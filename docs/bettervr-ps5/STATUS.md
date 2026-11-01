@@ -3,6 +3,67 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-01 (second run): M2 built and released as `m2-hmd2-flat`
+
+**Built, untested on console.** No headset or console result exists for any of this.
+
+- **Release:** [`m2-hmd2-flat`](https://github.com/Papyszoo/botw-bettervr-ps5/releases/tag/m2-hmd2-flat).
+  Same title ID and install as `m1-baseline`. Test request 2 below.
+- **What it does** (`port/bettervr/VrPS5.*`, `patches/cemu/0048`, one call in
+  `port/app/emulator.cpp`):
+  - **Switch:** `/data/ps5cemu/bettervr.json` with `{"vr": true}`, read once, when a Wii U game
+    first presents. It's a file of its own rather than a key in `ps5cemu.json`, because the app
+    rewrites `ps5cemu.json` from its settings and would drop an unknown key. It adds no setting row
+    and no strings. Without the file, nothing VR runs.
+  - **Eye buffers:** on the first frame, three host-visible, host-coherent buffers of
+    `2 × 1984 × 2048 × 4` bytes on Cemu's own `VkDevice` (device-local type preferred, as in
+    `reference/eye_buffers.cpp`). They are mapped, must be 256-byte aligned, and go to `hmd2::init`
+    as `Config::external`. 1984×2048 per eye is photo-splat-vr's size. The TV mirror is off, so the
+    TV keeps Cemu's picture.
+  - **Each TV frame**, in `VulkanRenderer::SwapBuffer` before the present:
+    `wait_slot` → `begin_frame` → `acquire`. Then, on Cemu's own command buffer: blit the swapchain
+    image (after the overlays and the in-game menu, so those show in the headset too) into the
+    middle of one 1984×2048 eye image (60% of its width, the TV's shape kept, black around it), and
+    copy that image into both halves of the acquired buffer. It ends with HLA-PSVR2's buffer barrier.
+    Cemu then submits and presents to the TV, waits for that command buffer
+    (`WaitCommandBufferFinished`), and calls `hmd2::submit`.
+  - **Colour:** the eye image is `R8G8B8A8_UNORM` when the swapchain is UNORM (Cemu picks
+    `B8G8R8A8_UNORM`), so the bytes Hmd2 samples are the TV's bytes, already sRGB-encoded. That
+    matches photo-splat-vr, whose comment says the sampled bytes are sRGB-encoded.
+  - **Off while VR is on:** frame generation (`SwapBuffer` skips `ps5framegen::Wanted`) and
+    ReShade (`PS5_PostEffects`).
+  - **Shutdown:** a game ends with a LoadExec, so Cemu's destructor never runs.
+    `LeaveEndingToSystem` (before both of the app's LoadExec calls) now calls `PS5Cemu_VrStop` →
+    `hmd2::shutdown()`, under the same lock as the frame calls. hmd2's notes say a title that ends
+    with VrTracker2 live faults the tracker. The destructor path frees the buffers too. If the
+    process is killed from the PS button, nothing runs, and Hmd2 isn't stopped.
+  - **Logs:** every line starts `[vr]`, including hmd2's own (`[vr] hmd2: …`). At start there's a
+    line per eye buffer and `[vr] headset up: …` (size, buffers, Hz, user, export table, FOV). Every
+    600 headset frames there's a pacing line, and on failure `VR off: …` with hmd2's step and return
+    code.
+- **Costs and guesses to check on the console:**
+  - **The wait for the GPU.** Waiting for this frame's command buffer before `hmd2::submit` holds
+    Cemu's GPU thread until the GPU finishes the frame. Without VR it only waits for the previous
+    frame. Expect a lower flat frame rate with VR on. If it matters, the next step is a thread that
+    waits on the fence and submits.
+  - **Two pacers.** `wait_slot`/`begin_frame` pace the GPU thread to Hmd2's 60 Hz slots, and the
+    TV's FIFO present paces it too.
+  - **TV and headset together.** photo-splat-vr in VR mode doesn't show its own picture on the TV.
+    Here, RADV's VideoOut port for the TV and Hmd2's bus-32 port are open at the same time. Nothing
+    has tried that.
+  - **RADV versions** (`third_party/hmd2/README.md`): photo-splat-vr links PS5_Vulkan `f410e67`'s
+    Mesa, and this app links PS5_Mesa `7b59ef27`. If the headset shows garbage or black, check that
+    first.
+  - **The picture is head-locked.** Hmd2 reprojects it with the pose it predicted, so the screen
+    follows the head. It's the same image in both eyes, so it reads as far away.
+- **Next:** Test requests 1 and 2. M3 starts from BetterVR's own code, which doesn't depend on
+  their results, but its pacing and buffer path build on M2 working on the console.
+- **Build:** `make release` with `EDEN_SKIP_SOURCE_CHECKS=1`, as for M1, on `72aa2a7`. The zip's
+  SHA-256 is `4d82b1c8…1b3f`. `ps5vr::*` and `hmd2::*` are in the ELF, and its new imports
+  (`sceVideoOutRegisterBuffers2`, `sceKernelDlsym`, `sceSysmoduleLoadModule`, …) are all in the
+  payload SDK's system-module stubs. Adding the include directories rebuilt all of CemuCafe (647
+  steps, about 16 minutes), then the link.
+
 ## 2026-11-01 (second run): M1 built and released as `m1-baseline`
 
 Cloud session, with zlib.net and wrapdb.mesonbuild.com now allowed. **Built, untested on console.**
@@ -122,6 +183,53 @@ Cloud session, scheduled run. Nothing was built for the console and nothing was 
 - **Next:** M1, the baseline build and release (see `PLAN.md`).
 
 ## Open test requests
+
+### Test request 2: the TV's picture in the PS VR2 headset (M2)
+
+**Which build.** [`m2-hmd2-flat`](https://github.com/Papyszoo/botw-bettervr-ps5/releases/tag/m2-hmd2-flat).
+
+**Install:**
+
+1. Download `PS5-ECAM-v5.1.1.zip` and `SHA256SUMS` from the pre-release and check them
+   (`sha256sum -c SHA256SUMS --ignore-missing`).
+2. Copy the zip's `PPSA99360` folder over `/data/homebrew/PPSA99360`. It replaces your PS5-ECAM.
+   Don't accept an in-app update.
+3. **First, flat:** start Breath of the Wild without the file below, play a minute, and quit to the
+   library. This shows the build still works flat (boot.log then has no `[vr]` lines).
+4. With FTP (as you copy the app), put a file `/data/ps5cemu/bettervr.json` on the console
+   containing exactly `{"vr": true}`.
+
+**Try:**
+
+1. Connect and turn on the PS VR2, and put it on (or hold it so its sensor sees a face).
+2. Start Breath of the Wild (v208) from PS5-ECAM. The headset should show the game's TV picture as
+   a screen in the middle of the view, with black around it, and follow your head.
+3. Play about 2 minutes: the title screen, then walking around. Open the in-game menu once; it
+   should show in the headset too.
+4. Look at the TV: does it still show the game?
+5. Quit to the library from the in-game menu. Does the headset go back to the PS5's own VR view?
+   Does the library come back?
+6. Settings > Diagnostics > **Copy logs to USB**.
+
+**Send back:**
+
+- **Headset:** did a picture appear? Is it stable, or flickering, torn or garbled? Is it black,
+  green or wrong in colour? Roughly how big and sharp is it, and does it follow your head?
+- **TV:** did it still show the game? Any difference from flat?
+- **Quit:** did quitting work, and what did the headset show after?
+- **From `/data/ps5cemu/logs/boot.log`:** every line with `[vr]` (including `[vr] hmd2: …`), the
+  `[perf] … fps over 10 s` lines while VR was on, and any `[crash]` lines. If it crashed, also send
+  the whole boot.log.
+- **The flat run in Install step 3:** did it play as before? Two of its `[perf]` lines are enough.
+
+**What it decides:**
+
+- **A stable picture:** M2 is done, and M3 (BetterVR's stereo and head tracking) can start.
+- **No picture, with `[vr] headset up`:** the eye-buffer hand-off. Check the RADV difference
+  (`third_party/hmd2/README.md`) and the image format.
+- **`VR off: hmd2 did not start`:** its step and return code say which Hmd2 call refused. The TV's
+  VideoOut being open at the same time is the first suspect.
+- **A crash at the first frame:** the `[crash]` lines with `ps5cemu-v5.1.1.elf.xz`.
 
 ### Test request 1: flat Breath of the Wild frame rate (M1)
 
