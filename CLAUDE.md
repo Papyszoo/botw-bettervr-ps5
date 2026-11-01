@@ -32,9 +32,9 @@ Read these before you plan anything:
   exactly what to install, what to do, and which log lines or numbers to send back.
 - **No game files, keys, firmware, or Sony SDK material** in the repo, in releases, or downloaded
   in a session. Patryk supplies his own dumped game on the console.
-- **PS5XR source is not reachable from cloud sessions** (theghostonline.dev is blocked for git and
-  curl). It lives in `third_party/ps5xr/` once Patryk adds it. If it is missing, do everything that
-  doesn't need it, and say so in `STATUS.md`.
+- **The PSVR2 path is `third_party/hmd2/`,** from Patryk's photo-splat-vr, which he has tested on
+  his console. PS5XR (`third_party/ps5xr/`) is optional; cloud sessions can't download it, because
+  theghostonline.dev is blocked.
 - **Commit and push often** to `main` (or a topic branch merged into `main`). Cloud sessions are
   reclaimed when idle, and anything unpushed is lost.
 

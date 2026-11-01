@@ -99,6 +99,27 @@ source or built. Nothing here has been run on a console.
 - **Not reachable from cloud sessions:** `git clone https://theghostonline.dev/...` gets a 403 from
   the egress proxy.
 
+## photo-splat-vr's hmd2 (Patryk's own, `third_party/hmd2/`)
+
+- **Source:** Papyszoo/photo-splat-vr `eddd5b7` (v0.1.1, 2026-10-27), `platform/ps5/hmd2/`.
+  GPL-3.0-or-later. A public GitHub repo, so cloud sessions can clone it.
+- **Status:** Patryk reports photo-splat-vr tested and working on his PS5 (13.60) with PSVR2, the
+  Sense controllers and a DualSense.
+- **What it is:** a PSVR2 library with no OpenXR and no GPU API of its own.
+  - Its frame path is ported from theghostonline's PS5VR. Its pacing, the RADV buffer hand-off and
+    the texture descriptor are ported from HLA-PSVR2's PS5XR (`psvr2.c`, `xr_session.c`,
+    `xr_vulkan.c`).
+  - In external mode it takes three linear RGBA8 side-by-side images that are RADV host-visible
+    `vkMapMemory` pointers.
+  - API: `init`/`wait_slot`/`begin_frame`/`acquire`/`submit`, `predicted_poses()` (head plus per-eye
+    poses), `field_of_view()`, and `register_controller`/`controller_pose` for the Sense controllers
+    through VrTracker2. A code comment marks the controller pose path "UNVERIFIED on hardware".
+- **Controller input:** read with `scePadVrControllerReadState` (Sense) and the pad API
+  (DualSense), using one table (`reference/pad_input.h`).
+- **What it means for this project:** M2 doesn't need PS5XR. For M3, BetterVR still expects OpenXR,
+  so either a small OpenXR layer goes on top of hmd2, or BetterVR calls hmd2 directly (see
+  `PLAN.md`, M3).
+
 ## Reference: RE7-PSVR2 and HLA-PSVR2 behaviour
 
 - **RE7:** about 35–60 fps at full resolution, with lock modes of 60 or 40 fps reprojected to

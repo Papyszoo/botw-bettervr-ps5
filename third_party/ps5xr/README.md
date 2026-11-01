@@ -1,4 +1,8 @@
-# PS5XR (placeholder)
+# PS5XR (placeholder, optional)
+
+Optional since 2026-11-01. The PSVR2 path now comes from `third_party/hmd2/` (Patryk's
+photo-splat-vr), which is tested on his console. PS5XR is only worth adding as a reference for the
+OpenXR layer in M3, or to use directly as that layer.
 
 PS5XR is the OpenXR runtime for PlayStation VR2 from theghostonline's HLA-PSVR2 and RE7-PSVR2
 (GPL-3.0). It drives the headset, tracking, Sense controllers and frame pacing through the PS5's VR

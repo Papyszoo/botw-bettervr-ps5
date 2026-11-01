@@ -26,20 +26,24 @@ Wild with update v208.
      (see `docs/DRIVER-PERFORMANCE.md`).
   3. As a rough go/no-go, VR fps will be about half the uncapped flat fps in those spots.
 
-## M2: PS5XR in Cemu, flat picture in the headset
+## M2: flat picture in the headset through hmd2
 
-Needs `third_party/ps5xr/` (see its README).
+Uses `third_party/hmd2/`, the PSVR2 library from Patryk's photo-splat-vr. It is tested on his
+console with the Sense controllers and a DualSense. Read its README first. PS5XR
+(`third_party/ps5xr/`) isn't needed for M2.
 
-- **Build PS5XR in:** compile PS5XR into the app and create an OpenXR instance and session on
-  Cemu's own `VkInstance`/`VkDevice`/queue (`XR_KHR_vulkan_enable` or `enable2`). Request only
-  extensions PS5XR advertises, because it refuses unknown ones at `xrCreateInstance`.
-- **Show the picture:** put Cemu's final frame in the headset as a quad layer (or as the same image
-  for both eyes). Head tracking isn't needed yet.
+- **Build hmd2 in:** compile `third_party/hmd2/hmd2.cpp` into the app.
+- **Set up the eye buffers:** on Cemu's own `VkDevice`, create three host-visible, host-coherent
+  buffers of `2 * eye_w * eye_h * 4` bytes. Map them and pass them to `hmd2::init` as
+  `Config::external`. `third_party/hmd2/reference/eye_buffers.*` shows how.
+- **Show the picture:** each frame, `wait_slot` → `begin_frame` → `acquire`, copy and scale Cemu's
+  final frame into both halves of the acquired buffer on Cemu's queue, wait for the fence, then
+  `submit`. A centred, screen-sized picture is enough. Head tracking isn't needed yet.
 - **Make it optional:** turn VR on with one setting or config switch, so flat play keeps working.
   Turn frame generation (MihawkGen) and ReShade off while VR is on.
-- **Release:** publish `m2-xr-quad`.
-- **Test request:** does the picture appear in the headset, and is it stable? Send the PS5XR and
-  Cemu log lines. Also check the TV picture.
+- **Release:** publish `m2-hmd2-flat`.
+- **Test request:** does the picture appear in the headset, and is it stable? Send the `hmd2` log
+  lines and the Cemu log lines. Also check the TV picture.
 
 ## M3: BetterVR stereo with head tracking
 
@@ -58,8 +62,20 @@ native Vulkan/OpenXR backend.
   the PS5 there is no loader. Cemu gets every Vulkan entry point through `PS5_VulkanGetGlobalProc`
   in `port/cemu/VulkanPS5.cpp`, which makes it the natural place to hand out wrapped function
   pointers. Prefer that to patching each call in Cemu.
-- **Adapt the Linux backend to PS5XR:**
-  - Make `XR_KHR_composition_layer_depth` optional (PS5XR doesn't offer it).
+- **Choose how BetterVR reaches the headset.** BetterVR (and its Linux backend) is written against
+  OpenXR, and hmd2 is not an OpenXR runtime. There are two options:
+  - **A (preferred): a small OpenXR runtime over hmd2,** in `port/bettervr/xr/`. It implements only
+    what BetterVR calls: instance, system, session with the Vulkan binding, swapchains,
+    wait/begin/end frame with projection and quad layers, spaces and `xrLocateViews`, and actions
+    with the Oculus Touch profile mapped to the Sense controllers and DualSense. This is what PS5XR
+    is. It keeps BetterVR's code close to upstream, so it stays rebasable. If Patryk adds the PS5XR
+    source to `third_party/ps5xr/`, compare it with yours or use it directly.
+  - **B: call hmd2 directly** from BetterVR's renderer and controls. That's less code at first but
+    touches many BetterVR files.
+
+  Write down which you chose, and why, in `STATUS.md`.
+- **Adapt the Linux backend:**
+  - Make `XR_KHR_composition_layer_depth` optional (hmd2 and PS5XR have no depth layer).
   - Use the timespec time conversion.
   - Make the three-queue setup fit what RADV on the PS5 exposes; fall back to fewer queues.
   - Drop the desktop mirror, launcher script and Nix build.
@@ -71,8 +87,10 @@ native Vulkan/OpenXR backend.
 
 ## M4: controllers, menus, performance
 
-- **Controllers:** BetterVR binds `/interaction_profiles/oculus/touch_controller`. Find out which
-  profiles PS5XR accepts, and map the Sense controllers to them.
+- **Controllers:** BetterVR binds `/interaction_profiles/oculus/touch_controller`. Map the Sense
+  controllers to it (buttons and sticks through `scePadVrControllerReadState`, as in
+  `third_party/hmd2/reference/pad_input.h`; poses through `hmd2::controller_pose`). Map the
+  DualSense as a fallback.
 - **Frame-rate locks:** add 40 and 60 fps locks with reprojection to 120 Hz, as RE7-PSVR2 does. Use
   `XR_FB_display_refresh_rate` for 90 or 120 Hz.
 - **Performance options:** expose BetterVR's options for performance (shadows off, resolution per
@@ -84,7 +102,7 @@ native Vulkan/OpenXR backend.
 Stop when any of these is true:
 - Everything that doesn't need a console result is done, built, pushed and released, and `STATUS.md`
   lists the open test requests.
-- You're blocked: PS5XR is missing, a blocked download, or a decision Patryk has to make. Write the
-  blocker in `STATUS.md`.
+- You're blocked: a blocked download, or a decision Patryk has to make. Write the blocker in
+  `STATUS.md`.
 
 Don't polish past an open test request.
