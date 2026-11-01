@@ -1,0 +1,61 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# BotW-BetterVR on PS5: publishes a console test build as a pre-release (docs/bettervr-ps5/PLAN.md).
+# The build is made in a cloud session, which can push but cannot create releases. The session
+# pushes the build to a staging branch: notes.md, SHA256SUMS, and the files SHA256SUMS names, each
+# split into parts under 95 MB (name.part-00, name.part-01, ...). This workflow joins the parts,
+# checks every file against SHA256SUMS, creates the pre-release on the commit the build came from,
+# and deletes the staging branch.
+name: BetterVR pre-release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Pre-release tag, named after the milestone (m1-baseline, m2-hmd2-flat, ...)"
+        required: true
+      staging:
+        description: "Branch holding the build"
+        required: true
+      target:
+        description: "Commit the build came from (the tag points at it)"
+        required: true
+      title:
+        description: "Release title"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.staging }}
+          path: staging
+      - name: Join and check the files
+        working-directory: staging
+        run: |
+          set -euo pipefail
+          for first in *.part-00; do
+            name=${first%.part-00}
+            cat "$name".part-* > "$name"
+            rm "$name".part-*
+          done
+          sha256sum -c SHA256SUMS
+          ls -la
+      - name: Create the pre-release
+        working-directory: staging
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          files=$(awk '{print $2}' SHA256SUMS)
+          gh release create "${{ inputs.tag }}" --repo "$GITHUB_REPOSITORY" --prerelease \
+            --target "${{ inputs.target }}" --title "${{ inputs.title }}" --notes-file notes.md \
+            $files SHA256SUMS
+      - name: Delete the staging branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/heads/${{ inputs.staging }}"
