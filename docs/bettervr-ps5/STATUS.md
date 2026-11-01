@@ -3,6 +3,66 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-01 (second run): M1 built and released as `m1-baseline`
+
+Cloud session, with zlib.net and wrapdb.mesonbuild.com now allowed. **Built, untested on console.**
+
+- **Release:** [`m1-baseline`](https://github.com/Papyszoo/botw-bettervr-ps5/releases/tag/m1-baseline),
+  a pre-release on `14b0b9c`. It contains `PS5-ECAM-v5.1.1.zip` (76 MB, SHA-256 `5c0624aa…ab63`),
+  `ps5cemu-v5.1.1.elf.xz` (the eboot's ELF with symbols, for `tools/symbolize-crash.py`) and
+  `SHA256SUMS`. Title ID PPSA99360, so it replaces an installed PS5-ECAM. The notes say not to take
+  the in-app update. Test request 1 can now use it.
+- **Times** on this machine (4 cores this time, not 2):
+
+  | Step | Time |
+  | --- | --- |
+  | apt packages and `pip install meson mako packaging` | 45 s |
+  | `deps.py fetch` (everything, fresh container) | 2 min 56 s |
+  | `tools/build-deps.sh` | 51 s |
+  | `tools/build-radv.sh` (both RADV builds) | 7 min 33 s |
+  | Azahar, melonDS and Cemu compiles | about 19 min, in two 9.5-minute calls |
+  | Cemu's link (`ps5cemu.elf`) | **11 min 33 s**, one lld step, longer than a 10-minute shell call |
+  | Eden: its RADV, FFmpeg, then Eden itself (1721 steps) | about 33 min (95 CPU-minutes for Eden) |
+  | packaging | about 2 min |
+
+  The Cemu link and the Eden build can't fit in one 10-minute shell call. They ran as background
+  processes, watched from the same turn with foreground waits of 9 minutes or less.
+- **Host packages the docs don't list** (`docs/BUILDING.md` names the rest): `bison`, `lld-18`,
+  `ccache` (Eden refuses to build without it, or with `USE_CCACHE=0`), `libclang-rt-18-dev`
+  (an Eden host tool links ASan), and CMake 3.31 at `~/hosttools/cmake-3.31.8` (Eden wants 3.31 or
+  later; Ubuntu has 3.28). CMake came from Kitware's GitHub release and was checked against its
+  `SHA-256.txt`.
+- **Downloads the network refused, and what replaced them.** Each replacement was checked against
+  the dependency's own pin:
+  - **GitHub source archives** (`github.com/<repo>/archive/*.tar.gz`, HTTP 403): Eden's `deps.py`
+    needs FFmpeg and fmt that way, and Eden's CMake (CPM) needs 35 more packages. All were rebuilt
+    with `git archive --prefix=<GitHub's folder>/ <ref> | gzip -cn` from the pinned refs. Every one
+    is byte-identical to the pin (the SHA-512 or SHA-256 matches), so Eden's own checks accepted
+    them. They're in `~/.cache/prosperoeden-deps/` and in CPM's cache under Eden's prepared source.
+    The script is simple to redo: fetch each ref with git, try `<repo>-<ref>`,
+    `<repo>-<ref without v>` and `<repo>-<full commit>` as the folder, and keep the file only if
+    its hash matches. CPM's folder is the package's `package` name in lower case where it has one,
+    otherwise its key.
+  - **blackbearreloaded's account is gone** (HTTP 404). Eden pins three things from it:
+    - the PS5 OpenGL SDK 1.0.2, from darkxex/ps5-opengl's `v1.0.2` release, as
+      `tools/build-eden.sh` says (SHA-256 matches);
+    - ps5-homebrew-ui's 10 theme files at `aed286b`, from Phononenom/ps5-homebrew-ui (each SHA-256
+      matches);
+    - the Lapy helper at commit `57fcc19b7f57`, from Phononenom/PS5-Lapy-JB-Daemon-bbr, the only
+      copy found with that commit.
+- **Eden's source checks were skipped** (`EDEN_SKIP_SOURCE_CHECKS=1`, Eden's own switch). After
+  Eden builds, `build-headless-native.sh` runs text checks on its sources. At this repo's base, four
+  of them fail: `check-load-failure`, `check-startup-performance`, `check-native-gpu-thread` and
+  `check-gpu-sync-stop`. Upstream's newest Eden patches (`patches/eden/0021`, `0022`, eden-nx2)
+  changed the code they read. For example, 0022 put `Eden::Nx2::ResetForSession()` inside the block
+  `check-load-failure` compiles against stubs. The sources weren't changed. This is upstream's to
+  fix, and it only concerns the Switch side.
+- **Publishing:** this session's GitHub access can't create releases or dispatch workflows (HTTP
+  403). `.github/workflows/bettervr-prerelease.yml` does it instead: push a branch
+  `staging/<tag>` based on `main`, with `release.env` (`TAG`, `TARGET` as a full commit ID,
+  `TITLE`), `notes.md`, `SHA256SUMS` and the files split into 95 MB parts. The workflow joins them,
+  checks them, creates the pre-release and deletes the branch.
+
 ## 2026-11-01: M1 stopped at a blocked download (zlib.net)
 
 Cloud session, scheduled run. Nothing was built for the console and nothing was released.
@@ -65,17 +125,17 @@ Cloud session, scheduled run. Nothing was built for the console and nothing was 
 
 ### Test request 1: flat Breath of the Wild frame rate (M1)
 
-**Which build.** The plan is to run this on `m1-baseline`, which isn't built yet (see Blockers).
-PS5-ECAM **5.1.1**, premohq's release, should give the same Wii U numbers, so you can run it now.
+**Which build.** [`m1-baseline`](https://github.com/Papyszoo/botw-bettervr-ps5/releases/tag/m1-baseline).
+PS5-ECAM **5.1.1**, premohq's release, should give the same Wii U numbers, so it will do too.
 Between 5.1.1 (`1e8da2d`) and this repo's base (`269e273`), the Cemu pin, the RADV pin and
 `patches/mesa` are the same. The only change on the Wii U side is frame generation (#94), which is
 off for this test. That comes from reading the git history, not from a console. Say which build
 you used.
 
-**Install** (only for `m1-baseline`, once it's published; skip this for 5.1.1 you already have):
+**Install** (only for `m1-baseline`; skip this for 5.1.1 you already have):
 
 1. Download `PS5-ECAM-v5.1.1.zip` and `SHA256SUMS` from the `m1-baseline` pre-release and check the
-   checksum.
+   checksum (`sha256sum -c SHA256SUMS --ignore-missing`).
 2. This build keeps title ID PPSA99360, so it **replaces** your installed PS5-ECAM. Copy the zip's
    `PPSA99360` folder over `/data/homebrew/PPSA99360`. Your data in `/data/ps5cemu` stays.
 3. If the app offers an update, don't take it: that would install premohq's release over this one.
@@ -110,25 +170,6 @@ and under 60 flat means the open world will be hard to hold at 40.
 
 ## Blockers
 
-1. **zlib.net is refused by the cloud egress proxy (HTTP 403), so `make deps` can't finish.**
-   Blocked URL: `https://zlib.net/fossils/zlib-1.3.2.tar.gz` (SHA-256
-   `bb329a0a2cd0274d05519d61c667c062e06990d72e125ee2dfa8de64f0119d16`, pinned in both
-   `setup-native-dependencies.sh` scripts). Patryk, pick one:
-   - **a. Allow `zlib.net`** in this cloud environment's network settings. The build then runs
-     unmodified, as M1 asks.
-   - **b. Commit the tarball** here, for example as `third_party/zlib/zlib-1.3.2.tar.gz` (zlib's
-     licence allows it). A session then copies it to
-     `.deps/ps5-native-app-boilerplate/.deps/native/zlib/` and `.deps/PS5_Vulkan/.deps/native/zlib/`
-     before `make deps`. Both scripts check the SHA-256 and skip the download when the file is
-     already there, so nothing in the build changes. If `wrapdb.mesonbuild.com` turns out to be
-     blocked too, Mesa's wrap needs `zlib-1.3.1.tar.gz` and `zlib_1.3.1-1_patch.zip` the same way,
-     in `.deps/PS5_Vulkan/.deps/work/radv-src/subprojects/packagecache/`. Meson looks there first,
-     and the build keeps that folder between revisions.
-   - **c. Allow a GitHub copy.** zlib also publishes release tarballs on `madler/zlib`'s GitHub
-     releases. Sessions can reach those, but they'd have to put the file in the same two places, and
-     the SHA-256 check decides whether it's the same file. This only needs your OK, because it's a
-     way around the block.
-2. **The scheduled task's prompt is older than the new plan.** It still says "continue with M2 only
-   if `third_party/ps5xr/` has the PS5XR source, up to `m2-xr-quad`". `PLAN.md` now does M2 with
-   `third_party/hmd2/` and releases `m2-hmd2-flat`. To have the next run start M2 without PS5XR,
-   update the task's prompt to follow `PLAN.md`'s M2. Until then, runs will skip M2.
+None open. Resolved this run: zlib.net is allowed now, and the M2 prompt follows `PLAN.md`.
+If a scheduled task still has the older prompt (the one that waits for PS5XR and `m2-xr-quad`),
+update it to follow `PLAN.md`.
