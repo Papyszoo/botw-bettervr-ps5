@@ -87,6 +87,8 @@ extern std::atomic<uint32> g_ps5LongestFrameUs;
 extern std::atomic<uint64> g_ps5GpuWaitTicks[6];
 // patches/cemu: Cemu's VulkanPipelineStableCache.cpp
 void PS5Cemu_PipelineCacheProgress(uint32& loaded, uint32& queued, uint32& lastIndex);
+// BotW-BetterVR (port/bettervr/VrPS5.h): the PS VR2 headset off, before the process is replaced
+void PS5Cemu_VrStop();
 
 namespace ps5emu
 {
@@ -433,6 +435,7 @@ namespace ps5emu
 		// which is not the system ending the process for the program that is to follow (#60)
 		void LeaveEndingToSystem()
 		{
+			PS5Cemu_VrStop(); // BotW-BetterVR: the PS VR2 headset off first (port/bettervr/VrPS5.h)
 			for (const int sig : {SIGTERM, SIGINT, SIGHUP, SIGQUIT})
 				std::signal(sig, SIG_DFL);
 		}

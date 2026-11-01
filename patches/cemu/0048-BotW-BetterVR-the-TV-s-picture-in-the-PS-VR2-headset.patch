@@ -1,0 +1,95 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Patryk <papyszoo@gmail.com>
+Date: Sun, 1 Nov 2026 21:33:02 +0000
+Subject: [PATCH] BotW-BetterVR: the TV's picture in the PS VR2 headset through
+ hmd2, while bettervr.json turns VR on
+
+port/bettervr/VrPS5.h: at each TV frame, SwapBuffer records the picture's scale into both halves of
+the eye buffer Hmd2 handed out, presents to the TV, waits for those commands and flips the headset's
+frame. Frame generation and ReShade are off while VR is on. The destructor stops Hmd2 before the
+device goes. hmd2.cpp (third_party/hmd2, from photo-splat-vr) is built into CemuCafe.
+---
+ src/Cafe/CMakeLists.txt                       |  7 ++++++
+ .../Latte/Renderer/Vulkan/VulkanRenderer.cpp  | 23 +++++++++++++++++--
+ 2 files changed, 28 insertions(+), 2 deletions(-)
+
+diff --git a/src/Cafe/CMakeLists.txt b/src/Cafe/CMakeLists.txt
+index 85f5441..03391c8 100644
+--- a/src/Cafe/CMakeLists.txt
++++ b/src/Cafe/CMakeLists.txt
+@@ -580,6 +580,13 @@ if(CEMU_PS5)
+ 		"${PS5_RESHADE}/deps/stb" "${PS5_RESHADE}/deps/stb_image")
+ 	set_source_files_properties(${PS5_RESHADE_SOURCES} PROPERTIES SKIP_PRECOMPILE_HEADERS ON COMPILE_OPTIONS "-w")
+ 	set_source_files_properties("${CEMU_PS5_PORT_DIR}/cemu/ReShadeEffects.cpp" PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
++	# BotW-BetterVR on PS5 (port/bettervr/VrPS5.h): the TV's picture in the PS VR2 headset through hmd2
++	# (third_party/hmd2, from photo-splat-vr), while bettervr.json turns VR on
++	set(PS5_HMD2 "${CEMU_PS5_PORT_DIR}/../third_party/hmd2")
++	target_sources(CemuCafe PRIVATE "${CEMU_PS5_PORT_DIR}/bettervr/VrPS5.cpp" "${CEMU_PS5_PORT_DIR}/bettervr/VrPS5.h" "${PS5_HMD2}/hmd2.cpp")
++	target_include_directories(CemuCafe PRIVATE "${CEMU_PS5_PORT_DIR}/bettervr" "${PS5_HMD2}")
++	set_source_files_properties("${PS5_HMD2}/hmd2.cpp" PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
++	set_source_files_properties("${CEMU_PS5_PORT_DIR}/bettervr/VrPS5.cpp" PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
+ endif()
+ 
+ if(APPLE)
+diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
+index 1a31179..5fb7ef0 100644
+--- a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
++++ b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
+@@ -875,6 +875,9 @@ VulkanRenderer::~VulkanRenderer()
+ 	SubmitCommandBuffer();
+ 	WaitDeviceIdle();
+ 	WaitCommandBufferFinished(GetCurrentCommandBufferId());
++#if defined(CEMU_PS5)
++	ps5vr::Shutdown(); // BotW-BetterVR: Hmd2 off, then its eye buffers freed (port/bettervr/VrPS5.h)
++#endif
+ 	// shut down pipeline save thread
+ 	m_destructionRequested = true;
+ 	m_pipeline_cache_semaphore.notify();
+@@ -2338,6 +2341,7 @@ static bool s_ps5WaitingForPreviousFrame = false;
+ uint32 PS5Cemu_FramesInFlight();
+ #include "FrameGenPS5.h"
+ #include "ReShadePS5.h"
++#include "VrPS5.h"
+ #define PS5_WAIT_BEGIN() const uint64 ps5WaitStart = __rdtsc()
+ #define PS5_WAIT_END(kind) g_ps5GpuWaitTicks[kind].fetch_add(__rdtsc() - ps5WaitStart, std::memory_order_relaxed)
+ #else
+@@ -3325,7 +3329,7 @@ void VulkanRenderer::SwapBuffer(bool mainWindow)
+ #if defined(CEMU_PS5)
+ 	// PS5: frame generation (port/cemu/FrameGenPS5.h, #66): the picture between the last frame and this
+ 	// one is presented first, from this image; this one then goes into the next image
+-	if (mainWindow && ps5framegen::Wanted())
++	if (mainWindow && !ps5vr::Enabled() && ps5framegen::Wanted())
+ 	{
+ 		draw_endRenderPass();
+ 		const ps5framegen::Swap swap{m_logicalDevice, m_physicalDevice, getCurrentCommandBuffer(),
+@@ -3342,6 +3346,21 @@ void VulkanRenderer::SwapBuffer(bool mainWindow)
+ 			return;
+ 		}
+ 	}
++	// BotW-BetterVR (port/bettervr/VrPS5.h): the TV's picture into the PS VR2 headset's eye buffer, on
++	// this frame's commands; flipped once they have run on the GPU
++	if (mainWindow && ps5vr::Enabled())
++	{
++		draw_endRenderPass();
++		const bool headset = ps5vr::Record({m_logicalDevice, m_physicalDevice, getCurrentCommandBuffer(),
++			chainInfo.m_swapchainImages[chainInfo.swapchainImageIndex], chainInfo.m_surfaceFormat.format, chainInfo.getExtent()});
++		presentAcquired(true);
++		if (headset)
++		{
++			WaitCommandBufferFinished(m_commandBufferIDOfPrevFrame);
++			ps5vr::Submit();
++		}
++		return;
++	}
+ #endif
+ 	presentAcquired(true);
+ }
+@@ -3353,7 +3372,7 @@ void VulkanRenderer::SwapBuffer(bool mainWindow)
+ // the TV's pictures alone (port/cemu/FrameGenPS5.h, #94)
+ void VulkanRenderer::PS5_PostEffects()
+ {
+-	const bool reshade = ps5reshade::Wanted();
++	const bool reshade = !ps5vr::Enabled() && ps5reshade::Wanted();
+ 	if (!reshade && !ps5framegen::CleanWanted())
+ 		return;
+ 	auto& chainInfo = GetChainInfo(true);
