@@ -10,8 +10,8 @@ frame. Frame generation and ReShade are off while VR is on. The destructor stops
 device goes. hmd2.cpp (third_party/hmd2, from photo-splat-vr) is built into CemuCafe.
 ---
  src/Cafe/CMakeLists.txt                       |  7 ++++++
- .../Latte/Renderer/Vulkan/VulkanRenderer.cpp  | 23 +++++++++++++++++--
- 2 files changed, 28 insertions(+), 2 deletions(-)
+ .../Latte/Renderer/Vulkan/VulkanRenderer.cpp  | 24 +++++++++++++++++--
+ 2 files changed, 29 insertions(+), 2 deletions(-)
 
 diff --git a/src/Cafe/CMakeLists.txt b/src/Cafe/CMakeLists.txt
 index 85f5441..03391c8 100644
@@ -32,10 +32,19 @@ index 85f5441..03391c8 100644
  
  if(APPLE)
 diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
-index 1a31179..5fb7ef0 100644
+index 1a31179..7ce6044 100644
 --- a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
 +++ b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
-@@ -875,6 +875,9 @@ VulkanRenderer::~VulkanRenderer()
+@@ -13,6 +13,8 @@ uint32 PS5Cemu_SubmitDraws();
+ extern bool g_ps5StandardBorderColors; // below
+ // The remote touch screen (port/stream): the GamePad's picture, as RGB rows
+ void PS5Cemu_StreamFrame(const uint8* rgb, int width, int height);
++// BotW-BetterVR: the TV's picture in the PS VR2 headset (port/bettervr/VrPS5.h)
++#include "VrPS5.h"
+ #endif
+ #include "Cafe/HW/Latte/Renderer/Vulkan/VulkanAPI.h"
+ #include "Cafe/HW/Latte/Renderer/Vulkan/LatteTextureVk.h"
+@@ -875,6 +877,9 @@ VulkanRenderer::~VulkanRenderer()
  	SubmitCommandBuffer();
  	WaitDeviceIdle();
  	WaitCommandBufferFinished(GetCurrentCommandBufferId());
@@ -45,15 +54,7 @@ index 1a31179..5fb7ef0 100644
  	// shut down pipeline save thread
  	m_destructionRequested = true;
  	m_pipeline_cache_semaphore.notify();
-@@ -2338,6 +2341,7 @@ static bool s_ps5WaitingForPreviousFrame = false;
- uint32 PS5Cemu_FramesInFlight();
- #include "FrameGenPS5.h"
- #include "ReShadePS5.h"
-+#include "VrPS5.h"
- #define PS5_WAIT_BEGIN() const uint64 ps5WaitStart = __rdtsc()
- #define PS5_WAIT_END(kind) g_ps5GpuWaitTicks[kind].fetch_add(__rdtsc() - ps5WaitStart, std::memory_order_relaxed)
- #else
-@@ -3325,7 +3329,7 @@ void VulkanRenderer::SwapBuffer(bool mainWindow)
+@@ -3325,7 +3330,7 @@ void VulkanRenderer::SwapBuffer(bool mainWindow)
  #if defined(CEMU_PS5)
  	// PS5: frame generation (port/cemu/FrameGenPS5.h, #66): the picture between the last frame and this
  	// one is presented first, from this image; this one then goes into the next image
@@ -62,7 +63,7 @@ index 1a31179..5fb7ef0 100644
  	{
  		draw_endRenderPass();
  		const ps5framegen::Swap swap{m_logicalDevice, m_physicalDevice, getCurrentCommandBuffer(),
-@@ -3342,6 +3346,21 @@ void VulkanRenderer::SwapBuffer(bool mainWindow)
+@@ -3342,6 +3347,21 @@ void VulkanRenderer::SwapBuffer(bool mainWindow)
  			return;
  		}
  	}
@@ -84,7 +85,7 @@ index 1a31179..5fb7ef0 100644
  #endif
  	presentAcquired(true);
  }
-@@ -3353,7 +3372,7 @@ void VulkanRenderer::SwapBuffer(bool mainWindow)
+@@ -3353,7 +3373,7 @@ void VulkanRenderer::SwapBuffer(bool mainWindow)
  // the TV's pictures alone (port/cemu/FrameGenPS5.h, #94)
  void VulkanRenderer::PS5_PostEffects()
  {
