@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "VrPS5.h"
 #include "../app/paths.h"
+#include "../app/own_status.h"
+#include "Cafe/CafeSystem.h"
 #include "hmd2.h"
 
 #include <fmt/format.h>
 #include <rapidjson/document.h>
 
 #include <cstdio>
+#include <filesystem>
 #include <cstring>
 #include <mutex>
 #include <string>
@@ -74,7 +77,40 @@ namespace ps5vr
 			return fmt::format("{} -> {} ({})", call, Name(result), (int)result);
 		}
 
-		bool ReadSwitch()
+		enum class Mode
+		{
+			Off,
+			Flat,	 // M2: the TV's picture on a screen in the headset (this file)
+			BetterVR // M3: Breath of the Wild in stereo through BetterVR (port/bettervr/layer, xr)
+		};
+
+		bool IsBreathOfTheWild(uint64_t titleId)
+		{
+			return titleId == 0x00050000101C9300ull || titleId == 0x00050000101C9400ull || titleId == 0x00050000101C9500ull;
+		}
+
+		bool ReadSwitch(bool& betterVR);
+
+		// bettervr.json: {"vr": true} turns VR on; Breath of the Wild then goes through BetterVR, unless
+		// "bettervr": false asks for the flat screen; every other game gets the flat screen
+		Mode ReadMode()
+		{
+			bool betterVR = true;
+			const bool on = ReadSwitch(betterVR);
+			if (!on)
+				return Mode::Off;
+			const uint64_t titleId = CafeSystem::GetForegroundTitleId();
+			if (IsBreathOfTheWild(titleId) && betterVR)
+			{
+				Log(fmt::format("{:016x} is Breath of the Wild: BetterVR in stereo", titleId));
+				return Mode::BetterVR;
+			}
+			Log(fmt::format("{:016x}: the TV's picture on a screen in the headset{}", titleId,
+				IsBreathOfTheWild(titleId) ? " (\"bettervr\": false)" : ""));
+			return Mode::Flat;
+		}
+
+		bool ReadSwitch(bool& betterVR)
 		{
 			const std::string path = ps5paths::Root() + "/bettervr.json";
 			std::FILE* file = std::fopen(path.c_str(), "rb");
@@ -93,6 +129,8 @@ namespace ps5vr
 				return false;
 			}
 			const bool on = json.HasMember("vr") && json["vr"].IsBool() && json["vr"].GetBool();
+			if (json.HasMember("bettervr") && json["bettervr"].IsBool())
+				betterVR = json["bettervr"].GetBool();
 			Log(fmt::format("{}: VR {}", path, on ? "on (frame generation and ReShade off while it is)" : "off"));
 			return on;
 		}
@@ -275,12 +313,16 @@ namespace ps5vr
 		}
 
 		// Enabled, under the lock
+		Mode s_mode = Mode::Off; // ReadMode's, once a game has asked
+
+		// Enabled, under the lock: M2's flat screen
 		bool Wanted()
 		{
 			if (!s.checked)
 			{
 				s.checked = true;
-				s.enabled = ReadSwitch();
+				s_mode = ReadMode();
+				s.enabled = s_mode == Mode::Flat;
 			}
 			return s.enabled;
 		}
@@ -371,7 +413,8 @@ namespace ps5vr
 	bool Enabled()
 	{
 		std::lock_guard lock(s_lock);
-		return Wanted();
+		Wanted();
+		return s_mode != Mode::Off; // frame generation and ReShade off in either mode
 	}
 
 	bool Record(const Frame& frame)
@@ -451,8 +494,54 @@ namespace ps5vr
 	}
 }
 
-// app/emulator.cpp, before every LoadExec
+// BetterVR's layer (patches/bettervr: IsLayerActiveForProcess) and the Vulkan loader's stand-in
+// (VulkanLayerPS5.cpp): whether Breath of the Wild goes through BetterVR
+extern "C" bool BetterVR_PS5_LayerWanted()
+{
+	std::lock_guard lock(ps5vr::s_lock);
+	ps5vr::Wanted();
+	return ps5vr::s_mode == ps5vr::Mode::BetterVR;
+}
+
+// app/emulator.cpp, before Cemu loads its graphic packs: BetterVR's pack (the app's
+// assets/bettervr, tools/package.sh) in graphicPacks/bettervr while bettervr.json asks for BetterVR,
+// and gone from there otherwise. It is on by default for Breath of the Wild, and its patches call
+// BetterVR's hooks, which only exist while BetterVR runs: left there, it would break the game flat.
+void PS5Cemu_BetterVRPrepareGraphicPack()
+{
+	namespace fs = std::filesystem;
+	bool betterVR = true;
+	const bool wanted = ps5vr::ReadSwitch(betterVR) && betterVR;
+	const fs::path source = fs::path(ps5paths::AppDir()) / "assets" / "bettervr" / "BreathOfTheWild_BetterVR";
+	const fs::path target = fs::path(ps5paths::CemuRoot()) / "graphicPacks" / "bettervr";
+	std::error_code ec;
+	if (!wanted)
+	{
+		if (ps5files::OwnStatus(target, ec).type() == fs::file_type::directory)
+		{
+			fs::remove_all(target, ec);
+			ps5vr::Log(fmt::format("BetterVR's graphic pack taken out of {} (BetterVR is off){}", target.string(), ec ? ": " + ec.message() : ""));
+		}
+		return;
+	}
+	if (ps5files::OwnStatus(source / "rules.txt", ec).type() != fs::file_type::regular)
+	{
+		ps5vr::Log(fmt::format("BetterVR's graphic pack is not in the app ({}): Breath of the Wild will not start in stereo", source.string()));
+		return;
+	}
+	// copied again each start, so a new app's pack replaces the last one (35 small files)
+	fs::remove_all(target, ec);
+	fs::create_directories(target, ec);
+	fs::copy(source, target / "BreathOfTheWild_BetterVR", fs::copy_options::recursive, ec);
+	ps5vr::Log(fmt::format("BetterVR's graphic pack in {}{}", (target / "BreathOfTheWild_BetterVR").string(), ec ? " failed: " + ec.message() : ""));
+}
+
+// port/bettervr/xr/runtime.cpp, in BetterVR's object
+extern "C" void BetterVR_PS5_Stop();
+
+// app/emulator.cpp, before every LoadExec: the headset off, whichever mode had it
 void PS5Cemu_VrStop()
 {
 	ps5vr::Stop();
+	BetterVR_PS5_Stop();
 }

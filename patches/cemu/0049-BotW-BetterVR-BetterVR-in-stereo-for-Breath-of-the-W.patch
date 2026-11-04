@@ -1,0 +1,30 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Patryk <papyszoo@gmail.com>
+Date: Wed, 4 Nov 2026 19:03:02 +0000
+Subject: [PATCH] BotW-BetterVR: BetterVR in stereo for Breath of the Wild, its
+ object and the loader's part for its layer
+
+port/bettervr/VulkanLayerPS5.cpp stands in for the Vulkan loader for BetterVR's layer;
+build/bettervr/bettervr.o (tools/build-bettervr.sh) is BetterVR, its ImGui and the OpenXR runtime
+over hmd2, with its symbols local.
+---
+ src/Cafe/CMakeLists.txt | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/src/Cafe/CMakeLists.txt b/src/Cafe/CMakeLists.txt
+index 03391c8..b3fd26c 100644
+--- a/src/Cafe/CMakeLists.txt
++++ b/src/Cafe/CMakeLists.txt
+@@ -587,6 +587,12 @@ if(CEMU_PS5)
+ 	target_include_directories(CemuCafe PRIVATE "${CEMU_PS5_PORT_DIR}/bettervr" "${PS5_HMD2}")
+ 	set_source_files_properties("${PS5_HMD2}/hmd2.cpp" PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
+ 	set_source_files_properties("${CEMU_PS5_PORT_DIR}/bettervr/VrPS5.cpp" PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
++	# BetterVR in stereo for Breath of the Wild (M3): the Vulkan loader's part for its layer, and its one
++	# object (tools/build-bettervr.sh: BetterVR, its ImGui and the OpenXR runtime over hmd2, its symbols local)
++	set(PS5_BETTERVR_OBJECT "${CEMU_PS5_PORT_DIR}/../build/bettervr/bettervr.o")
++	target_sources(CemuCafe PRIVATE "${CEMU_PS5_PORT_DIR}/bettervr/VulkanLayerPS5.cpp" "${PS5_BETTERVR_OBJECT}")
++	set_source_files_properties("${PS5_BETTERVR_OBJECT}" PROPERTIES EXTERNAL_OBJECT TRUE GENERATED TRUE)
++	set_source_files_properties("${CEMU_PS5_PORT_DIR}/bettervr/VulkanLayerPS5.cpp" PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
+ endif()
+ 
+ if(APPLE)

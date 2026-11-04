@@ -14,7 +14,7 @@ APP := build/app/PPSA99360
 JOBS ?= $(shell nproc)
 export JOBS
 
-.PHONY: gameboy retro-upgrades retro test-retro help deps deps-status radv azahar melonds eden build check package release clean distclean test-contribution esde
+.PHONY: gameboy retro-upgrades retro test-retro help deps deps-status radv azahar melonds bettervr eden build check package release clean distclean test-contribution esde
 
 test-retro: ## Host verification for the additional system integration
 	bash tools/tests/test-retro.sh
@@ -68,10 +68,13 @@ eden: deps ## Build ProsperoEdenX, the Switch side's program (Eden), with patche
 esde: ## Build EmulationStation (ES-DE), the optional other frontend, with PS5-ECAM's glue: build/esde/es-de
 	bash tools/build-esde.sh
 
-build: deps azahar melonds $(if $(RADV_ARCHIVE),,radv) ## Build PS5-ECAM (Cemu, Azahar and melonDS) and link it with RADV: build/cemu/ps5cemu.elf
+bettervr: deps ## BotW-BetterVR on PS5: BetterVR, its ImGui and the OpenXR runtime over hmd2 in one object: build/bettervr/bettervr.o
+	bash tools/build-bettervr.sh
+
+build: deps azahar melonds bettervr $(if $(RADV_ARCHIVE),,radv) ## Build PS5-ECAM (Cemu, Azahar and melonDS) and link it with RADV: build/cemu/ps5cemu.elf
 	bash tools/build-cemu.sh
 
-check: deps azahar melonds ## Build and package everything with a stand-in for RADV, to check the build (not an app)
+check: deps azahar melonds bettervr ## Build and package everything with a stand-in for RADV, to check the build (not an app)
 	PS5CEMU_LINK_CHECK=1 bash tools/build-cemu.sh
 	bash tools/package.sh --check
 

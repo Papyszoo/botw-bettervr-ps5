@@ -89,6 +89,8 @@ extern std::atomic<uint64> g_ps5GpuWaitTicks[6];
 void PS5Cemu_PipelineCacheProgress(uint32& loaded, uint32& queued, uint32& lastIndex);
 // BotW-BetterVR (port/bettervr/VrPS5.h): the PS VR2 headset off, before the process is replaced
 void PS5Cemu_VrStop();
+// BotW-BetterVR (port/bettervr/VrPS5.cpp): BetterVR's graphic pack in graphicPacks/ while bettervr.json asks for it
+void PS5Cemu_BetterVRPrepareGraphicPack();
 
 namespace ps5emu
 {
@@ -317,6 +319,7 @@ namespace ps5emu
 			GetConfigHandle().Save();
 			if (NetworkConfig::XMLExists())
 				n_config.Load();
+			PS5Cemu_BetterVRPrepareGraphicPack(); // BotW-BetterVR: its pack in graphicPacks/ while bettervr.json asks
 			GraphicPack2::LoadAll();
 			InputManager::instance().load();
 			DefaultControllers();

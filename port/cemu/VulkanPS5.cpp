@@ -6,9 +6,12 @@
 #include "Cafe/HW/Latte/Renderer/Vulkan/VulkanAPI.h"
 #include "../ps5/vulkan_display.h"
 
+// BotW-BetterVR on PS5: the loader's part for BetterVR's layer, over the driver's (port/bettervr/VulkanLayerPS5.cpp)
+namespace ps5bettervr { PFN_vkGetInstanceProcAddr Wrap(PFN_vkGetInstanceProcAddr driver); }
+
 PFN_vkVoidFunction PS5_VulkanGetGlobalProc(const char* name)
 {
-	const auto gipa = ps5vk::GetInstanceProcAddr();
+	const auto gipa = ps5bettervr::Wrap(ps5vk::GetInstanceProcAddr());
 	if (strcmp(name, "vkGetInstanceProcAddr") == 0)
 		return reinterpret_cast<PFN_vkVoidFunction>(gipa);
 	return gipa(VK_NULL_HANDLE, name);

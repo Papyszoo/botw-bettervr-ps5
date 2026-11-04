@@ -169,6 +169,12 @@ cp "$PS5CEMU_ROOT/docs/COMPATIBILITY.md" "$app/assets/compatibility.md"
 mkdir -p "$app/assets/borders"
 cp "$PS5CEMU_ROOT"/port/azahar/borders/*.png "$app/assets/borders/"
 cp -a "$deps/Cemu/bin/resources/sharedFonts" "$app/assets/cemu/resources/"
+# BotW-BetterVR on PS5: BetterVR's graphic pack, without its debug patches (as its own release),
+# which the app puts in graphicPacks/ while bettervr.json asks for BetterVR (port/bettervr/VrPS5.cpp)
+rm -rf "$app/assets/bettervr"
+mkdir -p "$app/assets/bettervr"
+cp -a "$deps/BotW-BetterVR/resources/BreathOfTheWild_BetterVR" "$app/assets/bettervr/"
+rm -f "$app/assets/bettervr/BreathOfTheWild_BetterVR"/patch_debug_*.asm
 
 # The Switch side's program (tools/build-eden.sh): ProsperoEdenX's eboot.bin and the files it reads
 # from its own folder, with the boilerplate's libc.prx beside it as in the app's own sce_module
