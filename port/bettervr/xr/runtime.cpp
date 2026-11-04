@@ -20,8 +20,15 @@
 //                      projection layer and the HUD quad into the frame's eye buffer in one compute
 //                      pass (shaders/compose.comp), on the binding's queue, waits for it, and submits
 //                      it with the head pose the submitted views were rendered from.
-//   actions            created, bound and synced; every state is inactive, so BetterVR keeps the
-//                      game's own GamePad input (the DualSense). The Sense controllers are M4.
+//   actions            (M4) the PS VR2 Sense controllers as the Oculus Touch profile BetterVR binds:
+//                      left Square/Triangle = X/Y, right Cross/Circle = A/B, L1/R1 = squeeze,
+//                      L3/R3 = thumbstick click, the stick, the trigger (the larger of its two bytes),
+//                      Create = menu. Read with scePadVrControllerReadState (types 3 and 4, opened
+//                      for Hmd2's user), posed by VrTracker2 (hmd2::register_controller /
+//                      controller_pose) with velocities from successive poses; haptics through
+//                      scePadSetVibration. The DualSense stays the game's GamePad (Cemu's), which
+//                      BetterVR merges with these. Layout from photo-splat-vr's pad_input.h and
+//                      HLA-PSVR2's psvr2.c (third_party/hmd2/reference); none of it seen on a console.
 //
 // The PS5 has one graphics queue, which Cemu's GPU thread, BetterVR's submit thread and this
 // compositor share: every submission to it holds ps5xr::QueueMutex() (patches/bettervr 0002 for
@@ -38,6 +45,18 @@
 
 #include "hmd2.h"
 #include "shaders.h"
+
+extern "C" {
+// libScePad (the app's pad.cpp has called scePadInit)
+int scePadOpen(int user, int type, int index, const void* parameters);
+int scePadGetHandle(int user, int type, int index);
+int scePadClose(int handle);
+int scePadVrControllerReadState(int handle, void* state);
+int scePadSetVibration(int handle, const void* vibration);
+int scePadSetVibrationMode(int handle, int mode);
+// port/bettervr/VrPS5.cpp: a number from bettervr.json, or fallback
+float BetterVR_PS5_Setting(const char* name, float fallback);
+}
 
 #include <algorithm>
 #include <atomic>
@@ -153,6 +172,11 @@ namespace
 	{
 		return {{p.q.x, p.q.y, p.q.z, p.q.w}, {p.p.x, p.p.y, p.p.z}};
 	}
+	Quat AxisAngle(float x, float y, float z, float degrees)
+	{
+		const float half = degrees * 3.14159265f / 360.0f, s = std::sin(half);
+		return {x * s, y * s, z * s, std::cos(half)};
+	}
 	Pose FromHmd(const hmd2::Pose& h)
 	{
 		return {{h.quat[0], h.quat[1], h.quat[2], h.quat[3]}, {h.pos[0], h.pos[1], h.pos[2]}};
@@ -171,10 +195,32 @@ struct XrInstance_T
 struct XrActionSet_T
 {
 	std::string name;
+	bool active = false; // in the last xrSyncActions' list
 };
+
+namespace
+{
+	// The Touch profile's inputs BetterVR binds, and the Sense controller's part for each
+	enum class Component
+	{
+		X, Y, A, B, Menu, Squeeze, Trigger, Thumbstick, ThumbstickX, ThumbstickY, ThumbstickClick, GripPose, AimPose, Haptic
+	};
+	struct Binding
+	{
+		int hand; // 0 left, 1 right
+		Component component;
+	};
+}
+
 struct XrAction_T
 {
 	XrActionType type;
+	XrActionSet_T* set = nullptr;
+	std::vector<Binding> bindings;
+	// per hand, for changedSinceLastSync and lastChangeTime
+	float last[2][2] = {};
+	XrTime changedAt[2] = {};
+	bool changed[2] = {};
 };
 
 struct XrSwapchain_T
@@ -192,8 +238,10 @@ struct XrSwapchain_T
 struct XrSpace_T
 {
 	XrReferenceSpaceType type = XR_REFERENCE_SPACE_TYPE_STAGE;
-	bool action = false; // an action space: located nowhere until the Sense controllers (M4)
+	bool action = false; // an action space: a hand's grip or aim pose
 	Pose offset;
+	XrAction_T* poseAction = nullptr;
+	int hand = -1; // the subaction path's hand, -1 for either
 };
 
 struct XrSession_T
@@ -277,7 +325,27 @@ namespace
 		XrInstance instance = XR_NULL_HANDLE;
 		XrSession session = XR_NULL_HANDLE;
 		std::vector<std::string> paths; // XrPath n is paths[n - 1]
-		std::deque<XrEventDataSessionStateChanged> events;
+		std::deque<XrEventDataBuffer> events;
+		// -- input (M4) --
+		XrPath touchProfile = XR_NULL_PATH, handPath[2] = {XR_NULL_PATH, XR_NULL_PATH};
+		bool touchSuggested = false, attached = false;
+		std::vector<XrAction_T*> actions;
+		struct Hand
+		{
+			int handle = -1;
+			bool registered = false, connected = false, reportedMissing = false;
+			XrTime nextOpen = 0;
+			uint32_t buttons = 0, rawLogged = 0xffffffffu;
+			float stickX = 0, stickY = 0, trigger = 0;
+			bool poseValid = false, velocityValid = false;
+			Pose pose;
+			Vec3 linear, angular;
+			XrTime poseTime = 0;
+			XrTime hapticUntil = 0;
+			bool vibrating = false, vibrationLogged = false;
+		} hands[2];
+		float gripPitch = 0, aimPitch = 0;
+		XrTime syncTime = 0;
 		hmd2::Fov fov{1.0f, 1.0f, 1.0f, 1.0f};
 		Vec3 eyeOffset[2] = {{-kHalfIpd, 0, 0}, {kHalfIpd, 0, 0}}; // in the head's frame
 		// the head pose each pair of located views was computed from: xrEndFrame submits with the one
@@ -294,11 +362,267 @@ namespace
 
 	void QueueState(XrSessionState state)
 	{
-		XrEventDataSessionStateChanged event{XR_TYPE_EVENT_DATA_SESSION_STATE_CHANGED};
-		event.session = s.session;
-		event.state = state;
-		event.time = Now();
-		s.events.push_back(event);
+		XrEventDataBuffer buffer{};
+		auto* event = reinterpret_cast<XrEventDataSessionStateChanged*>(&buffer);
+		event->type = XR_TYPE_EVENT_DATA_SESSION_STATE_CHANGED;
+		event->session = s.session;
+		event->state = state;
+		event->time = Now();
+		s.events.push_back(buffer);
+	}
+
+	void QueueProfileChanged()
+	{
+		if (!s.attached)
+			return;
+		XrEventDataBuffer buffer{};
+		auto* event = reinterpret_cast<XrEventDataInteractionProfileChanged*>(&buffer);
+		event->type = XR_TYPE_EVENT_DATA_INTERACTION_PROFILE_CHANGED;
+		event->session = s.session;
+		s.events.push_back(buffer);
+	}
+
+	// -- the Sense controllers (M4) ------------------------------------------------------------
+	constexpr int kPadTypeSense[2] = {3, 4}; // scePad types: left, right (HLA-PSVR2 psvr2.c:461)
+	constexpr size_t kSenseStateBytes = 0x68;
+	constexpr size_t kSenseConnected = 0x40; // bit 0 (psvr2.c:517-525)
+	constexpr size_t kSenseStickX = 0x04, kSenseStickY = 0x05, kSenseTriggerA = 0x08, kSenseTriggerB = 0x09;
+	constexpr uint32_t kIntercepted = 0x80000000u; // the system menu has the pads
+	constexpr uint32_t kCreate = 0x1, kL3 = 0x2, kR3 = 0x4, kOptions = 0x8, kL1 = 0x400, kR1 = 0x800, kTriangle = 0x1000,
+					   kCircle = 0x2000, kCross = 0x4000, kSquare = 0x8000;
+	constexpr XrDuration kPadRetry = 2'000'000'000; // as photo-splat-vr and HLA-PSVR2: every 2 s
+	constexpr int kVibrationModeCompatible = 2;			 // the app's pad.cpp sets it for the DualSense's motors
+
+	const char* HandName(int hand)
+	{
+		return hand == 0 ? "left" : "right";
+	}
+
+	float Axis(uint8_t raw) // -1..1, BetterVR applies its own dead zone
+	{
+		return std::max(-1.0f, std::min(1.0f, ((float)raw - 128.0f) / 127.0f));
+	}
+
+	void OpenHands()
+	{
+		const XrTime now = Now();
+		const int user = hmd2::user_id();
+		for (int i = 0; i < 2; i++)
+		{
+			auto& hand = s.hands[i];
+			if (hand.handle >= 0 || now < hand.nextOpen)
+				continue;
+			hand.nextOpen = now + kPadRetry;
+			int handle = scePadOpen(user, kPadTypeSense[i], 0, nullptr);
+			if (handle < 0)
+				handle = scePadGetHandle(user, kPadTypeSense[i], 0);
+			if (handle < 0)
+			{
+				if (!hand.reportedMissing)
+					Log("no %s Sense controller for user %d (scePadOpen -> 0x%08x); trying every 2 s", HandName(i), user, (unsigned)handle);
+				hand.reportedMissing = true;
+				continue;
+			}
+			hand.handle = handle;
+			hand.reportedMissing = false;
+			const int mode = scePadSetVibrationMode(handle, kVibrationModeCompatible);
+			hand.registered = hmd2::register_controller(handle, i == 1);
+			Log("%s Sense controller open (handle %d), VrTracker2 registration %s, vibration mode 0x%08x", HandName(i), handle,
+				hand.registered ? "done" : "FAILED (no pose for this hand)", (unsigned)mode);
+		}
+	}
+
+	void CloseHands()
+	{
+		for (auto& hand : s.hands)
+		{
+			if (hand.handle >= 0)
+				scePadClose(hand.handle);
+			hand = State::Hand{};
+		}
+	}
+
+	// once a frame (xrSyncActions): buttons, stick, trigger and pose of each hand
+	void ReadHands()
+	{
+		OpenHands();
+		const XrTime now = Now();
+		for (int i = 0; i < 2; i++)
+		{
+			auto& hand = s.hands[i];
+			const bool wasConnected = hand.connected;
+			hand.connected = false;
+			hand.buttons = 0;
+			hand.stickX = hand.stickY = hand.trigger = 0;
+			hand.poseValid = false;
+			if (hand.handle < 0)
+				continue;
+			alignas(16) uint8_t state[kSenseStateBytes] = {};
+			const bool read = scePadVrControllerReadState(hand.handle, state) == 0;
+			hand.connected = read && (state[kSenseConnected] & 1) != 0;
+			if (hand.connected != wasConnected)
+			{
+				Log("%s Sense controller %s", HandName(i), hand.connected ? "connected" : "gone");
+				QueueProfileChanged();
+			}
+			if (!hand.connected)
+				continue;
+			uint32_t buttons = 0;
+			std::memcpy(&buttons, state, sizeof(buttons));
+			if (buttons != hand.rawLogged)
+			{
+				hand.rawLogged = buttons;
+				static int s_logged = 0;
+				if (s_logged++ < 40)
+					Log("%s Sense buttons 0x%08x stick %u,%u triggers %u,%u", HandName(i), buttons, state[kSenseStickX], state[kSenseStickY],
+						state[kSenseTriggerA], state[kSenseTriggerB]);
+			}
+			if (buttons & kIntercepted)
+				continue; // the system menu has it: nothing pressed here
+			hand.buttons = buttons;
+			hand.stickX = Axis(state[kSenseStickX]);
+			hand.stickY = -Axis(state[kSenseStickY]); // its byte is down positive
+			hand.trigger = (float)std::max(state[kSenseTriggerA], state[kSenseTriggerB]) / 255.0f;
+			if (!hand.registered)
+				continue;
+			float pos[3], quat[4];
+			if (!hmd2::controller_pose(hand.handle, pos, quat))
+				continue;
+			const Pose pose{{quat[0], quat[1], quat[2], quat[3]}, {pos[0], pos[1], pos[2]}};
+			const double dt = hand.poseTime ? (double)(now - hand.poseTime) / 1e9 : 0.0;
+			hand.velocityValid = false;
+			if (dt > 0.001 && dt < 0.2)
+			{
+				hand.linear = {(float)((pose.p.x - hand.pose.p.x) / dt), (float)((pose.p.y - hand.pose.p.y) / dt),
+					(float)((pose.p.z - hand.pose.p.z) / dt)};
+				// the rotation from the last pose to this one, as an axis times its angle per second
+				Quat d = Mul(pose.q, Conj(hand.pose.q));
+				if (d.w < 0)
+					d = {-d.x, -d.y, -d.z, -d.w};
+				const float sinHalf = std::sqrt(d.x * d.x + d.y * d.y + d.z * d.z);
+				const float angle = 2.0f * std::atan2(sinHalf, d.w);
+				const float k = sinHalf > 1e-6f ? angle / sinHalf / (float)dt : 0.0f;
+				hand.angular = {d.x * k, d.y * k, d.z * k};
+				hand.velocityValid = true;
+			}
+			hand.pose = pose;
+			hand.poseTime = now;
+			hand.poseValid = true;
+		}
+	}
+
+	// One bound input's value now: a button as 0 or 1, an axis as itself
+	float Value(const State::Hand& hand, Component component)
+	{
+		const bool left = &hand == &s.hands[0];
+		switch (component)
+		{
+		case Component::X: return left && (hand.buttons & kSquare) ? 1.0f : 0.0f;
+		case Component::Y: return left && (hand.buttons & kTriangle) ? 1.0f : 0.0f;
+		case Component::A: return !left && (hand.buttons & kCross) ? 1.0f : 0.0f;
+		case Component::B: return !left && (hand.buttons & kCircle) ? 1.0f : 0.0f;
+		case Component::Menu: return (hand.buttons & (left ? kCreate : kOptions)) ? 1.0f : 0.0f;
+		case Component::Squeeze: return (hand.buttons & (left ? kL1 : kR1)) ? 1.0f : 0.0f;
+		case Component::Trigger: return hand.trigger;
+		case Component::ThumbstickX: return hand.stickX;
+		case Component::ThumbstickY: return hand.stickY;
+		case Component::ThumbstickClick: return (hand.buttons & (left ? kL3 : kR3)) ? 1.0f : 0.0f;
+		default: return 0.0f;
+		}
+	}
+
+	bool IsPose(Component c)
+	{
+		return c == Component::GripPose || c == Component::AimPose;
+	}
+
+	// An action's value for a hand (-1 both): [0] for a button or float, [0],[1] for a stick.
+	// False when nothing bound to it is there to read.
+	bool ActionValue(const XrAction_T* action, int which, float out[2])
+	{
+		out[0] = out[1] = 0;
+		if (!action->set || !action->set->active)
+			return false;
+		bool any = false;
+		for (const Binding& binding : action->bindings)
+		{
+			if (which >= 0 && binding.hand != which)
+				continue;
+			const auto& hand = s.hands[binding.hand];
+			if (!hand.connected)
+				continue;
+			any = true;
+			if (binding.component == Component::Thumbstick)
+			{
+				if (std::fabs(hand.stickX) + std::fabs(hand.stickY) > std::fabs(out[0]) + std::fabs(out[1]))
+					out[0] = hand.stickX, out[1] = hand.stickY;
+			}
+			else if (!IsPose(binding.component) && binding.component != Component::Haptic)
+			{
+				const float v = Value(hand, binding.component);
+				if (std::fabs(v) > std::fabs(out[0]))
+					out[0] = v;
+			}
+		}
+		return any;
+	}
+
+	int HandOf(XrPath path)
+	{
+		if (path == XR_NULL_PATH)
+			return -1;
+		return path == s.handPath[0] ? 0 : path == s.handPath[1] ? 1 : -2;
+	}
+
+	// "/user/hand/left/input/x/click" -> left, X
+	bool ParseTouchPath(const std::string& path, Binding& binding)
+	{
+		static const struct
+		{
+			const char* name;
+			Component component;
+		} inputs[] = {{"x/click", Component::X}, {"x", Component::X}, {"y/click", Component::Y}, {"y", Component::Y},
+			{"a/click", Component::A}, {"a", Component::A}, {"b/click", Component::B}, {"b", Component::B},
+			{"menu/click", Component::Menu}, {"menu", Component::Menu}, {"system/click", Component::Menu},
+			{"squeeze/value", Component::Squeeze}, {"squeeze/force", Component::Squeeze}, {"squeeze", Component::Squeeze},
+			{"trigger/value", Component::Trigger}, {"trigger", Component::Trigger}, {"thumbstick", Component::Thumbstick},
+			{"thumbstick/x", Component::ThumbstickX}, {"thumbstick/y", Component::ThumbstickY},
+			{"thumbstick/click", Component::ThumbstickClick}, {"grip/pose", Component::GripPose}, {"grip", Component::GripPose},
+			{"aim/pose", Component::AimPose}, {"aim", Component::AimPose}};
+		for (int hand = 0; hand < 2; hand++)
+		{
+			const std::string prefix = std::string("/user/hand/") + HandName(hand) + "/";
+			if (path.rfind(prefix, 0) != 0)
+				continue;
+			const std::string rest = path.substr(prefix.size());
+			binding.hand = hand;
+			if (rest == "output/haptic")
+				return binding.component = Component::Haptic, true;
+			if (rest.rfind("input/", 0) != 0)
+				return false;
+			const std::string input = rest.substr(6);
+			for (const auto& entry : inputs)
+				if (input == entry.name)
+					return binding.component = entry.component, true;
+			return false;
+		}
+		return false;
+	}
+
+	void SetVibration(int i, float amplitude)
+	{
+		auto& hand = s.hands[i];
+		if (hand.handle < 0)
+			return;
+		const uint8_t level = (uint8_t)std::lround(std::max(0.0f, std::min(1.0f, amplitude)) * 255.0f);
+		const uint8_t motors[2] = {level, level};
+		const int result = scePadSetVibration(hand.handle, motors);
+		if (!hand.vibrationLogged && level)
+		{
+			hand.vibrationLogged = true;
+			Log("%s Sense controller vibration -> 0x%08x (first one; untested on this controller)", HandName(i), (unsigned)result);
+		}
+		hand.vibrating = level != 0;
 	}
 
 	// the head in tracker space at a time, with hmd2's prediction; the last one when it has none
@@ -740,7 +1064,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrPollEvent(XrInstance, XrEventDataBuffer* event)
 	std::lock_guard lock(s.lock);
 	if (s.events.empty())
 		return XR_EVENT_UNAVAILABLE;
-	std::memcpy(event, &s.events.front(), sizeof(XrEventDataSessionStateChanged));
+	*event = s.events.front();
 	s.events.pop_front();
 	return XR_SUCCESS;
 }
@@ -880,6 +1204,10 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateSession(XrInstance, const XrSessionCreate
 		delete session;
 		return XR_ERROR_RUNTIME_FAILURE;
 	}
+	s.gripPitch = BetterVR_PS5_Setting("gripPitch", 0.0f);
+	s.aimPitch = BetterVR_PS5_Setting("aimPitch", 0.0f);
+	Log("controllers: grip pitch %.1f deg, aim pitch %.1f deg (bettervr.json's gripPitch, aimPitch)", s.gripPitch, s.aimPitch);
+	OpenHands();
 	*out = session;
 	QueueState(XR_SESSION_STATE_IDLE);
 	QueueState(XR_SESSION_STATE_READY);
@@ -896,6 +1224,8 @@ XRAPI_ATTR XrResult XRAPI_CALL xrDestroySession(XrSession session)
 		std::lock_guard queue(ps5xr::QueueMutex());
 		vk.vkDeviceWaitIdle(session->device);
 	}
+	CloseHands();
+	s.attached = false;
 	EndSessionObjects(session);
 	Log("session ended after %llu frames (%llu without layers, %llu without an Hmd2 frame)", (unsigned long long)session->frames,
 		(unsigned long long)session->emptyFrames, (unsigned long long)session->skipped);
@@ -967,7 +1297,11 @@ XRAPI_ATTR XrResult XRAPI_CALL xrGetReferenceSpaceBoundsRect(XrSession, XrRefere
 
 XRAPI_ATTR XrResult XRAPI_CALL xrCreateActionSpace(XrSession, const XrActionSpaceCreateInfo* info, XrSpace* space)
 {
-	*space = new XrSpace_T{XR_REFERENCE_SPACE_TYPE_STAGE, true, FromXr(info->poseInActionSpace)};
+	std::lock_guard lock(s.lock);
+	auto* created = new XrSpace_T{XR_REFERENCE_SPACE_TYPE_STAGE, true, FromXr(info->poseInActionSpace)};
+	created->poseAction = info->action;
+	created->hand = HandOf(info->subactionPath);
+	*space = created;
 	return XR_SUCCESS;
 }
 
@@ -985,13 +1319,50 @@ XRAPI_ATTR XrResult XRAPI_CALL xrLocateSpace(XrSpace space, XrSpace base, XrTime
 	for (auto* next = static_cast<XrBaseOutStructure*>(location->next); next; next = next->next)
 		if (next->type == XR_TYPE_SPACE_VELOCITY)
 			reinterpret_cast<XrSpaceVelocity*>(next)->velocityFlags = 0;
-	if (space->action || base->action)
+	if (base->action)
 	{
 		location->locationFlags = 0;
 		location->pose = {{0, 0, 0, 1}, {0, 0, 0}};
 		return XR_SUCCESS;
 	}
-	const Pose pose = Compose(Inverse(SpacePose(base, time)), SpacePose(space, time));
+	Pose spacePose;
+	if (space->action)
+	{
+		// the hand's tracked pose, the grip or aim tilt (bettervr.json), then the space's own offset
+		const XrAction_T* action = space->poseAction;
+		const int which = space->hand;
+		const State::Hand* hand = nullptr;
+		bool aim = false;
+		if (action && action->set && action->set->active)
+			for (const Binding& binding : action->bindings)
+				if (IsPose(binding.component) && (which < 0 || binding.hand == which) && s.hands[binding.hand].poseValid)
+				{
+					hand = &s.hands[binding.hand];
+					aim = binding.component == Component::AimPose;
+					break;
+				}
+		if (!hand)
+		{
+			location->locationFlags = 0;
+			location->pose = {{0, 0, 0, 1}, {0, 0, 0}};
+			return XR_SUCCESS;
+		}
+		const Pose tilt{AxisAngle(1, 0, 0, aim ? s.aimPitch : s.gripPitch), {}};
+		spacePose = Compose(Compose(hand->pose, tilt), space->offset);
+		const Pose toBase = Inverse(SpacePose(base, time));
+		for (auto* next = static_cast<XrBaseOutStructure*>(location->next); next; next = next->next)
+			if (next->type == XR_TYPE_SPACE_VELOCITY && hand->velocityValid)
+			{
+				auto* velocity = reinterpret_cast<XrSpaceVelocity*>(next);
+				const Vec3 linear = Rotate(toBase.q, hand->linear), angular = Rotate(toBase.q, hand->angular);
+				velocity->linearVelocity = {linear.x, linear.y, linear.z};
+				velocity->angularVelocity = {angular.x, angular.y, angular.z};
+				velocity->velocityFlags = XR_SPACE_VELOCITY_LINEAR_VALID_BIT | XR_SPACE_VELOCITY_ANGULAR_VALID_BIT;
+			}
+	}
+	else
+		spacePose = SpacePose(space, time);
+	const Pose pose = Compose(Inverse(SpacePose(base, time)), spacePose);
 	location->pose = ToXr(pose);
 	location->locationFlags = XR_SPACE_LOCATION_ORIENTATION_VALID_BIT | XR_SPACE_LOCATION_POSITION_VALID_BIT |
 		XR_SPACE_LOCATION_ORIENTATION_TRACKED_BIT | XR_SPACE_LOCATION_POSITION_TRACKED_BIT;
@@ -1370,64 +1741,192 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateActionSet(XrInstance, const XrActionSetCr
 
 XRAPI_ATTR XrResult XRAPI_CALL xrDestroyActionSet(XrActionSet set)
 {
+	std::lock_guard lock(s.lock);
+	for (XrAction_T* action : s.actions)
+		if (action->set == set)
+			action->set = nullptr;
 	delete set;
 	return XR_SUCCESS;
 }
 
-XRAPI_ATTR XrResult XRAPI_CALL xrCreateAction(XrActionSet, const XrActionCreateInfo* info, XrAction* action)
+XRAPI_ATTR XrResult XRAPI_CALL xrCreateAction(XrActionSet set, const XrActionCreateInfo* info, XrAction* action)
 {
-	*action = new XrAction_T{info->actionType};
+	std::lock_guard lock(s.lock);
+	auto* created = new XrAction_T{info->actionType, set};
+	s.actions.push_back(created);
+	*action = created;
 	return XR_SUCCESS;
 }
 
 XRAPI_ATTR XrResult XRAPI_CALL xrDestroyAction(XrAction action)
 {
+	std::lock_guard lock(s.lock);
+	s.actions.erase(std::remove(s.actions.begin(), s.actions.end(), action), s.actions.end());
 	delete action;
 	return XR_SUCCESS;
 }
 
-XRAPI_ATTR XrResult XRAPI_CALL xrSuggestInteractionProfileBindings(XrInstance, const XrInteractionProfileSuggestedBinding*)
+// The Oculus Touch profile's bindings are kept (the Sense controllers stand in for it); every other
+// profile's are accepted and not used
+XRAPI_ATTR XrResult XRAPI_CALL xrSuggestInteractionProfileBindings(XrInstance, const XrInteractionProfileSuggestedBinding* suggested)
 {
+	std::lock_guard lock(s.lock);
+	if (suggested->interactionProfile == XR_NULL_PATH || suggested->interactionProfile > s.paths.size())
+		return XR_ERROR_PATH_INVALID;
+	if (s.paths[suggested->interactionProfile - 1] != "/interaction_profiles/oculus/touch_controller")
+		return XR_SUCCESS;
+	s.touchProfile = suggested->interactionProfile;
+	s.touchSuggested = true;
+	int kept = 0, unknown = 0;
+	for (uint32_t i = 0; i < suggested->countSuggestedBindings; i++)
+	{
+		const XrActionSuggestedBinding& suggestion = suggested->suggestedBindings[i];
+		Binding binding{};
+		if (suggestion.binding == XR_NULL_PATH || suggestion.binding > s.paths.size() || !ParseTouchPath(s.paths[suggestion.binding - 1], binding))
+		{
+			unknown++;
+			continue;
+		}
+		suggestion.action->bindings.push_back(binding);
+		kept++;
+	}
+	Log("Touch profile: %d bindings onto the Sense controllers, %d not mapped", kept, unknown);
 	return XR_SUCCESS;
 }
 
 XRAPI_ATTR XrResult XRAPI_CALL xrAttachSessionActionSets(XrSession, const XrSessionActionSetsAttachInfo*)
 {
+	std::lock_guard lock(s.lock);
+	s.attached = true;
 	return XR_SUCCESS;
 }
 
-XRAPI_ATTR XrResult XRAPI_CALL xrGetCurrentInteractionProfile(XrSession, XrPath, XrInteractionProfileState* state)
+XRAPI_ATTR XrResult XRAPI_CALL xrGetCurrentInteractionProfile(XrSession, XrPath topLevel, XrInteractionProfileState* state)
 {
+	std::lock_guard lock(s.lock);
+	const int hand = HandOf(topLevel);
 	state->interactionProfile = XR_NULL_PATH;
+	if (hand >= 0 && s.touchSuggested && s.hands[hand].handle >= 0)
+		state->interactionProfile = s.touchProfile;
 	return XR_SUCCESS;
 }
 
-XRAPI_ATTR XrResult XRAPI_CALL xrSyncActions(XrSession, const XrActionsSyncInfo*)
+XRAPI_ATTR XrResult XRAPI_CALL xrSyncActions(XrSession, const XrActionsSyncInfo* info)
 {
-	return s.stopped ? Lost() : XR_SUCCESS;
-}
-
-XRAPI_ATTR XrResult XRAPI_CALL xrGetActionStateBoolean(XrSession, const XrActionStateGetInfo*, XrActionStateBoolean* state)
-{
-	state->currentState = XR_FALSE, state->changedSinceLastSync = XR_FALSE, state->lastChangeTime = 0, state->isActive = XR_FALSE;
+	std::lock_guard lock(s.lock);
+	if (s.stopped)
+		return Lost();
+	if (s.handPath[0] == XR_NULL_PATH)
+	{
+		// the hands' paths, once: BetterVR names them before it syncs
+		for (int i = 0; i < 2; i++)
+		{
+			const std::string name = std::string("/user/hand/") + HandName(i);
+			for (size_t p = 0; p < s.paths.size(); p++)
+				if (s.paths[p] == name)
+					s.handPath[i] = p + 1;
+		}
+	}
+	for (XrAction_T* action : s.actions)
+		if (action->set)
+			action->set->active = false;
+	for (uint32_t i = 0; i < info->countActiveActionSets; i++)
+		info->activeActionSets[i].actionSet->active = true;
+	ReadHands();
+	s.syncTime = Now();
+	for (int i = 0; i < 2; i++)
+	{
+		auto& hand = s.hands[i];
+		if (hand.vibrating && s.syncTime >= hand.hapticUntil)
+			SetVibration(i, 0.0f);
+	}
+	for (XrAction_T* action : s.actions)
+		for (int hand = 0; hand < 2; hand++)
+		{
+			float value[2];
+			ActionValue(action, hand, value);
+			action->changed[hand] = value[0] != action->last[hand][0] || value[1] != action->last[hand][1];
+			if (action->changed[hand])
+				action->changedAt[hand] = s.syncTime;
+			action->last[hand][0] = value[0], action->last[hand][1] = value[1];
+		}
 	return XR_SUCCESS;
 }
 
-XRAPI_ATTR XrResult XRAPI_CALL xrGetActionStateFloat(XrSession, const XrActionStateGetInfo*, XrActionStateFloat* state)
+namespace
 {
-	state->currentState = 0.0f, state->changedSinceLastSync = XR_FALSE, state->lastChangeTime = 0, state->isActive = XR_FALSE;
+	// an action's state for xrGetActionState*: active, value, changed since the last sync, when
+	struct Read
+	{
+		bool active = false;
+		float value[2] = {};
+		bool changed = false;
+		XrTime changedAt = 0;
+	};
+
+	Read ReadAction(const XrActionStateGetInfo* info)
+	{
+		Read read;
+		const XrAction_T* action = info->action;
+		const int which = HandOf(info->subactionPath);
+		if (which == -2)
+			return read;
+		read.active = ActionValue(action, which, read.value);
+		for (int hand = 0; hand < 2; hand++)
+			if ((which < 0 || which == hand) && action->changed[hand])
+			{
+				read.changed = true;
+				read.changedAt = std::max(read.changedAt, action->changedAt[hand]);
+			}
+		return read;
+	}
+}
+
+XRAPI_ATTR XrResult XRAPI_CALL xrGetActionStateBoolean(XrSession, const XrActionStateGetInfo* info, XrActionStateBoolean* state)
+{
+	std::lock_guard lock(s.lock);
+	const Read read = ReadAction(info);
+	state->isActive = read.active;
+	state->currentState = read.value[0] > 0.5f;
+	state->changedSinceLastSync = read.changed;
+	state->lastChangeTime = read.changedAt;
 	return XR_SUCCESS;
 }
 
-XRAPI_ATTR XrResult XRAPI_CALL xrGetActionStateVector2f(XrSession, const XrActionStateGetInfo*, XrActionStateVector2f* state)
+XRAPI_ATTR XrResult XRAPI_CALL xrGetActionStateFloat(XrSession, const XrActionStateGetInfo* info, XrActionStateFloat* state)
 {
-	state->currentState = {0.0f, 0.0f}, state->changedSinceLastSync = XR_FALSE, state->lastChangeTime = 0, state->isActive = XR_FALSE;
+	std::lock_guard lock(s.lock);
+	const Read read = ReadAction(info);
+	state->isActive = read.active;
+	state->currentState = read.value[0];
+	state->changedSinceLastSync = read.changed;
+	state->lastChangeTime = read.changedAt;
 	return XR_SUCCESS;
 }
 
-XRAPI_ATTR XrResult XRAPI_CALL xrGetActionStatePose(XrSession, const XrActionStateGetInfo*, XrActionStatePose* state)
+XRAPI_ATTR XrResult XRAPI_CALL xrGetActionStateVector2f(XrSession, const XrActionStateGetInfo* info, XrActionStateVector2f* state)
 {
+	std::lock_guard lock(s.lock);
+	const Read read = ReadAction(info);
+	state->isActive = read.active;
+	state->currentState = {read.value[0], read.value[1]};
+	state->changedSinceLastSync = read.changed;
+	state->lastChangeTime = read.changedAt;
+	return XR_SUCCESS;
+}
+
+XRAPI_ATTR XrResult XRAPI_CALL xrGetActionStatePose(XrSession, const XrActionStateGetInfo* info, XrActionStatePose* state)
+{
+	std::lock_guard lock(s.lock);
+	const XrAction_T* action = info->action;
+	const int which = HandOf(info->subactionPath);
 	state->isActive = XR_FALSE;
+	if (which == -2 || !action->set || !action->set->active)
+		return XR_SUCCESS;
+	for (const Binding& binding : action->bindings)
+		if (IsPose(binding.component) && (which < 0 || binding.hand == which) && s.hands[binding.hand].connected &&
+			s.hands[binding.hand].registered)
+			state->isActive = XR_TRUE;
 	return XR_SUCCESS;
 }
 
@@ -1446,13 +1945,31 @@ XRAPI_ATTR XrResult XRAPI_CALL xrGetInputSourceLocalizedName(XrSession, const Xr
 	return XR_SUCCESS;
 }
 
-XRAPI_ATTR XrResult XRAPI_CALL xrApplyHapticFeedback(XrSession, const XrHapticActionInfo*, const XrHapticBaseHeader*)
+XRAPI_ATTR XrResult XRAPI_CALL xrApplyHapticFeedback(XrSession, const XrHapticActionInfo* info, const XrHapticBaseHeader* header)
 {
+	std::lock_guard lock(s.lock);
+	if (!header || header->type != XR_TYPE_HAPTIC_VIBRATION)
+		return XR_SUCCESS;
+	const auto* vibration = reinterpret_cast<const XrHapticVibration*>(header);
+	const int which = HandOf(info->subactionPath);
+	// XR_MIN_HAPTIC_DURATION (-1) asks for the shortest the device does: a frame
+	const XrDuration duration = vibration->duration <= 0 ? kFramePeriod : std::min<XrDuration>(vibration->duration, 2'000'000'000);
+	for (const Binding& binding : info->action->bindings)
+		if (binding.component == Component::Haptic && (which < 0 || binding.hand == which))
+		{
+			s.hands[binding.hand].hapticUntil = Now() + duration;
+			SetVibration(binding.hand, vibration->amplitude);
+		}
 	return XR_SUCCESS;
 }
 
-XRAPI_ATTR XrResult XRAPI_CALL xrStopHapticFeedback(XrSession, const XrHapticActionInfo*)
+XRAPI_ATTR XrResult XRAPI_CALL xrStopHapticFeedback(XrSession, const XrHapticActionInfo* info)
 {
+	std::lock_guard lock(s.lock);
+	const int which = HandOf(info->subactionPath);
+	for (const Binding& binding : info->action->bindings)
+		if (binding.component == Component::Haptic && (which < 0 || binding.hand == which))
+			SetVibration(binding.hand, 0.0f);
 	return XR_SUCCESS;
 }
 
@@ -1492,6 +2009,9 @@ void BetterVR_PS5_Stop()
 	std::lock_guard lock(s.lock);
 	if (s.stopped.exchange(true))
 		return;
+	for (int i = 0; i < 2; i++)
+		if (s.hands[i].vibrating)
+			SetVibration(i, 0.0f);
 	if (s.session && s.session->hmdUp)
 	{
 		hmd2::shutdown();

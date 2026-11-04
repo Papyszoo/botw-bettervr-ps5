@@ -544,6 +544,26 @@ extern "C" uint64_t gameMeta_getTitleId()
 	return CafeSystem::GetForegroundTitleId();
 }
 
+// The OpenXR runtime's options (port/bettervr/xr/runtime.cpp): a number from bettervr.json, or fallback.
+// gripPitch and aimPitch tilt the Sense controllers' poses, in degrees, for trying without a new build.
+extern "C" float BetterVR_PS5_Setting(const char* name, float fallback)
+{
+	const std::string path = ps5paths::Root() + "/bettervr.json";
+	std::FILE* file = std::fopen(path.c_str(), "rb");
+	if (!file)
+		return fallback;
+	std::string text;
+	char chunk[4096];
+	for (size_t got; (got = std::fread(chunk, 1, sizeof(chunk), file)) > 0;)
+		text.append(chunk, got);
+	std::fclose(file);
+	rapidjson::Document json;
+	json.Parse(text.c_str());
+	if (json.HasParseError() || !json.IsObject() || !json.HasMember(name) || !json[name].IsNumber())
+		return fallback;
+	return json[name].GetFloat();
+}
+
 // BetterVR's own settings (its ImGui ini, patches/bettervr): beside bettervr.json, as the app's working
 // directory is not writable
 extern "C" const char* BetterVR_PS5_SettingsPath()
