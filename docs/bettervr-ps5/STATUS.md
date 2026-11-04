@@ -24,7 +24,7 @@ device through its layer, then logged nothing more. No `[vr-xr]` line at all: Be
 clears, so the eye colours the graphic pack clears with stay on screen. Reading the code
 (VulkanLayerPS5.cpp, vkroots, Cemu's PS5 loading) didn't show why the clears miss the layer.
 
-**m6-vr-diag** (built, untested on console):
+**[m6-vr-diag](https://github.com/Papyszoo/botw-bettervr-ps5/releases/tag/m6-vr-diag)** (built, untested on console; zip SHA-256 `bcaac3d7…db6d`):
 
 - **The PS VR2 attributes** in `param.json`: `attribute 0x62000000`, `attribute3 0x40c0c40` (photo-
   splat-vr's and HLA-PSVR2's `0x4080c40`, with PS5-ECAM's own bits). photo-splat-vr's research:
