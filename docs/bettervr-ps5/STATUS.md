@@ -3,6 +3,26 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-04: install guide; the app's name, title ID and tile
+
+- **`INSTALL.md`:** where the game, its update v208, the DLC and (for WUD/WUX only) `keys.txt` go,
+  which formats work, and the steps from install to VR. Written from the app's guide and code, not
+  checked on a console.
+- **Asked by Patryk:** an own title ID and name, and a tile and background from the game. Not done
+  yet; the options are written here so the choice is his:
+  - **Game art can't ship.** BotW's icon and boot picture are Nintendo's, and the hard rules keep
+    game material out of the repo and releases. They can be taken from his own dump on the console,
+    at run time: the app's **Add to home screen** already makes a game a tile of its own (a new,
+    free title ID, the PS5 Forwarder Format) with its box art. Adding the game's `bootTvTex` as the
+    tile's background (`pic0`/`pic1`, BC7 DDS) and having that tile start VR is a contained change.
+  - **An own title ID for the whole app** is the change judged too wide on 2026-11-01 (about 120
+    lines across code, scripts, five Eden patches and 30 translations), plus the HEN's jailbreak list
+    needs the new ID. The app's data would still be shared with PS5-ECAM unless `/data/ps5cemu`
+    changes too.
+  - **What PS5-ECAM bundles:** Cemu, Azahar (3DS), melonDS (DS), Eden (Switch, 78 MB of the 210 MB
+    zip), five libretro cores, an ES-DE port, the launcher, streaming and an updater. 33
+    dependencies (9.5 GB in `.deps`). BetterVR's part is about 3,000 of the port's 71,000 lines.
+
 ## 2026-11-04: M4, the Sense controllers (built ahead of the M2 and M3 results, as Patryk asked)
 
 **Built, untested on console.** Patryk asked for M4 with the Sense controllers, also ahead of the
@@ -383,7 +403,7 @@ below), since M3 can only work if M2's flat screen does.
 1. **Flat:** no `/data/ps5cemu/bettervr.json`. Start Breath of the Wild and play a minute, then
    quit to the library. It should play as before, with no `[vr]` lines in the boot log. If
    `graphicPacks/bettervr` is there from an earlier try, it should be gone after this start.
-2. **FPS++:** in Breath of the Wild's graphic packs (Triangle on the game in the library), check
+2. **FPS++:** in Breath of the Wild's graphic packs (Options on the game > Graphic packs), check
    that **FPS++ is on**. BetterVR needs it.
 3. **M2's screen, as a baseline:** put `{"vr": true, "bettervr": false}` in
    `/data/ps5cemu/bettervr.json` (FTP). Restart the app, start the game, and check that the headset
