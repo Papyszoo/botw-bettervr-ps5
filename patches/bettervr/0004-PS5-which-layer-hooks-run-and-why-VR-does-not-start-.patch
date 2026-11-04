@@ -1,0 +1,94 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Wed, 4 Nov 2026 23:04:54 +0000
+Subject: [PATCH] PS5: which layer hooks run, and why VR does not start, in the
+ boot log
+
+---
+ src/hooking/framebuffer.cpp | 35 +++++++++++++++++++++++++++++++++++
+ 1 file changed, 35 insertions(+)
+
+diff --git a/src/hooking/framebuffer.cpp b/src/hooking/framebuffer.cpp
+index 2c25ef0..6a30048 100644
+--- a/src/hooking/framebuffer.cpp
++++ b/src/hooking/framebuffer.cpp
+@@ -17,6 +17,19 @@
+ std::mutex lockImageResolutions;
+ std::unordered_map<VkImage, std::pair<VkExtent2D, VkFormat>> imageResolutions;
+ 
++#ifdef __PROSPERO__
++// PS5: which of the layer's hooks Cemu's calls reach, once each, for the boot log (the console has no
++// debugger; m5-botw-vr's first VR start showed no hook running)
++static void PS5FirstCall(std::atomic<bool>& seen, const char* hook, bool active) {
++    if (!seen.exchange(true))
++        Log::print<INFO>("PS5: the layer's {} runs ({})", hook, active ? "BetterVR on" : "BetterVR off for this process, passed through");
++}
++static std::atomic<bool> s_ps5CreateImage, s_ps5Clear, s_ps5Submit, s_ps5Present, s_ps5MagicClear;
++#define PS5_FIRST_CALL(flag, hook) PS5FirstCall(flag, hook, VRLayer::IsLayerActiveForProcess())
++#else
++#define PS5_FIRST_CALL(flag, hook)
++#endif
++
+ #ifdef _WIN32
+ struct PendingCopyOperation {
+     VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
+@@ -55,6 +68,7 @@ static bool QueuePendingCopyOperation(VkCommandBuffer commandBuffer, SharedTextu
+ #endif
+ 
+ VkResult VkDeviceOverrides::CreateImage(const vkroots::VkDeviceDispatch& pDispatch, VkDevice device, const VkImageCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkImage* pImage) {
++    PS5_FIRST_CALL(s_ps5CreateImage, "vkCreateImage");
+     if (!VRLayer::IsLayerActiveForProcess()) {
+         return pDispatch.CreateImage(device, pCreateInfo, pAllocator, pImage);
+     }
+@@ -104,6 +118,7 @@ void CemuHooks::hook_FixCameraSaveFilesAndInventory(PPCInterpreter_t* hCPU) {
+ 
+ 
+ void VkDeviceOverrides::CmdClearColorImage(const vkroots::VkCommandBufferDispatch& pDispatch, VkCommandBuffer commandBuffer, VkImage image, VkImageLayout imageLayout, const VkClearColorValue* pColor, uint32_t rangeCount, const VkImageSubresourceRange* pRanges) {
++    PS5_FIRST_CALL(s_ps5Clear, "vkCmdClearColorImage");
+     if (!VRLayer::IsLayerActiveForProcess()) {
+         return pDispatch.CmdClearColorImage(commandBuffer, image, imageLayout, pColor, rangeCount, pRanges);
+     }
+@@ -119,9 +134,27 @@ void VkDeviceOverrides::CmdClearColorImage(const vkroots::VkCommandBufferDispatc
+ 
+     if (!VRManager::instance().VK) {
+         auto* dispatch = pDispatch.pDeviceDispatch;
++#ifdef __PROSPERO__
++        // PS5: VR starts here; a failure would otherwise leave nothing in the boot log
++        Log::print<INFO>("PS5: the first clear through the layer: starting OpenXR and its session");
++        try {
++            VRManager::instance().Init(dispatch->pPhysicalDeviceDispatch->pInstanceDispatch->Instance, dispatch->PhysicalDevice, dispatch->Device);
++            VRManager::instance().InitSession();
++            Log::print<INFO>("PS5: OpenXR session started");
++        }
++        catch (const std::exception& e) {
++            Log::print<ERROR>("PS5: VR did not start: {}", e.what());
++            throw;
++        }
++#else
+         VRManager::instance().Init(dispatch->pPhysicalDeviceDispatch->pInstanceDispatch->Instance, dispatch->PhysicalDevice, dispatch->Device);
+         VRManager::instance().InitSession();
++#endif
+     }
++#ifdef __PROSPERO__
++    if (side != (OpenXR::EyeSide)-1 && !s_ps5MagicClear.exchange(true))
++        Log::print<INFO>("PS5: the graphic pack's first eye clear ({} side)", side == OpenXR::EyeSide::LEFT ? "left" : "right");
++#endif
+ 
+     if (side != (OpenXR::EyeSide)-1) {
+         // r value in magical clear value is the capture idx after rounding down
+@@ -476,6 +509,7 @@ void VkDeviceOverrides::CmdClearDepthStencilImage(const vkroots::VkCommandBuffer
+ }
+ 
+ VkResult VkDeviceOverrides::QueueSubmit(const vkroots::VkQueueDispatch& pDispatch, VkQueue queue, uint32_t submitCount, const VkSubmitInfo* pSubmits, VkFence fence) {
++    PS5_FIRST_CALL(s_ps5Submit, "vkQueueSubmit");
+     if (!VRLayer::IsLayerActiveForProcess()) {
+         return pDispatch.QueueSubmit(queue, submitCount, pSubmits, fence);
+     }
+@@ -636,6 +670,7 @@ VkResult VkDeviceOverrides::QueueSubmit(const vkroots::VkQueueDispatch& pDispatc
+ }
+ 
+ VkResult VkDeviceOverrides::QueuePresentKHR(const vkroots::VkQueueDispatch& pDispatch, VkQueue queue, const VkPresentInfoKHR* pPresentInfo) {
++    PS5_FIRST_CALL(s_ps5Present, "vkQueuePresentKHR");
+     if (!VRLayer::IsLayerActiveForProcess()) {
+         return pDispatch.QueuePresentKHR(queue, pPresentInfo);
+     }

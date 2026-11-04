@@ -20,8 +20,10 @@
 #include "Cafe/HW/Latte/Renderer/Vulkan/VulkanAPI.h"
 #include <vulkan/vk_layer.h>
 
+#include <atomic>
 #include <cstring>
 #include <mutex>
+#include <string>
 #include <string_view>
 
 void PS5Cemu_LogLine(std::string_view line);
@@ -38,6 +40,46 @@ namespace ps5bettervr
 		PFN_vkGetDeviceProcAddr s_layerDevice = nullptr;
 		std::mutex s_lock;
 		VkInstance s_instance = VK_NULL_HANDLE; // the one instance created through the layer
+
+		// What Cemu's calls reach, for the boot log (m5-botw-vr's first VR start had a green screen, and
+		// no sign that BetterVR's hooks ever ran): its vkGetDeviceProcAddr, and its color clears, the
+		// call that starts VR in BetterVR (hooking/framebuffer.cpp)
+		PFN_vkGetDeviceProcAddr s_layerGetDeviceProcAddr = nullptr;
+		PFN_vkCmdClearColorImage s_layerClear = nullptr;
+		std::atomic<int> s_clears{0}, s_magicClears{0};
+		std::atomic<bool> s_deviceProcLogged{false};
+
+		bool Magic(const VkClearColorValue* color)
+		{
+			// BetterVR's graphic pack marks an eye's clear: green about 0.125 and blue about 0.98, or swapped
+			const float g = color->float32[1], b = color->float32[2];
+			return (g >= 0.12f && g <= 0.13f && b >= 0.97f && b <= 0.99f) || (b >= 0.12f && b <= 0.13f && g >= 0.97f && g <= 0.99f);
+		}
+
+		VKAPI_ATTR void VKAPI_CALL ClearSpy(VkCommandBuffer commands, VkImage image, VkImageLayout layout, const VkClearColorValue* color,
+			uint32_t count, const VkImageSubresourceRange* ranges)
+		{
+			if (s_clears.fetch_add(1) == 0)
+				PS5Cemu_LogLine("[vr] Cemu's first vkCmdClearColorImage, on its way to BetterVR's layer");
+			if (color && Magic(color) && s_magicClears.fetch_add(1) < 3)
+				PS5Cemu_LogLine("[vr] Cemu clears with BetterVR's eye colour (" + std::to_string(color->float32[0]) + ", " +
+					std::to_string(color->float32[1]) + ", " + std::to_string(color->float32[2]) + ", " + std::to_string(color->float32[3]) +
+					"), " + std::to_string(s_clears.load()) + " clears so far");
+			s_layerClear(commands, image, layout, color, count, ranges);
+		}
+
+		VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL GetDeviceProcAddr(VkDevice device, const char* name)
+		{
+			if (!s_deviceProcLogged.exchange(true))
+				PS5Cemu_LogLine(std::string("[vr] Cemu takes its device functions from BetterVR's layer (the first: ") + name + ")");
+			const PFN_vkVoidFunction function = s_layerGetDeviceProcAddr(device, name);
+			if (function && std::strcmp(name, "vkCmdClearColorImage") == 0)
+			{
+				s_layerClear = reinterpret_cast<PFN_vkCmdClearColorImage>(function);
+				return reinterpret_cast<PFN_vkVoidFunction>(&ClearSpy);
+			}
+			return function;
+		}
 
 		bool Negotiate()
 		{
@@ -100,7 +142,9 @@ namespace ps5bettervr
 			VkDeviceCreateInfo withLayer = *info;
 			withLayer.pNext = &chain;
 			auto layerCreate = (PFN_vkCreateDevice)s_layerInstance(s_instance, "vkCreateDevice");
-			return layerCreate(physical, &withLayer, allocator, device);
+			const VkResult result = layerCreate(physical, &withLayer, allocator, device);
+			PS5Cemu_LogLine("[vr] Cemu's Vulkan device through BetterVR's layer: " + std::to_string((int)result));
+			return result;
 		}
 
 		VKAPI_ATTR void VKAPI_CALL DestroyInstance(VkInstance instance, const VkAllocationCallbacks* allocator)
@@ -126,11 +170,20 @@ namespace ps5bettervr
 				layered = instance != VK_NULL_HANDLE && instance == s_instance;
 			}
 			if (!layered)
+			{
+				if (instance != VK_NULL_HANDLE && std::strcmp(name, "vkGetDeviceProcAddr") == 0 && BetterVR_PS5_LayerWanted())
+					PS5Cemu_LogLine("[vr] vkGetDeviceProcAddr asked of an instance without BetterVR's layer: Cemu's device would bypass it");
 				return s_driver(instance, name);
+			}
 			if (std::strcmp(name, "vkCreateDevice") == 0)
 				return reinterpret_cast<PFN_vkVoidFunction>(&CreateDevice);
 			if (std::strcmp(name, "vkDestroyInstance") == 0)
 				return reinterpret_cast<PFN_vkVoidFunction>(&DestroyInstance);
+			if (std::strcmp(name, "vkGetDeviceProcAddr") == 0)
+			{
+				s_layerGetDeviceProcAddr = reinterpret_cast<PFN_vkGetDeviceProcAddr>(s_layerInstance(instance, name));
+				return s_layerGetDeviceProcAddr ? reinterpret_cast<PFN_vkVoidFunction>(&GetDeviceProcAddr) : nullptr;
+			}
 			return s_layerInstance(instance, name);
 		}
 	}
