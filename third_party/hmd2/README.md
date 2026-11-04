@@ -35,6 +35,13 @@ tested and working on his console with the PS VR2 Sense controllers and with a D
   reading, recentring) is in photo-splat-vr. Clone it at `eddd5b7` when you need it. It's a public
   GitHub repo, so cloud sessions can clone it.
 
+## Changed here
+
+- `hmd2::submit(const Pose&)` (2026-11-04): `submit()` with the head pose the image was rendered
+  from, in place of the one `begin_frame()` predicted. The OpenXR runtime over hmd2
+  (`port/bettervr/xr`) takes that pose from the views BetterVR submits. `submit()` itself is
+  unchanged.
+
 ## RADV versions
 
 photo-splat-vr links PS5_Vulkan `f410e67`'s Mesa. PS5-ECAM links PS5_Mesa `7b59ef27`, built with

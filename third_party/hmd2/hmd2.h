@@ -171,6 +171,11 @@ EyeBuffer acquire();
 // Hmd2 SetParam + VideoOut SubmitFlip for the frame begin_frame() opened, then
 // advance to the next buffer.
 bool submit();
+// The same, with the head pose the image was rendered from in place of the one
+// begin_frame() predicted: for a caller that renders ahead of, or re-shows an
+// image from, another frame (an OpenXR runtime takes the pose from the views the
+// application submits). Added for BotW-BetterVR on PS5 (port/bettervr/xr).
+bool submit(const Pose &render_pose);
 
 // The pose Hmd2 predicted for the frame begin_frame() opened (the same value
 // begin_frame() queried). Convenience for "next frame"; use the overload below

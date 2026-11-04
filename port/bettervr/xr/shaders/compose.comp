@@ -1,0 +1,49 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// BotW-BetterVR on PS5: the OpenXR runtime's compositor (port/bettervr/xr/runtime.cpp). One pass
+// writes hmd2's side-by-side eye image, linear RGBA8 bytes in a buffer Hmd2 samples: each eye's
+// projection view (an sRGB swapchain image, scaled to the eye) and, over it, the HUD quad where it
+// falls in that eye, blended by its alpha. The bytes are sRGB-encoded, as the TV's are.
+// Compiled by tools/render-shaders.sh into port/bettervr/xr/shaders.h.
+#version 450
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(set = 0, binding = 0) uniform sampler2D eyeImage[2];
+layout(set = 0, binding = 1) uniform sampler2D hud;
+layout(set = 0, binding = 2, std430) writeonly buffer Out { uint pixels[]; };
+
+layout(push_constant) uniform Params {
+	ivec2 eyeSize;   // one eye of the output, in pixels
+	uint flags;      // 1, 2: left, right eye has a projection view; 4: a HUD; 8: the HUD blends by its alpha
+	uint pad;
+	vec4 source[2];  // each eye's image rect in its image, as UVs (u0, v0, u1, v1)
+	vec4 hudRect[2]; // where the HUD falls in each eye, in the eye's UVs (u0, v0, u1, v1)
+} p;
+
+vec3 toSrgb(vec3 c) {
+	c = clamp(c, 0.0, 1.0);
+	return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), c));
+}
+
+void main() {
+	const ivec2 at = ivec2(gl_GlobalInvocationID.xy);
+	if (at.x >= 2 * p.eyeSize.x || at.y >= p.eyeSize.y)
+		return;
+	const int eye = at.x >= p.eyeSize.x ? 1 : 0;
+	const vec2 uv = (vec2(at.x - eye * p.eyeSize.x, at.y) + 0.5) / vec2(p.eyeSize);
+
+	vec4 color = vec4(0.0, 0.0, 0.0, 1.0);
+	if ((p.flags & (1u << eye)) != 0u) {
+		const vec4 s = p.source[eye];
+		color = vec4(textureLod(eyeImage[eye], mix(s.xy, s.zw, uv), 0.0).rgb, 1.0);
+	}
+	if ((p.flags & 4u) != 0u) {
+		const vec4 r = p.hudRect[eye];
+		const vec2 h = (uv - r.xy) / (r.zw - r.xy);
+		if (all(greaterThanEqual(h, vec2(0.0))) && all(lessThan(h, vec2(1.0)))) {
+			const vec4 c = textureLod(hud, h, 0.0);
+			color.rgb = (p.flags & 8u) != 0u ? mix(color.rgb, c.rgb, c.a) : c.rgb;
+		}
+	}
+	const uvec4 b = uvec4(round(vec4(toSrgb(color.rgb), 1.0) * 255.0));
+	pixels[at.y * 2 * p.eyeSize.x + at.x] = b.r | (b.g << 8) | (b.b << 16) | (b.a << 24);
+}

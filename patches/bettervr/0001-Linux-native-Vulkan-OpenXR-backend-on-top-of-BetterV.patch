@@ -1,4 +1,4 @@
-From 9fe25457d0de7c659fa93ed04b40137a91397eab Mon Sep 17 00:00:00 2001
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Patryk <papyszoo@gmail.com>
 Date: Sun, 1 Nov 2026 19:42:47 +0100
 Subject: [PATCH] Linux native Vulkan/OpenXR backend on top of BetterVR 0.9.23
@@ -7926,6 +7926,3 @@ index bac1422..e983d0b 100644
      };
  
      inline static std::atomic_bool s_enabled = false;
--- 
-2.43.0
-

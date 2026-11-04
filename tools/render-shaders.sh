@@ -6,6 +6,7 @@
 #   port/ui/shaders/*.vert, *.frag       the UI kit's: port/ui/shaders.h (ui::shaders)
 #   port/melonds/shaders/*.vert, *.frag  the DS's screens on the TV: port/melonds/shaders.h (ps5melonds::shaders)
 #   port/cemu/shaders/*.comp             the Wii U's frame generation: port/cemu/framegen_shaders.h (ps5framegen::shaders)
+#   port/bettervr/xr/shaders/*.comp      BotW-BetterVR on PS5's OpenXR compositor: port/bettervr/xr/shaders.h (ps5xr::shaders)
 
 set -euo pipefail
 shopt -s nullglob # a folder of compute shaders alone, or of the others alone
@@ -41,3 +42,4 @@ render() {
 render "$root/port/ui/shaders" "$root/port/ui/shaders.h" "ui::shaders" "the UI kit's shaders"
 render "$root/port/melonds/shaders" "$root/port/melonds/shaders.h" "ps5melonds::shaders" "the DS's screens' shaders"
 render "$root/port/cemu/shaders" "$root/port/cemu/framegen_shaders.h" "ps5framegen::shaders" "the Wii U's frame generation's shaders"
+render "$root/port/bettervr/xr/shaders" "$root/port/bettervr/xr/shaders.h" "ps5xr::shaders" "BotW-BetterVR's OpenXR compositor"

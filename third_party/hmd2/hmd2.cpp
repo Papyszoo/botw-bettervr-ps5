@@ -1349,14 +1349,18 @@ EyeBuffer acquire() {
 }
 
 bool submit() {
+    return submit(s.pose);
+}
+
+bool submit(const Pose &render_pose) {
     if (!s.frame_open)
         return false;
     s.frame_open = false;
-    const bool ok = submit_flip(static_cast<uint32_t>(s.buf), s.frame, s.display_time, s.pose);
+    const bool ok = submit_flip(static_cast<uint32_t>(s.buf), s.frame, s.display_time, render_pose);
     drop_pending(s.frame);
     s.have_last = true;
     s.last_buf = static_cast<uint32_t>(s.buf);
-    s.last_pose = s.pose;
+    s.last_pose = render_pose;
     s.last_work_us = now_us() - s.frame_started_us;
     s.submits++;
     s.buf = (s.buf + 1) % s.buffers;
