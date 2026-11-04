@@ -3,6 +3,56 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-04: M4, the Sense controllers (built ahead of the M2 and M3 results, as Patryk asked)
+
+**Built, untested on console.** Patryk asked for M4 with the Sense controllers, also ahead of the
+results for M2 and M3.
+
+- **Release:** [`m4-sense`](https://github.com/Papyszoo/botw-bettervr-ps5/releases/tag/m4-sense),
+  a pre-release on `0981a54`. The zip's SHA-256 is `02b65718…0379`. Test request 4 below. The
+  ELF's one new system import is `scePadVrControllerReadState` (libScePad).
+- **What's in it:** the OpenXR runtime's actions are real now (`port/bettervr/xr/runtime.cpp`).
+  - **Opening:** the Sense controllers are opened for Hmd2's user as scePad types 3 (left) and 4
+    (right), with `scePadOpen`, else `scePadGetHandle`, retried every 2 s. Each is registered with
+    VrTracker2 (`hmd2::register_controller`) as photo-splat-vr does.
+  - **Reading:** once a frame (`xrSyncActions`) with `scePadVrControllerReadState`: the button word
+    at +0x00, the stick at +0x04/+0x05, the trigger as the larger byte of +0x08/+0x09, and
+    connected at +0x40 bit 0 (`third_party/hmd2/reference/pad_input.h`, HLA-PSVR2's offsets).
+    While the system menu has the pads (bit 31), every input reads as nothing.
+  - **The Touch profile BetterVR binds**, onto the Sense controllers:
+
+    | Touch | Sense | BetterVR, in game |
+    | --- | --- | --- |
+    | left X, Y | Square, Triangle | mod menu (X), rune / d-pad menu (Y) |
+    | right A, B | Cross, Circle | run / interact (A), jump (B) |
+    | squeeze (both) | L1, R1 | grab / interact |
+    | trigger (both) | L2, R2 (analogue) | use the item in that hand |
+    | thumbstick (both) | the stick | move (left), camera (right) |
+    | thumbstick click | L3, R3 | crouch / scope (left), inventory / map (right) |
+    | menu | Create (left), Options (right) | not bound by BetterVR |
+
+  - **Poses:** grip and aim are VrTracker2's controller pose (`hmd2::controller_pose`, tracker
+    space, like the head). Velocities are worked out from successive poses, because BetterVR's
+    weapon swings use them. `gripPitch` and `aimPitch` in bettervr.json tilt the two poses about
+    the controller's x axis, in degrees (default 0), so a wrong angle can be fixed without a new
+    build.
+  - **Profile:** `xrGetCurrentInteractionProfile` names the Touch profile while a controller is
+    open. A controller that connects or goes away is an interaction-profile event.
+  - **Haptics:** BetterVR's rumble goes to `scePadSetVibration` on the Sense controller for the
+    duration asked, with the vibration mode the app's DualSense uses (2). The first call's result
+    is logged.
+  - **DualSense:** the game's GamePad through Cemu, as before. BetterVR merges it with the
+    controllers' input, so it still works next to them.
+- **Not in this build (rest of `PLAN.md`'s M4):** the 40/60 fps locks (hmd2 shows each frame for
+  two of its 120 Hz refreshes, a 60 fps cadence, and a 40 fps lock needs a change there),
+  `XR_FB_display_refresh_rate`, and BetterVR's performance options as settings.
+- **Unverified, and what would show it:**
+  - **The pose path:** hmd2's own note says the controller pose path is "UNVERIFIED on hardware".
+  - **The poses' axes:** which way a Sense controller's pose points, against what Touch's grip and
+    aim mean. Hands tilted by a fixed angle mean adjusting `gripPitch`/`aimPitch`. Hands mirrored
+    or rotated about another axis mean a code change.
+  - **The vibration call:** whether `scePadSetVibration` drives a Sense controller at all.
+
 ## 2026-11-04: M3 built ahead of the M1 and M2 results, as Patryk asked
 
 **Built, untested on console.** Patryk asked for M3 before Test requests 1 and 2 came back, to try it
@@ -274,6 +324,47 @@ Cloud session, scheduled run. Nothing was built for the console and nothing was 
 - **Next:** M1, the baseline build and release (see `PLAN.md`).
 
 ## Open test requests
+
+### Test request 4: the Sense controllers in BetterVR (M4)
+
+**Which build.** `m4-sense`. It includes M3: do Test request 3's steps 1-4 first (flat, FPS++, M2's
+screen, then BetterVR with `{"vr": true}`). If those fail, this one can't work, so send that
+instead.
+
+**Try:**
+
+1. Turn both Sense controllers on before starting the game. Start Breath of the Wild with
+   `{"vr": true}`.
+2. **Hands:** in game, look at your hands. Move each controller: does the hand follow, in the
+   right place, the right way round, and pointing the right way?
+3. **Buttons:** walk with the left stick, turn with the right one. Jump (Circle), run (Cross), and
+   crouch (L3). Open the inventory (R3). Grab something (L1/R1). Draw and use a weapon with the
+   right trigger, and swing it.
+4. **Rumble:** take a hit or attack something. Does a controller vibrate?
+5. **If a hand points wrong by a fixed tilt,** add `"gripPitch": 30` (or −30, 60, …) and, for the
+   pointer, `"aimPitch"` to `bettervr.json`. Restart, and say which values looked right.
+6. Turn one controller off and on again mid-game: does it come back?
+7. Quit to the library, then Settings > Diagnostics > Copy logs to USB.
+
+**Send back:**
+
+- What each step did: hands (position, rotation, mirrored?), each button, swings, rumble.
+- From `boot.log`: every `[vr-xr]` line, in particular "Sense controller open …",
+  "VrTracker2 registration …", "Touch profile: N bindings …", "Sense buttons 0x… stick …"
+  (the first 40 changes) and "vibration -> 0x…". Also the `[bettervr]` lines and any `[crash]`
+  lines.
+
+**What it decides:**
+
+- **Hands that follow and buttons that act:** M4's controller part is done. What's left of M4 is
+  the frame-rate locks and performance.
+- **Buttons that act but hands that don't move:** VrTracker2's controller poses
+  (`register_controller` returned false, or `controller_pose` reports nothing). This is the part
+  hmd2 marks unverified.
+- **Hands that move wrongly:** the pose's axes. A fixed tilt is `gripPitch`/`aimPitch`; anything
+  else is a code change, and the "Sense buttons" lines plus a description are enough to make it.
+- **No input from the controllers at all:** the button lines say whether `scePadVrControllerReadState`
+  reads anything.
 
 ### Test request 3: Breath of the Wild in stereo through BetterVR (M3)
 
