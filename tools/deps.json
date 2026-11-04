@@ -276,6 +276,42 @@
       "commit": "8c56053f13ca13a0c050de613706ff69eb615836",
       "path": ".deps/SDL-ps5",
       "creates": ".deps/SDL-ps5/include/SDL.h"
+    },
+    {
+      "name": "bettervr",
+      "about": "Crementif's BotW-BetterVR 0.9.23 (MIT), the Breath of the Wild VR mod for Cemu, with patches/bettervr: the Linux fork's native Vulkan/OpenXR backend and the PS5's changes. tools/build-bettervr.sh builds it into one object the app links (port/bettervr)",
+      "kind": "git",
+      "url": "https://github.com/Crementif/BotW-BetterVR.git",
+      "commit": "2e06b31f062408d3293a392df418da0ab37b1f23",
+      "path": ".deps/BotW-BetterVR",
+      "creates": ".deps/BotW-BetterVR/src/instance.h"
+    },
+    {
+      "name": "openxr-sdk",
+      "about": "Khronos' OpenXR SDK 1.1.49 (Apache-2.0): only its headers, which BetterVR and the app's OpenXR runtime over hmd2 (port/bettervr/xr) are built with",
+      "kind": "git",
+      "url": "https://github.com/KhronosGroup/OpenXR-SDK.git",
+      "commit": "977f6675bc0057d5a54ed290cb5c71c699b1c0ab",
+      "path": ".deps/OpenXR-SDK",
+      "creates": ".deps/OpenXR-SDK/include/openxr/openxr.h"
+    },
+    {
+      "name": "imgui-bettervr",
+      "about": "Dear ImGui 1.91.9 (MIT), the version BetterVR's menus are written for. Built into BetterVR's object with its symbols kept local, apart from Cemu's own ImGui 1.89.5",
+      "kind": "git",
+      "url": "https://github.com/ocornut/imgui.git",
+      "commit": "97428e8ac99e339ce05eee531cf55b77b29ea709",
+      "path": ".deps/imgui-1.91.9",
+      "creates": ".deps/imgui-1.91.9/imgui.cpp"
+    },
+    {
+      "name": "implot-bettervr",
+      "about": "ImPlot 0.16 (MIT), the plots in BetterVR's debug menus, built with BetterVR's ImGui",
+      "kind": "git",
+      "url": "https://github.com/epezent/implot.git",
+      "commit": "18c72431f8265e2b0b5378a3a73d8a883b2175ff",
+      "path": ".deps/implot-0.16",
+      "creates": ".deps/implot-0.16/implot.cpp"
     }
   ]
 }
