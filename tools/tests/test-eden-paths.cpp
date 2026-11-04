@@ -17,7 +17,7 @@ static void Check(bool ok, const char* label) {
 // The app installed on a USB drive, as ShadowMountPlus records it, with the launcher's data folder
 // on that drive when data is true
 static fs::path InstallOnDrive(bool data) {
-    const fs::path drive = fs::path(ECAM_DRIVES) / "usb0", app = drive / "homebrew/PPSA99360";
+    const fs::path drive = fs::path(ECAM_DRIVES) / "usb0", app = drive / "homebrew/PPSA98720";
     Put(app / "eboot.bin", "eboot");
     Put(ECAM_MOUNT_RECORD, app.string() + "/\n");
     if (data) fs::create_directories(drive / ecam_layout::kDriveData);

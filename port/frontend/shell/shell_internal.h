@@ -249,6 +249,9 @@ namespace ps5shell
 		// a Switch game's cover: a picture beside it, else GameTDB's box art or its own icon (Settings > Online)
 		std::string SwitchCover(const ps5emu::Game& game) const;
 		std::string IconOf(Game& game);
+		// BotW VR (port/bettervr/TileArt.cpp): the app's tile and background from Breath of the Wild, once
+		void PollBotwArt();
+		bool m_botwArtDone = false;
 		// The backdrop's picture (7.4): a Wii U game's boot screen (looked for at most one a frame,
 		// sharing the icons' budget: each mounts the game), else the box art
 		std::string BackdropOf(Game& game);

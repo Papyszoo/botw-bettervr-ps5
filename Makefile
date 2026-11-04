@@ -10,7 +10,7 @@ MAKEFLAGS += --no-print-directory
 
 # The release's version, set here only: port/CMakeLists.txt and tools/package.sh (param.json) read it
 VERSION := 5.1.1
-APP := build/app/PPSA99360
+APP := build/app/PPSA98720
 JOBS ?= $(shell nproc)
 export JOBS
 
@@ -71,10 +71,10 @@ esde: ## Build EmulationStation (ES-DE), the optional other frontend, with PS5-E
 bettervr: deps ## BotW-BetterVR on PS5: BetterVR, its ImGui and the OpenXR runtime over hmd2 in one object: build/bettervr/bettervr.o
 	bash tools/build-bettervr.sh
 
-build: deps azahar melonds bettervr $(if $(RADV_ARCHIVE),,radv) ## Build PS5-ECAM (Cemu, Azahar and melonDS) and link it with RADV: build/cemu/ps5cemu.elf
+build: deps bettervr $(if $(RADV_ARCHIVE),,radv) ## Build BotW VR (Cemu with BetterVR) and link it with RADV: build/cemu/ps5cemu.elf
 	bash tools/build-cemu.sh
 
-check: deps azahar melonds bettervr ## Build and package everything with a stand-in for RADV, to check the build (not an app)
+check: deps bettervr ## Build and package everything with a stand-in for RADV, to check the build (not an app)
 	PS5CEMU_LINK_CHECK=1 bash tools/build-cemu.sh
 	bash tools/package.sh --check
 
@@ -87,22 +87,20 @@ retro-upgrades: ## Build optional N64/NES alternative runtimes (prepared toolcha
 retro: ## Build the pinned Porpoise, N64 and NES runtimes (prepared donor toolchains required)
 	python3 tools/build-retro.py porpoise n64 nes
 
-package: build eden ## The app folder: build/app/PPSA99360 (with eden/, the Switch side's program)
+package: build ## The app folder: build/app/PPSA98720
 	bash tools/package.sh
 
 # a release takes the emulators' patches only as they are: a checkout in .deps with commits not exported
 # or changes not committed stops it (ps5cemu_patches_apply in tools/env.sh)
 release: export PS5CEMU_RELEASE := 1
-release: package ## dist/PS5-ECAM-vVERSION.zip (the PPSA99360 folder), SHA256SUMS, and the ELF with its symbols
+release: package ## dist/BotW-VR-vVERSION.zip (the PPSA98720 folder), SHA256SUMS, and the ELF with its symbols
 	@mkdir -p dist
-	rm -f dist/PS5-ECAM-v$(VERSION).zip
-	cd build/app && python3 -m zipfile -c ../../dist/PS5-ECAM-v$(VERSION).zip PPSA99360
-	cd dist && sha256sum PS5-ECAM-v$(VERSION).zip > SHA256SUMS
+	rm -f dist/BotW-VR-v$(VERSION).zip
+	cd build/app && python3 -m zipfile -c ../../dist/BotW-VR-v$(VERSION).zip PPSA98720
+	cd dist && sha256sum BotW-VR-v$(VERSION).zip > SHA256SUMS
 	@# the unstripped ELF of the eboot, kept to look up this release's crash reports
 	@# (tools/symbolize-crash.py dist/ps5cemu-vVERSION.elf boot.log)
 	cp build/cemu/ps5cemu.elf dist/ps5cemu-v$(VERSION).elf
-	@# and the Switch side's program's (ProsperoEdenX's tools/symbolize-crash.py)
-	if [[ -f build/eden/eden.elf ]]; then cp build/eden/eden.elf dist/eden-v$(VERSION).elf; fi
 	@cat dist/SHA256SUMS
 
 clean: ## Remove build outputs (build/, dist/); dependencies stay

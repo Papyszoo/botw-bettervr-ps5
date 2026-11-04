@@ -124,7 +124,7 @@ namespace ps5privilege
 				{
 					unlink(kRequestPath);
 					unanswered = true;
-					detail = "no HEN took the request (is a HEN loaded, with PPSA99360 in its app jailbreak list: etaHEN's list, or OnionHEN's exact_title_ids with no trailing comma?)";
+					detail = "no HEN took the request (is a HEN loaded, with PPSA98720 in its app jailbreak list: etaHEN's list, or OnionHEN's exact_title_ids with no trailing comma?)";
 					return false;
 				}
 				sceKernelUsleep(kPollUs);
@@ -240,7 +240,7 @@ namespace ps5privilege
 		Result r;
 		std::string henDetail;
 		// A test of the no-HEN start on a console that has one: with this file in the app's own
-		// download0 (/mnt/sandbox/PPSA99360_000/download0 from outside), no HEN is asked
+		// download0 (/mnt/sandbox/PPSA98720_000/download0 from outside), no HEN is asked
 		if (access("/download0/ps5cemu_skip_hen", F_OK) == 0)
 			henDetail = "not asked: download0/ps5cemu_skip_hen is there";
 		// as other homebrew starts: no HEN asked, and no 5 s on the PS5's loading screen, when the

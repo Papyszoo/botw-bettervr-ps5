@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // PS5Cemu: where things live on the console.
 //
-//   /data/homebrew/PPSA99360/        the app (eboot.bin, sce_sys, assets) as ShadowMountPlus mounts it
+//   /data/homebrew/PPSA98720/        the app (eboot.bin, sce_sys, assets) as ShadowMountPlus mounts it
 //   /app0/                           the same, read-only, from inside the app's sandbox (AppDir)
 //   /data/cemu/                      Wii U games, MLC, keys, packs and Cemu settings
 //   /data/azahar/                    3DS games, SD/NAND storage, keys and settings
@@ -27,22 +27,24 @@
 
 namespace ps5paths
 {
-	constexpr const char* kTitleId = "PPSA99360";
-	constexpr const char* kInstallDir = "/data/homebrew/PPSA99360";
-	constexpr const char* kMountedEboot = "/data/homebrew/PPSA99360/eboot.bin";
+	constexpr const char* kTitleId = "PPSA98720";
+	constexpr const char* kInstallDir = "/data/homebrew/PPSA98720";
+	constexpr const char* kMountedEboot = "/data/homebrew/PPSA98720/eboot.bin";
 	// where the PS5 mounts the app it runs, whatever ShadowMountPlus mounted it from (a folder on
 	// /data, an extended storage or USB drive, or an image)
-	constexpr const char* kSystemMount = "/system_ex/app/PPSA99360";
+	constexpr const char* kSystemMount = "/system_ex/app/PPSA98720";
 	// ShadowMountPlus's record of that source: mount.lnk holds the folder's path, mount_img.lnk is
 	// there for an image
 	constexpr const char* kMountRecord = ECAM_MOUNT_RECORD;
-	constexpr const char* kImageMountRecord = "/user/app/PPSA99360/mount_img.lnk";
+	constexpr const char* kImageMountRecord = "/user/app/PPSA98720/mount_img.lnk";
 
 // where PS5-ECAM writes everything, unless DecideRoot finds a folder of its own on the app's
 // drive: on the console /data/ps5cemu; the launcher's preview on a PC (tools/preview-shell.sh) gives
 // a folder of its own
 #ifndef PS5CEMU_DATA
-#define PS5CEMU_DATA "/data/ps5cemu"
+// BotW VR (docs/bettervr-ps5): a folder of its own, /data/botwvr, holding the launcher's (here)
+// and Cemu's (beside it, /data/botwvr/cemu): nothing shared with an installed PS5-ECAM
+#define PS5CEMU_DATA "/data/botwvr/launcher"
 #endif
 	constexpr const char* kDefaultRoot = PS5CEMU_DATA;
 	// the data folder's name at the top of the app's drive (DecideRoot): the app's name before 5.0.0,
@@ -269,7 +271,7 @@ namespace ps5paths
 			struct stat info{};
 			return stat((folder + "/eboot.bin").c_str(), &info) == 0 && S_ISREG(info.st_mode);
 		};
-		for (const char* candidate : {"/app0", kSystemMount, kInstallDir, "/mnt/sandbox/PPSA99360_000/app0"})
+		for (const char* candidate : {"/app0", kSystemMount, kInstallDir, "/mnt/sandbox/PPSA98720_000/app0"})
 			if (holdsApp(candidate))
 				return std::string(candidate);
 		// none of those: the folder ShadowMountPlus recorded (MountSource checks it holds the app),
@@ -317,7 +319,7 @@ namespace ps5paths
 	}
 
 	// The app's own download0, which its sandbox mounts as /download0 and a process the HEN or the
-	// elevation helper has taken out of it sees at /mnt/sandbox/PPSA99360_000/download0: the Switch
+	// elevation helper has taken out of it sees at /mnt/sandbox/PPSA98720_000/download0: the Switch
 	// side's program keeps its trace there until it reaches /data (patches/eden)
 	inline std::string SandboxDownload()
 	{
@@ -327,7 +329,7 @@ namespace ps5paths
 		return std::string("/mnt/sandbox/") + kTitleId + "_000/download0";
 	}
 
-	// The USB drive or extended storage a path is on ("/mnt/usb0" for "/mnt/usb0/homebrew/PPSA99360");
+	// The USB drive or extended storage a path is on ("/mnt/usb0" for "/mnt/usb0/homebrew/PPSA98720");
 	// empty for any other place
 	inline std::string DriveOf(const std::string& path)
 	{
@@ -354,6 +356,8 @@ namespace ps5paths
 		struct stat info{};
 		const bool there = stat(folder.c_str(), &info) == 0 && S_ISDIR(info.st_mode);
 		const bool inData = stat(kDefaultRoot, &info) == 0;
+		if (!there && !inData)
+			mkdir(ecam_layout::Parent(folder).c_str(), 0777); // BotW VR: BotWVR, above launcher
 		if (there || (!inData && mkdir(folder.c_str(), 0777) == 0))
 			root = folder;
 		return root;

@@ -2,7 +2,7 @@
 // PS5-ECAM: a game's own tile on the PS5's home screen, in the open
 // PS5 Forwarder Format (github.com/heydemoura/ps5-forwarder-format, its psfwd library, GPL-3.0): a
 // folder in /data/homebrew holding the format's tile program, whose forwarder.json asks the format's
-// launcher to start PS5-ECAM (PPSA99360) with "--rom <the game's path> --exit-after-game"
+// launcher to start PS5-ECAM (PPSA98720) with "--rom <the game's path> --exit-after-game"
 // (main_ps5.cpp). Its picture is the game's box art, or its icon, made square. ShadowMount Plus puts
 // the folder on the home screen as it does any homebrew; Forwarder Manager can edit it. Without a HEN
 // the app may not make folders in /data/homebrew (root's): the tile is then made in

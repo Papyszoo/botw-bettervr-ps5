@@ -17,19 +17,19 @@ random.seed(1)
 names = ["eboot.bin", "sce_sys/param.json"] + [f"assets/dir{d}/sub{d % 3}/file{i}.bin" for d in range(40) for i in range(25)]
 random.shuffle(names)
 with zipfile.ZipFile(os.path.join(work, "release.zip"), "w", zipfile.ZIP_DEFLATED) as z:
-    z.writestr("PPSA99360/", b"")
+    z.writestr("PPSA98720/", b"")
     z.writestr("../evil.txt", b"outside")
-    z.writestr("PPSA99360/assets/", b"")
+    z.writestr("PPSA98720/assets/", b"")
     for name in names:
         data = os.urandom(random.randint(0, 100000)) if random.random() < 0.5 else b"text " * random.randint(0, 20000)
         os.makedirs(os.path.dirname(os.path.join(source, name)), exist_ok=True)
         with open(os.path.join(source, name), "wb") as file:
             file.write(data)
-        z.writestr("PPSA99360/" + name, data)
+        z.writestr("PPSA98720/" + name, data)
 with open(os.path.join(work, "expected.txt"), "w") as file:
     file.write("\n".join(names) + "\n")
 with zipfile.ZipFile(os.path.join(work, "noeboot.zip"), "w") as z:
-    z.writestr("PPSA99360/readme.txt", b"no program")
+    z.writestr("PPSA98720/readme.txt", b"no program")
 EOF
 
 compiler=${CXX:-$(command -v clang++-18 || command -v clang++ || command -v g++)}

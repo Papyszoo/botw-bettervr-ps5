@@ -84,7 +84,7 @@ int main(int argc, char** argv)
 	systems[1].side = 3;
 	systems[1].folder = (games / "switch").string();
 	systems[1].games = {{(games / "switch/Game.nsp").string(), "Game", 0x0100000000010000, false, false, 0, 0}};
-	const std::string eboot = "/data/homebrew/PPSA99360/eboot.bin";
+	const std::string eboot = "/data/homebrew/PPSA98720/eboot.bin";
 	const ps5esde::Written first = ps5esde::WriteLibrary(home.string(), reference, eboot, systems);
 	Check(first.error.empty() && first.systems == 2 && first.games == 4, "both systems and their four games written");
 

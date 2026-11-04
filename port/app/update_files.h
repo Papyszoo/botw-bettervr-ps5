@@ -43,7 +43,7 @@ namespace ps5update
 	void MakeFolders(const std::filesystem::path& under, const std::vector<std::filesystem::path>& files);
 	// folder and all in it deleted, its files kWorkers at a time
 	void RemoveAll(const std::filesystem::path& folder);
-	// The release's PPSA99360 folder unpacked into folder (made new); its files, relative to it, in the
+	// The release's PPSA98720 folder unpacked into folder (made new); its files, relative to it, in the
 	// archive's order. False, with why (in the player's language), when it could not be, or stop was set
 	// meanwhile (a game starting)
 	bool Unpack(const std::filesystem::path& archive, const std::filesystem::path& folder, std::vector<std::filesystem::path>& files,

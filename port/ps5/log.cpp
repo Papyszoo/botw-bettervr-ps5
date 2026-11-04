@@ -164,7 +164,9 @@ namespace ps5log
 			return;
 		std::string root = folder;
 		root.erase(root.find_last_of('/'));
-		// the folder above too, which a first start (#26: a fresh install) has not made yet
+		// the folder above too, which a first start (#26: a fresh install) has not made yet, and BotW
+		// VR's /data/botwvr above that
+		mkdir(root.substr(0, root.find_last_of('/')).c_str(), 0777);
 		mkdir(root.c_str(), 0777);
 		mkdir(folder, 0777);
 		s_path = std::string(folder) + "/boot.log";

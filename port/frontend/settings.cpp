@@ -426,6 +426,8 @@ namespace ps5settings
 			ReadBool(ui, "switchOffered", switchOffered);
 			if (!switchOffered)
 				out.sides |= 8;
+			// BotW VR (docs/bettervr-ps5): Cemu is the only emulator in this build, so the Wii U side alone
+			out.sides = 1;
 			ReadString(ui, "lastVersion", out.lastVersion);
 			ReadString(ui, "skipVersion", out.skipVersion);
 			ReadInt(ui, "reorganizeAsked", out.reorganizeAsked, 0, 10000000);

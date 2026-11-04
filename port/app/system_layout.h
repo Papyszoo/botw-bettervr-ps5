@@ -12,7 +12,7 @@
 // ShadowMountPlus's record of the folder the app is mounted from, and where the console mounts drives
 // (tests give their own)
 #ifndef ECAM_MOUNT_RECORD
-#define ECAM_MOUNT_RECORD "/user/app/PPSA99360/mount.lnk"
+#define ECAM_MOUNT_RECORD "/user/app/PPSA98720/mount.lnk"
 #endif
 #ifndef ECAM_DRIVES
 #define ECAM_DRIVES "/mnt"
@@ -21,7 +21,7 @@ namespace ecam_layout
 {
     // The launcher's data folder at the top of the drive the app is installed on (its DecideRoot):
     // the app's name before 5.0.0
-    inline constexpr const char* kDriveData = "PS5CEMU-HAR-data";
+    inline constexpr const char* kDriveData = "BotWVR/launcher"; // BotW VR: its own, beside BotWVR/cemu
     inline constexpr const char* kMarker = ".ecam-separated-v2";
     inline constexpr const char* kVersion = "ecam-system-layout-v2\n";
     inline std::string Parent(const std::string& path)
@@ -63,7 +63,7 @@ namespace ecam_layout
         const std::string target = Sibling(shared, system), legacy = shared + "/" + system;
         return Activated(target) || !Present(legacy) ? target : legacy;
     }
-    // The USB drive or extended storage a path is on ("/mnt/usb0" for "/mnt/usb0/homebrew/PPSA99360");
+    // The USB drive or extended storage a path is on ("/mnt/usb0" for "/mnt/usb0/homebrew/PPSA98720");
     // empty for any other place
     inline std::string DriveOf(const std::string& path)
     {

@@ -2376,8 +2376,8 @@ msgstr "Nem sikerült kiírni: {0} (megtelt a /data?)"
 
 #. at a start after an update: {0} the release installed, {1} the folder, {2} this release
 #: port/app/updates.cpp:321
-msgid "{0} was installed in {1}, but the PS5 started {2} again. Close PS5-ECAM and start it from the home screen; if it is still {2}, copy the release's PPSA99360 folder over by hand."
-msgstr "A(z) {0} telepítve lett ide: {1}, de a PS5 újra a(z) {2} verziót indította el. Zárd be a PS5-ECAM-ot, és indítsd el a kezdőképernyőről; ha még mindig {2}, másold rá kézzel a kiadás PPSA99360 mappáját."
+msgid "{0} was installed in {1}, but the PS5 started {2} again. Close PS5-ECAM and start it from the home screen; if it is still {2}, copy the release's PPSA98720 folder over by hand."
+msgstr "A(z) {0} telepítve lett ide: {1}, de a PS5 újra a(z) {2} verziót indította el. Zárd be a PS5-ECAM-ot, és indítsd el a kezdőképernyőről; ha még mindig {2}, másold rá kézzel a kiadás PPSA98720 mappáját."
 
 #: port/app/updates.cpp:429
 msgid "The latest release's version ({0}) is not one this can read"
@@ -2412,16 +2412,16 @@ msgid "It could not be unpacked: {0}"
 msgstr "Nem sikerült kicsomagolni: {0}"
 
 #: port/app/updates.cpp:588
-msgid "{0} could not be replaced ({1}): copy the release's PPSA99360 folder over by hand"
-msgstr "Nem sikerült lecserélni: {0} ({1}): másold rá kézzel a kiadás PPSA99360 mappáját"
+msgid "{0} could not be replaced ({1}): copy the release's PPSA98720 folder over by hand"
+msgstr "Nem sikerült lecserélni: {0} ({1}): másold rá kézzel a kiadás PPSA98720 mappáját"
 
 #: port/app/updates.cpp:711
 msgid "No earlier version is kept here."
 msgstr "Itt nincs megőrzött korábbi verzió."
 
 #: port/app/updates.cpp:734
-msgid "{0} could not be put back ({1}): copy that release's PPSA99360 folder over by hand"
-msgstr "Nem sikerült visszatenni: {0} ({1}): másold rá kézzel annak a kiadásnak a PPSA99360 mappáját"
+msgid "{0} could not be put back ({1}): copy that release's PPSA98720 folder over by hand"
+msgstr "Nem sikerült visszatenni: {0} ({1}): másold rá kézzel annak a kiadásnak a PPSA98720 mappáját"
 
 #. an update is installed, but the app could not start itself again to run it
 #: port/app/updates.cpp:790
@@ -7041,8 +7041,8 @@ msgid "Let PS5-ECAM out of its sandbox"
 msgstr "Engedd ki a PS5-ECAM-t a homokozójából"
 
 #: port/frontend/shell/setup.cpp:138
-msgid "Add PPSA99360 to your HEN's app jailbreak list (etaHEN: its app jailbreak list; OnionHEN: the end of exact_title_ids in config.ini, with no comma after it), or have elfldr listening on port 9021. Then start PS5-ECAM again."
-msgstr "Add hozzá a PPSA99360-at a HEN-ed alkalmazás-jailbreak listájához (etaHEN: az alkalmazás-jailbreak lista; OnionHEN: a config.ini exact_title_ids sorának végére, utána vessző nélkül), vagy indítsd el az elfldr-t a 9021-es porton. Aztán indítsd újra a PS5-ECAM-t."
+msgid "Add PPSA98720 to your HEN's app jailbreak list (etaHEN: its app jailbreak list; OnionHEN: the end of exact_title_ids in config.ini, with no comma after it), or have elfldr listening on port 9021. Then start PS5-ECAM again."
+msgstr "Add hozzá a PPSA98720-at a HEN-ed alkalmazás-jailbreak listájához (etaHEN: az alkalmazás-jailbreak lista; OnionHEN: a config.ini exact_title_ids sorának végére, utána vessző nélkül), vagy indítsd el az elfldr-t a 9021-es porton. Aztán indítsd újra a PS5-ECAM-t."
 
 #: port/frontend/shell/setup.cpp:145
 msgid "Recompilers"
@@ -7069,8 +7069,8 @@ msgid "No JIT or executable memory: Wii U games run on the much slower interpret
 msgstr "Nincs JIT- és végrehajtható memória: a Wii U-játékok a sokkal lassabb értelmezőn futnak"
 
 #: port/frontend/shell/setup.cpp:161
-msgid "Neither your HEN's JIT memory nor executable memory could be made, so Wii U games fall back to Cemu's interpreter. Add PPSA99360 to your HEN's app jailbreak list, then start PS5-ECAM again; Settings > Diagnostics says what it got."
-msgstr "Sem a HEN-ed JIT-memóriáját, sem végrehajtható memóriát nem sikerült létrehozni, így a Wii U-játékok a Cemu értelmezőjére váltanak. Add hozzá a PPSA99360-at a HEN-ed alkalmazás-jailbreak listájához, majd indítsd újra a PS5-ECAM-t; a Beállítások > Diagnosztika mutatja, mit kapott."
+msgid "Neither your HEN's JIT memory nor executable memory could be made, so Wii U games fall back to Cemu's interpreter. Add PPSA98720 to your HEN's app jailbreak list, then start PS5-ECAM again; Settings > Diagnostics says what it got."
+msgstr "Sem a HEN-ed JIT-memóriáját, sem végrehajtható memóriát nem sikerült létrehozni, így a Wii U-játékok a Cemu értelmezőjére váltanak. Add hozzá a PPSA98720-at a HEN-ed alkalmazás-jailbreak listájához, majd indítsd újra a PS5-ECAM-t; a Beállítások > Diagnosztika mutatja, mit kapott."
 
 #: port/frontend/shell/setup.cpp:190 port/frontend/shell/shell.cpp:731 port/libretro/game.cpp:517 port/main_ps5.cpp:703 port/retro/launch.cpp:38 port/retro/launch.cpp:48
 msgid "This side's emulator is not in this copy of PS5-ECAM."
@@ -8228,8 +8228,8 @@ msgid "Boot log not written (/data is unreachable)"
 msgstr "Indítási napló nincs megírva (a /data nem érhető el)"
 
 #: port/main_ps5.cpp:598
-msgid "PS5-ECAM cannot reach /data. Load a HEN with PPSA99360 in its app jailbreak list, or elfldr, then restart PS5-ECAM."
-msgstr "A PS5-ECAM nem éri el a /data mappát. Tölts be egy HEN-t, amelynek alkalmazás-jailbreak listáján szerepel a PPSA99360, vagy az elfldr-t, majd indítsd újra a PS5-ECAM-t."
+msgid "PS5-ECAM cannot reach /data. Load a HEN with PPSA98720 in its app jailbreak list, or elfldr, then restart PS5-ECAM."
+msgstr "A PS5-ECAM nem éri el a /data mappát. Tölts be egy HEN-t, amelynek alkalmazás-jailbreak listáján szerepel a PPSA98720, vagy az elfldr-t, majd indítsd újra a PS5-ECAM-t."
 
 #: port/main_ps5.cpp:710
 msgid "This session: Azahar (3DS); Cemu's emulated Wii U is not started"
@@ -8248,8 +8248,8 @@ msgid "This session: Cemu (Wii U); Azahar's core is not started"
 msgstr "Ez a munkamenet: Cemu (Wii U); az Azahar magja nincs elindítva"
 
 #: port/main_ps5.cpp:747
-msgid "No JIT memory: Wii U games run on the interpreter, much slower. Is PPSA99360 in your HEN's app jailbreak list?"
-msgstr "Nincs JIT-memória: a Wii U-játékok az értelmezőn futnak, sokkal lassabban. Szerepel a PPSA99360 a HEN-ed alkalmazás-jailbreak listáján?"
+msgid "No JIT memory: Wii U games run on the interpreter, much slower. Is PPSA98720 in your HEN's app jailbreak list?"
+msgstr "Nincs JIT-memória: a Wii U-játékok az értelmezőn futnak, sokkal lassabban. Szerepel a PPSA98720 a HEN-ed alkalmazás-jailbreak listáján?"
 
 #. {0} is the app's data folder: /data/ps5cemu, or the PS5CEMU-HAR-data folder on the drive the app is installed on
 #: port/main_ps5.cpp:789

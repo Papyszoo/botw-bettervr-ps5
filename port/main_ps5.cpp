@@ -595,7 +595,7 @@ int main(int argc, char* argv[])
 	if (!privileges.filesystem)
 	{
 		status.notice = status.notice3ds = status.noticeDs = status.noticeSwitch =
-			ps5lang::Tr("PS5-ECAM cannot reach /data. Load a HEN with PPSA99360 in its app jailbreak list, or elfldr, then restart PS5-ECAM.");
+			ps5lang::Tr("PS5-ECAM cannot reach /data. Load a HEN with PPSA98720 in its app jailbreak list, or elfldr, then restart PS5-ECAM.");
 		ps5log::Line("[main] {}", status.notice);
 		ps5notify::Send(status.notice);
 	}
@@ -744,7 +744,7 @@ int main(int argc, char* argv[])
 		options.keepGameList = keepList(system, settings.gamesFolder);
 		ps5emu::StartCore(options);
 		if (!privileges.jit)
-			ps5notify::Send(ps5lang::Tr("No JIT memory: Wii U games run on the interpreter, much slower. Is PPSA99360 in your HEN's app jailbreak list?"));
+			ps5notify::Send(ps5lang::Tr("No JIT memory: Wii U games run on the interpreter, much slower. Is PPSA98720 in your HEN's app jailbreak list?"));
 	};
 
 	// what this app made since the last start, and earlier builds and sessions as another user, opened

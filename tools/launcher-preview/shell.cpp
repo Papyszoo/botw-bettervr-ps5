@@ -141,7 +141,7 @@ int main(int argc, char* argv[])
 		"Boot log: /data/ps5cemu/logs/boot.log", "Cemu's log: " + ps5paths::CemuRoot() + "/log.txt"};
 	if (std::getenv("PREVIEW_NO_DATA"))
 		status.notice = status.notice3ds = status.noticeDs = status.noticeSwitch =
-			"PS5-ECAM cannot reach /data. Load a HEN with PPSA99360 in its app jailbreak list, or elfldr, then restart PS5-ECAM.";
+			"PS5-ECAM cannot reach /data. Load a HEN with PPSA98720 in its app jailbreak list, or elfldr, then restart PS5-ECAM.";
 	else if (std::getenv("PREVIEW_LAUNCH_ERROR"))
 		status.launchError = ps5lang::Tr("This is not a Wii U game PS5-ECAM can start.") + std::string(" ") +
 			ps5lang::TrF("Its disc key is missing from {0}/keys.txt.", ps5paths::CemuRoot());

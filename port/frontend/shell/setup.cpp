@@ -135,7 +135,7 @@ namespace ps5shell
 			storage.state = 1;
 			storage.detail = Tr("/data is out of reach: nothing can be kept");
 			storage.aboutTitle = Tr("Let PS5-ECAM out of its sandbox");
-			storage.about = Tr("Add PPSA99360 to your HEN's app jailbreak list (etaHEN: its app jailbreak list; OnionHEN: the end of "
+			storage.about = Tr("Add PPSA98720 to your HEN's app jailbreak list (etaHEN: its app jailbreak list; OnionHEN: the end of "
 							   "exact_title_ids in config.ini, with no comma after it), or have elfldr listening on port 9021. Then start "
 							   "PS5-ECAM again.");
 		}
@@ -159,7 +159,7 @@ namespace ps5shell
 			recompilers.state = 1;
 			recompilers.detail = Tr("No JIT or executable memory: Wii U games run on the much slower interpreter");
 			recompilers.about = Tr("Neither your HEN's JIT memory nor executable memory could be made, so Wii U games fall back to Cemu's "
-								   "interpreter. Add PPSA99360 to your HEN's app jailbreak list, then start PS5-ECAM again; Settings > "
+								   "interpreter. Add PPSA98720 to your HEN's app jailbreak list, then start PS5-ECAM again; Settings > "
 								   "Diagnostics says what it got.");
 		}
 		m_checks.push_back(recompilers);

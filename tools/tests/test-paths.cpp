@@ -72,7 +72,7 @@ int main(int argc, char** argv) {
     Check(ps5paths::Relocated(std::string(ps5paths::kDefaultRoot) + "-other/games") == std::string(ps5paths::kDefaultRoot) + "-other/games", "root relocation respects path boundaries");
 
     // the copy of the app that runs, told from an older one left in /data/homebrew beside it
-    const fs::path running = base / "usb0/homebrew/PPSA99360", stale = base / "homebrew/PPSA99360", same = base / "ext0/homebrew/PPSA99360";
+    const fs::path running = base / "usb0/homebrew/PPSA98720", stale = base / "homebrew/PPSA98720", same = base / "ext0/homebrew/PPSA98720";
     Put(running / "eboot.bin", "release 5.1.0");
     Put(stale / "eboot.bin", "release 5.0");
     fs::create_directories(same);
@@ -84,6 +84,6 @@ int main(int argc, char** argv) {
     Check(!ps5paths::RunsFrom(stale.string(), eboot) && !ps5paths::RunsFrom((base / "missing").string(), eboot), "an older copy, or none, is not the running app's");
     Check(ps5paths::RunsFrom(stale.string(), "") && ps5paths::RunsFrom(stale.string(), (base / "unreadable/eboot.bin").string()), "without the running app's eboot, nothing tells the copies apart");
     const auto installs = ps5paths::InstallFolders();
-    Check(installs.front() == ps5paths::kInstallDir && std::find(installs.begin(), installs.end(), "/mnt/usb0/homebrew/PPSA99360") != installs.end() &&
-              std::find(installs.begin(), installs.end(), "/mnt/ext1/homebrew/PPSA99360") != installs.end(), "the usual install folder first, then the drives'");
+    Check(installs.front() == ps5paths::kInstallDir && std::find(installs.begin(), installs.end(), "/mnt/usb0/homebrew/PPSA98720") != installs.end() &&
+              std::find(installs.begin(), installs.end(), "/mnt/ext1/homebrew/PPSA98720") != installs.end(), "the usual install folder first, then the drives'");
 }

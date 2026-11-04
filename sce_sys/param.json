@@ -7,9 +7,9 @@
   "attribute": 0,
   "attribute2": 0,
   "attribute3": 262208,
-  "conceptId": "99360",
+  "conceptId": "98720",
   "contentBadgeType": 1,
-  "contentId": "UP9000-PPSA99360_00-PS5CEMUWIIU00001",
+  "contentId": "UP9000-PPSA98720_00-BOTWVRWIIU000001",
   "contentVersion": "05.001.100",
   "downloadDataSize": 256,
   "gameIntent": {
@@ -22,7 +22,7 @@
   "localizedParameters": {
     "defaultLanguage": "en-US",
     "en-US": {
-      "titleName": "PS5-ECAM"
+      "titleName": "Breath of the Wild VR"
     }
   },
   "masterVersion": "05.01",
@@ -33,6 +33,6 @@
   },
   "requiredSystemSoftwareVersion": "0x0000000000000000",
   "sdkVersion": "0x0000000000000000",
-  "titleId": "PPSA99360",
+  "titleId": "PPSA98720",
   "versionFileUri": ""
 }

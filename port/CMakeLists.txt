@@ -160,6 +160,7 @@ add_library(CemuPS5 STATIC
 	app/paths.h
 	app/side_menu.h
 	app/tga.h
+	bettervr/TileArt.cpp # BotW VR: the home screen tile and background from the player's game
 	azahar/azahar.h
 	app/boxart.cpp
 	azahar/controls.cpp
@@ -304,6 +305,7 @@ set_source_files_properties(
 	app/catalog.cpp
 	app/compatibility.cpp
 	app/gameinfo.cpp
+	bettervr/TileArt.cpp
 	azahar/controls.cpp
 	azahar/library.cpp
 	azahar/unavailable.cpp

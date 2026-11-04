@@ -2379,8 +2379,8 @@ msgstr "{0} se nepodařilo zapsat (je /data plný?)"
 
 #. at a start after an update: {0} the release installed, {1} the folder, {2} this release
 #: port/app/updates.cpp:321
-msgid "{0} was installed in {1}, but the PS5 started {2} again. Close PS5-ECAM and start it from the home screen; if it is still {2}, copy the release's PPSA99360 folder over by hand."
-msgstr "{0} byl nainstalován do {1}, ale PS5 znovu spustil {2}. Zavřete PS5-ECAM a spusťte ho z domovské obrazovky; pokud je to stále {2}, zkopírujte ručně přes něj složku PPSA99360 z vydání."
+msgid "{0} was installed in {1}, but the PS5 started {2} again. Close PS5-ECAM and start it from the home screen; if it is still {2}, copy the release's PPSA98720 folder over by hand."
+msgstr "{0} byl nainstalován do {1}, ale PS5 znovu spustil {2}. Zavřete PS5-ECAM a spusťte ho z domovské obrazovky; pokud je to stále {2}, zkopírujte ručně přes něj složku PPSA98720 z vydání."
 
 #: port/app/updates.cpp:429
 msgid "The latest release's version ({0}) is not one this can read"
@@ -2415,16 +2415,16 @@ msgid "It could not be unpacked: {0}"
 msgstr "Nepodařilo se rozbalit: {0}"
 
 #: port/app/updates.cpp:588
-msgid "{0} could not be replaced ({1}): copy the release's PPSA99360 folder over by hand"
-msgstr "{0} se nepodařilo nahradit ({1}): zkopírujte ručně přes něj složku PPSA99360 z vydání"
+msgid "{0} could not be replaced ({1}): copy the release's PPSA98720 folder over by hand"
+msgstr "{0} se nepodařilo nahradit ({1}): zkopírujte ručně přes něj složku PPSA98720 z vydání"
 
 #: port/app/updates.cpp:711
 msgid "No earlier version is kept here."
 msgstr "Žádná starší verze tu uložena není."
 
 #: port/app/updates.cpp:734
-msgid "{0} could not be put back ({1}): copy that release's PPSA99360 folder over by hand"
-msgstr "{0} se nepodařilo vrátit ({1}): zkopírujte ručně přes něj složku PPSA99360 z toho vydání"
+msgid "{0} could not be put back ({1}): copy that release's PPSA98720 folder over by hand"
+msgstr "{0} se nepodařilo vrátit ({1}): zkopírujte ručně přes něj složku PPSA98720 z toho vydání"
 
 #. an update is installed, but the app could not start itself again to run it
 #: port/app/updates.cpp:790
@@ -7071,8 +7071,8 @@ msgid "Let PS5-ECAM out of its sandbox"
 msgstr "Pusťte PS5-ECAM z jeho sandboxu"
 
 #: port/frontend/shell/setup.cpp:138
-msgid "Add PPSA99360 to your HEN's app jailbreak list (etaHEN: its app jailbreak list; OnionHEN: the end of exact_title_ids in config.ini, with no comma after it), or have elfldr listening on port 9021. Then start PS5-ECAM again."
-msgstr "Přidejte PPSA99360 do seznamu app jailbreak vašeho HEN (etaHEN: jeho seznam app jailbreak; OnionHEN: na konec exact_title_ids v config.ini, bez čárky za ním), nebo nechte elfldr naslouchat na portu 9021. Pak PS5-ECAM spusťte znovu."
+msgid "Add PPSA98720 to your HEN's app jailbreak list (etaHEN: its app jailbreak list; OnionHEN: the end of exact_title_ids in config.ini, with no comma after it), or have elfldr listening on port 9021. Then start PS5-ECAM again."
+msgstr "Přidejte PPSA98720 do seznamu app jailbreak vašeho HEN (etaHEN: jeho seznam app jailbreak; OnionHEN: na konec exact_title_ids v config.ini, bez čárky za ním), nebo nechte elfldr naslouchat na portu 9021. Pak PS5-ECAM spusťte znovu."
 
 #: port/frontend/shell/setup.cpp:145
 msgid "Recompilers"
@@ -7099,8 +7099,8 @@ msgid "No JIT or executable memory: Wii U games run on the much slower interpret
 msgstr "Žádná paměť JIT ani spustitelná: hry pro Wii U běží v mnohem pomalejším interpretu"
 
 #: port/frontend/shell/setup.cpp:161
-msgid "Neither your HEN's JIT memory nor executable memory could be made, so Wii U games fall back to Cemu's interpreter. Add PPSA99360 to your HEN's app jailbreak list, then start PS5-ECAM again; Settings > Diagnostics says what it got."
-msgstr "Nepodařilo se získat paměť JIT vašeho HEN ani spustitelnou paměť, takže hry pro Wii U přecházejí na interpret Cemu. Přidejte PPSA99360 do seznamu app jailbreak vašeho HEN a PS5-ECAM spusťte znovu; Nastavení > Diagnostika ukáže, co získal."
+msgid "Neither your HEN's JIT memory nor executable memory could be made, so Wii U games fall back to Cemu's interpreter. Add PPSA98720 to your HEN's app jailbreak list, then start PS5-ECAM again; Settings > Diagnostics says what it got."
+msgstr "Nepodařilo se získat paměť JIT vašeho HEN ani spustitelnou paměť, takže hry pro Wii U přecházejí na interpret Cemu. Přidejte PPSA98720 do seznamu app jailbreak vašeho HEN a PS5-ECAM spusťte znovu; Nastavení > Diagnostika ukáže, co získal."
 
 #: port/frontend/shell/setup.cpp:190 port/frontend/shell/shell.cpp:731 port/libretro/game.cpp:517 port/main_ps5.cpp:703 port/retro/launch.cpp:38 port/retro/launch.cpp:48
 msgid "This side's emulator is not in this copy of PS5-ECAM."
@@ -8271,8 +8271,8 @@ msgid "Boot log not written (/data is unreachable)"
 msgstr "Protokol spuštění nezapsán (/data není dostupný)"
 
 #: port/main_ps5.cpp:598
-msgid "PS5-ECAM cannot reach /data. Load a HEN with PPSA99360 in its app jailbreak list, or elfldr, then restart PS5-ECAM."
-msgstr "PS5-ECAM nemá přístup k /data. Načtěte HEN s PPSA99360 v jeho seznamu app jailbreak, nebo elfldr, a pak PS5-ECAM spusťte znovu."
+msgid "PS5-ECAM cannot reach /data. Load a HEN with PPSA98720 in its app jailbreak list, or elfldr, then restart PS5-ECAM."
+msgstr "PS5-ECAM nemá přístup k /data. Načtěte HEN s PPSA98720 v jeho seznamu app jailbreak, nebo elfldr, a pak PS5-ECAM spusťte znovu."
 
 #: port/main_ps5.cpp:710
 msgid "This session: Azahar (3DS); Cemu's emulated Wii U is not started"
@@ -8291,8 +8291,8 @@ msgid "This session: Cemu (Wii U); Azahar's core is not started"
 msgstr "Tato relace: Cemu (Wii U); jádro Azaharu není spuštěné"
 
 #: port/main_ps5.cpp:747
-msgid "No JIT memory: Wii U games run on the interpreter, much slower. Is PPSA99360 in your HEN's app jailbreak list?"
-msgstr "Žádná paměť JIT: hry pro Wii U běží v interpretu, mnohem pomaleji. Je PPSA99360 v seznamu app jailbreak vašeho HEN?"
+msgid "No JIT memory: Wii U games run on the interpreter, much slower. Is PPSA98720 in your HEN's app jailbreak list?"
+msgstr "Žádná paměť JIT: hry pro Wii U běží v interpretu, mnohem pomaleji. Je PPSA98720 v seznamu app jailbreak vašeho HEN?"
 
 #. {0} is the app's data folder: /data/ps5cemu, or the PS5CEMU-HAR-data folder on the drive the app is installed on
 #: port/main_ps5.cpp:789

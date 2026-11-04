@@ -5,7 +5,7 @@
 // PS5Cemu asks, in order:
 //  1. etaHEN (or OnionHEN, which watches the same file) to jailbreak this process: write
 //     {"PID":n} to /download0/etahen_jailbreak and wait for the HEN to consume it. The HEN only
-//     does this for title IDs in its app-jailbreak allowlist, so PPSA99360 must be listed there.
+//     does this for title IDs in its app-jailbreak allowlist, so PPSA98720 must be listed there.
 //     This is how PS5SX2 gets JIT memory and /data (its ProsperoHenJailbreak.cpp).
 //  2. failing that, the console's ELF loader (elfldr, port 9021, which etaHEN provides) to run the
 //     bundled helper /app0/sandbox-elevator.elf, which grants filesystem access only

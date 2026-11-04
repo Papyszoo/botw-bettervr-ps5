@@ -149,7 +149,7 @@ namespace ps5settings
 		bool setupDone = false;		 // the Setup check was shown once
 		// the sides the bar offers, Wii U 1, 3DS 2, DS 4, Switch 8 (Settings > Launcher > Sides, and the
 		// first start's Make it yours); at least one
-		int sides = 15;
+		int sides = 1; // BotW VR: the Wii U side alone (settings.cpp)
 		bool switchOffered = true;	 // the Switch side was offered: those whose sides predate it (4.0.2) see it once
 		std::string lastVersion;	 // the version that ran last: a newer one says what it brings, once (Make it yours)
 		// a release the start does not offer (the update's Skip this version, or one gone back from), as

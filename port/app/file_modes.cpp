@@ -207,7 +207,7 @@ namespace ps5filemodes
 			for (const std::string& example : walk.examples)
 				examples += (examples.empty() ? "" : "; ") + example;
 			ps5log::Line("[files] {}: {} opened to every user, {} another user's that the app may not change ({} looked at in {} ms): {}. "
-						 "The next start asks the elevation helper (elfldr) for root to open them; without elfldr, PPSA99360 in the "
+						 "The next start asks the elevation helper (elfldr) for root to open them; without elfldr, PPSA98720 in the "
 						 "HEN's app jailbreak list with alwaysAskHen in ps5cemu.json does, or a file manager's chmod 777",
 				ps5paths::Root(), walk.opened, walk.refused, walk.seen, ms, examples);
 		}

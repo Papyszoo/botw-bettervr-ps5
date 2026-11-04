@@ -67,8 +67,8 @@ namespace ecam_bridge
 		std::vector<std::string> args;
 		for (int i = 0; argv && i < argc && i < 32; i++) if (argv[i]) args.emplace_back(argv[i]);
 		request = Parse(args);
-		std::vector<std::string> roots{"/app0", "/download0", "/data/homebrew/PPSA99360", "/mnt/ext0/homebrew/PPSA99360", "/mnt/ext1/homebrew/PPSA99360", "/system_ex/app/PPSA99360", "/mnt/sandbox/PPSA99360_000/app0"};
-		for (int drive = 0; drive < 8; drive++) roots.push_back("/mnt/usb" + std::to_string(drive) + "/homebrew/PPSA99360");
+		std::vector<std::string> roots{"/app0", "/download0", "/data/homebrew/PPSA98720", "/mnt/ext0/homebrew/PPSA98720", "/mnt/ext1/homebrew/PPSA98720", "/system_ex/app/PPSA98720", "/mnt/sandbox/PPSA98720_000/app0"};
+		for (int drive = 0; drive < 8; drive++) roots.push_back("/mnt/usb" + std::to_string(drive) + "/homebrew/PPSA98720");
 		for (const auto& root : roots)
 		{
 			auto recorded = Read(root + "/retro/" + runtime + "/ecam-request.txt");

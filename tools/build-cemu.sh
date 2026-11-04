@@ -38,12 +38,11 @@ options=(
     -DENABLE_DISCORD_RPC=OFF -DENABLE_HIDAPI=OFF -DENABLE_SDL=OFF -DENABLE_LIBUSB=OFF -DENABLE_CUBEB=OFF
     -DALLOW_PORTABLE=OFF -DBoost_USE_STATIC_LIBS=ON -DBoost_ROOT="$PS5CEMU_SYSROOT"
     -DCMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE=OFF
-    # Azahar's core, when tools/build-azahar.sh has built it (port/CMakeLists.txt)
-    -DPS5CEMU_AZAHAR_LIBRARIES="$PS5CEMU_BUILD/azahar/azahar_ps5_libraries.txt"
-    # melonDS's core, when tools/build-melonds.sh has built it (port/CMakeLists.txt)
-    -DPS5CEMU_MELONDS_LIBRARIES="$PS5CEMU_BUILD/melonds/melonds_ps5_libraries.txt"
-    # the libretro cores, when tools/build-libretro.py has built them (port/CMakeLists.txt)
-    -DPS5CEMU_LIBRETRO_OBJECTS="$PS5CEMU_BUILD/libretro/objects.txt"
+    # BotW VR (docs/bettervr-ps5): Cemu alone. No Azahar, melonDS or libretro cores, even when built:
+    # port/CMakeLists.txt links their stand-ins (azahar/unavailable.cpp, melonds/unavailable.cpp)
+    -DPS5CEMU_AZAHAR_LIBRARIES=
+    -DPS5CEMU_MELONDS_LIBRARIES=
+    -DPS5CEMU_LIBRETRO_OBJECTS=
 )
 # configured again when the options change (this script's), as CMake would not know
 if [[ ! -f $build/build.ninja || $(cat "$build/ps5-options" 2>/dev/null) != "${options[*]}" ]]; then

@@ -31,6 +31,9 @@
 #include <filesystem>
 #include <utility>
 
+// BotW VR: the app's home screen tile and background from Breath of the Wild (port/bettervr/TileArt.cpp)
+void PS5Cemu_BotwTileArt(const std::string& cover, const std::string& bootScreen);
+
 namespace ps5shell
 {
 	using namespace ui::tokens;
@@ -366,6 +369,7 @@ namespace ps5shell
 		}
 		m_feedback.Update(m_now);
 		Update(actions);
+		PollBotwArt();
 		if (m_status.coreStarting)
 			PollCore();
 		PollGames();
@@ -1112,6 +1116,31 @@ namespace ps5shell
 		if (m_toasts.size() > 3)
 			m_toasts.erase(m_toasts.begin());
 		m_feedback.Play(ui::Cue::Notify);
+	}
+
+	void Shell::PollBotwArt()
+	{
+		// Breath of the Wild's USA, Europe and Japan title IDs; its icon and boot screen mount the game,
+		// one a frame (IconOf, BackdropOf), so this comes back until both were looked for
+		if (m_botwArtDone || !IsWiiU() || !m_status.coreReady)
+			return;
+		for (const uint64_t titleId : {0x00050000101C9400ull, 0x00050000101C9500ull, 0x00050000101C9300ull})
+		{
+			const int index = FindGame(titleId);
+			if (index < 0)
+				continue;
+			Game& game = m_games[index];
+			const std::string icon = IconOf(game);
+			if (!game.iconLooked)
+				return;
+			BackdropOf(game);
+			if (!game.bootScreenLooked)
+				return;
+			const std::string cover = !game.boxArt.empty() && IsFile(game.boxArt) ? game.boxArt : icon;
+			PS5Cemu_BotwTileArt(cover, game.bootScreen);
+			m_botwArtDone = true;
+			return;
+		}
 	}
 
 	void Shell::AddTile(Game& game)

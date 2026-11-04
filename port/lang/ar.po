@@ -2388,8 +2388,8 @@ msgstr "تعذرت كتابة {0} (هل /data ممتلئ؟)"
 
 #. at a start after an update: {0} the release installed, {1} the folder, {2} this release
 #: port/app/updates.cpp:321
-msgid "{0} was installed in {1}, but the PS5 started {2} again. Close PS5-ECAM and start it from the home screen; if it is still {2}, copy the release's PPSA99360 folder over by hand."
-msgstr "تم تثبيت {0} في {1}، لكن PS5 شغّل {2} مرة أخرى. أغلق PS5-ECAM وشغّله من الشاشة الرئيسية؛ وإن بقي {2}، فانسخ مجلد PPSA99360 من الإصدار فوقه يدويا."
+msgid "{0} was installed in {1}, but the PS5 started {2} again. Close PS5-ECAM and start it from the home screen; if it is still {2}, copy the release's PPSA98720 folder over by hand."
+msgstr "تم تثبيت {0} في {1}، لكن PS5 شغّل {2} مرة أخرى. أغلق PS5-ECAM وشغّله من الشاشة الرئيسية؛ وإن بقي {2}، فانسخ مجلد PPSA98720 من الإصدار فوقه يدويا."
 
 #: port/app/updates.cpp:429
 msgid "The latest release's version ({0}) is not one this can read"
@@ -2424,16 +2424,16 @@ msgid "It could not be unpacked: {0}"
 msgstr "تعذر فك الضغط: {0}"
 
 #: port/app/updates.cpp:588
-msgid "{0} could not be replaced ({1}): copy the release's PPSA99360 folder over by hand"
-msgstr "تعذر استبدال {0} ‏({1}): انسخ مجلد PPSA99360 من الإصدار فوقه يدويا"
+msgid "{0} could not be replaced ({1}): copy the release's PPSA98720 folder over by hand"
+msgstr "تعذر استبدال {0} ‏({1}): انسخ مجلد PPSA98720 من الإصدار فوقه يدويا"
 
 #: port/app/updates.cpp:711
 msgid "No earlier version is kept here."
 msgstr "لا يوجد إصدار أقدم محفوظ هنا."
 
 #: port/app/updates.cpp:734
-msgid "{0} could not be put back ({1}): copy that release's PPSA99360 folder over by hand"
-msgstr "تعذرت إعادة {0} ‏({1}): انسخ مجلد PPSA99360 من ذلك الإصدار فوقه يدويا"
+msgid "{0} could not be put back ({1}): copy that release's PPSA98720 folder over by hand"
+msgstr "تعذرت إعادة {0} ‏({1}): انسخ مجلد PPSA98720 من ذلك الإصدار فوقه يدويا"
 
 #. an update is installed, but the app could not start itself again to run it
 #: port/app/updates.cpp:790
@@ -7161,8 +7161,8 @@ msgid "Let PS5-ECAM out of its sandbox"
 msgstr "أخرج PS5-ECAM من صندوق الحماية"
 
 #: port/frontend/shell/setup.cpp:138
-msgid "Add PPSA99360 to your HEN's app jailbreak list (etaHEN: its app jailbreak list; OnionHEN: the end of exact_title_ids in config.ini, with no comma after it), or have elfldr listening on port 9021. Then start PS5-ECAM again."
-msgstr "أضف PPSA99360 إلى قائمة كسر حماية التطبيقات في HEN الخاص بك (etaHEN: قائمة كسر حماية التطبيقات فيه؛ OnionHEN: نهاية exact_title_ids في config.ini، بلا فاصلة بعده)، أو اجعل elfldr يستمع على المنفذ 9021. ثم ابدأ PS5-ECAM من جديد."
+msgid "Add PPSA98720 to your HEN's app jailbreak list (etaHEN: its app jailbreak list; OnionHEN: the end of exact_title_ids in config.ini, with no comma after it), or have elfldr listening on port 9021. Then start PS5-ECAM again."
+msgstr "أضف PPSA98720 إلى قائمة كسر حماية التطبيقات في HEN الخاص بك (etaHEN: قائمة كسر حماية التطبيقات فيه؛ OnionHEN: نهاية exact_title_ids في config.ini، بلا فاصلة بعده)، أو اجعل elfldr يستمع على المنفذ 9021. ثم ابدأ PS5-ECAM من جديد."
 
 #: port/frontend/shell/setup.cpp:145
 msgid "Recompilers"
@@ -7189,8 +7189,8 @@ msgid "No JIT or executable memory: Wii U games run on the much slower interpret
 msgstr "لا توجد ذاكرة JIT ولا ذاكرة قابلة للتنفيذ: تعمل ألعاب Wii U على المفسر الأبطأ بكثير"
 
 #: port/frontend/shell/setup.cpp:161
-msgid "Neither your HEN's JIT memory nor executable memory could be made, so Wii U games fall back to Cemu's interpreter. Add PPSA99360 to your HEN's app jailbreak list, then start PS5-ECAM again; Settings > Diagnostics says what it got."
-msgstr "تعذر إنشاء ذاكرة JIT من HEN الخاص بك أو ذاكرة قابلة للتنفيذ، لذا تعود ألعاب Wii U إلى مفسر Cemu. أضف PPSA99360 إلى قائمة كسر حماية التطبيقات في HEN الخاص بك، ثم ابدأ PS5-ECAM من جديد؛ والإعدادات > التشخيص تبين ما حصل عليه."
+msgid "Neither your HEN's JIT memory nor executable memory could be made, so Wii U games fall back to Cemu's interpreter. Add PPSA98720 to your HEN's app jailbreak list, then start PS5-ECAM again; Settings > Diagnostics says what it got."
+msgstr "تعذر إنشاء ذاكرة JIT من HEN الخاص بك أو ذاكرة قابلة للتنفيذ، لذا تعود ألعاب Wii U إلى مفسر Cemu. أضف PPSA98720 إلى قائمة كسر حماية التطبيقات في HEN الخاص بك، ثم ابدأ PS5-ECAM من جديد؛ والإعدادات > التشخيص تبين ما حصل عليه."
 
 #: port/frontend/shell/setup.cpp:190 port/frontend/shell/shell.cpp:731 port/libretro/game.cpp:517 port/main_ps5.cpp:703 port/retro/launch.cpp:38 port/retro/launch.cpp:48
 msgid "This side's emulator is not in this copy of PS5-ECAM."
@@ -8400,8 +8400,8 @@ msgid "Boot log not written (/data is unreachable)"
 msgstr "لم يكتب سجل الإقلاع (لا يمكن الوصول إلى /data)"
 
 #: port/main_ps5.cpp:598
-msgid "PS5-ECAM cannot reach /data. Load a HEN with PPSA99360 in its app jailbreak list, or elfldr, then restart PS5-ECAM."
-msgstr "لا يستطيع PS5-ECAM الوصول إلى /data. حمل HEN مع وجود PPSA99360 في قائمة كسر حماية التطبيقات فيه، أو elfldr، ثم أعد تشغيل PS5-ECAM."
+msgid "PS5-ECAM cannot reach /data. Load a HEN with PPSA98720 in its app jailbreak list, or elfldr, then restart PS5-ECAM."
+msgstr "لا يستطيع PS5-ECAM الوصول إلى /data. حمل HEN مع وجود PPSA98720 في قائمة كسر حماية التطبيقات فيه، أو elfldr، ثم أعد تشغيل PS5-ECAM."
 
 #: port/main_ps5.cpp:710
 msgid "This session: Azahar (3DS); Cemu's emulated Wii U is not started"
@@ -8420,8 +8420,8 @@ msgid "This session: Cemu (Wii U); Azahar's core is not started"
 msgstr "هذه الجلسة: Cemu ‏(Wii U)؛ لم تبدأ نواة Azahar"
 
 #: port/main_ps5.cpp:747
-msgid "No JIT memory: Wii U games run on the interpreter, much slower. Is PPSA99360 in your HEN's app jailbreak list?"
-msgstr "لا توجد ذاكرة JIT: تعمل ألعاب Wii U على المفسر، وهو أبطأ بكثير. هل PPSA99360 في قائمة كسر حماية التطبيقات في HEN الخاص بك؟"
+msgid "No JIT memory: Wii U games run on the interpreter, much slower. Is PPSA98720 in your HEN's app jailbreak list?"
+msgstr "لا توجد ذاكرة JIT: تعمل ألعاب Wii U على المفسر، وهو أبطأ بكثير. هل PPSA98720 في قائمة كسر حماية التطبيقات في HEN الخاص بك؟"
 
 #. {0} is the app's data folder: /data/ps5cemu, or the PS5CEMU-HAR-data folder on the drive the app is installed on
 #: port/main_ps5.cpp:789

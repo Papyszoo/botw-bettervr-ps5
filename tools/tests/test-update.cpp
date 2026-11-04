@@ -53,7 +53,7 @@ int main(int argc, char** argv)
 		Check(order && i == files.size(), "its files, in the archive's order");
 		Check(same, "each file as it was");
 		Check(open, "each file readable, writable and runnable by all");
-		Check(!fs::exists(work / "evil.txt") && !fs::exists(work / "out/PPSA99360"), "nothing outside its folder, and no PPSA99360/ in it");
+		Check(!fs::exists(work / "evil.txt") && !fs::exists(work / "out/PPSA98720"), "nothing outside its folder, and no PPSA98720/ in it");
 	}
 	RemoveAll(work / "out");
 	Check(!fs::exists(work / "out"), "RemoveAll leaves nothing");

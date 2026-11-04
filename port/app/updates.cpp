@@ -42,7 +42,7 @@ namespace ps5update
 		// old address on to the new one): the first that answers is asked for the rest
 		constexpr const char* kRepositories[] = {"premohq/PS5-ECAM", "premohq/PS5CEMU-HAR"};
 		std::string s_repository = kRepositories[0]; // under s_mutex: the one that answered
-		// the releases branch: each release's ZIP (PS5-ECAM-<tag>.zip, the PPSA99360 folder) and
+		// the releases branch: each release's ZIP (PS5-ECAM-<tag>.zip, the PPSA98720 folder) and
 		// SHA256SUMS for all of them
 		std::string Files(const std::string& repository) { return "https://raw.githubusercontent.com/" + repository + "/releases/"; }
 		constexpr const char* kHosts[] = {"api.github.com", "raw.githubusercontent.com"};
@@ -319,7 +319,7 @@ namespace ps5update
 			s_status.installing = true; // the sheet shows it
 			// tr: at a start after an update: {0} the release installed, {1} the folder, {2} this release
 			s_status.message = ps5lang::TrF("{0} was installed in {1}, but the PS5 started {2} again. Close PS5-ECAM and start it from the "
-											"home screen; if it is still {2}, copy the release's PPSA99360 folder over by hand.",
+											"home screen; if it is still {2}, copy the release's PPSA98720 folder over by hand.",
 				Readable(version), folder, Readable(PS5CEMU_VERSION));
 			return false;
 		}
@@ -585,7 +585,7 @@ namespace ps5update
 					return true;
 				std::lock_guard lock(failure);
 				if (failed.empty())
-					failed = ps5lang::TrF("{0} could not be replaced ({1}): copy the release's PPSA99360 folder over by hand", files[i].string(), why.message());
+					failed = ps5lang::TrF("{0} could not be replaced ({1}): copy the release's PPSA98720 folder over by hand", files[i].string(), why.message());
 				return false;
 			};
 			// all but the program at once, then the program (files' last) on its own
@@ -645,8 +645,14 @@ namespace ps5update
 		}
 	}
 
+	// BotW VR (docs/bettervr-ps5): no updates from premohq's PS5-ECAM, whose release is another app
+	// (PPSA99360) and would be unpacked over this one. Its builds are the fork's pre-releases.
+	constexpr bool kOwnUpdates = false;
+
 	void Start()
 	{
+		if (!kOwnUpdates)
+			return;
 		{
 			std::lock_guard lock(s_mutex);
 			if (s_status.state != Status::State::Idle)
@@ -663,6 +669,8 @@ namespace ps5update
 
 	void Check()
 	{
+		if (!kOwnUpdates)
+			return;
 		{
 			std::lock_guard lock(s_mutex);
 			// (a cancelled download's thread still ending: asked again once it has)
@@ -731,7 +739,7 @@ namespace ps5update
 			if (ec)
 			{
 				ps5log::Line("[update] going back to {}: {} could not be put back ({})", version, file.string(), ec.message());
-				error = ps5lang::TrF("{0} could not be put back ({1}): copy that release's PPSA99360 folder over by hand", file.string(), ec.message());
+				error = ps5lang::TrF("{0} could not be put back ({1}): copy that release's PPSA98720 folder over by hand", file.string(), ec.message());
 				return false;
 			}
 		}

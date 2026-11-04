@@ -6,7 +6,7 @@
 // sends this payload to elfldr, the console's payload loader on 127.0.0.1:9021, which runs it as
 // root. For each pending tile it:
 //   - takes only a PS5 Forwarder Format folder (eboot.bin, sce_sys/param.json, forwarder.json) whose
-//     forwarder.json starts PS5-ECAM (PPSA99360), under a title ID of PPSA and five digits that is
+//     forwarder.json starts PS5-ECAM (PPSA98720), under a title ID of PPSA and five digits that is
 //     not PS5-ECAM's own;
 //   - replaces /data/homebrew/<title ID> only when that folder is itself such a tile (the same game's
 //     tile made again), never another app's folder;
@@ -26,10 +26,10 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#define PENDING "/data/ps5cemu/tiles/pending"
-#define REMOVE "/data/ps5cemu/tiles/remove"
+#define PENDING "/data/botwvr/launcher/tiles/pending"
+#define REMOVE "/data/botwvr/launcher/tiles/remove"
 #define HOMEBREW "/data/homebrew"
-#define TARGET "PPSA99360"
+#define TARGET "PPSA98720"
 
 static int valid_id(const char* id)
 {

@@ -2376,8 +2376,8 @@ msgstr "{0} konnte nicht geschrieben werden (ist /data voll?)"
 
 #. at a start after an update: {0} the release installed, {1} the folder, {2} this release
 #: port/app/updates.cpp:321
-msgid "{0} was installed in {1}, but the PS5 started {2} again. Close PS5-ECAM and start it from the home screen; if it is still {2}, copy the release's PPSA99360 folder over by hand."
-msgstr "{0} wurde in {1} installiert, aber die PS5 hat wieder {2} gestartet. Schließe PS5-ECAM und starte es vom Startbildschirm aus; ist es noch immer {2}, kopiere den Ordner PPSA99360 des Release von Hand darüber."
+msgid "{0} was installed in {1}, but the PS5 started {2} again. Close PS5-ECAM and start it from the home screen; if it is still {2}, copy the release's PPSA98720 folder over by hand."
+msgstr "{0} wurde in {1} installiert, aber die PS5 hat wieder {2} gestartet. Schließe PS5-ECAM und starte es vom Startbildschirm aus; ist es noch immer {2}, kopiere den Ordner PPSA98720 des Release von Hand darüber."
 
 #: port/app/updates.cpp:429
 msgid "The latest release's version ({0}) is not one this can read"
@@ -2412,16 +2412,16 @@ msgid "It could not be unpacked: {0}"
 msgstr "Es konnte nicht entpackt werden: {0}"
 
 #: port/app/updates.cpp:588
-msgid "{0} could not be replaced ({1}): copy the release's PPSA99360 folder over by hand"
-msgstr "{0} konnte nicht ersetzt werden ({1}): Kopiere den Ordner PPSA99360 des Release von Hand darüber"
+msgid "{0} could not be replaced ({1}): copy the release's PPSA98720 folder over by hand"
+msgstr "{0} konnte nicht ersetzt werden ({1}): Kopiere den Ordner PPSA98720 des Release von Hand darüber"
 
 #: port/app/updates.cpp:711
 msgid "No earlier version is kept here."
 msgstr "Hier ist keine ältere Version aufbewahrt."
 
 #: port/app/updates.cpp:734
-msgid "{0} could not be put back ({1}): copy that release's PPSA99360 folder over by hand"
-msgstr "{0} konnte nicht zurückgelegt werden ({1}): Kopiere den Ordner PPSA99360 jenes Release von Hand darüber"
+msgid "{0} could not be put back ({1}): copy that release's PPSA98720 folder over by hand"
+msgstr "{0} konnte nicht zurückgelegt werden ({1}): Kopiere den Ordner PPSA98720 jenes Release von Hand darüber"
 
 #. an update is installed, but the app could not start itself again to run it
 #: port/app/updates.cpp:790
@@ -7041,8 +7041,8 @@ msgid "Let PS5-ECAM out of its sandbox"
 msgstr "PS5-ECAM aus seiner Sandbox lassen"
 
 #: port/frontend/shell/setup.cpp:138
-msgid "Add PPSA99360 to your HEN's app jailbreak list (etaHEN: its app jailbreak list; OnionHEN: the end of exact_title_ids in config.ini, with no comma after it), or have elfldr listening on port 9021. Then start PS5-ECAM again."
-msgstr "Füge PPSA99360 der App-Jailbreak-Liste deines HEN hinzu (etaHEN: seine App-Jailbreak-Liste; OnionHEN: ans Ende von exact_title_ids in config.ini, ohne Komma danach) oder lass elfldr auf Port 9021 lauschen. Starte PS5-ECAM dann neu."
+msgid "Add PPSA98720 to your HEN's app jailbreak list (etaHEN: its app jailbreak list; OnionHEN: the end of exact_title_ids in config.ini, with no comma after it), or have elfldr listening on port 9021. Then start PS5-ECAM again."
+msgstr "Füge PPSA98720 der App-Jailbreak-Liste deines HEN hinzu (etaHEN: seine App-Jailbreak-Liste; OnionHEN: ans Ende von exact_title_ids in config.ini, ohne Komma danach) oder lass elfldr auf Port 9021 lauschen. Starte PS5-ECAM dann neu."
 
 #: port/frontend/shell/setup.cpp:145
 msgid "Recompilers"
@@ -7069,8 +7069,8 @@ msgid "No JIT or executable memory: Wii U games run on the much slower interpret
 msgstr "Kein JIT- oder ausführbarer Speicher: Wii U-Spiele laufen im viel langsameren Interpreter"
 
 #: port/frontend/shell/setup.cpp:161
-msgid "Neither your HEN's JIT memory nor executable memory could be made, so Wii U games fall back to Cemu's interpreter. Add PPSA99360 to your HEN's app jailbreak list, then start PS5-ECAM again; Settings > Diagnostics says what it got."
-msgstr "Weder der JIT-Speicher deines HEN noch ausführbarer Speicher ließ sich anlegen, daher weichen Wii U-Spiele auf Cemus Interpreter aus. Füge PPSA99360 der App-Jailbreak-Liste deines HEN hinzu und starte PS5-ECAM dann neu; Einstellungen > Diagnose zeigt, was es bekommen hat."
+msgid "Neither your HEN's JIT memory nor executable memory could be made, so Wii U games fall back to Cemu's interpreter. Add PPSA98720 to your HEN's app jailbreak list, then start PS5-ECAM again; Settings > Diagnostics says what it got."
+msgstr "Weder der JIT-Speicher deines HEN noch ausführbarer Speicher ließ sich anlegen, daher weichen Wii U-Spiele auf Cemus Interpreter aus. Füge PPSA98720 der App-Jailbreak-Liste deines HEN hinzu und starte PS5-ECAM dann neu; Einstellungen > Diagnose zeigt, was es bekommen hat."
 
 #: port/frontend/shell/setup.cpp:190 port/frontend/shell/shell.cpp:731 port/libretro/game.cpp:517 port/main_ps5.cpp:703 port/retro/launch.cpp:38 port/retro/launch.cpp:48
 msgid "This side's emulator is not in this copy of PS5-ECAM."
@@ -8228,8 +8228,8 @@ msgid "Boot log not written (/data is unreachable)"
 msgstr "Boot-Protokoll nicht geschrieben (/data ist nicht erreichbar)"
 
 #: port/main_ps5.cpp:598
-msgid "PS5-ECAM cannot reach /data. Load a HEN with PPSA99360 in its app jailbreak list, or elfldr, then restart PS5-ECAM."
-msgstr "PS5-ECAM erreicht /data nicht. Lade einen HEN mit PPSA99360 in seiner App-Jailbreak-Liste oder elfldr und starte PS5-ECAM dann neu."
+msgid "PS5-ECAM cannot reach /data. Load a HEN with PPSA98720 in its app jailbreak list, or elfldr, then restart PS5-ECAM."
+msgstr "PS5-ECAM erreicht /data nicht. Lade einen HEN mit PPSA98720 in seiner App-Jailbreak-Liste oder elfldr und starte PS5-ECAM dann neu."
 
 #: port/main_ps5.cpp:710
 msgid "This session: Azahar (3DS); Cemu's emulated Wii U is not started"
@@ -8248,8 +8248,8 @@ msgid "This session: Cemu (Wii U); Azahar's core is not started"
 msgstr "Diese Sitzung: Cemu (Wii U); Azahars Kern ist nicht gestartet"
 
 #: port/main_ps5.cpp:747
-msgid "No JIT memory: Wii U games run on the interpreter, much slower. Is PPSA99360 in your HEN's app jailbreak list?"
-msgstr "Kein JIT-Speicher: Wii U-Spiele laufen im Interpreter, viel langsamer. Ist PPSA99360 in der App-Jailbreak-Liste deines HEN?"
+msgid "No JIT memory: Wii U games run on the interpreter, much slower. Is PPSA98720 in your HEN's app jailbreak list?"
+msgstr "Kein JIT-Speicher: Wii U-Spiele laufen im Interpreter, viel langsamer. Ist PPSA98720 in der App-Jailbreak-Liste deines HEN?"
 
 #. {0} is the app's data folder: /data/ps5cemu, or the PS5CEMU-HAR-data folder on the drive the app is installed on
 #: port/main_ps5.cpp:789

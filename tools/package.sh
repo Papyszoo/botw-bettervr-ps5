@@ -3,12 +3,12 @@
 # Assembles the app folder from build/cemu/ps5cemu.elf, as PS5_Vulkan packages a RADV title
 # (tools/build-radv-title.sh):
 #
-#   build/app/PPSA99360/              copied to /data/homebrew/PPSA99360 on the console
+#   build/app/PPSA98720/              copied to /data/homebrew/PPSA98720 on the console
 #     eboot.bin                       the ELF, converted and fake-signed by ps5-native-tool
 #     sce_sys/param.json, icon0.png   the title's parameters and home screen tile
 #     sce_sys/pic0.dds, pic1.dds      its home screen background (selected, starting)
 #     sce_module/libc.prx             the boilerplate's clean-room runtime
-#     sandbox-elevator.elf            the boilerplate's /data helper, built for PPSA99360
+#     sandbox-elevator.elf            the boilerplate's /data helper, built for PPSA98720
 #     tile-installer.elf              moves the home screen tiles the app made into /data/homebrew
 #     assets/ui/                      the launcher's font (fonts/lexend.sdf), the in-game menus'
 #                                     (fonts/Lexend-*.ttf), sounds and the two sides' tiles
@@ -32,7 +32,7 @@
 
 set -euo pipefail
 source "$(dirname -- "${BASH_SOURCE[0]}")/env.sh"
-title=PPSA99360
+title=PPSA98720
 check=0
 [[ ${1:-} == --check ]] && check=1
 elf=$PS5CEMU_BUILD/cemu/ps5cemu.elf
@@ -165,9 +165,6 @@ for po in "$PS5CEMU_ROOT"/port/lang/*.po; do
 done
 # the compatibility list the game pages show a status from (app/compatibility.h)
 cp "$PS5CEMU_ROOT/docs/COMPATIBILITY.md" "$app/assets/compatibility.md"
-# the 3DS side's border themes (tools/render-borders.py, committed)
-mkdir -p "$app/assets/borders"
-cp "$PS5CEMU_ROOT"/port/azahar/borders/*.png "$app/assets/borders/"
 cp -a "$deps/Cemu/bin/resources/sharedFonts" "$app/assets/cemu/resources/"
 # BotW-BetterVR on PS5: BetterVR's graphic pack, without its debug patches (as its own release),
 # which the app puts in graphicPacks/ while bettervr.json asks for BetterVR (port/bettervr/VrPS5.cpp)
@@ -176,34 +173,7 @@ mkdir -p "$app/assets/bettervr"
 cp -a "$deps/BotW-BetterVR/resources/BreathOfTheWild_BetterVR" "$app/assets/bettervr/"
 rm -f "$app/assets/bettervr/BreathOfTheWild_BetterVR"/patch_debug_*.asm
 
-# The Switch side's program (tools/build-eden.sh): ProsperoEdenX's eboot.bin and the files it reads
-# from its own folder, with the boilerplate's libc.prx beside it as in the app's own sce_module
-if [[ -f $PS5CEMU_BUILD/eden/app/eboot.bin ]]; then
-    cp -a "$PS5CEMU_BUILD/eden/app" "$app/eden"
-    mkdir -p "$app/eden/sce_module"
-    cp "$boilerplate/runtime/libc.prx" "$app/eden/sce_module/libc.prx"
-elif ((!check)); then
-    echo "build/eden is missing (make eden): the Switch side cannot start games" >&2
-    [[ ${PS5CEMU_RELEASE:-0} == 1 ]] && exit 2
-fi
-
-# EmulationStation (tools/build-esde.sh), the optional other frontend: its folder as it was built. The
-# app is whole without it, and Settings > Launcher offers it only where it is (port/esde/esde.h).
-if [[ -f $PS5CEMU_BUILD/esde/es-de/es-de.bin ]]; then
-    cp -a "$PS5CEMU_BUILD/esde/es-de" "$app/es-de"
-elif ((!check)); then
-    echo "note: build/esde is missing (make esde): the app is packaged without EmulationStation"
-fi
-
-# Optional additional systems: only source-built ECAM overlays are staged here.
-for system in porpoise n64 nes mupen64plus fceumm gbc gba; do
-    runtime="$PS5CEMU_BUILD/retro/$system"
-    if [[ -f $runtime/eboot.bin ]]; then
-        [[ -f $runtime/ECAM-SOURCE.json ]] || { echo "Missing source provenance: $runtime" >&2; exit 2; }
-        mkdir -p "$app/retro"
-        cp -a "$runtime" "$app/retro/$system"
-    fi
-done
+# BotW VR (docs/bettervr-ps5): Cemu alone. No Switch side (Eden), EmulationStation or retro runtimes.
 
 if ((check)); then
     echo "LINK CHECK ONLY: built without RADV, this folder cannot run on a console." >"$app/NOT-AN-APP.txt"
