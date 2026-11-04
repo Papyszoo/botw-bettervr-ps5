@@ -3,6 +3,38 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-05: Patryk's first console results (m5-botw-vr), and m6-vr-diag
+
+**Reported by Patryk on his PS5** (firmware 13.59, `m5-botw-vr`, BotW EUR v208 with DLC, unpacked):
+
+- The app installs and starts as "Breath of the Wild VR", with its data in `/data/botwvr`. No HEN
+  was asked: JIT and `/data` were there without one.
+- **Flat: works**, with FPS++ at 120: a steady 60 fps in game.
+- **VR (`{"vr": true}`): a green screen.** The game ran at 60 fps on 98 draws a frame and never got
+  further.
+- The tile has no PS VR2 mark.
+- The Sense controllers don't move through the app's menus; only the DualSense does.
+- He finds the emulator's launcher too big for a BotW app: he wants something made for BotW, keeping
+  the community graphic packs, but only BotW's.
+
+**What his boot log says about the green screen.** BetterVR started, created the instance and the
+device through its layer, then logged nothing more. No `[vr-xr]` line at all: BetterVR never called
+`xrCreateInstance`. It does that on the first `vkCmdClearColorImage` its layer sees
+(`hooking/framebuffer.cpp`). Its README: a green screen means the layer isn't seeing the game's
+clears, so the eye colours the graphic pack clears with stay on screen. Reading the code
+(VulkanLayerPS5.cpp, vkroots, Cemu's PS5 loading) didn't show why the clears miss the layer.
+
+**m6-vr-diag** (built, untested on console):
+
+- **The PS VR2 attributes** in `param.json`: `attribute 0x62000000`, `attribute3 0x40c0c40` (photo-
+  splat-vr's and HLA-PSVR2's `0x4080c40`, with PS5-ECAM's own bits). photo-splat-vr's research:
+  without them "Hmd2 reported the headset not worn and never consumed a frame". So even with the
+  layer fixed, `m5-botw-vr` couldn't have shown a frame in the headset.
+- **Boot-log lines** for where Cemu's Vulkan calls go: the device through the layer, Cemu's
+  `vkGetDeviceProcAddr` (the layer's, or another instance's), its first clear and BetterVR's eye
+  colours on their way to the layer (VulkanLayerPS5.cpp); and in BetterVR (patches/bettervr/0004),
+  the first call of each hook, and VR's start or the exception that stopped it.
+
 ## 2026-11-04: M5, BotW VR as an app of its own (Patryk's choice)
 
 **Built, untested on console.** Patryk chose an own title ID for the whole app and the other
@@ -376,6 +408,22 @@ Cloud session, scheduled run. Nothing was built for the console and nothing was 
 - **Next:** M1, the baseline build and release (see `PLAN.md`).
 
 ## Open test requests
+
+### Test request 6: why BetterVR's layer misses the clears (m6-vr-diag)
+
+**Which build.** `m6-vr-diag`. Copy its `PPSA98720` over the installed one; everything in
+`/data/botwvr` stays.
+
+**Try:**
+
+1. **The tile:** after installing, does the home screen show the PS VR2 mark on it? (ShadowMount
+   Plus may need to put the app on the home screen again first.)
+2. With `{"vr": true}`, headset on and connected, start the game, wait a minute on whatever shows,
+   then quit to the library.
+3. Say what the TV and the headset showed.
+
+**Send back:** `/data/botwvr/launcher/logs/boot.log`, whole. The new lines to look for start with
+`[vr] Cemu's`, `[vr] vkGetDeviceProcAddr`, `[bettervr] [INFO] PS5:` and `[vr-xr]`.
 
 ### Test request 5: BotW VR as its own app (M5)
 
