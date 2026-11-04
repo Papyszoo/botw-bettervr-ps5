@@ -3,13 +3,42 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-04: M5, BotW VR as an app of its own (Patryk's choice)
+
+**Built, untested on console.** Patryk chose an own title ID for the whole app and the other
+emulators taken out.
+
+- **Release:** `m5-botw-vr`, on the commit named in its notes. Test request 5 below.
+- **Title ID `PPSA98720`, "Breath of the Wild VR".** Not found in a web search, and outside the range
+  the app's own forwarder tiles draw from (PPSA99200-99899, psfwd.c). Changed in the code, scripts,
+  `sce_sys/param.json`, the payloads, host tests and the string tables (only the ID in the
+  messages; `lang.py check` passes). Not changed: Eden's patches and `tools/build-eden.sh` (Eden is
+  no longer built), upstream's docs, README and site.
+- **Its own data, `/data/botwvr`:** `PS5CEMU_DATA` is `/data/botwvr/launcher`, so Cemu's folder, its
+  sibling, is `/data/botwvr/cemu`. On a drive: `BotWVR/launcher` and `BotWVR/cemu`. The boot log and
+  the drive's folder make `/data/botwvr` (`BotWVR`) first.
+- **Cemu alone.** `tools/build-cemu.sh` passes no Azahar, melonDS or libretro archives, so the port
+  links `azahar/unavailable.cpp` and `melonds/unavailable.cpp` (both needed `SetResume`).
+  `tools/package.sh` packages no Eden, ES-DE, retro runtimes or 3DS borders, and the Makefile builds
+  none of them. The launcher shows the Wii U side alone (`ui.sides` is 1, and Settings > Launcher
+  has no Sides). Their code stays in the tree, unbuilt, so upstream still rebases.
+- **No update checks** (`kOwnUpdates` in `port/app/updates.cpp`): premohq's release is another app.
+- **Art:** the app's own tile and background (`tools/render-botwvr-art.py`: a visor and "BotW VR",
+  nothing of Nintendo's), and at run time `port/bettervr/TileArt.cpp`. Once the launcher has the
+  player's Breath of the Wild (`Shell::PollBotwArt`), it writes `sce_sys/icon0.png` from its box art
+  (or icon) and `pic0.dds`/`pic1.dds` from its boot screen (BC7, the Python encoder in C++) into the
+  app's folder, and `icon0.png` into `/user/appmeta/PPSA98720` when that exists. Whether the home
+  screen picks them up is Test request 5's question.
+- **Cemu's version** (Patryk asked): upstream's `cc6fea1` from 4 October 2026, after Cemu's last
+  release (2.6, February 2025), with PS5-ECAM's 48 patches and ours.
+
 ## 2026-11-04: install guide; the app's name, title ID and tile
 
 - **`INSTALL.md`:** where the game, its update v208, the DLC and (for WUD/WUX only) `keys.txt` go,
   which formats work, and the steps from install to VR. Written from the app's guide and code, not
   checked on a console.
-- **Asked by Patryk:** an own title ID and name, and a tile and background from the game. Not done
-  yet; the options are written here so the choice is his:
+- **Asked by Patryk:** an own title ID and name, and a tile and background from the game. The options
+  as written then (he chose the second, with the other emulators out: M5 above):
   - **Game art can't ship.** BotW's icon and boot picture are Nintendo's, and the hard rules keep
     game material out of the repo and releases. They can be taken from his own dump on the console,
     at run time: the app's **Add to home screen** already makes a game a tile of its own (a new,
@@ -344,6 +373,29 @@ Cloud session, scheduled run. Nothing was built for the console and nothing was 
 - **Next:** M1, the baseline build and release (see `PLAN.md`).
 
 ## Open test requests
+
+### Test request 5: BotW VR as its own app (M5)
+
+**Which build.** `m5-botw-vr`. Set it up as `INSTALL.md` says: **`PPSA98720` in the HEN's app
+jailbreak list**, the game in `/data/botwvr/cemu/games`, update v208 installed.
+
+**Try:**
+
+1. **It starts:** "Breath of the Wild VR" on the home screen, next to PS5-ECAM. It opens on the Wii
+   U library alone, with no 3DS, DS or Switch side.
+2. **Its own data:** `/data/botwvr/launcher` and `/data/botwvr/cemu` were made; PS5-ECAM's
+   `/data/ps5cemu` and `/data/cemu` were not touched. Settings > Diagnostics: JIT memory there (the
+   HEN list worked).
+3. **Tile and background:** with BotW in the library, wait a minute, then look at the app's tile and
+   background on the home screen. If they still show the visor, restart the console, then look
+   again. If still the visor, have ShadowMount Plus put the app on the home screen again (rescan).
+   Say at which step, if any, the game's pictures appeared.
+4. **The game:** BotW flat, then Test request 4 (VR with the Sense controllers), with
+   `bettervr.json` now in `/data/botwvr/launcher`.
+
+**Send back:** what each step showed; from `/data/botwvr/launcher/logs/boot.log`, the `[vr]` lines
+(the tile ones say "home screen tile" and "home screen background", written or not), `[paths]`
+lines, any `[crash]`, and the ones Test request 4 asks for.
 
 ### Test request 4: the Sense controllers in BetterVR (M4)
 
