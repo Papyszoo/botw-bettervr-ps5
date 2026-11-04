@@ -9,8 +9,10 @@
 //                     next vkGetInstanceProcAddr being RADV's)
 //   vkCreateDevice    the layer's, with its link info (RADV's vkGetInstanceProcAddr and
 //                     vkGetDeviceProcAddr)
-//   anything else     for that instance, the layer's vkGetInstanceProcAddr (it hands out its
-//                     vkGetDeviceProcAddr, which every device function then comes through)
+//   vkGetDeviceProcAddr the layer's, from negotiation (vkroots' vkGetInstanceProcAddr does not give
+//                     it out), which every device function then comes through; the few device
+//                     functions Cemu takes from vkGetInstanceProcAddr go through it too
+//   anything else     for that instance, the layer's vkGetInstanceProcAddr
 //
 // Every other instance (another game's, the 3DS side's) takes RADV's functions as before, so
 // nothing changes there. The layer is BetterVR's (vkroots), in BetterVR's object
@@ -41,44 +43,52 @@ namespace ps5bettervr
 		std::mutex s_lock;
 		VkInstance s_instance = VK_NULL_HANDLE; // the one instance created through the layer
 
-		// What Cemu's calls reach, for the boot log (m5-botw-vr's first VR start had a green screen, and
-		// no sign that BetterVR's hooks ever ran): its vkGetDeviceProcAddr, and its color clears, the
-		// call that starts VR in BetterVR (hooking/framebuffer.cpp)
-		PFN_vkGetDeviceProcAddr s_layerGetDeviceProcAddr = nullptr;
-		PFN_vkCmdClearColorImage s_layerClear = nullptr;
-		std::atomic<int> s_clears{0}, s_magicClears{0};
+		VkDevice s_device = VK_NULL_HANDLE; // the device created through the layer
 		std::atomic<bool> s_deviceProcLogged{false};
 
-		bool Magic(const VkClearColorValue* color)
-		{
-			// BetterVR's graphic pack marks an eye's clear: green about 0.125 and blue about 0.98, or swapped
-			const float g = color->float32[1], b = color->float32[2];
-			return (g >= 0.12f && g <= 0.13f && b >= 0.97f && b <= 0.99f) || (b >= 0.12f && b <= 0.13f && g >= 0.97f && g <= 0.99f);
-		}
-
-		VKAPI_ATTR void VKAPI_CALL ClearSpy(VkCommandBuffer commands, VkImage image, VkImageLayout layout, const VkClearColorValue* color,
-			uint32_t count, const VkImageSubresourceRange* ranges)
-		{
-			if (s_clears.fetch_add(1) == 0)
-				PS5Cemu_LogLine("[vr] Cemu's first vkCmdClearColorImage, on its way to BetterVR's layer");
-			if (color && Magic(color) && s_magicClears.fetch_add(1) < 3)
-				PS5Cemu_LogLine("[vr] Cemu clears with BetterVR's eye colour (" + std::to_string(color->float32[0]) + ", " +
-					std::to_string(color->float32[1]) + ", " + std::to_string(color->float32[2]) + ", " + std::to_string(color->float32[3]) +
-					"), " + std::to_string(s_clears.load()) + " clears so far");
-			s_layerClear(commands, image, layout, color, count, ranges);
-		}
-
+		// Device functions come from the layer's own vkGetDeviceProcAddr, the one negotiation gives, as a
+		// loader takes them: vkroots' vkGetInstanceProcAddr answers instance functions only and hands
+		// the rest to the next one down, RADV's. m5-botw-vr and m6-vr-diag gave Cemu RADV's
+		// vkGetDeviceProcAddr that way, so none of BetterVR's device hooks ran, VR never started, and
+		// the graphic pack's eye colours stayed on screen (the green screen).
 		VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL GetDeviceProcAddr(VkDevice device, const char* name)
 		{
 			if (!s_deviceProcLogged.exchange(true))
 				PS5Cemu_LogLine(std::string("[vr] Cemu takes its device functions from BetterVR's layer (the first: ") + name + ")");
-			const PFN_vkVoidFunction function = s_layerGetDeviceProcAddr(device, name);
-			if (function && std::strcmp(name, "vkCmdClearColorImage") == 0)
+			return s_layerDevice(device, name);
+		}
+
+		// The device functions Cemu takes from vkGetInstanceProcAddr (VulkanAPI.h's VKFUNC_INSTANCE): a
+		// loader's trampolines, which go through the layer for the device they are called on. There is
+		// one device through the layer, so a queue's is that one.
+		template <typename Function>
+		Function Layer(VkDevice device, const char* name)
+		{
+			return reinterpret_cast<Function>(s_layerDevice(device != VK_NULL_HANDLE ? device : s_device, name));
+		}
+		VKAPI_ATTR VkResult VKAPI_CALL QueuePresent(VkQueue queue, const VkPresentInfoKHR* info)
+		{
+			static const auto present = Layer<PFN_vkQueuePresentKHR>(VK_NULL_HANDLE, "vkQueuePresentKHR");
+			return present(queue, info);
+		}
+		VKAPI_ATTR VkResult VKAPI_CALL DeviceWaitIdle(VkDevice device)
+		{
+			return Layer<PFN_vkDeviceWaitIdle>(device, "vkDeviceWaitIdle")(device);
+		}
+		VKAPI_ATTR VkResult VKAPI_CALL SetObjectName(VkDevice device, const VkDebugUtilsObjectNameInfoEXT* info)
+		{
+			const auto name = Layer<PFN_vkSetDebugUtilsObjectNameEXT>(device, "vkSetDebugUtilsObjectNameEXT");
+			return name ? name(device, info) : VK_SUCCESS;
+		}
+		VKAPI_ATTR void VKAPI_CALL DestroyDevice(VkDevice device, const VkAllocationCallbacks* allocator)
+		{
+			const auto destroy = Layer<PFN_vkDestroyDevice>(device, "vkDestroyDevice");
 			{
-				s_layerClear = reinterpret_cast<PFN_vkCmdClearColorImage>(function);
-				return reinterpret_cast<PFN_vkVoidFunction>(&ClearSpy);
+				std::lock_guard lock(s_lock);
+				if (device == s_device)
+					s_device = VK_NULL_HANDLE;
 			}
-			return function;
+			destroy(device, allocator);
 		}
 
 		bool Negotiate()
@@ -89,7 +99,7 @@ namespace ps5bettervr
 			negotiate.sType = LAYER_NEGOTIATE_INTERFACE_STRUCT;
 			negotiate.loaderLayerInterfaceVersion = CURRENT_LOADER_LAYER_INTERFACE_VERSION;
 			const VkResult result = VRLayer_NegotiateLoaderLayerInterfaceVersion(&negotiate);
-			if (result != VK_SUCCESS || !negotiate.pfnGetInstanceProcAddr)
+			if (result != VK_SUCCESS || !negotiate.pfnGetInstanceProcAddr || !negotiate.pfnGetDeviceProcAddr)
 			{
 				PS5Cemu_LogLine("[vr] BetterVR's Vulkan layer did not negotiate (" + std::to_string((int)result) + "): Cemu goes without it");
 				return false;
@@ -144,6 +154,11 @@ namespace ps5bettervr
 			auto layerCreate = (PFN_vkCreateDevice)s_layerInstance(s_instance, "vkCreateDevice");
 			const VkResult result = layerCreate(physical, &withLayer, allocator, device);
 			PS5Cemu_LogLine("[vr] Cemu's Vulkan device through BetterVR's layer: " + std::to_string((int)result));
+			if (result == VK_SUCCESS)
+			{
+				std::lock_guard lock(s_lock);
+				s_device = *device;
+			}
 			return result;
 		}
 
@@ -180,10 +195,15 @@ namespace ps5bettervr
 			if (std::strcmp(name, "vkDestroyInstance") == 0)
 				return reinterpret_cast<PFN_vkVoidFunction>(&DestroyInstance);
 			if (std::strcmp(name, "vkGetDeviceProcAddr") == 0)
-			{
-				s_layerGetDeviceProcAddr = reinterpret_cast<PFN_vkGetDeviceProcAddr>(s_layerInstance(instance, name));
-				return s_layerGetDeviceProcAddr ? reinterpret_cast<PFN_vkVoidFunction>(&GetDeviceProcAddr) : nullptr;
-			}
+				return reinterpret_cast<PFN_vkVoidFunction>(&GetDeviceProcAddr);
+			if (std::strcmp(name, "vkQueuePresentKHR") == 0)
+				return reinterpret_cast<PFN_vkVoidFunction>(&QueuePresent);
+			if (std::strcmp(name, "vkDeviceWaitIdle") == 0)
+				return reinterpret_cast<PFN_vkVoidFunction>(&DeviceWaitIdle);
+			if (std::strcmp(name, "vkSetDebugUtilsObjectNameEXT") == 0)
+				return reinterpret_cast<PFN_vkVoidFunction>(&SetObjectName);
+			if (std::strcmp(name, "vkDestroyDevice") == 0)
+				return reinterpret_cast<PFN_vkVoidFunction>(&DestroyDevice);
 			return s_layerInstance(instance, name);
 		}
 	}
