@@ -2,7 +2,6 @@
 #include "VrPS5.h"
 #include "../app/paths.h"
 #include "../app/own_status.h"
-#include "Cafe/CafeSystem.h"
 #include "hmd2.h"
 
 #include <fmt/format.h>
@@ -15,6 +14,8 @@
 #include <string>
 #include <string_view>
 
+// Cemu's (Cafe/CafeSystem.h, which needs Cemu's precompiled header): the game being started
+namespace CafeSystem { uint64_t GetForegroundTitleId(); }
 // the port's (ps5/log.cpp): a line of the boot log
 void PS5Cemu_LogLine(std::string_view line);
 
