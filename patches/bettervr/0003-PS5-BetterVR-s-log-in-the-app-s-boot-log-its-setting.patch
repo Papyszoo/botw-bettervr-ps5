@@ -1,0 +1,124 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Patryk <papyszoo@gmail.com>
+Date: Wed, 4 Nov 2026 19:05:45 +0000
+Subject: [PATCH] PS5: BetterVR's log in the app's boot log, its settings in
+ the app's data folder
+
+The PS5 app's working directory is not writable, and stderr reaches its boot log only as the driver's
+lines: BetterVR's lines go to the boot log as [bettervr] lines (PS5Cemu_LogLine), and its ImGui ini
+to BetterVR_PS5_SettingsPath (beside bettervr.json). BETTERVR_SETTINGS_INI keeps the file name the
+other platforms use.
+---
+ include/platform/pch_posix.h   |  9 +++++++++
+ include/platform/pch_win32.h   |  3 +++
+ src/hooking/imgui_menus.cpp    |  4 ++--
+ src/rendering/vulkan_imgui.cpp |  4 ++--
+ src/utils/logger.cpp           | 12 ++++++++++++
+ 5 files changed, 28 insertions(+), 4 deletions(-)
+
+diff --git a/include/platform/pch_posix.h b/include/platform/pch_posix.h
+index 6ca879d..1d16259 100644
+--- a/include/platform/pch_posix.h
++++ b/include/platform/pch_posix.h
+@@ -34,5 +34,14 @@ namespace ps5xr { std::mutex& QueueMutex(); }
+ #define BETTERVR_PS5_QUEUE_LOCK() ((void)0)
+ #endif
+ 
++// BotW-BetterVR on PS5: BetterVR's settings (ImGui's ini) in the app's data folder, beside
++// bettervr.json, as the app's working directory is not writable (port/bettervr/VrPS5.cpp)
++#ifdef __PROSPERO__
++extern "C" const char* BetterVR_PS5_SettingsPath();
++#define BETTERVR_SETTINGS_INI BetterVR_PS5_SettingsPath()
++#else
++#define BETTERVR_SETTINGS_INI "BetterVR_settings.ini"
++#endif
++
+ // Backend selection consumed by the shared OpenXR includes in pch.h
+ #define XR_USE_GRAPHICS_API_VULKAN
+diff --git a/include/platform/pch_win32.h b/include/platform/pch_win32.h
+index 6eb82cd..5e329ad 100644
+--- a/include/platform/pch_win32.h
++++ b/include/platform/pch_win32.h
+@@ -40,3 +40,6 @@ inline std::string wcharToUtf8(const wchar_t* wstr) {
+     WideCharToMultiByte(CP_UTF8, 0, wstr, -1, &str[0], size_needed, nullptr, nullptr);
+     return str;
+ }
++
++// BetterVR's settings (ImGui's ini), in the working directory (the PS5 puts them elsewhere: pch_posix.h)
++#define BETTERVR_SETTINGS_INI "BetterVR_settings.ini"
+diff --git a/src/hooking/imgui_menus.cpp b/src/hooking/imgui_menus.cpp
+index adf36c2..027d4ba 100644
+--- a/src/hooking/imgui_menus.cpp
++++ b/src/hooking/imgui_menus.cpp
+@@ -1397,7 +1397,7 @@ static void DrawTutorialPromptAndControllerVerification(bool isMenuOpen) {
+     if (!settings.tutorialPromptShown) {
+         if (isMenuOpen || ImGui::GetTime() > timeLimit) {
+             settings.tutorialPromptShown = true;
+-            ImGui::SaveIniSettingsToDisk("BetterVR_settings.ini");
++            ImGui::SaveIniSettingsToDisk(BETTERVR_SETTINGS_INI);
+         }
+     }
+ 
+@@ -1553,7 +1553,7 @@ void RND_Renderer::ImGuiOverlay::DrawHelpMenu() {
+ 
+         if (changed) {
+             shouldLogSavedSettingsOnClose = true;
+-            ImGui::SaveIniSettingsToDisk("BetterVR_settings.ini");
++            ImGui::SaveIniSettingsToDisk(BETTERVR_SETTINGS_INI);
+         }
+ 
+         ImGui::Separator();
+diff --git a/src/rendering/vulkan_imgui.cpp b/src/rendering/vulkan_imgui.cpp
+index b6e7530..51ce7af 100644
+--- a/src/rendering/vulkan_imgui.cpp
++++ b/src/rendering/vulkan_imgui.cpp
+@@ -62,9 +62,9 @@ RND_Renderer::ImGuiOverlay::ImGuiOverlay(VkCommandBuffer cb, VkExtent2D fbRes, V
+     ImGui::CreateContext();
+     ImGui::GetPlatformIO().Platform_OpenInShellFn = &OpenLinkInShell;
+     Log::print<INFO>("Installed the ImGui link handler, links in the mod menu can open a browser");
+-    ImGui::GetIO().IniFilename = "BetterVR_settings.ini";
++    ImGui::GetIO().IniFilename = BETTERVR_SETTINGS_INI;
+     InitSettings();
+-    ImGui::LoadIniSettingsFromDisk("BetterVR_settings.ini");
++    ImGui::LoadIniSettingsFromDisk(BETTERVR_SETTINGS_INI);
+     ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
+ 
+     ImFontConfig fontCfg{};
+diff --git a/src/utils/logger.cpp b/src/utils/logger.cpp
+index 3fb6f0e..56fdf9d 100644
+--- a/src/utils/logger.cpp
++++ b/src/utils/logger.cpp
+@@ -3,6 +3,11 @@
+ #include "logger.h"
+ #include <fstream>
+ 
++#ifdef __PROSPERO__
++#include <string_view>
++void PS5Cemu_LogLine(std::string_view line); // the PS5 app's (port/ps5/log.cpp)
++#endif
++
+ #ifdef _WIN32
+ // FILE_APPEND_DATA without FILE_WRITE_DATA is what makes each write an atomic append, so the layer,
+ // the launcher and Cemu's stderr can share one file. Adding FILE_WRITE_DATA breaks that.
+@@ -472,6 +477,11 @@ void Log::submit(LogType type, std::string_view message) {
+     if (s_linuxShowThreadIds.load(std::memory_order_relaxed)) {
+         line += std::format("[{}] ", std::hash<std::thread::id>{}(std::this_thread::get_id()));
+     }
++#ifdef __PROSPERO__
++    // the PS5 app's boot log (/data/ps5cemu/logs/boot.log): stderr reaches it only as the driver's lines
++    PS5Cemu_LogLine(std::format("[bettervr] [{}] {}", LinuxLogTypeName(type), message));
++    return;
++#endif
+     line += std::format("[{:<7}] {}\n", LinuxLogTypeName(type), message);
+     if (s_linuxLogFile.is_open()) {
+         s_linuxLogFile << line;
+@@ -481,7 +491,9 @@ void Log::submit(LogType type, std::string_view message) {
+ }
+ 
+ Log::Log() {
++#ifndef __PROSPERO__ // the PS5 app's working directory is not writable: the boot log has these lines
+     s_linuxLogFile.open("BetterVR_log.txt", std::ios::out | std::ios::trunc);
++#endif
+     Log::print<INFO>("Successfully started BetterVR!");
+     LogSystemHardwareInfo();
+ }

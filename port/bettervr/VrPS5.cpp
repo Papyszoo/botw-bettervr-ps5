@@ -536,6 +536,14 @@ void PS5Cemu_BetterVRPrepareGraphicPack()
 	ps5vr::Log(fmt::format("BetterVR's graphic pack in {}{}", (target / "BreathOfTheWild_BetterVR").string(), ec ? " failed: " + ec.message() : ""));
 }
 
+// BetterVR's own settings (its ImGui ini, patches/bettervr): beside bettervr.json, as the app's working
+// directory is not writable
+extern "C" const char* BetterVR_PS5_SettingsPath()
+{
+	static const std::string path = ps5paths::Root() + "/bettervr_settings.ini";
+	return path.c_str();
+}
+
 // port/bettervr/xr/runtime.cpp, in BetterVR's object
 extern "C" void BetterVR_PS5_Stop();
 
