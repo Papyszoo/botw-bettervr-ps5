@@ -1,7 +1,8 @@
 # Breath of the Wild in VR on PS5: what you need and where it goes
 
-Everything needed to play BotW-BetterVR on a jailbroken PS5 with PlayStation VR2, from this fork's
-pre-releases. **Nobody has run these builds on a console yet** (see `STATUS.md`): this page says how
+Everything needed to play BotW-BetterVR on a jailbroken PS5 with PlayStation VR2, with this fork's
+app, **Breath of the Wild VR** (title ID `PPSA98720`, from the `m5-botw-vr` pre-release on). It is
+an app of its own: it sits next to PS5-ECAM, if you have it, and shares nothing with it. **Nobody has run these builds on a console yet** (see `STATUS.md`): this page says how
 they are meant to be set up, not what has been seen to work.
 
 Nothing from Nintendo or Sony comes with the app. You bring the game, dumped from your own Wii U
@@ -11,8 +12,8 @@ disc or console.
 
 | | What | Notes |
 | --- | --- | --- |
-| Console | A PS5 that runs homebrew, with a HEN and elfldr | The same setup PS5-ECAM needs ([HEN setup](../HEN-SETUP.md)). |
-| HEN list | `PPSA99360` in your HEN's app jailbreak list | Already there if PS5-ECAM runs on your console. Without it Cemu gets no JIT and runs far too slowly for VR. |
+| Console | A PS5 that runs homebrew, with a HEN, elfldr and ShadowMount Plus | The same setup PS5-ECAM needs ([HEN setup](../HEN-SETUP.md)). |
+| HEN list | **`PPSA98720`** added to your HEN's app jailbreak list | New for this app: PS5-ECAM's `PPSA99360` there doesn't cover it. etaHEN: its app jailbreak list; OnionHEN: the end of `exact_title_ids` in its config, with no comma after it. Without it Cemu gets no JIT and runs far too slowly for VR. |
 | Headset | PS VR2, plugged in and set up in the PS5's settings | Its first-time setup (play area, eye distance) done once from the PS5's own menus. |
 | Controllers | Both PS VR2 Sense controllers, paired and charged | From `m4-sense` on. A DualSense works too, as the Wii U GamePad. |
 | Game | **The Legend of Zelda: Breath of the Wild, Wii U version** | Any region: USA, Europe or Japan. Not the Switch version. |
@@ -50,25 +51,32 @@ BotW's title IDs, if a tool asks or to check that a dump is complete:
 
 ## 3. Where the files go
 
-The Wii U side's folder is **`/data/cemu`** on an install made with 5.1 or newer. An older install
-keeps using **`/data/ps5cemu`** until you choose Reorganize. **Settings > Game files** on the Wii U
-side shows which folder yours uses. Below, `<cemu>` is that folder.
+Everything of this app's is in **`/data/botwvr`**:
 
 ```text
-<cemu>/
-├── games/                          the game: a .wua, a .wud/.wux, or an unpacked folder
-│   └── The Legend of Zelda Breath of the Wild.wua
-├── updates/                        an unpacked update v208 (if it isn't inside your WUA)
-│   └── BotW Update v208/
-│       ├── code/  content/  meta/
-├── dlc/                            an unpacked DLC (optional)
-│   └── BotW DLC/
-│       ├── code/  content/  meta/
-└── keys.txt                        only for an encrypted WUD/WUX
+/data/botwvr/
+├── cemu/
+│   ├── games/                      the game: a .wua, a .wud/.wux, or an unpacked folder
+│   │   └── The Legend of Zelda Breath of the Wild.wua
+│   ├── updates/                    an unpacked update v208 (if it isn't inside your WUA)
+│   │   └── BotW Update v208/
+│   │       ├── code/  content/  meta/
+│   ├── dlc/                        an unpacked DLC (optional)
+│   │   └── BotW DLC/
+│   │       ├── code/  content/  meta/
+│   ├── keys.txt                    only for an encrypted WUD/WUX
+│   └── mlc01/                      Cemu's storage: installed update and DLC, and your saves
+└── launcher/
+    ├── bettervr.json               the VR switch (section 7)
+    └── logs/boot.log
 ```
 
-Folder and file names don't matter: the app reads the title ID inside each one. `games/` can be
-another folder, or a USB drive: pick it in **Settings > Game files**.
+The app makes these folders on its first start; you can also make them yourself. Folder and file
+names inside `games/`, `updates/` and `dlc/` don't matter: the app reads the title ID inside each
+one. The games folder can also be another folder or a USB drive: **Settings > Game files**.
+
+With the app installed on a USB drive instead, the same two folders are in `BotWVR/` at the top of
+that drive.
 
 **keys.txt** (only for WUD/WUX). One line per disc. The line is the disc key as 32 hexadecimal
 characters, optionally followed by a comment:
@@ -80,17 +88,15 @@ characters, optionally followed by a comment:
 The disc key is the one your disc-dumping tool saved next to the image, often as `game.key` (16
 bytes). Turn it into hex with `xxd -p game.key` on a PC.
 
-**The VR switch** is in the launcher's folder, **`/data/ps5cemu`**, even on an install whose Wii U
-folder is `/data/cemu`. (With the app installed on a USB drive, it is the drive's
-`PS5CEMU-HAR-data` folder instead.)
+**Coming from PS5-ECAM?** Your BotW there is in `/data/cemu` (or `/data/ps5cemu` on an older
+install). To take it over, copy:
 
-```text
-/data/ps5cemu/bettervr.json
-```
+- the game file into `/data/botwvr/cemu/games/`;
+- `mlc01/usr/title/0005000e/101c9x00` (the installed update), `mlc01/usr/title/0005000c/101c9x00`
+  (DLC) and `mlc01/usr/save/00050000/101c9x00` (your saves) into the same places under
+  `/data/botwvr/cemu/mlc01/`. `x` is 4 for USA, 5 for Europe, 3 for Japan.
 
-```json
-{"vr": true}
-```
+Copying, not moving, leaves PS5-ECAM's copy as it was.
 
 ### Getting the files onto the PS5
 
@@ -99,8 +105,8 @@ Any of these:
 - **FTP**, from a PC, with your HEN's FTP server.
 - **A USB drive** (exFAT): put the game in a folder on it and choose that folder in **Settings > Game
   files**, or copy it across with a file manager on the PS5.
-- **The app's upload page**, from a phone or PC browser: on the Wii U side turn on **Settings > System
-  > Remote touch screen**, then open `http://<the PS5's address>:8080/files`, choose the Wii U games
+- **The app's upload page**, from a phone or PC browser: turn on **Settings > System > Remote touch
+  screen**, then open `http://<the PS5's address>:8080/files`, choose the Wii U games
   folder and send the file. It takes WUA, WUD/WUX and archives, not loose folders. `bettervr.json` and `keys.txt` go over
   FTP.
 
@@ -108,32 +114,41 @@ Any of these:
 
 Skip this if your WUA already has update v208 in it.
 
-1. Start the app and go to the **Wii U** side (touchpad click switches sides).
-2. **Settings > Game files > Updates, DLC and mods.** It lists what it found in `<cemu>/updates`,
-   `<cemu>/dlc`, your games folder, USB drives and `/data`.
+1. Start the app.
+2. **Settings > Game files > Updates, DLC and mods.** It lists what it found in `cemu/updates`,
+   `cemu/dlc`, your games folder, USB drives and `/data`.
 3. Choose the update with Cross (or Square for everything new). It is copied into Cemu's storage
-   (`<cemu>/mlc01`). This takes a few minutes for BotW's 3 GB update.
+   (`/data/botwvr/cemu/mlc01`). This takes a few minutes for BotW's 3 GB update.
 4. In the Library, Breath of the Wild's page should now show update **v208**.
 
 ## 5. Install this build
 
-1. From the pre-release (the newest is `m4-sense`), download `PS5-ECAM-v5.1.1.zip` and `SHA256SUMS`,
+1. From the pre-release (`m5-botw-vr` or newer), download `BotW-VR-v5.1.1.zip` and `SHA256SUMS`,
    and check them on a PC:
 
    ```bash
    sha256sum -c SHA256SUMS --ignore-missing
    ```
 
-2. Copy the zip's `PPSA99360` folder over `/data/homebrew/PPSA99360`. It replaces PS5-ECAM (same
-   title ID); your games, saves and settings stay.
-3. **If the app offers an update, decline it**, with **Skip this version** so it stops asking.
-   Accepting would put premohq's PS5-ECAM back over this build.
+2. Copy the zip's `PPSA98720` folder to `/data/homebrew/PPSA98720`. PS5-ECAM, in
+   `/data/homebrew/PPSA99360`, stays as it is.
+3. Let ShadowMount Plus put it on the home screen, as for any homebrew. It shows as **Breath of the
+   Wild VR**.
+4. It doesn't update itself: newer builds are this repository's pre-releases, copied over the same
+   way.
+
+**The tile and background.** The app comes with a plain picture of its own (nothing of Nintendo's
+can be in it). Once it has found your Breath of the Wild, it makes its tile from the game's box art
+(GameTDB's, or the game's own icon) and its home screen background from the game's boot screen,
+and writes them into its own folder. Whether the home screen shows them at once, after a restart,
+or only once ShadowMount Plus puts the app on the home screen again is not known yet (Test
+request 5).
 
 ## 6. First start, flat
 
 Do this once without VR, so a problem with the game itself doesn't look like a VR problem.
 
-1. With no `bettervr.json` (or `{"vr": false}`), start the app, open the Wii U side and start BotW.
+1. With no `bettervr.json` (or `{"vr": false}`), start the app and start BotW.
    Check that it gets in-game. The first start builds shaders and stutters; that's normal.
 2. Back in the Library: **Options** on the game > **Graphic packs** >
    **The Legend of Zelda: Breath of the Wild**. Turn **Mods > FPS++** on, with its FPS limit at 120
@@ -142,7 +157,7 @@ Do this once without VR, so a problem with the game itself doesn't look like a V
 
 ## 7. VR
 
-1. Put `{"vr": true}` in `/data/ps5cemu/bettervr.json`.
+1. Put `{"vr": true}` in `/data/botwvr/launcher/bettervr.json`.
 2. **Close the app and start it again.** BetterVR's graphic pack is put in place when the app starts.
 3. In BotW's graphic packs, **Better VR** should now be listed and on, next to FPS++.
 4. Turn on both Sense controllers, put on the headset, and start the game.
@@ -165,6 +180,6 @@ To play flat again, set `{"vr": false}` and restart the app.
 - **Better VR isn't in the graphic packs:** the app wasn't restarted after `bettervr.json` changed,
   or the file isn't valid JSON (check the quotes).
 - **It crashes at the title screen with BetterVR:** FPS++ off, or an update other than v208.
-- **Logs:** Settings > Diagnostics > **Copy logs to USB**, or `/data/ps5cemu/logs/boot.log` over FTP.
+- **Logs:** Settings > Diagnostics > **Copy logs to USB**, or `/data/botwvr/launcher/logs/boot.log` over FTP.
   VR's lines start with `[vr]`, `[vr-xr]` and `[bettervr]`. `STATUS.md`'s Test requests say which
   ones to send.
