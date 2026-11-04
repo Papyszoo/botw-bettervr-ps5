@@ -252,6 +252,7 @@ namespace ps5shell
 		// BotW VR (port/bettervr/TileArt.cpp): the app's tile and background from Breath of the Wild, once
 		void PollBotwArt();
 		bool m_botwArtDone = false;
+		bool m_botwHomeOpened = false; // its page opened as the Library first showed
 		// The backdrop's picture (7.4): a Wii U game's boot screen (looked for at most one a frame,
 		// sharing the icons' budget: each mounts the game), else the box art
 		std::string BackdropOf(Game& game);

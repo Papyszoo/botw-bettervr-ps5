@@ -1137,3 +1137,16 @@ namespace ps5rooms
 	Status Get() { return {false, true, {}, {}}; }
 	bool ValidNickname(const std::string& name) { return name.size() >= 4 && name.size() <= 20; }
 }
+
+// EmulationStation and the libretro cores, which the preview leaves out
+#include "esde/esde.h"
+#include "libretro/plays.h"
+namespace ps5esde
+{
+	bool Available() { return false; }
+	void BackToFrontend(const ps5settings::Launcher&, const std::string&) {}
+}
+namespace ps5libretro
+{
+	bool Plays(int) { return false; }
+}

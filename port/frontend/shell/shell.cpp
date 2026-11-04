@@ -32,7 +32,7 @@
 #include <utility>
 
 // BotW VR: the app's home screen tile and background from Breath of the Wild (port/bettervr/TileArt.cpp)
-void PS5Cemu_BotwTileArt(const std::string& cover, const std::string& bootScreen);
+__attribute__((weak)) void PS5Cemu_BotwTileArt(const std::string& cover, const std::string& bootScreen); // weak: not in the PC preview
 
 namespace ps5shell
 {
@@ -1120,6 +1120,15 @@ namespace ps5shell
 
 	void Shell::PollBotwArt()
 	{
+		// BotW VR's home: Breath of the Wild's page, once, as the Library first shows it
+		if (!m_botwHomeOpened && IsWiiU() && m_screen == ScreenId::Library)
+			for (const uint64_t titleId : {0x00050000101C9400ull, 0x00050000101C9500ull, 0x00050000101C9300ull})
+				if (const int index = FindGame(titleId); index >= 0)
+				{
+					m_botwHomeOpened = true;
+					HubOpen(index, ScreenId::Library);
+					break;
+				}
 		// Breath of the Wild's USA, Europe and Japan title IDs; its icon and boot screen mount the game,
 		// one a frame (IconOf, BackdropOf), so this comes back until both were looked for
 		if (m_botwArtDone || !IsWiiU() || !m_status.coreReady)
@@ -1137,7 +1146,9 @@ namespace ps5shell
 			if (!game.bootScreenLooked)
 				return;
 			const std::string cover = !game.boxArt.empty() && IsFile(game.boxArt) ? game.boxArt : icon;
-			PS5Cemu_BotwTileArt(cover, game.bootScreen);
+			ps5log::Line("[vr] home screen pictures from Breath of the Wild: cover \"{}\", boot screen \"{}\"", cover, game.bootScreen);
+			if (PS5Cemu_BotwTileArt)
+				PS5Cemu_BotwTileArt(cover, game.bootScreen);
 			m_botwArtDone = true;
 			return;
 		}

@@ -11,6 +11,11 @@
 #include <algorithm>
 #include <cmath>
 
+// BotW VR (port/bettervr/VrPS5.cpp): bettervr.json's "vr" for Play in VR and Play on TV; weak, as the
+// launcher's PC preview has none
+__attribute__((weak)) void PS5Cemu_SetVrMode(bool vr);
+__attribute__((weak)) bool PS5Cemu_VrModeOn();
+
 namespace ps5shell
 {
 	using namespace ui::tokens;
@@ -19,6 +24,12 @@ namespace ps5shell
 	namespace
 	{
 		constexpr float kAboutTop = 590, kAboutHeight = 250, kAboutWidth = 640;
+
+		// BotW VR: Breath of the Wild's page has Play in VR and Play on TV in place of Play
+		bool BreathOfTheWild(uint64_t titleId)
+		{
+			return titleId == 0x00050000101C9300ull || titleId == 0x00050000101C9400ull || titleId == 0x00050000101C9500ull;
+		}
 	}
 
 	void Shell::HubOpen(int game, ScreenId from)
@@ -44,9 +55,11 @@ namespace ps5shell
 			return;
 		}
 		const Button b = press.button;
-		// Play, Graphic packs (the Wii U's), Game settings, the Game menu
+		// Play (for Breath of the Wild, Play in VR and Play on TV), Graphic packs (the Wii U's), Game
+		// settings, the Game menu
 		const bool packs = IsWiiU() && m_status.coreReady;
-		const int actions = packs ? 4 : 3;
+		const int plays = BreathOfTheWild(m_games[m_hubGame].entry.game.titleId) ? 2 : 1;
+		const int actions = (packs ? 4 : 3) + plays - 1;
 		switch (b)
 		{
 		case Button::Circle:
@@ -128,9 +141,13 @@ namespace ps5shell
 				m_hubAbout = false;
 				m_feedback.Play(ui::Cue::Focus);
 			}
-			else if (m_hubAction == 0)
+			else if (m_hubAction < plays)
+			{
+				if (plays == 2 && PS5Cemu_SetVrMode)
+					PS5Cemu_SetVrMode(m_hubAction == 0);
 				Launch(m_hubGame);
-			else if (packs && m_hubAction == 1)
+			}
+			else if (packs && m_hubAction == plays)
 			{
 				m_feedback.Play(ui::Cue::Select);
 				PacksOpen(m_hubGame, ScreenId::Hub);
@@ -228,17 +245,34 @@ namespace ps5shell
 
 		// the actions
 		const bool packs = wiiu && m_status.coreReady;
-		const int actions = packs ? 4 : 3;
+		const int plays = BreathOfTheWild(g.titleId) ? 2 : 1;
+		const int actions = (packs ? 4 : 3) + plays - 1;
 		m_hubAction = std::clamp(m_hubAction, 0, actions - 1);
 		const float ay = cy + 72;
-		Box b = PillButton(canvas, x, ay, Tr("Play"), true, !m_hubAbout && m_hubAction == 0, Icon::Play, true, 72, 420);
-		float bx = b.Right() + 20;
+		Box b;
+		float bx = x;
+		if (plays == 2)
+		{
+			// both there, Play in VR first; the mode bettervr.json has now is the one drawn as primary
+			const bool vr = !PS5Cemu_VrModeOn || PS5Cemu_VrModeOn();
+			// tr: Breath of the Wild's page in BotW VR: start the game in the PS VR2 headset
+			b = PillButton(canvas, bx, ay, Tr("Play in VR"), vr, !m_hubAbout && m_hubAction == 0, Icon::Play, true, 72, 420);
+			bx = b.Right() + 20;
+			// tr: Breath of the Wild's page in BotW VR: start the game on the TV, without the headset
+			b = PillButton(canvas, bx, ay, Tr("Play on TV"), !vr, !m_hubAbout && m_hubAction == 1, Icon::Play, !vr, 72, 360);
+			bx = b.Right() + 20;
+		}
+		else
+		{
+			b = PillButton(canvas, x, ay, Tr("Play"), true, !m_hubAbout && m_hubAction == 0, Icon::Play, true, 72, 420);
+			bx = b.Right() + 20;
+		}
 		if (packs)
 		{
 			if (game.packsOn < 0 && m_status.coreReady)
 				game.packsOn = ps5emu::EnabledGraphicPackCount(g.titleId);
 			b = PillButton(canvas, bx, ay, game.packsOn > 0 ? TrP(game.packsOn, "Graphic packs · {0} on", "Graphic packs · {0} on") : std::string(Tr("Graphic packs")),
-				false, !m_hubAbout && m_hubAction == 1, Icon::Play, false, 72, 620);
+				false, !m_hubAbout && m_hubAction == plays, Icon::Play, false, 72, plays == 2 ? 420 : 620);
 			bx = b.Right() + 20;
 		}
 		const bool own = m_settings.games.count(ps5settings::GameKey(ps5launcher::SideName(m_side), g.titleId)) > 0;

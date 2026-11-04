@@ -294,11 +294,16 @@ namespace
 		const std::string marker = ps5paths::Root() + "/bettervr-art.txt";
 		const std::string wanted = Signature(cover) + "\n" + Signature(bootScreen) + "\n";
 		if (ReadFile(marker, 4096) == std::vector<uint8_t>(wanted.begin(), wanted.end()))
+		{
+			ps5log::Line("[vr] home screen pictures: made already from these ({})", marker);
 			return;
+		}
 		const std::string sceSys = WritableAppDir() + "/sce_sys";
 		bool made = false;
 		std::vector<uint8_t> rgba;
-		if (!cover.empty() && ui::SquarePicture(cover, kIconSize, rgba))
+		if (!cover.empty() && !ui::SquarePicture(cover, kIconSize, rgba))
+			ps5log::Line("[vr] home screen tile: {} could not be read", cover);
+		else if (!cover.empty())
 		{
 			std::vector<uint8_t> rgb((size_t)kIconSize * kIconSize * 3), png;
 			for (size_t i = 0, o = 0; i < rgba.size(); i += 4, o += 3)
@@ -317,7 +322,9 @@ namespace
 		}
 		int width = 0, height = 0;
 		std::vector<uint8_t> rgb;
-		if (!bootScreen.empty() && DecodeTga(ReadFile(bootScreen, 16u << 20), width, height, rgb))
+		if (!bootScreen.empty() && !DecodeTga(ReadFile(bootScreen, 16u << 20), width, height, rgb))
+			ps5log::Line("[vr] home screen background: {} could not be read", bootScreen);
+		else if (!bootScreen.empty())
 		{
 			const std::vector<uint8_t> dds = Dds(EncodeBc7(Fill(rgb, width, height)));
 			const bool pic0 = Write(sceSys + "/pic0.dds", dds), pic1 = Write(sceSys + "/pic1.dds", dds);

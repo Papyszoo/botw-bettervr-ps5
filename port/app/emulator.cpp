@@ -89,8 +89,10 @@ extern std::atomic<uint64> g_ps5GpuWaitTicks[6];
 void PS5Cemu_PipelineCacheProgress(uint32& loaded, uint32& queued, uint32& lastIndex);
 // BotW-BetterVR (port/bettervr/VrPS5.h): the PS VR2 headset off, before the process is replaced
 void PS5Cemu_VrStop();
-// BotW-BetterVR (port/bettervr/VrPS5.cpp): BetterVR's graphic pack in graphicPacks/ while bettervr.json asks for it
+// BotW-BetterVR (port/bettervr/VrPS5.cpp): BetterVR's graphic pack in graphicPacks/, and on or off as
+// a game starts, as bettervr.json asks
 void PS5Cemu_BetterVRPrepareGraphicPack();
+void PS5Cemu_BetterVRApplyMode(uint64_t titleId);
 
 namespace ps5emu
 {
@@ -319,7 +321,7 @@ namespace ps5emu
 			GetConfigHandle().Save();
 			if (NetworkConfig::XMLExists())
 				n_config.Load();
-			PS5Cemu_BetterVRPrepareGraphicPack(); // BotW-BetterVR: its pack in graphicPacks/ while bettervr.json asks
+			PS5Cemu_BetterVRPrepareGraphicPack(); // BotW-BetterVR: its pack in graphicPacks/
 			GraphicPack2::LoadAll();
 			InputManager::instance().load();
 			DefaultControllers();
@@ -758,6 +760,7 @@ namespace ps5emu
 	bool LaunchGame(const Game& game, std::string& error)
 	{
 		ps5log::Line("[emu] launching {} ({:016x}) from {}", game.name, game.titleId, _pathToUtf8(game.path));
+		PS5Cemu_BetterVRApplyMode(game.titleId); // BotW VR: BetterVR's pack on for VR, off for the TV
 		ps5ingame::SetGame(game); // the in-game menu's top: its name, box art and GameTDB's facts
 		if (!StartSystem(error))
 			return false;

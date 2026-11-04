@@ -161,6 +161,7 @@ add_library(CemuPS5 STATIC
 	app/side_menu.h
 	app/tga.h
 	bettervr/TileArt.cpp # BotW VR: the home screen tile and background from the player's game
+	bettervr/SensePS5.cpp # BotW VR: the Sense controllers in the launcher's menus
 	azahar/azahar.h
 	app/boxart.cpp
 	azahar/controls.cpp
@@ -306,6 +307,7 @@ set_source_files_properties(
 	app/compatibility.cpp
 	app/gameinfo.cpp
 	bettervr/TileArt.cpp
+	bettervr/SensePS5.cpp
 	azahar/controls.cpp
 	azahar/library.cpp
 	azahar/unavailable.cpp

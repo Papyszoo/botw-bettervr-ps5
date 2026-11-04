@@ -2,10 +2,13 @@
 #include "VrPS5.h"
 #include "../app/paths.h"
 #include "../app/own_status.h"
+#include "../app/emulator.h"
 #include "hmd2.h"
 
 #include <fmt/format.h>
 #include <rapidjson/document.h>
+#include <rapidjson/stringbuffer.h>
+#include <rapidjson/writer.h>
 
 #include <cstdio>
 #include <filesystem>
@@ -505,26 +508,16 @@ extern "C" bool BetterVR_PS5_LayerWanted()
 }
 
 // app/emulator.cpp, before Cemu loads its graphic packs: BetterVR's pack (the app's
-// assets/bettervr, tools/package.sh) in graphicPacks/bettervr while bettervr.json asks for BetterVR,
-// and gone from there otherwise. It is on by default for Breath of the Wild, and its patches call
-// BetterVR's hooks, which only exist while BetterVR runs: left there, it would break the game flat.
+// assets/bettervr, tools/package.sh) in graphicPacks/bettervr, always: the launcher's Play in VR and
+// Play on TV choose between them without a restart, and PS5Cemu_BetterVRApplyMode turns the pack on
+// or off before each start. (It is on by default for Breath of the Wild, and its patches call
+// BetterVR's hooks, which only exist while BetterVR runs: on, it would break the game flat.)
 void PS5Cemu_BetterVRPrepareGraphicPack()
 {
 	namespace fs = std::filesystem;
-	bool betterVR = true;
-	const bool wanted = ps5vr::ReadSwitch(betterVR) && betterVR;
 	const fs::path source = fs::path(ps5paths::AppDir()) / "assets" / "bettervr" / "BreathOfTheWild_BetterVR";
 	const fs::path target = fs::path(ps5paths::CemuRoot()) / "graphicPacks" / "bettervr";
 	std::error_code ec;
-	if (!wanted)
-	{
-		if (ps5files::OwnStatus(target, ec).type() == fs::file_type::directory)
-		{
-			fs::remove_all(target, ec);
-			ps5vr::Log(fmt::format("BetterVR's graphic pack taken out of {} (BetterVR is off){}", target.string(), ec ? ": " + ec.message() : ""));
-		}
-		return;
-	}
 	if (ps5files::OwnStatus(source / "rules.txt", ec).type() != fs::file_type::regular)
 	{
 		ps5vr::Log(fmt::format("BetterVR's graphic pack is not in the app ({}): Breath of the Wild will not start in stereo", source.string()));
@@ -535,6 +528,76 @@ void PS5Cemu_BetterVRPrepareGraphicPack()
 	fs::create_directories(target, ec);
 	fs::copy(source, target / "BreathOfTheWild_BetterVR", fs::copy_options::recursive, ec);
 	ps5vr::Log(fmt::format("BetterVR's graphic pack in {}{}", (target / "BreathOfTheWild_BetterVR").string(), ec ? " failed: " + ec.message() : ""));
+}
+
+// app/emulator.cpp, as a game starts, before Cemu activates its graphic packs: for Breath of the
+// Wild, BetterVR's pack on when bettervr.json asks for BetterVR and off otherwise, and FPS++ on with
+// it (BetterVR crashes without it), as the player would set them in the game's Graphic packs
+void PS5Cemu_BetterVRApplyMode(uint64_t titleId)
+{
+	if (!ps5vr::IsBreathOfTheWild(titleId))
+		return;
+	bool betterVR = true;
+	const bool wanted = ps5vr::ReadSwitch(betterVR) && betterVR;
+	const std::vector<ps5emu::GraphicPackInfo> packs = ps5emu::ListGraphicPacks(titleId);
+	bool found = false;
+	for (size_t i = 0; i < packs.size(); i++)
+	{
+		const bool vrPack = packs[i].name == "Better VR";
+		const bool fpsPack = packs[i].name == "FPS++";
+		if (vrPack)
+			found = true;
+		if ((vrPack && packs[i].enabled != wanted) || (fpsPack && wanted && !packs[i].enabled))
+		{
+			const bool now = ps5emu::ToggleGraphicPack(titleId, i);
+			ps5vr::Log(fmt::format("graphic pack {} turned {} for {}", packs[i].name, now ? "on" : "off", wanted ? "VR" : "the TV"));
+		}
+	}
+	if (wanted && !found)
+		ps5vr::Log("BetterVR's graphic pack is not among Breath of the Wild's: the game will not start in stereo");
+}
+
+// The launcher's Play in VR and Play on TV (frontend/shell/hub.cpp): bettervr.json's "vr" set, its
+// other settings kept
+void PS5Cemu_SetVrMode(bool vr)
+{
+	const std::string path = ps5paths::Root() + "/bettervr.json";
+	rapidjson::Document json;
+	if (std::FILE* file = std::fopen(path.c_str(), "rb"))
+	{
+		std::string text;
+		char chunk[4096];
+		for (size_t got; (got = std::fread(chunk, 1, sizeof(chunk), file)) > 0;)
+			text.append(chunk, got);
+		std::fclose(file);
+		json.Parse(text.c_str());
+	}
+	if (json.HasParseError() || !json.IsObject())
+		json.SetObject();
+	if (json.HasMember("vr"))
+		json["vr"].SetBool(vr);
+	else
+		json.AddMember("vr", vr, json.GetAllocator());
+	rapidjson::StringBuffer buffer;
+	rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+	json.Accept(writer);
+	const std::string temporary = path + ".tmp";
+	if (std::FILE* file = std::fopen(temporary.c_str(), "wb"))
+	{
+		const bool written = std::fwrite(buffer.GetString(), 1, buffer.GetSize(), file) == buffer.GetSize();
+		std::fclose(file);
+		std::error_code ec;
+		if (written)
+			std::filesystem::rename(temporary, path, ec);
+		ps5vr::Log(fmt::format("{}: VR {} from the launcher{}", path, vr ? "on" : "off", written && !ec ? "" : " (not saved)"));
+	}
+}
+
+// Whether bettervr.json has VR on, for the launcher's Play buttons
+bool PS5Cemu_VrModeOn()
+{
+	bool betterVR = true;
+	return ps5vr::ReadSwitch(betterVR);
 }
 
 // Cemu's export for BetterVR, which Cemu defines in src/main.cpp: the PS5's entry point is

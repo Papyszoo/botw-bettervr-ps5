@@ -4,6 +4,10 @@
 #include "input.h"
 #include "../ps5/pad.h"
 
+// BotW VR: the PS VR2 Sense controllers too (port/bettervr/SensePS5.cpp; weak, as the launcher's PC
+// preview has none)
+__attribute__((weak)) bool PS5Cemu_SenseMenuButtons(uint32_t& buttons);
+
 namespace ui
 {
 	namespace
@@ -57,6 +61,13 @@ namespace ui
 				buttons |= ps5pad::kLeft;
 			else if (data.leftX > 192)
 				buttons |= ps5pad::kRight;
+		}
+		if (uint32_t sense = 0; PS5Cemu_SenseMenuButtons && PS5Cemu_SenseMenuButtons(sense))
+		{
+			if (sense & ps5pad::kIntercepted)
+				intercepted = true;
+			else
+				buttons |= sense;
 		}
 		Actions actions;
 		if (intercepted)
