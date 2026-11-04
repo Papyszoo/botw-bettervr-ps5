@@ -3,6 +3,90 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-04: M3 built ahead of the M1 and M2 results, as Patryk asked
+
+**Built, untested on console.** Patryk asked for M3 before Test requests 1 and 2 came back, to try it
+on his PS5. `PLAN.md` says to stop where work builds on a guess about the console, and M3 builds
+on M2 working (hmd2 on Cemu's device, next to the TV's VideoOut), which nobody has seen yet.
+If M2 fails on the console, M3 fails the same way. Test request 3 starts with M2's check for that
+reason.
+
+- **Release:** `m3-stereo` (see below for what is in it).
+- **Choice: option A, a small OpenXR runtime over hmd2** (`port/bettervr/xr/runtime.cpp`), as
+  `PLAN.md` prefers. It keeps BetterVR's code close to upstream: patches/bettervr 0002 and 0003 are
+  about 150 lines, none of them in its renderer's logic.
+- **How it fits together:**
+  - **BetterVR's object:** `tools/build-bettervr.sh` builds BetterVR 0.9.23 (with patches/bettervr
+    0001-0003), its own ImGui 1.91.9 and ImPlot 0.16, and the runtime with the console toolchain
+    into one relocatable object, `build/bettervr/bettervr.o`. Every symbol in it is local but
+    `VRLayer_NegotiateLoaderLayerInterfaceVersion` and `BetterVR_PS5_Stop`, because Cemu links
+    ImGui 1.89.5 of its own. `patches/cemu/0049` adds it to CemuCafe.
+  - **The layer without a loader:** `port/bettervr/VulkanLayerPS5.cpp` is the
+    `vkGetInstanceProcAddr` Cemu is given (one line in `port/cemu/VulkanPS5.cpp`). For Breath of
+    the Wild with BetterVR on, it creates the instance and the device through BetterVR's layer with
+    the loader's link info; everything else takes RADV's functions as before. vkroots keys its
+    tables by the handles themselves, so it needs nothing of a loader's dispatch data.
+  - **Cemu's three exports** (`gameMeta_getTitleId`, `memory_getBase`, `osLib_registerHLEFunction`)
+    are named directly in `include/platform/compat.h` (patch 0002). BetterVR registers its 74 HLE
+    hooks the way upstream does, on the first frame whose magic clear colour its graphic pack draws.
+  - **One queue:** RADV on the PS5 exposes one graphics queue (`radv_physical_device.c`, queueCount
+    1), so BetterVR's three-queue setup falls back to sharing Cemu's, as its own code allows. Patch
+    0002 adds one lock (`ps5xr::QueueMutex`) around every submission and present on it: Cemu's
+    (through the layer's QueueSubmit and QueuePresentKHR), the submit thread's, and the runtime's.
+  - **The runtime:**
+    - It offers `XR_KHR_vulkan_enable`, and `XR_KHR_composition_layer_depth`, which BetterVR
+      requires. The depth it is given is ignored, since Hmd2 reprojects without depth. That's the
+      "make the depth layer optional" step, done on the runtime's side, not BetterVR's.
+    - Views come from hmd2's predicted head pose for the asked time, with the eyes' offsets from
+      the frame's tracker result (half a 63 mm IPD each side until there is one) and hmd2's FOV
+      tangents. Spaces are hmd2's tracker space, whose axes are OpenXR's (+y up, −z forward,
+      metres; photo-splat-vr's `vr_mode.cpp`).
+    - Swapchains are three images each on Cemu's device, 1984×2048 per eye (photo-splat-vr's
+      size).
+    - `xrWaitFrame` is hmd2's `wait_slot` + `begin_frame`. `xrEndFrame` composes the projection
+      layer and the HUD quad into hmd2's eye buffer in one compute pass
+      (`shaders/compose.comp`: sRGB in, sRGB bytes out, the HUD blended by its alpha), waits for
+      it, and calls `hmd2::submit(render pose)`. That's a new overload in `third_party/hmd2`, which
+      sends the head pose the submitted views were located from.
+    - Actions are all inactive, so BetterVR keeps the game's own GamePad input (the DualSense
+      through Cemu, which BetterVR merges with its own) and hands nothing to the hands. The Sense
+      controllers are M4.
+  - **Graphic pack:** `tools/package.sh` puts `resources/BreathOfTheWild_BetterVR` (without its
+    debug patches) in the app's `assets/bettervr`. At start, before Cemu loads its packs, the app
+    copies it to `graphicPacks/bettervr/` while bettervr.json asks for BetterVR, and removes that
+    copy when it doesn't. The pack is on by default, and its patches call BetterVR's hooks, which
+    only exist while BetterVR runs: a leftover copy would break the game flat. FPS++ (which
+    BetterVR needs) comes with the community packs the app downloads; turn it on yourself.
+  - **The switch:** `bettervr.json`'s `{"vr": true}` now means BetterVR for Breath of the Wild, and
+    M2's flat screen for every other game. `{"vr": true, "bettervr": false}` gives Breath of the
+    Wild M2's flat screen, to compare.
+  - **Logs and settings:** BetterVR's lines go to the boot log as `[bettervr] [INFO] …`, the
+    runtime's as `[vr-xr] …`, hmd2's as `[vr-xr] hmd2: …`. BetterVR's settings (its ImGui ini) are
+    in `/data/ps5cemu/bettervr_settings.ini`.
+  - **Stop:** before every LoadExec the app turns the runtime's headset off
+    (`BetterVR_PS5_Stop`), as for M2.
+- **Fixed in BetterVR's Linux backend on the way** (patch 0002): `RND_Renderer::EndSession` was
+  never defined on Linux. A shared library links without it, but one ELF can't. The C++ library
+  differences: formatters now take their context generically, and floats are parsed with `strtod`.
+- **Not done, and why:**
+  - **Controllers** (M4): the hands stay where BetterVR puts them without controller poses.
+  - **BetterVR's own re-presentation thread:** kept. Its submit thread drives `xrWaitFrame`, so
+    Hmd2's pacing paces it; dropping it means changing BetterVR's renderer, and it can wait for a
+    measured reason.
+  - **The desktop mirror:** compiled but off (it is enabled only by an environment variable). The
+    launcher script and Nix build aren't built.
+- **Guesses the console will settle:** all of M2's, plus these.
+  - **Cemu's swapchain image in BetterVR's frame:** never seen on RADV PS5. BetterVR's own capture
+    path on Linux has never been run against the 0.9.21 stereo rewrite either (`FINDINGS.md`).
+  - **Speed:** BetterVR's submit thread copies two 1984×2048 eyes a frame, then the compositor reads
+    them again. That's GPU time the flat game didn't spend. And as there is one queue, the
+    compositor's work waits behind whatever of Cemu's frame is queued before it, and `xrEndFrame`
+    waits for that too. If headset frames come late (the `[vr-xr] N frames: … missed` count), this
+    is the first suspect.
+  - **What happens on a BetterVR error:** `checkAssert` throws, and nothing above Cemu's Vulkan
+    calls catches it, so an error at start ends the app. The boot log's `[bettervr] [ERROR]` line
+    before it says why.
+
 ## 2026-11-01 (second run): M2 built and released as `m2-hmd2-flat`
 
 **Built, untested on console.** No headset or console result exists for any of this.
@@ -183,6 +267,56 @@ Cloud session, scheduled run. Nothing was built for the console and nothing was 
 - **Next:** M1, the baseline build and release (see `PLAN.md`).
 
 ## Open test requests
+
+### Test request 3: Breath of the Wild in stereo through BetterVR (M3)
+
+**Which build.** `m3-stereo`. It includes M2: run Test request 2's headset part with it too (step 3
+below), since M3 can only work if M2's flat screen does.
+
+**Install:**
+
+1. Download `PS5-ECAM-v5.1.1.zip` and `SHA256SUMS` from the pre-release and check them
+   (`sha256sum -c SHA256SUMS --ignore-missing`).
+2. Copy the zip's `PPSA99360` folder over `/data/homebrew/PPSA99360`. It replaces your PS5-ECAM.
+   Don't accept an in-app update.
+
+**Try, in this order** (each step tells the next one something):
+
+1. **Flat:** no `/data/ps5cemu/bettervr.json`. Start Breath of the Wild and play a minute, then
+   quit to the library. It should play as before, with no `[vr]` lines in the boot log. If
+   `graphicPacks/bettervr` is there from an earlier try, it should be gone after this start.
+2. **FPS++:** in Breath of the Wild's graphic packs (Triangle on the game in the library), check
+   that **FPS++ is on**. BetterVR needs it.
+3. **M2's screen, as a baseline:** put `{"vr": true, "bettervr": false}` in
+   `/data/ps5cemu/bettervr.json` (FTP). Restart the app, start the game, and check that the headset
+   shows the flat screen (Test request 2). Quit to the library.
+4. **BetterVR:** change the file to `{"vr": true}`. **Restart the app** (the graphic pack is put in
+   place when the app starts). In the game's graphic packs, **Better VR** should now be listed and
+   on, next to FPS++. Put the headset on and start the game.
+5. Watch: the title screen, loading, then walking around Link's area for a minute or two. Look
+   around and lean, and open the inventory once.
+6. Quit to the library from the in-game menu, then Settings > Diagnostics > Copy logs to USB.
+
+**Send back:**
+
+- **Each step:** what the headset showed. A 3D picture with depth? Does it follow the head
+  (turning and leaning)? Is it the right way up, and are left and right the right way round? Is
+  the HUD visible, and where? Flicker, judder, colours?
+- **TV:** what it showed in step 4.
+- **From `/data/ps5cemu/logs/boot.log`:** every line with `[vr]`, `[vr-xr]` or `[bettervr]`, the
+  `[perf]` lines while it ran, and any `[crash]` lines. If it crashed or froze, the whole boot.log
+  and the step it happened in.
+- **If BetterVR didn't start:** the last `[bettervr] [ERROR]` line, which says why.
+
+**What it decides:**
+
+- **Stereo that follows the head:** M3 is done; M4 (controllers, frame-rate locks, performance) is next.
+- **Upside down, mirrored, or turning the wrong way:** the axes in `runtime.cpp` (a sign or a
+  quaternion order), an easy change.
+- **A flat or broken picture with `[vr-xr] headset up`:** BetterVR's capture of Cemu's frames. The
+  `[bettervr]` lines about "Clearing color image" and swapchains say how far it got.
+- **Nothing in the headset, with M2's screen working in step 3:** the runtime's frame loop. The
+  `[vr-xr] N frames:` pacing lines say whether frames reach Hmd2.
 
 ### Test request 2: the TV's picture in the PS VR2 headset (M2)
 

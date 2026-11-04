@@ -537,6 +537,13 @@ void PS5Cemu_BetterVRPrepareGraphicPack()
 	ps5vr::Log(fmt::format("BetterVR's graphic pack in {}{}", (target / "BreathOfTheWild_BetterVR").string(), ec ? " failed: " + ec.message() : ""));
 }
 
+// Cemu's export for BetterVR, which Cemu defines in src/main.cpp: the PS5's entry point is
+// port/main_ps5.cpp, so it is here, as Cemu has it
+extern "C" uint64_t gameMeta_getTitleId()
+{
+	return CafeSystem::GetForegroundTitleId();
+}
+
 // BetterVR's own settings (its ImGui ini, patches/bettervr): beside bettervr.json, as the app's working
 // directory is not writable
 extern "C" const char* BetterVR_PS5_SettingsPath()
