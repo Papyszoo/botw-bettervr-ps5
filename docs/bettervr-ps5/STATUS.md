@@ -8,7 +8,10 @@ tested.
 **Built, untested on console.** Patryk chose an own title ID for the whole app and the other
 emulators taken out.
 
-- **Release:** `m5-botw-vr`, on the commit named in its notes. Test request 5 below.
+- **Release:** [`m5-botw-vr`](https://github.com/Papyszoo/botw-bettervr-ps5/releases/tag/m5-botw-vr),
+  a pre-release on `6bf0a6a`. `BotW-VR-v5.1.1.zip` is 45 MB (PS5-ECAM's was 77 MB), SHA-256
+  `7b6377bb…2f26`. Test request 5 below.
+- **Build time:** about 20 minutes: the port's 72 changed files, then Cemu's link (12 minutes).
 - **Title ID `PPSA98720`, "Breath of the Wild VR".** Not found in a web search, and outside the range
   the app's own forwarder tiles draw from (PPSA99200-99899, psfwd.c). Changed in the code, scripts,
   `sce_sys/param.json`, the payloads, host tests and the string tables (only the ID in the
