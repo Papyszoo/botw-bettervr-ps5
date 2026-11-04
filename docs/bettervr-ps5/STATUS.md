@@ -11,7 +11,14 @@ on M2 working (hmd2 on Cemu's device, next to the TV's VideoOut), which nobody h
 If M2 fails on the console, M3 fails the same way. Test request 3 starts with M2's check for that
 reason.
 
-- **Release:** `m3-stereo` (see below for what is in it).
+- **Release:** [`m3-stereo`](https://github.com/Papyszoo/botw-bettervr-ps5/releases/tag/m3-stereo),
+  a pre-release on `a0b2c3d`. The zip's SHA-256 is `8ce33465…62b6e`. Test request 3 below.
+- **Build:** `make release` with `EDEN_SKIP_SOURCE_CHECKS=1`, as before. `tools/build-bettervr.sh`
+  takes about 5 minutes from clean (30 files, each with BetterVR's 80,000-line precompiled header).
+  A new patch in `.deps/Cemu` changes Cemu's `EMULATOR_HASH`, so all of Cemu compiles again (about
+  25 minutes here), then the 12-minute link. `ps5cemu.elf` is 165.6 MB, 1 MB more than M2. Its
+  new system imports are `__atomic_load`, `__atomic_store`, `atanf`, `remainderf` and `tanf`, all
+  from `libSceLibcInternal`, like the app's other maths.
 - **Choice: option A, a small OpenXR runtime over hmd2** (`port/bettervr/xr/runtime.cpp`), as
   `PLAN.md` prefers. It keeps BetterVR's code close to upstream: patches/bettervr 0002 and 0003 are
   about 150 lines, none of them in its renderer's logic.
