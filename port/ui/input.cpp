@@ -4,9 +4,14 @@
 #include "input.h"
 #include "../ps5/pad.h"
 
-// BotW VR: the PS VR2 Sense controllers too (port/bettervr/SensePS5.cpp; weak, as the launcher's PC
-// preview has none)
+// BotW VR: the PS VR2 Sense controllers too (port/bettervr/SensePS5.cpp; weak only in the launcher's
+// PC preview, which has none). A weak reference on the console leaves SensePS5.cpp out of the static
+// library's link, so the menus never see the controllers.
+#ifdef PS5CEMU_LAUNCHER_PREVIEW
 __attribute__((weak)) bool PS5Cemu_SenseMenuButtons(uint32_t& buttons);
+#else
+bool PS5Cemu_SenseMenuButtons(uint32_t& buttons);
+#endif
 
 namespace ui
 {
@@ -62,7 +67,13 @@ namespace ui
 			else if (data.leftX > 192)
 				buttons |= ps5pad::kRight;
 		}
-		if (uint32_t sense = 0; PS5Cemu_SenseMenuButtons && PS5Cemu_SenseMenuButtons(sense))
+		uint32_t sense = 0;
+#ifdef PS5CEMU_LAUNCHER_PREVIEW
+		const bool hasSense = PS5Cemu_SenseMenuButtons && PS5Cemu_SenseMenuButtons(sense);
+#else
+		const bool hasSense = PS5Cemu_SenseMenuButtons(sense);
+#endif
+		if (hasSense)
 		{
 			if (sense & ps5pad::kIntercepted)
 				intercepted = true;

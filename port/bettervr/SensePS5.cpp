@@ -9,7 +9,9 @@
 #include "../ps5/pad.h"
 
 #include <chrono>
+#include <cstdarg>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <string>
 #include <string_view>
@@ -29,11 +31,23 @@ namespace
 	constexpr size_t kStateBytes = 0x68, kConnected = 0x40, kStickX = 0x04, kStickY = 0x05;
 	constexpr auto kRetry = std::chrono::seconds(2);
 
+	// a line of the boot log, with the "[vr]" the launcher's BetterVR lines carry
+	void Log(const char* format, ...)
+	{
+		char text[256];
+		va_list args;
+		va_start(args, format);
+		std::vsnprintf(text, sizeof(text), format, args);
+		va_end(args);
+		PS5Cemu_LogLine(std::string("[vr] ") + text);
+	}
+
 	struct Hand
 	{
 		int handle = -1;
 		std::chrono::steady_clock::time_point nextOpen{};
-		bool logged = false;
+		bool reportedMissing = false;
+		bool reportedRead = false;
 	};
 	Hand s_hands[2];
 }
@@ -56,19 +70,39 @@ bool PS5Cemu_SenseMenuButtons(uint32_t& buttons)
 			if (now < hand.nextOpen)
 				continue;
 			hand.nextOpen = now + kRetry;
-			int handle = scePadOpen(user, kPadType[i], 0, nullptr);
+			const int opened = scePadOpen(user, kPadType[i], 0, nullptr);
+			int found = 0;
+			int handle = opened;
 			if (handle < 0)
-				handle = scePadGetHandle(user, kPadType[i], 0);
+			{
+				found = scePadGetHandle(user, kPadType[i], 0);
+				handle = found;
+			}
 			if (handle < 0)
+			{
+				// once per hand: the return codes say whether the console has them at all outside VR
+				if (!hand.reportedMissing)
+					Log("no %s Sense controller for the menus (user 0x%08x): scePadOpen -> 0x%08x, scePadGetHandle -> 0x%08x; trying every 2 s",
+						i == 0 ? "left" : "right", (unsigned)user, (unsigned)opened, (unsigned)found);
+				hand.reportedMissing = true;
 				continue;
+			}
+			hand.reportedMissing = false;
 			hand.handle = handle;
-			if (!hand.logged)
-				PS5Cemu_LogLine(std::string("[vr] the ") + (i == 0 ? "left" : "right") + " Sense controller moves through the menus too");
-			hand.logged = true;
+			Log("the %s Sense controller opened for the menus (handle %d)", i == 0 ? "left" : "right", handle);
 		}
 		alignas(16) uint8_t state[kStateBytes] = {};
-		if (scePadVrControllerReadState(hand.handle, state) != 0 || (state[kConnected] & 1) == 0)
+		const int read = scePadVrControllerReadState(hand.handle, state);
+		if (read != 0 || (state[kConnected] & 1) == 0)
+		{
+			// once per hand, so a pad that is still waking up does not repeat this every frame
+			if (!hand.reportedRead)
+				Log("the %s Sense controller's state cannot be read yet (0x%08x, connected %d)", i == 0 ? "left" : "right",
+					(unsigned)read, (int)(state[kConnected] & 1));
+			hand.reportedRead = true;
 			continue;
+		}
+		hand.reportedRead = false;
 		uint32_t word = 0;
 		std::memcpy(&word, state, sizeof(word));
 		if (word & ps5pad::kIntercepted)

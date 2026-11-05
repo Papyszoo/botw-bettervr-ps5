@@ -3,6 +3,51 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-05 (second run): the reported crash was m9; 0005 then passed it; the Sense controllers were never linked
+
+**Reported by Patryk:** the Sense controllers still did not move the launcher's menus, and Play in VR
+crashed again.
+
+**The crash he reported (13:58) was m9, not 0005.** At that time the console's
+`/data/homebrew/PPSA98720/eboot.bin` was 45,314,393 bytes, SHA-256 `d6b34476…` (m9's), and every file
+in the folder still had its 10:51 install time. The crash was the same `0x800102040` SIGILL:
+`OpenXR::UpdateActions` → `__atomic_load(size=0x6c0)` on the submit thread (`rdi=0x6c0`, return
+`0xaa3a22`), which only the m9 build can emit. **0005 had not been installed when that session ran.**
+
+**The 0005 build was installed at 14:11 and passes the crash.** `eboot.bin` is now 45,314,777 bytes,
+SHA-256 `543407d3…` (mtime 14:11:12), with m9 beside it as `eboot.bin.m9-backup`. Its 14:12 session
+ran for at least 312 s: `OpenXR session begun successfully!`, `Hmd2 live at frame 2`, **6,000
+headset frames by 121 s (5,999 flips shown, 0 errors, 0 missed, 0 queue-full, 0 repeated), 60.0 fps
+by 262 s**, about 10,335 draws a frame, with no `[crash]`, no `VR off` and no `session ended`;
+`worn 1` for the first 72 s. **Test request 9 passes for the crash on console.** The headset/TV
+picture is not reported by Patryk; the log shows frames were shown, not what they looked like.
+
+**The Sense controllers: `SensePS5.cpp` was never linked.** `port/ui/input.cpp` declared
+`PS5Cemu_SenseMenuButtons` weak for the PC preview, and `CemuPS5` is a static library: a weak
+reference does not pull `port/bettervr/SensePS5.cpp` out of the archive. Both release ELFs (m9's and
+0005's) carry the symbol as `w` (weak undefined), have no `SensePS5.cpp` DWARF unit and none of its
+strings, and neither boot log has a "Sense controller … menus" line: the menus never tried to open a
+pad. The DualSense path is separate and works. The 0005 in-game runtime opened both Sense pads with
+the same user (`0x161c8e85`) and read L1/R1 (`0x400`/`0x800`) and stick changes, so the pads and the
+user are fine. The `0x80000000` intercept bit appeared at 51.927 s and cleared at 53.542 s: it is the
+system menu's ownership bit, not stuck and not a required init.
+
+**The fix (not in 0005, not built):**
+
+- `port/ui/input.cpp`: the weak declaration and the null-check exist only under
+  `PS5CEMU_LAUNCHER_PREVIEW`; the console has a strong reference, which pulls `SensePS5.cpp` in.
+  An ELF link test with a static archive confirmed the mechanism (weak: member left out; strong:
+  linked), and both files pass `clang++ -std=c++20 -fsyntax-only`, with and without the preview
+  define.
+- `port/bettervr/SensePS5.cpp`: the first failed open per hand now logs the user and both
+  `scePadOpen`/`scePadGetHandle` return codes; the first failed read logs its code and the connected
+  bit; the success line says the pad opened, not that the focus moved. Whether the console allows
+  `scePadOpen` types 3/4 before a VR session is the next unknown; the runtime's opens happen only
+  after Hmd2 starts, and 0005 never tried the menu path.
+
+**Backlog:** the same weak reference hides `PS5Cemu_BotwTileArt` (strong in m5, weak since m8), so
+the home screen tile and background have not been written by m8, m9 or 0005; not fixed here.
+
 ## 2026-11-05: the first VR frame's SIGILL, and the large input state through a mutex
 
 **Reported by Patryk** (`m9-launcher`, VR on): the session reached `OpenXR session begun
@@ -515,9 +560,44 @@ Cloud session, scheduled run. Nothing was built for the console and nothing was 
 
 ## Open test requests
 
+### Test request 10: the Sense controllers in the menus, linked at last
+
+**Which build.** The next build after the change above: a strong `PS5Cemu_SenseMenuButtons` reference
+in `port/ui/input.cpp` and the open/read lines in `port/bettervr/SensePS5.cpp`. The existing 0005
+artifact does **not** have this change (its ELF still has the weak symbol). Check the installed
+`/data/homebrew/PPSA98720/eboot.bin`'s SHA-256; it must not be m9's `d6b3447…`.
+
+**Try:** both Sense controllers on, the headset connected, the app on its home screen. Stay there for
+10 seconds, then push each controller's stick in each direction and press the right controller's
+Cross, Circle and Options, and the left controller's Square, Triangle and Create. Say what the focus
+did for each, and which buttons did nothing.
+
+Then run Test request 9's VR steps with the same build, if it is the one with 0005.
+
+**Send back:** `boot.log` and what the focus did. The new lines are `[vr] the left/right Sense
+controller opened for the menus (handle …)`, `[vr] no left/right Sense controller for the menus
+(user …): scePadOpen -> 0x…, scePadGetHandle -> 0x…`, and `[vr] the left/right Sense controller's
+state cannot be read yet (0x…, connected …)`. The first with the focus moving means the menus work;
+the failure line's codes say whether the console refuses types 3/4 outside VR, and the next step
+would be to open them only when the system offers them.
+
+**What it decides:** whether the missing link was the whole cause, or whether the Sense pads also
+need a VR session/Hmd2 before the launcher can open them. The read line separates "opened but no
+state" from "not opened".
+
 ### Test request 9: the first VR frame after the input-state fix (0005)
 
-**Which build.** A build with `patches/bettervr/0005-…` (the next release after `m9-launcher`).
+**Which build.** A build with `patches/bettervr/0005-…` (the next release after `m9-launcher`). **Check
+the eboot first:** m9's is 45,314,393 bytes, SHA-256 `d6b3447…`, and crashes at the same
+`__atomic_load` call; the 0005 CI artifact is 45,314,777 bytes, `543407d3…`; a newer build with 0005
+and the Sense fix has its own hash, but must not be m9's. The boot log's first line is the same in
+all of them, so it cannot tell them apart.
+
+**Result (2026-11-05, 14:12 session, 0005 CI artifact):** passed for the crash. The session ran at
+least 312 s; by 121 s it had 6,000 headset frames with `flip shown 5999`, 0
+errors/missed/queue-full/repeated, and by 262 s it was at 60.0 fps; no `[crash]`, no `VR off` and no
+`session ended`; `worn 1` for the first 72 s. What is still open is the visual half: what the headset
+and TV showed in that run.
 
 **Try:** `{"vr": true}` in `/data/botwvr/launcher/bettervr.json`, the headset on and connected, both
 Sense controllers on. Start the game and wait through the first shader compilation (a few minutes),
@@ -529,9 +609,9 @@ should respond as it did before.
 successfully!` and the Sense lines into frames. If it still crashes, send the `[crash]` line and
 its machine context.
 
-**What it decides:** whether the large `std::atomic` load was the first frame's only blocker. The
-next `[crash]`, if any, names the next thing to fix; a first frame in the headset is the m7/m9 VR
-path finally running.
+**What it decides:** the crash half is answered: the large `std::atomic` load was the first frame's
+only blocker, and 0005 removes it. A different `[crash]` in a later build names the next problem; the
+visual result says whether the m7/m9 VR path is finally correct in the headset.
 
 ### Test request 8: the launcher for one game (m9)
 
