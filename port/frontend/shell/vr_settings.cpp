@@ -5,8 +5,9 @@
 // (hooking/settings.cpp; the keys and their defaults are utils/mod_settings.h's), and reads it as
 // VR starts. The app's own options are in bettervr.json: "vr" (Play in VR or on TV), "bettervr"
 // (false: the flat screen in the headset) and the Sense controllers' gripPitch and aimPitch
-// (port/bettervr/xr/runtime.cpp). Both files are read once and written at each change; the rest of
-// each file (ImGui's other sections, other keys) is kept.
+// (port/bettervr/xr/runtime.cpp). Both files are written at each change; the rest of each file
+// (ImGui's other sections, other keys) is kept, and bettervr.json is read again before a write so
+// the switches added outside the app (graphicsPack, reproject) survive Play in VR/TV and Settings > VR.
 
 #include "shell_internal.h"
 #include "../../app/paths.h"
@@ -188,6 +189,15 @@ namespace ps5shell
 			}
 			return json;
 		}
+		// Read again before a write: the switches in this file (graphicsPack, reproject) are meant to be
+		// added outside the app, and a write from the home screen or Settings > VR must keep them
+		void JsonReload()
+		{
+			rapidjson::Document& json = Json();
+			json.Parse(ReadText(JsonPath()).c_str());
+			if (json.HasParseError() || !json.IsObject())
+				json.SetObject();
+		}
 		void SaveJson()
 		{
 			rapidjson::StringBuffer buffer;
@@ -208,6 +218,7 @@ namespace ps5shell
 		template <typename T>
 		void SetJson(const char* key, T value)
 		{
+			JsonReload();
 			auto& json = Json();
 			if (json.HasMember(key))
 				json.RemoveMember(key);
@@ -340,6 +351,7 @@ namespace ps5shell
 					 "SwingSensitivity", "OneHitPerSwing", "LeftHanded", "UiFollowsGaze", "HudDistance", "HudSize", "UseBlackBarsForCutscenes"})
 				Ini().erase(key);
 			SaveIni();
+			JsonReload();
 			auto& json = Json();
 			for (const char* key : {"bettervr", "gripPitch", "aimPitch"})
 				if (json.HasMember(key))
