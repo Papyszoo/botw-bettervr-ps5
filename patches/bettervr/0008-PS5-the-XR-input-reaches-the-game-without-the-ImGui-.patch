@@ -10,13 +10,14 @@ past its first lines: no Sense stick or button, no hand gesture, no game state, 
 the game; only the DualSense's own VPAD did (the boot log of the 2026-11-05 evening had no [diag]
 line from the code after it). The overlay is now optional: the mod menu is skipped without it and
 cannot be opened, so it cannot take the game's input. A [diag] line every 5 s says how often the
-hook runs.
+hook runs. A hand xrLocateSpace could not place is left out of the body-slot gestures, so a grip
+press cannot fire one from the tracker's origin.
 ---
- src/hooking/controls.cpp | 28 ++++++++++++++++++++++++----
- 1 file changed, 24 insertions(+), 4 deletions(-)
+ src/hooking/controls.cpp | 42 ++++++++++++++++++++++++++++++++++------
+ 1 file changed, 36 insertions(+), 6 deletions(-)
 
 diff --git a/src/hooking/controls.cpp b/src/hooking/controls.cpp
-index 09d26e3..474d3f9 100644
+index 09d26e3..95ddc25 100644
 --- a/src/hooking/controls.cpp
 +++ b/src/hooking/controls.cpp
 @@ -909,6 +909,12 @@ void processModMenuInput(std::atomic_bool& isMenuOpen, OpenXR::InputState& input
@@ -32,7 +33,31 @@ index 09d26e3..474d3f9 100644
      // allow the gamepad inputs to control the imgui overlay
      imguiOverlay->ProcessInputs(inputs, vpadInputs);
  
-@@ -1032,17 +1038,29 @@ void CemuHooks::hook_InjectXRInput(PPCInterpreter_t* hCPU) {
+@@ -927,11 +933,21 @@ void processHandGesture(RND_Renderer* renderer, OpenXR::InputState& inputs, Hand
+         const auto headsetMtx = headsetPose.value();
+         const glm::fvec3 headsetPos(headsetMtx[3]);
+         
++        // A hand xrLocateSpace could not place has a zeroed location, which is the tracker's origin
++        // and not the player's body: the waist slot matches a hand there, so a grip press would open
++        // a body slot with a hand that is not tracked. That hand is left out of the gestures instead.
++        const auto handLocated = [](const XrSpaceLocation& location) {
++            return (location.locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT) != 0;
++        };
+         const auto leftHandPos = ToGLM(inputs.shared.poseLocation[0].pose.position);
+         const auto rightHandPos = ToGLM(inputs.shared.poseLocation[1].pose.position);
+         
+-        leftGesture = calculateHandGesture(gameState, leftHandPos, headsetMtx, headsetPos, gameState.left_hand_position_stored, gameState.stored_left_hand_position);
+-        rightGesture = calculateHandGesture(gameState, rightHandPos, headsetMtx, headsetPos, gameState.right_hand_position_stored, gameState.stored_right_hand_position);
++        leftGesture = handLocated(inputs.shared.poseLocation[0])
++            ? calculateHandGesture(gameState, leftHandPos, headsetMtx, headsetPos, gameState.left_hand_position_stored, gameState.stored_left_hand_position)
++            : HandGestureState{};
++        rightGesture = handLocated(inputs.shared.poseLocation[1])
++            ? calculateHandGesture(gameState, rightHandPos, headsetMtx, headsetPos, gameState.right_hand_position_stored, gameState.stored_right_hand_position)
++            : HandGestureState{};
+     }
+ }
+ 
+@@ -1032,17 +1048,29 @@ void CemuHooks::hook_InjectXRInput(PPCInterpreter_t* hCPU) {
      uint32_t vpadStatusOffset = hCPU->gpr[4];
      VPADStatus vpadStatus = {};
  
@@ -65,7 +90,7 @@ index 09d26e3..474d3f9 100644
  
      // todo: revert this to unblock gamepad input
      readMemory(vpadStatusOffset, &vpadStatus);
-@@ -1057,7 +1075,9 @@ void CemuHooks::hook_InjectXRInput(PPCInterpreter_t* hCPU) {
+@@ -1057,7 +1085,9 @@ void CemuHooks::hook_InjectXRInput(PPCInterpreter_t* hCPU) {
              startBtnActionConsumed = false;
          }
          else if (!startBtnActionConsumed && std::chrono::steady_clock::now() - startBtnLastTime > std::chrono::milliseconds(500)) {
@@ -76,6 +101,3 @@ index 09d26e3..474d3f9 100644
              startBtnActionConsumed = true;
          }
          startBtnWasDown = true;
--- 
-2.50.1 (Apple Git-155)
-
