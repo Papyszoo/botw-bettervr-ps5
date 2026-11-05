@@ -274,6 +274,8 @@ struct XrSession_T
 	VkFence fence = VK_NULL_HANDLE;
 
 	uint64_t frames = 0, emptyFrames = 0, skipped = 0;
+	// frames whose render pose was found among the located views, and frames where it was not
+	uint64_t poseFound = 0, poseLost = 0;
 };
 
 namespace
@@ -355,7 +357,7 @@ namespace
 			Vec3 leftEye;
 			Pose head;
 		};
-		Located located[32];
+		Located located[256]; // BetterVR's pose thread locates at 250 Hz: 32 held only 128 ms
 		int nextLocated = 0;
 		Pose lastHead;
 	} s;
@@ -1393,7 +1395,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrLocateViews(XrSession session, const XrViewLoca
 		if (eye == 0)
 		{
 			s.located[s.nextLocated] = {eyePose.p, head};
-			s.nextLocated = (s.nextLocated + 1) % 32;
+			s.nextLocated = (s.nextLocated + 1) % (int)(sizeof(s.located) / sizeof(s.located[0]));
 		}
 	}
 	state->viewStateFlags = XR_VIEW_STATE_ORIENTATION_VALID_BIT | XR_VIEW_STATE_POSITION_VALID_BIT | XR_VIEW_STATE_ORIENTATION_TRACKED_BIT |
@@ -1597,13 +1599,18 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
 			params.source[eye][3] = (float)(r.offset.y + r.extent.height) / swapchain->height;
 			params.flags |= 1u << eye;
 		}
+		// x and z only: BetterVR lifts the views it renders from to a seated eye height (y) before it
+		// submits them, so a match on y never held and the frame went to Hmd2 as rendered from the
+		// pose of its display time: no reprojection of an image that is 50 ms old or more
+		bool found = false;
 		for (const auto& located : s.located)
-			if (std::fabs(located.leftEye.x - eyePoses[0].p.x) < 1e-5f && std::fabs(located.leftEye.y - eyePoses[0].p.y) < 1e-5f &&
-				std::fabs(located.leftEye.z - eyePoses[0].p.z) < 1e-5f)
+			if (std::fabs(located.leftEye.x - eyePoses[0].p.x) < 1e-5f && std::fabs(located.leftEye.z - eyePoses[0].p.z) < 1e-5f)
 			{
 				renderHead = located.head;
+				found = true;
 				break;
 			}
+		(found ? session->poseFound : session->poseLost)++;
 	}
 	else
 	{
@@ -1698,10 +1705,11 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
 		const hmd2::PaceStats pace = hmd2::take_pace();
 		const hmd2::FlipInfo flip = hmd2::flip_status();
 		Log("%llu frames: nap %.2f ms, BeginFrame %.2f ms, ahead %.2f ms, step %.2f ms; flip shown %llu pending %d; repeated %d, queue full %d, "
-			"missed %d, errors %d, without layers %llu, skipped %llu, worn %d",
+			"missed %d, errors %d, without layers %llu, skipped %llu, worn %d; render pose found %llu, not found %llu",
 			(unsigned long long)session->frames, pace.nap_ms, pace.call_ms, pace.ahead_ms, pace.step_ms, (unsigned long long)flip.shown, flip.pending,
 			hmd2::repeated_frames(), hmd2::queue_full_waits(), hmd2::missed_frames(), hmd2::frame_errors(), (unsigned long long)session->emptyFrames,
-			(unsigned long long)session->skipped, hmd2::worn() ? 1 : 0);
+			(unsigned long long)session->skipped, hmd2::worn() ? 1 : 0, (unsigned long long)session->poseFound,
+			(unsigned long long)session->poseLost);
 	}
 	return XR_SUCCESS;
 }
