@@ -3,6 +3,34 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-05: the TV shows the headset's view during VR (not built, not run)
+
+**Why the TV was black (PROVEN for the code and the log, INFERRED for the console's routing).**
+BetterVR's runtime started Hmd2 with `Config::mirror = false` (`port/bettervr/xr/runtime.cpp:937`
+before this change), so nothing ever asked Hmd2 for its social screen. The logs agree: VR mode was
+enabled (`logs8:152`, `logs9:152`, `ReprojectionEnableVrMode -> 0x00000000`) and no `TV mirror` line
+was written: with the flag false the mirror exports were never looked up (`hmd2.cpp:992-1002`) and
+`mirror_start()` never ran (`hmd2.cpp:1142`). Flat play makes Cemu's own VideoOut surface at 30.295 s
+(`logs6:80-81`, `[vulkan] VideoOut surface 3840x2160 at 59.94 Hz`), and the VR runs make none after
+4.38/4.64 s: the bus-32 port opened at 8.912/9.114 s is the headset's, not the TV's. Cemu's present
+still runs (`framebuffer.cpp:672-704`), and the Linux desktop mirror is off unless
+`BETTERVR_DESKTOP_MIRROR` is set (`linux_desktop_mirror.cpp:301-310`), so neither is the TV path.
+What is inferred is the console's own part: once VR mode is on, the TV gets Hmd2's social screen
+(`hmd2.h:80-85`), the path both reference runtimes use with option word `{1}`
+(`hmd2.cpp:855-917`, "as Horizon does"), and with it off the TV has no source. photo-splat-vr in VR
+mode shows nothing on the TV for the same reason (`STATUS.md`, M2).
+
+**The change (not built, not run).** `"tv": 0` in `bettervr.json` turns the TV image off (default
+on), read once at session start like `reproject`. The runtime passes it as `Config::mirror`, so
+Hmd2's compositor puts the headset's view on the TV; the app adds no blit, no present and no queue
+use, so it cannot block the submit thread or `ps5xr::QueueMutex()` (port-audit section 2 row 19's
+concern). The session-start line says `TV mirror on: Hmd2's social screen shows the headset's view
+on the TV ...` or that Hmd2 did not take it, and the 600-frame `[vr-xr]` line ends with
+`TV mirror on, shown N skipped M`. No BetterVR file changed, so `patches/bettervr` stays 0001-0012;
+all twelve apply in order on the pin. `port/bettervr/xr/runtime.cpp` passes
+`clang++ -std=c++23 -fsyntax-only` against OpenXR 1.1.49's headers and Vulkan-Headers 1.4.363, with
+the pre-existing `-Wreturn-type-c-linkage` warning on `ReadAction`. Test request 14.
+
 ## 2026-11-05 (fifth run): the offset is gone; the physics is late, not slow; a roomscale switch
 
 **Reported by Patryk (build 45a0bc3, Test request 12, Graphics pack off).** "Offset is gone,
@@ -759,6 +787,30 @@ Cloud session, scheduled run. Nothing was built for the console and nothing was 
 - **Next:** M1, the baseline build and release (see `PLAN.md`).
 
 ## Open test requests
+
+### Test request 14: the TV during VR (this build)
+
+**Which build.** The next console build of `fix/vr-first-frame-sigill`. `patches/bettervr` is still
+0001-0012; the change is `port/bettervr/xr/runtime.cpp`, so the boot log should contain a
+`TV mirror on: Hmd2's social screen shows the headset's view on the TV` line at VR start.
+
+**Try.** Start the app and Breath of the Wild in VR as usual, with no `tv` key in
+`/data/botwvr/launcher/bettervr.json` (the default is on). Watch the TV during the game: it should
+show the headset's view, not black. Say whether its shape is right (not stretched, with black bars
+where the view and the TV differ). Play for a minute and note whether the headset frame rate feels
+the same as before. Then quit the app fully, put `"tv":0` beside `"vr": true`, start it again, and
+check that the TV is dark again while the headset still runs; remove the key afterwards.
+
+**Send back:** the `TV mirror …` line from VR start; one or two `[vr-xr] N frames: … TV mirror on,
+shown N skipped M` lines for each run; the `[perf]` lines from the same times; whether the TV
+picture matches the headset and whether it is stretched; and, if the PS5's own recording records the
+TV, a short video. If the video is black while the TV is not, say so: the system recording may use
+a different path from the TV.
+
+**What it decides:** `TV mirror on, shown` rising by about 600 between lines means every headset
+frame reached the TV through Hmd2; `skipped` rising means Hmd2 refused the mirror (the `hmd2:` lines
+above say why). A TV that stays black with the on line is a console result this change does not
+explain, and the next step is Hmd2's mirroring option or its work areas, not Cemu's present.
 
 ### Test request 13: the roomscale switch, with and without (this build)
 

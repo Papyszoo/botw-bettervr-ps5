@@ -19,7 +19,8 @@
 //                      second, each shown for two of its 120 Hz refreshes). xrEndFrame composes the
 //                      projection layer and the HUD quad into the frame's eye buffer in one compute
 //                      pass (shaders/compose.comp), on the binding's queue, waits for it, and submits
-//                      it with the head pose the submitted views were rendered from.
+//                      it with the head pose the submitted views were rendered from. Hmd2's social
+//                      screen shows that view on the TV when bettervr.json's tv is on (default).
 //   actions            (M4) the PS VR2 Sense controllers as the Oculus Touch profile BetterVR binds:
 //                      left Square/Triangle = X/Y, right Cross/Circle = A/B, L1/R1 = squeeze,
 //                      L3/R3 = thumbstick click, the stick, the trigger (the larger of its two bytes),
@@ -276,6 +277,8 @@ struct XrSession_T
 	uint64_t frames = 0, emptyFrames = 0, skipped = 0;
 	// frames whose render pose was found among the located views, and frames where it was not
 	uint64_t poseFound = 0, poseLost = 0;
+	// frames Hmd2's TV mirror took, and frames it was asked for but did not take
+	uint64_t tvShown = 0, tvSkipped = 0;
 };
 
 namespace
@@ -350,6 +353,7 @@ namespace
 		} hands[2];
 		float gripPitch = 0, aimPitch = 0;
 		bool reproject = true; // bettervr.json's "reproject": 0 submits every frame as rendered from the display time's pose
+		bool tv = true; // bettervr.json's "tv": 0 keeps the TV dark while VR runs
 		XrTime syncTime = 0;
 		hmd2::Fov fov{1.0f, 1.0f, 1.0f, 1.0f};
 		Vec3 eyeOffset[2] = {{-kHalfIpd, 0, 0}, {kHalfIpd, 0, 0}}; // in the head's frame
@@ -934,7 +938,7 @@ namespace
 		config.external_count = kEyeBuffers;
 		config.image_width = 2 * kEyeWidth;
 		config.image_height = kEyeHeight;
-		config.mirror = false; // the TV keeps Cemu's own picture
+		config.mirror = s.tv; // Hmd2's social screen: the headset's view on the TV
 		if (!hmd2::init(config))
 		{
 			const hmd2::Error error = hmd2::error();
@@ -1235,6 +1239,8 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateSession(XrInstance, const XrSessionCreate
 	}
 	vk.vkGetDeviceQueue(session->device, binding->queueFamilyIndex, binding->queueIndex, &session->queue);
 	Log("session on Cemu's device %p, queue family %u index %u", (void*)binding->device, binding->queueFamilyIndex, binding->queueIndex);
+	// read before hmd2::init, which asks Hmd2 for the mirror or not
+	s.tv = BetterVR_PS5_Setting("tv", 1.0f) != 0.0f;
 	if (!StartSession(session))
 	{
 		EndSessionObjects(session);
@@ -1246,6 +1252,12 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateSession(XrInstance, const XrSessionCreate
 	s.aimPitch = BetterVR_PS5_Setting("aimPitch", 0.0f);
 	s.reproject = BetterVR_PS5_Setting("reproject", 1.0f) != 0.0f;
 	Log("reprojection of the game's frames: %s (bettervr.json's reproject)", s.reproject ? "on" : "off");
+	if (!s.tv)
+		Log("TV mirror off (bettervr.json's tv): the TV stays dark while VR runs");
+	else if (hmd2::mirroring())
+		Log("TV mirror on: Hmd2's social screen shows the headset's view on the TV (bettervr.json's tv), no present of ours");
+	else
+		Log("TV mirror asked for but Hmd2 did not take it (bettervr.json's tv); the hmd2 lines say why, VR continues");
 	Log("controllers: grip pitch %.1f deg, aim pitch %.1f deg (bettervr.json's gripPitch, aimPitch)", s.gripPitch, s.aimPitch);
 	OpenHands();
 	*out = session;
@@ -1742,20 +1754,24 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
 		return XR_ERROR_RUNTIME_FAILURE;
 	}
 	session->frameOpen = false;
-	hmd2::submit(ToHmd(renderHead));
+	const bool submitted = hmd2::submit(ToHmd(renderHead));
+	// Hmd2's compositor is what puts this frame on the TV: no present of ours and no queue lock
+	if (s.tv && submitted)
+		(hmd2::mirroring() ? session->tvShown : session->tvSkipped)++;
 	if (++session->frames % 600 == 0)
 	{
 		const hmd2::PaceStats pace = hmd2::take_pace();
 		const hmd2::FlipInfo flip = hmd2::flip_status();
 		Log("%llu frames: nap %.2f ms, BeginFrame %.2f ms, ahead %.2f ms, step %.2f ms; flip shown %llu pending %d; repeated %d, queue full %d, "
 			"missed %d, errors %d, without layers %llu, skipped %llu, worn %d; render pose found %llu, not found %llu; "
-			"head %.2f %.2f %.2f, hand spaces left %.3f %.3f %.3f right %.3f %.3f %.3f, hands posed %d %d",
+			"head %.2f %.2f %.2f, hand spaces left %.3f %.3f %.3f right %.3f %.3f %.3f, hands posed %d %d; "
+			"TV mirror %s, shown %llu skipped %llu",
 			(unsigned long long)session->frames, pace.nap_ms, pace.call_ms, pace.ahead_ms, pace.step_ms, (unsigned long long)flip.shown, flip.pending,
 			hmd2::repeated_frames(), hmd2::queue_full_waits(), hmd2::missed_frames(), hmd2::frame_errors(), (unsigned long long)session->emptyFrames,
 			(unsigned long long)session->skipped, hmd2::worn() ? 1 : 0, (unsigned long long)session->poseFound,
 			(unsigned long long)session->poseLost, renderHead.p.x, renderHead.p.y, renderHead.p.z, s.handLocated[0].p.x, s.handLocated[0].p.y,
 			s.handLocated[0].p.z, s.handLocated[1].p.x, s.handLocated[1].p.y, s.handLocated[1].p.z, s.hands[0].poseValid ? 1 : 0,
-			s.hands[1].poseValid ? 1 : 0);
+			s.hands[1].poseValid ? 1 : 0, s.tv ? "on" : "off", (unsigned long long)session->tvShown, (unsigned long long)session->tvSkipped);
 	}
 	return XR_SUCCESS;
 }
