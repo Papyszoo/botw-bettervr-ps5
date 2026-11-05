@@ -3,6 +3,53 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-05: the first VR frame's SIGILL, and the large input state through a mutex
+
+**Reported by Patryk** (`m9-launcher`, VR on): the session reached `OpenXR session begun
+successfully!`, the submit thread's bootstrap and both Sense controllers, then `[crash] signal 4 at
+0x800102040`; no frame statistics and no clean shutdown.
+
+**The crash, symbolized.** The release's `ps5cemu-v5.1.1.elf.xz` (SHA-256 `3acc3f47…`, the ELF
+`6ed7bfba…`) and `BotW-VR-v5.1.1.zip`'s eboot are the installed build (the zip's eboot is
+byte-identical to the console's, SHA-256 `d6b34476…`). `tools/symbolize-crash.py` places the
+eboot 0x400000 above the ELF; the chain is `SubmitThreadMain` → `OpenXR::UpdateActions` →
+`__atomic_load`. The machine context is the call's arguments: `rdi=0x6c0` (size),
+`rsi=0x20093cf950` (source), `rdx=0x4062d2810` (destination), `rcx=5` (seq_cst); the first stack
+word `0xaa3a22` is the instruction after the `__atomic_load` call at `0xaa3a1d`. That call is
+`InputState newState = m_input.load();` (`openxr.cpp:564` in the built source; 522 in the pinned
+upstream before `0001`–`0004`), where `m_input` is `std::atomic<InputState>` and `InputState` is
+0x6c0 bytes.
+
+**The cause (proven for the call, inferred for the instruction).** libc++ lowers a non-lock-free
+`std::atomic<T>` to `__atomic_load`/`__atomic_store` with `sizeof(T)`. The ELF has exactly 19 calls
+to those two imports; every one passes 0x90 (`GameState`) or 0x6c0 (`InputState`), and none passes
+16. The clean-room `sce_module/libc.prx` exports neither NID (`+iy+BecyFVw`, `sV6ry-Fd-TM`), and
+the app's `DT_NEEDED` names `libSceLibcInternal.sprx`; a public 3.20 `libSceLibcInternal` stub list
+has both, so the imports bind to the system `libSceLibcInternal`. The call traps there; that it
+rejects the 0x6c0 size rather than every call is inferred: the module is encrypted, so the
+instruction cannot be read, and no earlier session demonstrably ran a generic `__atomic_*` call
+(flat play had VR off; m5–m6 VR never reached OpenXR). `0x800102040` is neither the eboot nor
+`libc.prx`: in `libc.prx` offset 0x102040 is read-only zero data (its text ends at 0xc8092), while
+`libSceLibcInternal`'s text is 0x124e2e bytes. The address is in the system-module range; that
+the module starts at `0x800000000`, making the offset 0x102040, is inferred, since the base is
+not logged. The call, the size and the arguments are proven.
+
+**Not the causes:** the first `hmd2::submit`/`sceVideoOutSubmitFlip` (the stack and registers are
+`UpdateActions`/`__atomic_load`, and no frame submit line was reached); a wild indirect call
+(`__atomic_load` is the normal PLT import, with the correct arguments; the `query_pose` address on
+the stack is a stale return address from the bootstrap `xrWaitFrame`); a missing symbol (no "not
+resolved" line; `__atomic_load` is found); the Sense `controller_pose` path (skipped by the
+0x80000000 intercept bit).
+
+**The fix:** `patches/bettervr/0005-PS5-the-large-input-and-game-states-through-a-mutex.patch`
+replaces `std::atomic<InputState>`, `std::atomic<GameState>` and `std::atomic<RumbleParameters>`
+with a mutex-backed `AtomicState<T>`; `load()`, `store()` and each state's layout stay the same
+(the wrapper adds the mutex). `m_inputCameraRotation` (16 bytes) is left alone: it has no use in
+this source and no generic call in the ELF, so it is not part of this crash. `m_rumbleParameters`
+(24 bytes) has no use today either; the patch wraps it for the same class.
+The patch applies after `0001`–`0004`; **not built in this session**, so no console result.
+Test request 9.
+
 ## 2026-11-05: m8-botw-home released, and m9: a launcher for one game
 
 - **[m8-botw-home](https://github.com/Papyszoo/botw-bettervr-ps5/releases/tag/m8-botw-home)**
@@ -467,6 +514,24 @@ Cloud session, scheduled run. Nothing was built for the console and nothing was 
 - **Next:** M1, the baseline build and release (see `PLAN.md`).
 
 ## Open test requests
+
+### Test request 9: the first VR frame after the input-state fix (0005)
+
+**Which build.** A build with `patches/bettervr/0005-…` (the next release after `m9-launcher`).
+
+**Try:** `{"vr": true}` in `/data/botwvr/launcher/bettervr.json`, the headset on and connected, both
+Sense controllers on. Start the game and wait through the first shader compilation (a few minutes),
+then look at the headset and the TV for a minute. Move the controllers and the sticks; the game
+should respond as it did before.
+
+**Send back:** what the headset and the TV showed, and `/data/botwvr/launcher/logs/boot.log`. The
+`[crash] signal 4 at 0x800102040` should be gone; the log should pass `OpenXR session begun
+successfully!` and the Sense lines into frames. If it still crashes, send the `[crash]` line and
+its machine context.
+
+**What it decides:** whether the large `std::atomic` load was the first frame's only blocker. The
+next `[crash]`, if any, names the next thing to fix; a first frame in the headset is the m7/m9 VR
+path finally running.
 
 ### Test request 8: the launcher for one game (m9)
 

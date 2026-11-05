@@ -1,0 +1,86 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 5 Nov 2026 11:35:43 +0100
+Subject: [PATCH] PS5: the large input and game states through a mutex, not
+ std::atomic
+
+libc++ lowers std::atomic<InputState> (0x6c0 bytes) and std::atomic<GameState>
+(0x90 bytes) to __atomic_load/__atomic_store with their sizes; these are the
+release ELF's only generic atomic calls. The imports resolve to
+libSceLibcInternal: the clean-room libc.prx does not export their NIDs
+(+iy+BecyFVw, sV6ry-Fd-TM), and the app names libSceLibcInternal.sprx in
+DT_NEEDED. The first UpdateActions died with SIGILL at 0x800102040, with
+rdi=0x6c0, rsi=&m_input, rdx=&newState and rcx=5, the __atomic_load arguments.
+That the function rejects the 0x6c0 size is inferred, because the system module
+is encrypted on disk and its instruction cannot be read. A mutex keeps load()
+and store() and each state's layout; the wrapper adds the mutex.
+---
+ src/rendering/openxr.h | 28 +++++++++++++++++++++++++---
+ 1 file changed, 25 insertions(+), 3 deletions(-)
+
+diff --git a/src/rendering/openxr.h b/src/rendering/openxr.h
+index a4f9def..dc4a1b8 100644
+--- a/src/rendering/openxr.h
++++ b/src/rendering/openxr.h
+@@ -1,5 +1,7 @@
+ #pragma once
+ 
++#include <mutex>
++
+ #include "hooking/rumble.h"
+ #include "utils/controller_bindings.h"
+ 
+@@ -17,6 +19,26 @@ public:
+         RIGHT = 1
+     };
+ 
++    // PS5: libc++ lowers a std::atomic<T> that is not lock-free to __atomic_load/__atomic_store
++    // with sizeof(T). The system libSceLibcInternal's generic version is where the first UpdateActions
++    // died (SIGILL, size 0x6c0); that it rejects this size is inferred, as the module is encrypted.
++    // The large states below go through a mutex; load() and store() keep every call site the same.
++    template <typename T>
++    class AtomicState {
++    public:
++        T load() const {
++            std::lock_guard<std::mutex> lock(m_mutex);
++            return m_state;
++        }
++        void store(const T& state) {
++            std::lock_guard<std::mutex> lock(m_mutex);
++            m_state = state;
++        }
++    private:
++        mutable std::mutex m_mutex;
++        T m_state{};
++    };
++
+     struct Capabilities {
+ #ifdef _WIN32
+         LUID adapter;
+@@ -117,7 +139,7 @@ public:
+             XrActionStateBoolean rightTrigger;
+         } inMenu;
+     };
+-    std::atomic<InputState> m_input = InputState{};
++    AtomicState<InputState> m_input;
+     std::atomic<glm::fquat> m_inputCameraRotation = glm::identity<glm::fquat>();
+     std::atomic_int32_t m_pendingSnapTurnDirection = 0;
+     std::atomic_uint64_t m_pendingSnapTurnRequestUntilNs = 0;
+@@ -176,7 +198,7 @@ public:
+         int magnesis_forward_frames_interval = 0;
+         bool trigger_pressed_over_body_slot = false;
+     };
+-    std::atomic<GameState> m_gameState{};
++    AtomicState<GameState> m_gameState;
+     std::atomic_bool m_isMenuOpen = false;
+     std::atomic_uint8_t m_currMenuTab = 0;
+ 
+@@ -187,7 +209,7 @@ public:
+         float frequency = 0.0f;
+         float amplitude = 0.0f;
+     } rumbleParameters ;
+-    std::atomic<RumbleParameters> m_rumbleParameters{};
++    AtomicState<RumbleParameters> m_rumbleParameters;
+ 
+     // Creates the OpenXR session from a platform graphics binding (the OpenXR
+     // next-chain struct: XrGraphicsBindingD3D12KHR on Windows,
