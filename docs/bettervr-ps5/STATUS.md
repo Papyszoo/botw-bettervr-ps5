@@ -3,6 +3,70 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-05 (fifth run): the offset is gone; the physics is late, not slow; a roomscale switch
+
+**Reported by Patryk (build 45a0bc3, Test request 12, Graphics pack off).** "Offset is gone,
+tracking is really good now and very smooth. Sense works, I can control the game." The physics did
+not change: "Phisics - still very off." Flat play is the control: "runs super stable 60fps", and its
+physics is normal. The pack-on step of Test request 12 was not reported.
+
+**What the 193 `[diag]` lines show (logs7; proven from the log).** The body is moved late and by the
+wrong amount, not slowed. Forward from 79.38 s: x does not move until 80.28 s (0.9 s), then 5.3 u/s
+at once; from 82.86 s the first motion is at 84.3 s (1.45 s); another start 57.74 -> 59.43 s (1.7 s).
+The delay differs each time, so it is not a fixed 2-4 frame pipeline (60-120 ms). After release at
+63.72 s the body keeps moving to about 69 s at 4.7 u/s; the ~11 u it covers is about the distance the
+held period would give, i.e. the input is played back late. With no stick, y changes at constant
+1-5 u/s: 102.9-104.9 s rises 197.8 -> 199.7 at 1.0 u/s; 126.5-128.1 s falls 159.3 -> 152.0 at
+4-5 u/s; 5 s samples 160 -> 181 -> 190 -> 182 -> 155 -> 167 -> 192 -> 209 over 136-172 s. The
+highest y is 208.75 against a ground near 171.5 (37 u up), the lowest 24 u below the start. The
+position logged is the actor's world matrix, the one the camera follows, and the animation answers
+at once, so the camera follows a body being moved by something else, not a slowed clock. FPS++ reads
+~31-33 fps and anim ~0.9-1.0; the hook sees ~32 VPADReads/s; `[clock]` ratio is 1.000. The guest eye-pass
+structure is host-independent: `currentEyeSide` is written only by the pack's asm, and the Linux
+renderer never writes it. The only BetterVR code that writes Link's physics body is the roomscale
+drive; a warp whose support probe lands on the wrong surface can raise the body 0.10 m per step and
+overwrite y while gravity integrates. That fits the vertical constant rates and the launches, but no
+log line shows a warp and the delay is not explained by it. **No cause is claimed; the physics stays
+open.**
+
+**Patch 0010 (not built, not run).** `bettervr.json` `{"roomscale":0}` turns the roomscale body drive
+off (default on, as now; read once at the first use, so the app must be restarted after the file
+changes). The launcher reloads `bettervr.json` before a write, so Play in VR/TV and Settings > VR
+keep the key. The `[diag]` line gains `rs on/off b/c/w` (hook calls, ray casts, warps written to the body
+since the previous line), the player's actor jobs per eye pass, and the passes that ended; lines are
+also written every 4th VPADRead while Link's height changes 15 cm, and the cap is 2400 lines (8/s
+while active, so bounded). A warp count >0 during a launch or while the stick is idle is the
+roomscale drive writing the body; 0 with the same movement clears it.
+
+**Patch 0011 (not built, not run).** The submit thread now runs `UpdateSeatedHeightCalibration` as
+`renderer.cpp`'s `StartFrame` does, every thread locates in the current `m_stageSpace`, and the
+per-frame 1.65 m lift is gone after the calibration; before it, and if the first `LoadingWeapon_00`
+screen passed before the renderer existed, the old lift stays, so the start height is the one
+earlier builds had. The calibration moves the stage space, so the hands move with the head instead
+of sitting 0.65 m too low; the reprojection lookup matches x and z and is unaffected, and the render
+pose passed to Hmd2 is the raw head pose as before. The PS5 default `PlayPosition` is Seated (one
+line in `mod_settings.h` under `__PROSPERO__`); `PlayPosition=STANDING` in `bettervr_settings.ini`
+keeps the real height above the tracker's origin. The launcher's Settings > VR shows Seated as that
+default. Hands, the view height, and whether `Seated height calibrated` appears are Test request 13.
+
+**Patch 0012 (not built, not run).** The Linux renderer's constructor now creates an ImGui context,
+sets `IniFilename` null, calls `InitSettings`, and loads `bettervr_settings.ini` from
+`/data/botwvr/launcher` (the same path the launcher writes), once, before any frame. Nothing is drawn,
+no input is taken, and the file is not written back; BetterVR's ImGui is its own local copy, so
+Cemu's context is not touched. An absent file leaves the defaults; a malformed line is logged and
+skipped (an invalid enum resets to its default), so the next log decides. Settings > VR now reaches
+the game.
+
+**Accurate barriers (not built, not run).** A BotW VR start sets Cemu's `vk_accurate_barriers` false
+in memory, as BetterVR's Windows launcher does, and every `settings.xml` save (the in-game menu, the
+USB devices switch, graphic packs, accounts, the end of the game) writes the player's value through
+`SaveConfig`; the default is true and an existing false is kept. A flat start after a VR game in the
+same process restores it, so flat play reads the player's value, not the VR session's. A crash or a
+kill during VR therefore leaves the player's value, not false. No performance result is claimed.
+
+**Backlog:** nothing is displayed on the TV during VR; Patryk tried to record a video and got a
+black screen. Not investigated here.
+
 ## 2026-11-05 (fourth run): the XR input reaches the game, the view's aspect, and the Graphics pack off by default
 
 **Not built, not run.** This merges the game branch (`ae0a9ad`, BetterVR patch 0008) and the
@@ -680,11 +744,44 @@ Cloud session, scheduled run. Nothing was built for the console and nothing was 
 
 ## Open test requests
 
+### Test request 13: the roomscale switch, with and without (this build)
+
+**Which build.** The next console build of `fix/vr-first-frame-sigill`: `patches/bettervr` 0001-0012,
+including 0010 (the roomscale switch and counters), 0011 (the seated height moves the stage) and
+0012 (the ini is read), and Cemu's accurate barriers off for VR. It is not `45a0bc3` and not m9.
+The boot log should have `[vr] Cemu's accurate barriers off for VR`; `VR Settings Loaded` appears
+only if `bettervr_settings.ini` exists.
+
+**Try, in this order.** The switch is read once per app process, so quit the app fully between the
+two runs, not only the game.
+
+1. **Default.** Keep `{"vr": true}` and remove `roomscale` (or set it to 1). Play the same spot as
+   in logs7 for about 3 minutes: walk, jump, fall, and note the boot log's time when a launch or a
+   fall starts. Send the `[diag]` lines around it.
+2. **Roomscale off.** Quit the app, put `"roomscale":0` in `/data/botwvr/launcher/bettervr.json`,
+   start the app and the game again, and play the same way at the same spot for the same time. Send
+   the same lines.
+
+**Send back:** the `[diag]` lines around each launch and fall, with the `rs on/off b/c/w` fields; the
+`[vr] Cemu's accurate barriers off for VR ...` line; `Seated height calibrated` or its absence; and,
+if the ini exists, `VR Settings Loaded`. Say whether the view height at the start is as before and
+whether the hands stay with the head when you crouch or lean.
+
+**What it decides:** `rs ... w` > 0 during a launch or while the stick is idle means the roomscale
+drive wrote Link's body; 0 with the same movement means it did not. The two runs decide whether the
+switch changes the launches and the stick delay. `jobs` should be one per pass and `pass` one per
+VPADRead call; any other ratio means the eye-pass structure is wrong. The physics cause stays open
+until the warps and the A/B say it is or is not roomscale.
+
 ### Test request 12: the XR input, the view's aspect, and the Graphics pack switch (this build)
 
 **Which build.** The next console build of `fix/vr-first-frame-sigill`: BetterVR patches 0008 (the
 overlay optional, so the XR input reaches the game) and 0009 (the game camera's aspect, the
 `graphicsPack` and `reproject` switches). It is not m9 and not an earlier artifact.
+
+**Result (build 45a0bc3, Graphics pack off).** Passes for the picture, tracking and Sense:
+"Offset is gone, tracking is really good now and very smooth. Sense works, I can control the game."
+The physics is still off; the pack-on and pack-off-again steps were not reported.
 
 **If upgrading from a build before m6**, remove the home-screen tile and let ShadowMount Plus add the
 app again after copying it; a copy over `/data/homebrew/PPSA98720` alone leaves the old registered
