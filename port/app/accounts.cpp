@@ -28,7 +28,7 @@ namespace ps5emu
 		void SetCurrent(uint32_t id)
 		{
 			GetConfig().account.m_persistent_id = id;
-			GetConfigHandle().Save();
+			SaveConfig();
 		}
 	}
 

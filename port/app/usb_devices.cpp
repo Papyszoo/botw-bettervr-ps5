@@ -4,6 +4,7 @@
 // MPL-2.0 licence.
 
 #include "usb_devices.h"
+#include "emulator.h"
 #include "lang.h"
 #include "paths.h"
 #include "../ps5/log.h"
@@ -181,7 +182,7 @@ namespace ps5usb
 	void SetEnabled(Device device, bool on)
 	{
 		Switch(device) = on;
-		GetConfigHandle().Save();
+		ps5emu::SaveConfig(); // the in-game menu reaches this in VR, where settings.xml keeps the player's accurate barriers
 		ps5log::Line("[usb] {}: {} (from the next game started)", Name(device), on ? "on" : "off");
 	}
 
