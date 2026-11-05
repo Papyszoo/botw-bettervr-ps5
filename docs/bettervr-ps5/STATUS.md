@@ -3,6 +3,74 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-05 (fourth run): the XR input reaches the game, the view's aspect, and the Graphics pack off by default
+
+**Not built, not run.** This merges the game branch (`ae0a9ad`, BetterVR patch 0008) and the
+performance branch (`851503c`, patch 0009 with the `graphicsPack` and `reproject` switches) into
+`fix/vr-first-frame-sigill`. Both branches added a 0008; the overlay patch keeps 0008 and the aspect
+patch is 0009, so the series has one file per number. `patches/bettervr` 0001-0009 apply in order on
+BetterVR's pin `2e06b31` through `tools/bettervr-patches.sh apply`, on a fresh clone and on a tree
+with 0001-0007 (`applied 2 new patches`). `port/bettervr/xr/runtime.cpp` passes
+`clang++ -std=c++20 -fsyntax-only` against the pinned OpenXR 1.1.49 and PS5_Mesa's Vulkan headers,
+with the pre-existing `-Wreturn-type-c-linkage` warning on `ReadAction`. Nothing was compiled for the
+console, packaged or run.
+
+**Why the in-game Sense never worked (logs5; proven by the code and the log).** `hook_InjectXRInput`
+began with `renderer->EnsureFrameInputLatched(); auto* imguiOverlay = renderer->m_imguiOverlay.get();
+if (!imguiOverlay) return;`. `m_imguiOverlay` is made only in `framebuffer.cpp` under `_WIN32`, and
+the Linux backend's `ImGuiOverlay` methods are stubs, so this port never creates it: the hook
+returned before the Sense sticks and buttons, the hand gestures, the game state, the haptics and the
+motion bridge. The log agrees: both poses and buttons reached the runtime (`Sense pose from
+VrTracker2` at 18.5 s, `hands posed 1 1`), but no Sense input reached the game and no `[diag]` line
+ran. Patch 0008 makes the overlay optional; the mod menu is skipped without it, so it cannot take
+input and the Plus hold no longer toggles a menu that cannot exist. The hook ORs the XR buttons into
+the DualSense's own VPAD and adds the XR sticks (the upstream merge), so centred Sense sticks add
+zero and do not mask the DualSense; with both sticks pushed the sum can exceed 1, as upstream. The
+right Sense's motion replaces the DualSense's motion when its pose is valid; at rest the game's
+motion input follows the Sense, which is the upstream design but new on this console. A hand that
+`xrLocateSpace` could not place is now left out of the body-slot gestures (its zeroed location is
+the tracker's origin, where the waist slot matches), so a grip press cannot open a slot with a hand
+that is not tracked. The hook runs on the PPC thread; `m_input` and `m_gameState` are copied under
+their own `AtomicState` mutexes, no lock is held across another, and the runtime's haptic lock is
+taken only while a rumble is active. The `[diag] VPADRead hook` line is one line per 5 s; the other
+`[diag]` block keeps its 900-line cap.
+
+**What the new path still does not have.** BetterVR's own settings (`bettervr_settings.ini`) are
+loaded in the ImGui overlay's constructor, which is Win32-only: the log has no `VR Settings Loaded`,
+so the hook, the gestures and the cameras use `ModSettings`' defaults and Settings > VR has no effect.
+This was true before 0008 but only now does the input path depend on those settings; not changed in
+this build. The gesture comparison also uses the head pose the renderer lifts to 1.65 m while the
+hand poses are the tracker's (logs5: hands y 0.59-0.61, head 0.98); the shoulder and mouth radii are
+then about 0.7 m short, so those two gestures may not fire. This needs a decision about which frame
+they should use, so it is left for the next console log, not changed here.
+
+**The view after the Graphics pack (logs5; proven by the code).** The pack was active at 1280x1320
+and the view was offset. BetterVR's game camera projects for `m_gameRenderAspectRatio`, which the
+Windows path sets from the image and the Linux path left at 16:9, while the crop already took the
+aspect from the image. Patch 0009 sets it from the display 3D target, not from a target the 3D path
+refuses (its own "skipped non-display target" log line), and does so on every 3D clear, so it
+follows the pack. At 1280x720 the value is the same 16:9 as before.
+
+**Graphics pack off, and reprojection.** `"graphicsPack": 1` in
+`/data/botwvr/launcher/bettervr.json` turns the pack on; without it the pack is off. That is the file
+`BetterVR_PS5_Setting` reads (`ps5paths::Root()/bettervr.json`, and `Root()` is
+`/data/botwvr/launcher`, as the log's line says). On a console whose `settings.xml` holds the pack
+active with a preset, `PS5Cemu_BetterVRApplyMode` sees the exact name `Graphics (Modified Version For
+BetterVR)` enabled while `graphicsWanted` is false and toggles it off; `SaveState` writes the
+`_disabled` entry because the pack's rules have `default = 1`. The launcher's rapidjson writers keep
+every other key, so `graphicsPack` and `reproject` survive a change in Settings > VR. Turning the pack
+off drops its saved preset; turning it on again starts at the 0.5x default. This is code reading; the
+next log's `graphic pack … turned off for VR` and Cemu's `Activate graphic packs` decide. Reprojection
+stays on; `"reproject": 0` in the same file submits every frame as rendered from the display time's
+pose, as before `54e7944`, and the session-start line prints `reprojection … on/off`.
+
+**Gravity is still open, and the hook is not cleared.** The game report called gravity independent
+of this hook because the hook returned early in every session that showed it. That inference does not
+hold: the hook body never ran in those sessions, so the newly enabled path (XR input and game state,
+gestures, haptics, the motion bridge) has never been present with the symptom and may be a cause or
+change it. The guest clock is ruled out (`[clock]` ratio 1.000, 30.9 game frames per guest second).
+No cause is claimed; Test request 12 asks for the lines that would show it.
+
 ## 2026-11-05 (third run): the render pose, the Graphics pack, and the frame-rate session
 
 **Not built, not run.** This is the merge of the game branch (`c85f3ca`, `a12b994`) and the
@@ -607,6 +675,42 @@ Cloud session, scheduled run. Nothing was built for the console and nothing was 
 - **Next:** M1, the baseline build and release (see `PLAN.md`).
 
 ## Open test requests
+
+### Test request 12: the XR input, the view's aspect, and the Graphics pack switch (this build)
+
+**Which build.** The next console build of `fix/vr-first-frame-sigill`: BetterVR patches 0008 (the
+overlay optional, so the XR input reaches the game) and 0009 (the game camera's aspect, the
+`graphicsPack` and `reproject` switches). It is not m9 and not an earlier artifact.
+
+**If upgrading from a build before m6**, remove the home-screen tile and let ShadowMount Plus add the
+app again after copying it; a copy over `/data/homebrew/PPSA98720` alone leaves the old registered
+`param.json` (INSTALL.md section 5).
+
+**Try, in this order:**
+
+1. **Default: pack off.** Start the app and Breath of the Wild in VR, and play about 3 minutes in the
+   world. Walk with the DualSense; press every Sense button (A/B/X/Y, L1/R1, both sticks, the grips,
+   the triggers and Plus); and hold a grip while raising each hand to your shoulder, your waist and
+   your mouth. The view should be the 1280x720 one from the earlier builds. The boot log should have
+   a `[diag] VPADRead hook: N calls in 5 s` line every 5 s, and `[diag] calls=…` lines while you move.
+2. **Pack on.** Quit to the library and put `{"vr": true, "graphicsPack": 1}` in
+   `/data/botwvr/launcher/bettervr.json` (keep `"bettervr": false` if you use the flat screen).
+   Start the game again, not the app. Cemu should log the pack on, the picture should be sharper, and
+   the view must not be offset. If it is offset, quit, add `"reproject": 0` to the same file, start
+   again, and say whether the offset goes.
+3. **Pack off again.** Set `"graphicsPack": 0` (or remove the key), start the game, and check that
+   the 720p view comes back.
+
+**Send back:** the `[diag] VPADRead hook` and `[diag] calls=` lines; the `Sense pose`/`hands posed`/
+`head` lines; the app's `graphic pack … turned` lines and Cemu's `Activate graphic pack` lines for
+each step; `reprojection of the game's frames`; any `[crash]`; what the Sense buttons and gestures
+did; whether the picture was right in each step; and whether the slow/late physics and gravity still
+happen (say when, against the boot log's clock). No console result is claimed here.
+
+**What it decides:** whether the hook now runs and injects at all (the `[diag]` lines), whether the
+aspect fix removes the offset with the pack on, whether the switch really turns the pack off with the
+console's `settings.xml`, and whether `reproject 0` is needed. It also says whether the gravity
+problem survives the first session in which the hook body runs.
 
 ### Test request 11: the Graphics pack, the render pose, and the physics lines
 
