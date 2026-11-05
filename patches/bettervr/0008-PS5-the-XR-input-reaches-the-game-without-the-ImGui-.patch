@@ -1,0 +1,81 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 5 Nov 2026 16:39:53 +0100
+Subject: [PATCH] PS5: the XR input reaches the game without the ImGui overlay,
+ which only Windows makes
+
+hook_InjectXRInput returned at once when the renderer's ImGui overlay was missing. framebuffer.cpp
+makes that overlay under _WIN32 only, so on this port it never exists and the function never got
+past its first lines: no Sense stick or button, no hand gesture, no game state, no haptics reached
+the game; only the DualSense's own VPAD did (the boot log of the 2026-11-05 evening had no [diag]
+line from the code after it). The overlay is now optional: the mod menu is skipped without it and
+cannot be opened, so it cannot take the game's input. A [diag] line every 5 s says how often the
+hook runs.
+---
+ src/hooking/controls.cpp | 28 ++++++++++++++++++++++++----
+ 1 file changed, 24 insertions(+), 4 deletions(-)
+
+diff --git a/src/hooking/controls.cpp b/src/hooking/controls.cpp
+index 09d26e3..474d3f9 100644
+--- a/src/hooking/controls.cpp
++++ b/src/hooking/controls.cpp
+@@ -909,6 +909,12 @@ void processModMenuInput(std::atomic_bool& isMenuOpen, OpenXR::InputState& input
+         inputs.shared.modMenuState.longFired_actedUpon = false;
+     }
+ 
++    // without an overlay (the PS5 port) there is no menu to open: it would only take the game's input
++    if (!imguiOverlay) {
++        isMenuOpen = false;
++        return;
++    }
++
+     // allow the gamepad inputs to control the imgui overlay
+     imguiOverlay->ProcessInputs(inputs, vpadInputs);
+ 
+@@ -1032,17 +1038,29 @@ void CemuHooks::hook_InjectXRInput(PPCInterpreter_t* hCPU) {
+     uint32_t vpadStatusOffset = hCPU->gpr[4];
+     VPADStatus vpadStatus = {};
+ 
++    // PS5 diagnostics: that this hook runs at all, and where it leaves early, once per 5 s
++    static uint32_t s_hookCalls = 0, s_hookNoRenderer = 0;
++    static auto s_hookLast = std::chrono::steady_clock::now();
++    s_hookCalls++;
++    if (const auto hookNow = std::chrono::steady_clock::now(); hookNow - s_hookLast >= std::chrono::seconds(5)) {
++        s_hookLast = hookNow;
++        Log::print<INFO>("[diag] VPADRead hook: {} calls in 5 s, {} without a renderer", s_hookCalls, s_hookNoRenderer);
++        s_hookCalls = s_hookNoRenderer = 0;
++    }
++
+     auto& xr = VRManager::instance().XR;
+     auto* renderer = xr->GetRenderer();
+     if (!renderer) {
++        s_hookNoRenderer++;
+         return;
+     }
+     renderer->EnsureFrameInputLatched();
+ 
++    // PS5: the ImGui overlay is Win32-only (framebuffer.cpp creates it under _WIN32), so on this port it is
++    // never made. Returning here without it skipped the whole function: the XR sticks and buttons, the hand
++    // gestures, the game state, haptics and the motion never reached the game; only the DualSense's own
++    // VPAD did. The mod menu is the only thing that needs the overlay.
+     auto* imguiOverlay = renderer->m_imguiOverlay.get();
+-    if (!imguiOverlay) {
+-        return;
+-    }
+ 
+     // todo: revert this to unblock gamepad input
+     readMemory(vpadStatusOffset, &vpadStatus);
+@@ -1057,7 +1075,9 @@ void CemuHooks::hook_InjectXRInput(PPCInterpreter_t* hCPU) {
+             startBtnActionConsumed = false;
+         }
+         else if (!startBtnActionConsumed && std::chrono::steady_clock::now() - startBtnLastTime > std::chrono::milliseconds(500)) {
+-            xr->m_isMenuOpen = !xr->m_isMenuOpen;
++            if (imguiOverlay) {
++                xr->m_isMenuOpen = !xr->m_isMenuOpen;
++            }
+             startBtnActionConsumed = true;
+         }
+         startBtnWasDown = true;
+-- 
+2.50.1 (Apple Git-155)
+
