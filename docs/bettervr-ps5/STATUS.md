@@ -57,10 +57,12 @@ follows the pack. At 1280x720 the value is the same 16:9 as before.
 `/data/botwvr/launcher`, as the log's line says). On a console whose `settings.xml` holds the pack
 active with a preset, `PS5Cemu_BetterVRApplyMode` sees the exact name `Graphics (Modified Version For
 BetterVR)` enabled while `graphicsWanted` is false and toggles it off; `SaveState` writes the
-`_disabled` entry because the pack's rules have `default = 1`. The launcher's rapidjson writers keep
-every other key, so `graphicsPack` and `reproject` survive a change in Settings > VR. Turning the pack
-off drops its saved preset; turning it on again starts at the 0.5x default. This is code reading; the
-next log's `graphic pack … turned off for VR` and Cemu's `Activate graphic packs` decide. Reprojection
+`_disabled` entry because the pack's rules have `default = 1`. The launcher now reads
+`bettervr.json` again before a write (`vr_settings.cpp`), so a `graphicsPack` or `reproject` key
+added over FTP while the app runs survives Play in VR/TV and Settings > VR; without that, the copy
+the home screen read at its first draw would have dropped it. Turning the pack off drops its saved
+preset; turning it on again starts at the 0.5x default. This is code reading; the next log's
+`graphic pack … turned off for VR` and Cemu's `Activate graphic packs` decide. Reprojection
 stays on; `"reproject": 0` in the same file submits every frame as rendered from the display time's
 pose, as before `54e7944`, and the session-start line prints `reprojection … on/off`.
 
