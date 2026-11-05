@@ -3,6 +3,24 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-05 (seated height): the calibration runs on the first in-game frame if the loading screen was missed
+
+**Not built, not run.** Build 4e0676d has no `Seated height calibrated` line in logs8 or logs10. The
+only automatic request is the first `LoadingWeapon_00` screen, and the submit thread that calls
+`UpdateSeatedHeightCalibration` starts at 9.2 s, after the game (7.0 s) and the PS5's boot load;
+logs8's first `in_game=1` is at 41.2 s with no calibration line, so the trigger never fired while the
+submit thread was running. Patch 0011 now also requests the calibration on the first in-game frame with a
+valid head pose when Seated and not yet calibrated. The stage space moves once, so the view and the
+hands share it and the 1.65 m lift stops; Standing keeps the real height. The log gains
+`Seated height calibrated: head at ...m above the tracker origin, stage origin moved by ...m; views
+and hands share it`, and `Seated height calibration skipped: ...` once per reason (Standing, waiting
+for the game, no valid head pose, the runtime's recentre time). `port/bettervr/xr/runtime.cpp` queues
+no `XR_TYPE_EVENT_DATA_REFERENCE_SPACE_CHANGE_PENDING` and hmd2 has no recentre call, so a PSVR2
+recentre does not re-run it; the upstream handler is already there if a runtime sends the event. The
+next log must show one calibration line before the first `[diag] ... in_game=1`, a measured head
+height near the player's seated tracker height, and hands at the view's stage offset with no 1.65 m
+lift afterwards.
+
 ## 2026-11-05: the TV shows the headset's view during VR (not built, not run)
 
 **Why the TV was black (PROVEN for the code and the log, INFERRED for the console's routing).**
@@ -68,9 +86,10 @@ roomscale drive writing the body; 0 with the same movement clears it.
 
 **Patch 0011 (not built, not run).** The submit thread now runs `UpdateSeatedHeightCalibration` as
 `renderer.cpp`'s `StartFrame` does, every thread locates in the current `m_stageSpace`, and the
-per-frame 1.65 m lift is gone after the calibration; before it, and if the first `LoadingWeapon_00`
-screen passed before the renderer existed, the old lift stays, so the start height is the one
-earlier builds had. The calibration moves the stage space, so the hands move with the head instead
+per-frame 1.65 m lift is gone after the calibration; before it the old lift stays, so the start
+height is the one earlier builds had, and the first in-game frame requests the calibration if the
+first `LoadingWeapon_00` screen passed before the renderer existed (newest entry). The calibration
+moves the stage space, so the hands move with the head instead
 of sitting 0.65 m too low; the reprojection lookup matches x and z and is unaffected, and the render
 pose passed to Hmd2 is the raw head pose as before. The PS5 default `PlayPosition` is Seated (one
 line in `mod_settings.h` under `__PROSPERO__`); `PlayPosition=STANDING` in `bettervr_settings.ini`

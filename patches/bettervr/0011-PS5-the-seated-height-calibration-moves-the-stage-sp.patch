@@ -4,28 +4,29 @@ Date: Thu, 5 Nov 2026 18:15:26 +0100
 Subject: [PATCH] PS5: the seated height calibration moves the stage space, not
  only the head's views
 
-The Linux backend pinned the head to 1.65 m by shifting the views and left the hands where the runtime located them, so with the head at 1 m the hands were 0.65 m too low against it, and crouching and leaning were flattened. The submit thread now runs UpdateSeatedHeightCalibration as renderer.cpp's StartFrame does, and every thread locates in the stage space as it is then (OpenXR::GetStageSpace). On the PS5 the default play position is Seated (calibrates once at the first loading screen to Link's eye height; the tracker's origin is not known to be the floor). Until that calibration has run, the views keep the old 1.65 m lift, so the start height is the one earlier builds had even if the first loading screen passed before the renderer existed.
+The Linux backend pinned the head to 1.65 m by shifting the views and left the hands where the runtime located them, so with the head at 1 m the hands were 0.65 m too low against it, and crouching and leaning were flattened. The submit thread now runs UpdateSeatedHeightCalibration as renderer.cpp's StartFrame does, and every thread locates in the stage space as it is then (OpenXR::GetStageSpace). On the PS5 the default play position is Seated (calibrates to Link's eye height; the tracker's origin is not known to be the floor). If the first LoadingWeapon_00 screen passes before the renderer exists, as it does when the PS5 starts the session after the boot load, the first in-game frame with a valid head pose requests the calibration too; one line says when it runs, or why it is skipped. Until it has run, the views keep the old 1.65 m lift, so the start height is the one earlier builds had.
 ---
- src/rendering/openxr.cpp          |  8 ++++----
- src/rendering/openxr.h            |  5 ++++-
- src/rendering/renderer_vulkan.cpp | 31 +++++++++++++++++++------------
+ src/rendering/openxr.cpp          | 35 ++++++++++++++++++++++++++-----
+ src/rendering/openxr.h            |  8 ++++++-
+ src/rendering/renderer_vulkan.cpp | 31 ++++++++++++++++-----------
  src/utils/mod_settings.h          |  7 +++++++
- 4 files changed, 34 insertions(+), 17 deletions(-)
+ 4 files changed, 63 insertions(+), 18 deletions(-)
 
 diff --git a/src/rendering/openxr.cpp b/src/rendering/openxr.cpp
-index 4ec7823..e1f685f 100644
+index 4ec7823..148ab2d 100644
 --- a/src/rendering/openxr.cpp
 +++ b/src/rendering/openxr.cpp
-@@ -286,7 +286,7 @@ void OpenXR::CreateSession(const void* graphicsBinding, const char* failureMessa
+@@ -286,7 +286,8 @@ void OpenXR::CreateSession(const void* graphicsBinding, const char* failureMessa
      checkXRResult(xrCreateSession(m_instance, &sessionCreateInfo, &m_session), failureMessage);
  
      Log::print<INFO>("Creating the OpenXR spaces...");
 -    m_hasSeatedHeightCalibration = false;
 +    m_hasSeatedHeightCalibration.store(false, std::memory_order_release);
++    m_seatedHeightCalibrationSkipReason = nullptr;
      m_seenFirstLoadingScreen = false;
      m_lastSeenPlayMode.reset();
      ReplaceStageSpace(0.0f);
-@@ -324,7 +324,7 @@ void OpenXR::RequestSeatedHeightCalibration(XrTime notBeforeTime) {
+@@ -324,12 +325,21 @@ void OpenXR::RequestSeatedHeightCalibration(XrTime notBeforeTime) {
  }
  
  std::optional<float> OpenXR::GetCalibratedSeatedEyeHeight() const {
@@ -34,26 +35,72 @@ index 4ec7823..e1f685f 100644
          return std::nullopt;
      }
      return kLinkEyeHeight + m_stageFloorOffset;
-@@ -350,7 +350,7 @@ void OpenXR::UpdateSeatedHeightCalibration(XrTime predictedDisplayTime, const st
+ }
+ 
++void OpenXR::LogSeatedHeightCalibrationSkip(const char* reason) {
++    // the same literal while the reason does not change, so a per-frame call writes one line per reason
++    if (m_seatedHeightCalibrationSkipReason == reason) {
++        return;
++    }
++    m_seatedHeightCalibrationSkipReason = reason;
++    Log::print<INFO>("Seated height calibration skipped: {}", reason);
++}
++
+ void OpenXR::UpdateSeatedHeightCalibration(XrTime predictedDisplayTime, const std::optional<XrSpaceLocation>& headLocation) {
+     const PlayMode playMode = GetSettings().GetPlayMode();
+     if (m_lastSeenPlayMode.has_value() && playMode != m_lastSeenPlayMode.value() && playMode == PlayMode::SEATED) {
+@@ -344,31 +354,46 @@ void OpenXR::UpdateSeatedHeightCalibration(XrTime predictedDisplayTime, const st
+         }
+     }
+ 
++    // The loading screen above must be up after this renderer exists. The PS5 starts the session after the
++    // boot load, so that screen can pass unseen; ask again on the first in-game frame, where the head pose is
++    // the seated play pose. The request stays pending until a valid head pose arrives.
++    if (playMode == PlayMode::SEATED && !m_hasSeatedHeightCalibration.load(std::memory_order_acquire)
++        && !m_seatedHeightCalibrationRequested.load(std::memory_order_acquire) && CemuHooks::IsInGame()) {
++        RequestSeatedHeightCalibration();
++    }
++
+     if (playMode != PlayMode::SEATED) {
+         m_seatedHeightCalibrationRequested.store(false, std::memory_order_relaxed);
+         if (m_stageFloorOffset != 0.0f) {
              ReplaceStageSpace(0.0f);
              Log::print<INFO>("Seated height calibration cleared, using the real height above the floor again");
          }
 -        m_hasSeatedHeightCalibration = false;
 +        m_hasSeatedHeightCalibration.store(false, std::memory_order_release);
++        LogSeatedHeightCalibrationSkip("PlayPosition is Standing, so the real height above the tracker origin is used");
          return;
      }
  
-@@ -367,7 +367,7 @@ void OpenXR::UpdateSeatedHeightCalibration(XrTime predictedDisplayTime, const st
+     if (!m_seatedHeightCalibrationRequested.load(std::memory_order_acquire)) {
++        if (!m_hasSeatedHeightCalibration.load(std::memory_order_acquire)) {
++            LogSeatedHeightCalibrationSkip("waiting for the first loading screen or in-game frame");
++        }
+         return;
+     }
+     if (predictedDisplayTime < m_seatedHeightCalibrationNotBeforeTime.load(std::memory_order_relaxed)) {
++        LogSeatedHeightCalibrationSkip("waiting for the runtime's recentre time");
+         return;
+     }
+     if (!headLocation.has_value() || !std::isfinite(headLocation->pose.position.y)) {
++        LogSeatedHeightCalibrationSkip("no valid head pose yet");
+         return;
+     }
+ 
      const float realEyeHeight = headLocation->pose.position.y + m_stageFloorOffset;
      m_seatedHeightCalibrationRequested.store(false, std::memory_order_relaxed);
      ReplaceStageSpace(realEyeHeight - kLinkEyeHeight);
 -    m_hasSeatedHeightCalibration = true;
+-    Log::print<INFO>("Seated height calibrated: eyes are {:.2f}m above the floor, stage origin moved by {:.2f}m", realEyeHeight, m_stageFloorOffset);
 +    m_hasSeatedHeightCalibration.store(true, std::memory_order_release);
-     Log::print<INFO>("Seated height calibrated: eyes are {:.2f}m above the floor, stage origin moved by {:.2f}m", realEyeHeight, m_stageFloorOffset);
++    m_seatedHeightCalibrationSkipReason = nullptr;
++    Log::print<INFO>("Seated height calibrated: head at {:.2f}m above the tracker origin, stage origin moved by {:.2f}m; views and hands share it", realEyeHeight, m_stageFloorOffset);
  }
  
+ void OpenXR::CreateActions() {
 diff --git a/src/rendering/openxr.h b/src/rendering/openxr.h
-index dc4a1b8..7e38a4e 100644
+index dc4a1b8..a880dfb 100644
 --- a/src/rendering/openxr.h
 +++ b/src/rendering/openxr.h
 @@ -223,6 +223,7 @@ public:
@@ -73,12 +120,22 @@ index dc4a1b8..7e38a4e 100644
  
  #ifndef _WIN32
      // Current OpenXR session state (updated by ProcessEvents on Linux). The submit
-@@ -257,7 +260,7 @@ private:
+@@ -247,6 +250,7 @@ private:
+         return path;
+     };
+     void ReplaceStageSpace(float floorOffset);
++    void LogSeatedHeightCalibrationSkip(const char* reason);
+ 
+     XrInstance m_instance = XR_NULL_HANDLE;
+     XrSystemId m_systemId = XR_NULL_SYSTEM_ID;
+@@ -257,7 +261,9 @@ private:
      float m_stageFloorOffset = 0.0f;
      std::atomic_bool m_seatedHeightCalibrationRequested = false;
      std::atomic<XrTime> m_seatedHeightCalibrationNotBeforeTime = 0;
 -    bool m_hasSeatedHeightCalibration = false;
 +    std::atomic_bool m_hasSeatedHeightCalibration = false;
++    // the last skip reason logged: UpdateSeatedHeightCalibration runs every frame and writes one line per reason
++    const char* m_seatedHeightCalibrationSkipReason = nullptr;
      bool m_seenFirstLoadingScreen = false;
      std::optional<PlayMode> m_lastSeenPlayMode;
      std::array<XrSpace, 2> m_inGameHandSpaces = { XR_NULL_HANDLE, XR_NULL_HANDLE };
