@@ -335,6 +335,7 @@ namespace
 		struct Hand
 		{
 			int handle = -1;
+			bool owned = false; // opened here, not the launcher's handle (the menus open them first)
 			bool registered = false, connected = false, reportedMissing = false;
 			XrTime nextOpen = 0;
 			uint32_t buttons = 0, rawLogged = 0xffffffffu;
@@ -415,17 +416,24 @@ namespace
 			if (hand.handle >= 0 || now < hand.nextOpen)
 				continue;
 			hand.nextOpen = now + kPadRetry;
-			int handle = scePadOpen(user, kPadTypeSense[i], 0, nullptr);
+			// the launcher's menus open the pads before VR: take that handle rather than opening the
+			// pad a second time, and leave it open for the menus when VR stops
+			const int found = scePadGetHandle(user, kPadTypeSense[i], 0);
+			int opened = -1;
+			int handle = found;
+			const bool owned = handle < 0;
 			if (handle < 0)
-				handle = scePadGetHandle(user, kPadTypeSense[i], 0);
+				opened = handle = scePadOpen(user, kPadTypeSense[i], 0, nullptr);
 			if (handle < 0)
 			{
 				if (!hand.reportedMissing)
-					Log("no %s Sense controller for user %d (scePadOpen -> 0x%08x); trying every 2 s", HandName(i), user, (unsigned)handle);
+					Log("no %s Sense controller for user %d (scePadGetHandle -> 0x%08x, scePadOpen -> 0x%08x); trying every 2 s",
+						HandName(i), user, (unsigned)found, (unsigned)opened);
 				hand.reportedMissing = true;
 				continue;
 			}
 			hand.handle = handle;
+			hand.owned = owned;
 			hand.reportedMissing = false;
 			const int mode = scePadSetVibrationMode(handle, kVibrationModeCompatible);
 			hand.registered = hmd2::register_controller(handle, i == 1);
@@ -438,7 +446,7 @@ namespace
 	{
 		for (auto& hand : s.hands)
 		{
-			if (hand.handle >= 0)
+			if (hand.handle >= 0 && hand.owned)
 				scePadClose(hand.handle);
 			hand = State::Hand{};
 		}
