@@ -157,12 +157,27 @@ Do this once without VR, so a problem with the game itself doesn't look like a V
 
 ## 7. VR
 
-**From `m8` on:** the app opens on Breath of the Wild's page. Choose **Play in VR** or **Play on
-TV**. The app saves the choice in `bettervr.json` and turns BetterVR's graphic pack, and FPS++ for
-VR, on or off as the game starts: no file to edit, no restart. The Sense controllers move through
-the menus too (stick to move, Cross to choose, Circle to go back).
+**From `m9` on** the app is a launcher for this one game:
+
+![The home screen](screens/home.png)
+
+- **Play in VR** or **Play on TV** on the home screen. The app turns BetterVR's graphic pack (and
+  FPS++ for VR) on or off as the game starts: no file to edit, no restart.
+- **VR settings** (also the first page of **Settings**): BetterVR's options: camera (first or third
+  person), cutscenes, standing or seated, height, turning (snap or smooth), walking direction,
+  swings, left-handed, the menus in the headset (follow your view, distance, size), black bars in
+  cutscenes; and the app's own: the game in 3D or a flat screen in the headset, and the Sense
+  controllers' hand and aim angles. Each change is saved at once and used at the next Play in VR.
+- **Graphic packs:** Breath of the Wild's community packs, nothing else.
+- The Sense controllers move through the menus too (stick to move, Cross to choose, Circle to go
+  back).
+
+![Settings > VR](screens/vr-settings.png)
 
 Turn on both Sense controllers and put on the headset before Play in VR.
+
+**`m8`:** the app opens on Breath of the Wild's page in the emulator's launcher, with Play in VR and
+Play on TV; the other VR options are only in `bettervr.json` (below).
 
 **Before `m8`** (`m5` to `m7`):
 

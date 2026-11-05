@@ -3,6 +3,29 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-05: m8-botw-home released, and m9: a launcher for one game
+
+- **[m8-botw-home](https://github.com/Papyszoo/botw-bettervr-ps5/releases/tag/m8-botw-home)**
+  (`84f3f1a`, built, untested on console): m7's VR fix, BotW's page as home with Play in VR and Play
+  on TV, the Sense controllers in the menus.
+- **Patryk, after m8 was planned:** the UI still reads as a repurposed emulator; he wants a launcher
+  for one game, with its settings in it, and BetterVR's configuration without editing JSON.
+- **m9, on `main` (`486695d`):**
+  - **Home** (`frontend/shell/home.cpp`) in place of the Library: the game's own boot screen across
+    the screen (from his dump), its name with a VR mark, the update and DLC, and Play in VR, Play on
+    TV, VR settings, Graphic packs, Settings. Without the game: where to put it, and Look for it
+    again. Everything that went back to the Library comes back here.
+  - **Settings > VR** (`frontend/shell/vr_settings.cpp`): BetterVR's options, written to its own ini
+    (`bettervr_settings.ini`, section `[BetterVR][Settings]`, read as VR starts), and the app's
+    (3D or flat screen, the Sense hand and aim angles) in `bettervr.json`. Every other key and
+    section in both files is kept.
+  - **Settings** has this game's pages only, VR first; no sides, themes, play time or PS5-ECAM
+    updates. No What's new or Make it yours; the Setup check only when something fails.
+  - **A theme of its own**, BotW VR, deep teal like the home and the tile art, the default.
+  - The 61 new strings in all 27 full languages (`lang.py check` passes). The PC preview showed every
+    screen, in English and Polish (`docs/bettervr-ps5/screens`).
+  - Not changed: the in-game menu (touchpad + Options) is still PS5-ECAM's.
+
 ## 2026-11-05: the green screen's cause (m6-vr-diag's log), m7-vr-layer, and the launcher for BotW
 
 **Reported by Patryk** (`m6-vr-diag`, VR on): the green screen again. His boot log:
@@ -444,6 +467,23 @@ Cloud session, scheduled run. Nothing was built for the console and nothing was 
 - **Next:** M1, the baseline build and release (see `PLAN.md`).
 
 ## Open test requests
+
+### Test request 8: the launcher for one game (m9)
+
+**Which build.** `m9-launcher`, over the installed app.
+
+**Try:**
+
+1. The app opens on the new home: the game's own picture behind it, Play in VR first. Move with the
+   DualSense and with a Sense controller's stick.
+2. **VR settings:** change a few (camera, turning, height), leave, come back: are they kept?
+3. **Play in VR** (Test request 7's checks: what the headset shows). Did the settings you chose
+   apply in the game (BetterVR's own menu, long-press R3, shows them)?
+4. Quit, then **Play on TV**: the game flat, without BetterVR.
+5. Anything that still looks like the emulator's launcher, or that you would want in or out.
+
+**Send back:** what you saw, `/data/botwvr/launcher/logs/boot.log`, and
+`/data/botwvr/launcher/bettervr_settings.ini`.
 
 ### Test request 7: VR through BetterVR's layer (m7-vr-layer)
 
