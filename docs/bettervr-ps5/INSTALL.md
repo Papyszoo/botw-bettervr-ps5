@@ -137,6 +137,12 @@ Skip this if your WUA already has update v208 in it.
 4. It doesn't update itself: newer builds are this repository's pre-releases, copied over the same
    way.
 
+**Upgrading a build from before `m6`:** copying over `/data/homebrew/PPSA98720` does not refresh the
+`param.json` the system registered for the app. The PS VR2 flags in `/system_data/priv/appmeta` and
+`/user/app` can stay stale (they did from `m5`), leaving the old tile icon and the Sense controllers
+intercepted. After copying, **remove the app's tile and let ShadowMount Plus add it again**; that is
+what fixed both on the console.
+
 **The tile and background.** The app comes with a plain picture of its own (nothing of Nintendo's
 can be in it). Once it has found your Breath of the Wild, it makes its tile from the game's box art
 (GameTDB's, or the game's own icon) and its home screen background from the game's boot screen,

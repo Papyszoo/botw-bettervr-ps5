@@ -3,6 +3,54 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-05 (third run): the render pose, the Graphics pack, and the frame-rate session
+
+**Not built, not run.** This is the merge of the game branch (`c85f3ca`, `a12b994`) and the
+performance branch (`abb880d`, `eae7d67`, `54e7944`) into `fix/vr-first-frame-sigill`, with the
+review of the changes since `40f77a0`. `port/bettervr/xr/runtime.cpp` passes
+`clang++ -std=c++20 -fsyntax-only` against the pinned OpenXR 1.1.49 and PS5_Mesa's Vulkan headers;
+`patches/bettervr` 0001-0007 apply in order on BetterVR's pin `2e06b31` through
+`tools/bettervr-patches.sh apply`. Nothing was compiled for the console, packaged or run.
+
+**The render pose (`54e7944`).** BetterVR adds a seated-height offset to the views it renders from
+before it submits them, so the old x, y and z match never held and `xrEndFrame` sent Hmd2 the pose of
+the display time instead of the render pose: no reprojection of an image 50-80 ms old. The match is
+now x and z only, the ring holds 256 located views (about 1 s at BetterVR's 250 Hz pose thread), and
+the 600-frame `[vr-xr]` line ends with `render pose found N, not found M`. This is a code reading,
+not a console result: whether Hmd2's reprojection then follows the head is Test request 11.
+
+**The frame rate and the resolution (logs3, logs4).** The playable stretch is 31.6-34 fps at about
+9,000-10,300 draws a frame; the later 60 fps / 1,800-2,900-draw stretch is a light screen, not the
+world. The GPU thread is 70% busy and waits on the PS5 GPU about 0%, so the emulated CPU side is the
+limit (inferred; `"profile": true` would decide it). No Graphics pack was active, so BotW drew
+1280x720 16:9 and about 755x720 of it was stretched over each 1984x2048 eye. `0007` ships BetterVR's
+Graphics pack with the PS5 eye sizes, 0.5x (1280x1320 per eye) by default; the app copies it to
+`graphicPacks/bettervr` and turns it on for VR and off for the TV. Not run on the console; see Test
+request 11 for what to look for.
+
+**The game run (logs3, logs4).** The in-game Sense pads open, their buttons and sticks arrive, and
+BetterVR merges them with the DualSense; whether VrTracker2 gives them a pose was still unknown, so
+the runtime now logs the first pose (or its absence) and the `[vr-xr]` line carries the head position
+and which hands are posed. Because the launcher now opens the pads first, the runtime takes that
+handle instead of opening a second one, and closes only a handle it opened itself; otherwise VR's
+stop could close the launcher's pad. The port's Wii U in-game menu still reads only the DualSense; `a53b97b`
+changed the launcher's menus, not that one. Nothing in the code read so far advances game time twice
+per frame or queues right-eye work, and FPS++'s speed factor at 31.6 fps is 0.95; the cause of the
+slow/late physics is **not known and remains open**, with the tracker's origin against the floor as
+an unproven candidate. `[clock]` and `[diag]` (patch `0006`) now log the guest clock against host
+time, Link's position against the sticks and FPS++'s values.
+
+**The 180FPS preset is a console-only edit, not in this repository.** It removes Cemu's
+`Mismatching vsync frequency 180` line by making FPS++ agree with BetterVR's own 180; it changed
+nothing in the observed frame rate and is not a fix.
+
+**Installing over an old build.** The 0005 build was installed at 14:11 through Prospero Manager, not
+copied over by hand. Copying a build over `/data/homebrew/PPSA98720` does not refresh the
+`param.json` the system registered for the app: the PS VR2 flags in `/system_data/priv/appmeta` and
+`/user/app` stayed stale from `m5` until the tile was removed and ShadowMount Plus re-added it. That
+re-add is what made the tile's icon right and cleared the Sense intercept bit in the logs (set at
+51.927 s, clear at 53.542 s in the m9 session). `INSTALL.md` section 5 now says so.
+
 ## 2026-11-05 (second run): the reported crash was m9; 0005 then passed it; the Sense controllers were never linked
 
 **Reported by Patryk:** the Sense controllers still did not move the launcher's menus, and Play in VR
@@ -14,8 +62,8 @@ in the folder still had its 10:51 install time. The crash was the same `0x800102
 `OpenXR::UpdateActions` → `__atomic_load(size=0x6c0)` on the submit thread (`rdi=0x6c0`, return
 `0xaa3a22`), which only the m9 build can emit. **0005 had not been installed when that session ran.**
 
-**The 0005 build was installed at 14:11 and passes the crash.** `eboot.bin` is now 45,314,777 bytes,
-SHA-256 `543407d3…` (mtime 14:11:12), with m9 beside it as `eboot.bin.m9-backup`. Its 14:12 session
+**The 0005 build was installed at 14:11 through Prospero Manager and passes the crash.** `eboot.bin`
+is now 45,314,777 bytes, SHA-256 `543407d3…` (mtime 14:11:12). Its 14:12 session
 ran for at least 312 s: `OpenXR session begun successfully!`, `Hmd2 live at frame 2`, **6,000
 headset frames by 121 s (5,999 flips shown, 0 errors, 0 missed, 0 queue-full, 0 repeated), 60.0 fps
 by 262 s**, about 10,335 draws a frame, with no `[crash]`, no `VR off` and no `session ended`;
@@ -559,6 +607,34 @@ Cloud session, scheduled run. Nothing was built for the console and nothing was 
 - **Next:** M1, the baseline build and release (see `PLAN.md`).
 
 ## Open test requests
+
+### Test request 11: the Graphics pack, the render pose, and the physics lines
+
+**Which build.** The first build after the merge above: `patches/bettervr` 0001-0007, the x-z render
+pose match (`54e7944`), the Sense-pose and head logs (`c85f3ca`), and `[clock]`/`[diag]`. It is not
+m9 and not the 0005 artifact. The boot log should show `BetterVR's Graphics pack in …`; when the pack
+had to be turned on, `graphic pack Graphics (Modified Version For BetterVR) turned on for VR` follows.
+
+**If upgrading from a build before m6**, remove the home-screen tile and let ShadowMount Plus add the
+app again after copying it; a copy over `/data/homebrew/PPSA98720` alone leaves the old registered
+`param.json` (INSTALL.md section 5).
+
+**Try:** first start flat, open BotW's Graphic packs and check the new pack is listed (off for the
+TV, with FPS++ on as before), then play in VR for about 3 minutes in the world. Turn your head
+slowly and quickly, use both Sense controllers, and walk, jump and fall once. Then run once with
+`"profile": true` in `/data/botwvr/launcher/ps5cemu.json`.
+
+**Send back:** the boot log, with the `BetterVR's Graphics pack in …`, `graphic pack Graphics
+(Modified Version For BetterVR) …`, Cemu's `Activate graphic pack` and `rules.txt error` lines, the
+`[vr-xr] … render pose found N, not found M; head x y z, hands posed L R` line, the `Sense pose from
+VrTracker2` (or `VrTracker2 gives none`) lines, and the `[clock]` and `[diag]` lines. Say whether the
+picture is sharper, whether the HUD, shadows and first-person hands look right, whether head turning
+is smooth, and whether the slow/late physics and gravity still happen.
+
+**What it decides:** whether the x-z match finds the render pose on every frame (a large `not found`
+count means it does not), whether the Graphics pack activates at the expected size, whether VrTracker2
+gives the hands a pose, and whether the guest clock or FPS++ is away from the real frame rate. The
+gravity cause stays open until the head-position and physics lines say something concrete.
 
 ### Test request 10: the Sense controllers in the menus, linked at last
 
