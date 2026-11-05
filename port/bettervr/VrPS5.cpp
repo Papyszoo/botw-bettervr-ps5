@@ -505,11 +505,13 @@ extern "C" bool BetterVR_PS5_LayerWanted()
 	return ps5vr::s_mode == ps5vr::Mode::BetterVR;
 }
 
-// app/emulator.cpp, before Cemu loads its graphic packs: BetterVR's pack (the app's
-// assets/bettervr, tools/package.sh) in graphicPacks/bettervr, always: the launcher's Play in VR and
-// Play on TV choose between them without a restart, and PS5Cemu_BetterVRApplyMode turns the pack on
-// or off before each start. (It is on by default for Breath of the Wild, and its patches call
-// BetterVR's hooks, which only exist while BetterVR runs: on, it would break the game flat.)
+// app/emulator.cpp, before Cemu loads its graphic packs: BetterVR's pack and its Graphics pack (the
+// app's assets/bettervr, tools/package.sh) in graphicPacks/bettervr, always: the launcher's Play in
+// VR and Play on TV choose between them without a restart, and PS5Cemu_BetterVRApplyMode turns the
+// packs on or off before each start. (They are on by default for Breath of the Wild, and BetterVR's
+// patches call BetterVR's hooks, which only exist while BetterVR runs: on, they would break the game
+// flat.) Without the Graphics pack the game draws both eyes at 1280x720, 16:9, with the part of the
+// picture outside each eye's field of view too; with it, at the eye's shape and size.
 void PS5Cemu_BetterVRPrepareGraphicPack()
 {
 	namespace fs = std::filesystem;
@@ -526,11 +528,16 @@ void PS5Cemu_BetterVRPrepareGraphicPack()
 	fs::create_directories(target, ec);
 	fs::copy(source, target / "BreathOfTheWild_BetterVR", fs::copy_options::recursive, ec);
 	ps5vr::Log(fmt::format("BetterVR's graphic pack in {}{}", (target / "BreathOfTheWild_BetterVR").string(), ec ? " failed: " + ec.message() : ""));
+	// the Graphics pack is not needed for the game to start: a missing one is only said
+	const fs::path graphics = source.parent_path() / "BreathOfTheWild_Graphics";
+	fs::copy(graphics, target / "BreathOfTheWild_Graphics", fs::copy_options::recursive, ec);
+	ps5vr::Log(fmt::format("BetterVR's Graphics pack in {}{}", (target / "BreathOfTheWild_Graphics").string(), ec ? " failed: " + ec.message() : ""));
 }
 
 // app/emulator.cpp, as a game starts, before Cemu activates its graphic packs: for Breath of the
-// Wild, BetterVR's pack on when bettervr.json asks for BetterVR and off otherwise, and FPS++ on with
-// it (BetterVR crashes without it), as the player would set them in the game's Graphic packs
+// Wild, BetterVR's pack and its Graphics pack on when bettervr.json asks for BetterVR and off
+// otherwise, and FPS++ on with it (BetterVR crashes without it), as the player would set them in the
+// game's Graphic packs
 void PS5Cemu_BetterVRApplyMode(uint64_t titleId)
 {
 	if (!ps5vr::IsBreathOfTheWild(titleId))
@@ -543,9 +550,10 @@ void PS5Cemu_BetterVRApplyMode(uint64_t titleId)
 	{
 		const bool vrPack = packs[i].name == "Better VR";
 		const bool fpsPack = packs[i].name == "FPS++";
+		const bool graphicsPack = packs[i].name == "Graphics (Modified Version For BetterVR)";
 		if (vrPack)
 			found = true;
-		if ((vrPack && packs[i].enabled != wanted) || (fpsPack && wanted && !packs[i].enabled))
+		if (((vrPack || graphicsPack) && packs[i].enabled != wanted) || (fpsPack && wanted && !packs[i].enabled))
 		{
 			const bool now = ps5emu::ToggleGraphicPack(titleId, i);
 			ps5vr::Log(fmt::format("graphic pack {} turned {} for {}", packs[i].name, now ? "on" : "off", wanted ? "VR" : "the TV"));
