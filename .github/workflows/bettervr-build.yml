@@ -1,0 +1,103 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# BotW VR: builds this branch on the runner a private repository gets (2 vCPU, 7 GB), with
+# docs/BUILDING.md's packages and `make release`. It only builds: no release, tag or branch is made,
+# and no secret is used beyond the default token's read access. The push trigger is this branch
+# alone; workflow_dispatch starts working once this file is on the default branch.
+name: BetterVR build
+
+on:
+  push:
+    branches: ['fix/vr-first-frame-sigill']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    env:
+      # two compile jobs for two cores; the swap below takes the long Cemu link's peak
+      JOBS: 2
+      # Ubuntu 24.04's Python is externally managed: meson, mako and packaging go to the user site
+      PIP_BREAK_SYSTEM_PACKAGES: 1
+    steps:
+      - name: Free disk
+        run: |
+          sudo rm -rf -- /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup \
+            /opt/hostedtoolcache/CodeQL /usr/local/share/boost /usr/share/swift \
+            /usr/local/share/powershell /opt/microsoft /opt/az
+          sudo apt-get clean
+          df -h /
+
+      - uses: actions/checkout@v4
+
+      - name: Packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            clang-18 lld-18 llvm-18 llvm-18-dev libclang-18-dev libclc-18-dev \
+            libllvmspirvlib-18-dev llvm-spirv-18 spirv-tools glslang-tools bison flex rsync \
+            cmake ninja-build git make python3 python3-pip wget unzip
+
+      - name: meson, mako and packaging
+        run: |
+          python3 -m pip install --user meson mako packaging
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Swap
+        run: |
+          sudo fallocate -l 16G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          free -h
+
+      # the pinned inputs and the RADV/SDK build trees would otherwise be fetched and built again
+      # after a failure: kept under the deps.json revision, and not restored across a change of pin
+      - name: Cache the fetched inputs
+        id: cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            .deps
+            ~/.cache/ps5cemu-deps
+          key: bettervr-deps-${{ hashFiles('tools/deps.json') }}
+
+      - name: Build
+        shell: bash
+        run: |
+          set -o pipefail
+          make release 2>&1 | tee build.log
+
+      - name: Keep the fetched inputs
+        if: always() && steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            .deps
+            ~/.cache/ps5cemu-deps
+          key: bettervr-deps-${{ hashFiles('tools/deps.json') }}
+
+      - name: The build
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bettervr-build
+          path: |
+            dist/BotW-VR-v*.zip
+            dist/ps5cemu-v*.elf
+          if-no-files-found: error
+          retention-days: 3
+
+      - name: Build logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bettervr-build-logs
+          path: |
+            build.log
+            build/**/*.log
+          if-no-files-found: ignore
+          retention-days: 3
