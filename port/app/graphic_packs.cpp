@@ -53,7 +53,7 @@ namespace ps5emu
 				else if (pack->IsDefaultEnabled())
 					data.graphic_pack_entries[filename].try_emplace("_disabled", "false");
 			}
-			GetConfigHandle().Save();
+			SaveConfig();
 		}
 
 		// The preset categories with a preset to show, in the pack's order, as

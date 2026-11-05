@@ -1,0 +1,106 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ps5cemu <ps5cemu@localhost>
+Date: Thu, 5 Nov 2026 18:15:26 +0100
+Subject: [PATCH] PS5: the seated height calibration moves the stage space, not
+ only the head's views
+
+The Linux backend pinned the head to 1.65 m by shifting the views and left the hands where the runtime located them, so with the head at 1 m the hands were 0.65 m too low against it, and crouching and leaning were flattened. The submit thread now runs UpdateSeatedHeightCalibration as renderer.cpp's StartFrame does, and every thread locates in the current m_stageSpace. On the PS5 the default play position is Seated (calibrates once at the first loading screen to Link's eye height; the tracker's origin is not known to be the floor).
+---
+ src/rendering/renderer_vulkan.cpp | 21 ++++++++++-----------
+ src/utils/mod_settings.h          |  7 +++++++
+ 2 files changed, 17 insertions(+), 11 deletions(-)
+
+diff --git a/src/rendering/renderer_vulkan.cpp b/src/rendering/renderer_vulkan.cpp
+index fdf0fde..d9e5438 100644
+--- a/src/rendering/renderer_vulkan.cpp
++++ b/src/rendering/renderer_vulkan.cpp
+@@ -716,7 +716,7 @@ static void PoseTrackingThreadMain(XrSession session, XrSpace stageSpace) {
+         XrViewLocateInfo locateInfo = { XR_TYPE_VIEW_LOCATE_INFO };
+         locateInfo.viewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
+         locateInfo.displayTime = target;
+-        locateInfo.space = stageSpace;
++        locateInfo.space = VRManager::instance().XR->m_stageSpace;
+ 
+         XrViewState viewState = { XR_TYPE_VIEW_STATE };
+         uint32_t viewCount = 2;
+@@ -829,12 +829,15 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
+         }
+ 
+         if (currentFrameState.predictedDisplayTime != 0) {
+-            VRManager::instance().XR->UpdateSpaces(currentFrameState.predictedDisplayTime);
++            // as renderer.cpp's StartFrame: the head in the stage, for the seated height calibration, which
++            // moves the stage space (the spaces above are read from m_stageSpace each time for that)
++            const std::optional<XrSpaceLocation> headLocation = VRManager::instance().XR->UpdateSpaces(currentFrameState.predictedDisplayTime);
++            VRManager::instance().XR->UpdateSeatedHeightCalibration(currentFrameState.predictedDisplayTime, headLocation);
+ 
+             XrViewLocateInfo locateInfo = { XR_TYPE_VIEW_LOCATE_INFO };
+             locateInfo.viewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
+             locateInfo.displayTime = currentFrameState.predictedDisplayTime;
+-            locateInfo.space = stageSpace;
++            locateInfo.space = VRManager::instance().XR->m_stageSpace;
+             XrViewState viewState = { XR_TYPE_VIEW_STATE };
+             uint32_t viewCount = 2;
+             std::array<XrView, 2> views = { XrView{XR_TYPE_VIEW}, XrView{XR_TYPE_VIEW} };
+@@ -1135,7 +1138,7 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
+                 XrViewLocateInfo lateLocateInfo = { XR_TYPE_VIEW_LOCATE_INFO };
+                 lateLocateInfo.viewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
+                 lateLocateInfo.displayTime = currentFrameState.predictedDisplayTime;
+-                lateLocateInfo.space = stageSpace;
++                lateLocateInfo.space = VRManager::instance().XR->m_stageSpace;
+                 XrViewState lateViewState = { XR_TYPE_VIEW_STATE };
+                 uint32_t lateViewCount = 2;
+                 auto lateLocateStart = std::chrono::high_resolution_clock::now();
+@@ -1253,7 +1256,7 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
+                             glm::degrees(rv.fov.angleUp), glm::degrees(rv.fov.angleDown));
+                     }
+                 }
+-                projectionLayer.space = stageSpace;
++                projectionLayer.space = VRManager::instance().XR->m_stageSpace;
+                 projectionLayer.viewCount = 2;
+                 projectionLayer.views = projectionViews.data();
+                 projectionLayerReady = true;
+@@ -1280,7 +1283,7 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
+                 glm::quat hudOri = glm::quatLookAt(forward, up);
+                 constexpr float aspectRatio = 16.0f / 9.0f;
+                 hudLayer.layerFlags = has3D ? XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT : 0;
+-                hudLayer.space = stageSpace;
++                hudLayer.space = VRManager::instance().XR->m_stageSpace;
+                 hudLayer.eyeVisibility = XR_EYE_VISIBILITY_BOTH;
+                 hudLayer.subImage.swapchain = s_linux->hudSwapchain.handle;
+                 hudLayer.subImage.imageRect.offset = { 0, 0 };
+@@ -2161,15 +2164,11 @@ void RND_Renderer::LatchPendingIfNeeded() const {
+                                      std::memory_order_release);
+     }
+ 
+-    // Apply seated height offset and publish to m_currViews. This is the pose
++    // Publish to m_currViews (the seated height is the stage space's, OpenXR::UpdateSeatedHeightCalibration). This is the pose
+     // used by the game camera and therefore the pose to attach to captured 3D
+     // content for projection-layer reprojection.
+     {
+         std::unique_lock viewsLock(m_viewsMutex);
+-        constexpr float kTargetHeadHeight = 1.65f;
+-        float currentHeight = (views[0].pose.position.y + views[1].pose.position.y) * 0.5f;
+-        float heightOffset = kTargetHeadHeight - currentHeight;
+-        for (auto& v : views) v.pose.position.y += heightOffset;
+         m_currViews = views;
+         m_linuxCurrViewsDisplayTime = viewsDisplayTime;
+     }
+diff --git a/src/utils/mod_settings.h b/src/utils/mod_settings.h
+index 82e210e..d1a8c24 100644
+--- a/src/utils/mod_settings.h
++++ b/src/utils/mod_settings.h
+@@ -569,7 +569,14 @@ struct ModSettings {
+     // playing mode settings
+     EnumSetting<CameraMode> cameraMode{ "CameraMode", CameraMode::FIRST_PERSON };
+     // not keyed "PlayMode": that key is retired in settings.cpp, so a Seated choice saved by an older build stays unread
++#ifdef __PROSPERO__
++    // the PS5 runtime's tracker origin is not known to be the floor, so the eye height is set once (at the
++    // first loading screen) to Link's, as the Linux backend always did; "PlayPosition=STANDING" in
++    // bettervr_settings.ini takes the real height above the tracker's origin
++    EnumSetting<PlayMode> playMode{ "PlayPosition", PlayMode::SEATED };
++#else
+     EnumSetting<PlayMode> playMode{ "PlayPosition", PlayMode::STANDING };
++#endif
+     FloatSetting thirdPlayerDistance{ "ThirdPlayerDistance", 0.5f, 0.0f };
+     BoolSetting thirdPersonBowCameraAim{ "ThirdPersonBowCameraAim", true };
+     EnumSetting<EventMode> cutsceneCameraMode{ "CutsceneCameraMode", EventMode::FOLLOW_DEFAULT_EVENT_SETTINGS };

@@ -1,0 +1,29 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ps5cemu <ps5cemu@localhost>
+Date: Thu, 5 Nov 2026 18:15:42 +0100
+Subject: [PATCH] PS5: bettervr_settings.ini is read
+
+On Windows ImGuiOverlay's constructor creates the ImGui context, adds the settings handler and loads the file; the Linux backend has no overlay, so the file was never read. The same three calls, once, with no frame and no IniFilename.
+---
+ src/rendering/renderer_vulkan.cpp | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/src/rendering/renderer_vulkan.cpp b/src/rendering/renderer_vulkan.cpp
+index d9e5438..8a521c5 100644
+--- a/src/rendering/renderer_vulkan.cpp
++++ b/src/rendering/renderer_vulkan.cpp
+@@ -649,6 +649,14 @@ RND_Renderer::RND_Renderer(XrSession xrSession): m_session(xrSession) {
+         }
+     }
+ 
++    // The settings file: vulkan_imgui.cpp's ImGuiOverlay constructor reads it on Windows, and the Linux
++    // backend has no overlay. A context with the settings handler and no frame: it loads the file and
++    // nothing is drawn, nothing takes input from it, and it is never written (no IniFilename).
++    ImGui::CreateContext();
++    ImGui::GetIO().IniFilename = nullptr;
++    InitSettings();
++    ImGui::LoadIniSettingsFromDisk(BETTERVR_SETTINGS_INI);
++
+     m_isInitialized = true;
+     Log::print<INFO>("Linux RND_Renderer: Initialized with stereo swapchains + intermediates");
+ }
