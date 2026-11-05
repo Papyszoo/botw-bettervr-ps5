@@ -22,6 +22,16 @@ jobs:
       JOBS: 2
       # Ubuntu 24.04's Python is externally managed: meson, mako and packaging go to the user site
       PIP_BREAK_SYSTEM_PACKAGES: 1
+      # the compiler cache: CMake (Cemu, BetterVR, the libraries) reads the launcher from the
+      # environment into a new build folder; meson (RADV) finds ccache on PATH by itself; the
+      # boilerplate's own ninja steps ask for it with USE_CCACHE (the log said "disabled")
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
+      USE_CCACHE: 1
+      CCACHE_DIR: /home/runner/.ccache
+      CCACHE_MAXSIZE: 3G
+      CCACHE_COMPRESS: 1
+      CCACHE_SLOPPINESS: pch_defines,time_macros
     steps:
       - name: Free disk
         run: |
@@ -39,7 +49,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             clang-18 lld-18 llvm-18 llvm-18-dev libclang-18-dev libclc-18-dev \
             libllvmspirvlib-18-dev llvm-spirv-18 spirv-tools glslang-tools bison flex rsync \
-            cmake ninja-build git make python3 python3-pip wget unzip
+            cmake ninja-build ccache git make python3 python3-pip wget unzip
 
       - name: meson, mako and packaging
         run: |
@@ -67,11 +77,33 @@ jobs:
             ~/.cache/ps5cemu-deps
           key: bettervr-deps-${{ hashFiles('tools/deps.json') }}
 
+      # a new key for every run, the last run's cache as the start: a cache is never changed once saved
+      - name: Cache the compiler results
+        uses: actions/cache/restore@v4
+        with:
+          path: /home/runner/.ccache
+          key: bettervr-ccache-${{ hashFiles('tools/deps.json') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            bettervr-ccache-${{ hashFiles('tools/deps.json') }}-
+            bettervr-ccache-
+
       - name: Build
         shell: bash
         run: |
           set -o pipefail
+          ccache --zero-stats
           make release 2>&1 | tee build.log
+
+      - name: Compiler cache statistics
+        if: always()
+        run: ccache --show-stats || true
+
+      - name: Keep the compiler results
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: /home/runner/.ccache
+          key: bettervr-ccache-${{ hashFiles('tools/deps.json') }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Keep the fetched inputs
         if: always() && steps.cache.outputs.cache-hit != 'true'
