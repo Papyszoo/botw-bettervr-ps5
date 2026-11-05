@@ -59,12 +59,26 @@ the game.
 
 **CI compile failure (fixed; still not built, not run).** Run 42079383036 stopped in `renderer_vulkan.cpp`: patch 0011's submit and pose threads read `OpenXR::m_stageSpace` directly, and it is private (only `RND_Renderer` is a friend), so patch 0011 now adds `OpenXR::GetStageSpace()` beside the other getters and the five reads go through it; the twelve patches apply in order on the pin, and no other error was found by reading the files the run did not reach against their declarations.
 
-**Accurate barriers (not built, not run).** A BotW VR start sets Cemu's `vk_accurate_barriers` false
-in memory, as BetterVR's Windows launcher does, and every `settings.xml` save (the in-game menu, the
-USB devices switch, graphic packs, accounts, the end of the game) writes the player's value through
-`SaveConfig`; the default is true and an existing false is kept. A flat start after a VR game in the
-same process restores it, so flat play reads the player's value, not the VR session's. A crash or a
-kill during VR therefore leaves the player's value, not false. No performance result is claimed.
+**Test request 13, runs 1 and 2 (build f05d80d; reported by Patryk).** Roomscale on (run 1): 3734
+hook calls, 254 ray casts and 90 warps written to the body; roomscale off (run 2): 1224 calls, 0
+casts, 0 warps. The body's y spans 171.5 to 208.5 in both, and the player says "same gravity glitches
+happen in both": a run with no warp and the same launches rules the roomscale drive out as their
+cause. Run 1 has no `Seated height calibrated` line, so `ReplaceStageSpace` never ran and the old
+1.65 m lift stayed; the player says "My view height is accurate". The hands are joined: "joined
+together no matter what I do but they react to rotating controllers". The cause is
+`port/bettervr/xr/runtime.cpp`: `xrCreateActionSpace` stored `HandOf(subactionPath)` while the hand
+paths were cached only at the first `xrSyncActions`, which comes after creation, so both hand spaces
+held `hand == -2` and `xrLocateSpace` returned the first valid pose binding, the left grip, for both.
+`HandOf` now reads the hand name from the runtime's own path table, complete at creation, and the
+600-frame `[vr-xr]` line prints both hand spaces' located positions (`hand spaces left ...`, then
+`right ...`, 3 decimals) so the next log shows they differ. Not built, not run.
+
+**Accurate barriers (not built, not run).** The VR override is removed after Test request 13: the
+player says "I think there were more visual glitches" with the override on, and the fps did not
+change (31.6 before and after). A BotW VR start no longer sets Cemu's `vk_accurate_barriers` false,
+`SaveConfig` and the flat-start restore are gone, and every `settings.xml` save writes the player's
+value again, as before `45a0bc3`; the boot log has no `[vr] Cemu's accurate barriers off for VR`
+line. The `[ingame] accurate barriers` toggle still shows and changes the player's own value.
 
 **Backlog:** nothing is displayed on the TV during VR; Patryk tried to record a video and got a
 black screen. Not investigated here.

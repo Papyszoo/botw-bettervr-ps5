@@ -92,7 +92,7 @@ void PS5Cemu_VrStop();
 // BotW-BetterVR (port/bettervr/VrPS5.cpp): BetterVR's graphic pack in graphicPacks/, and on or off as
 // a game starts, as bettervr.json asks
 void PS5Cemu_BetterVRPrepareGraphicPack();
-bool PS5Cemu_BetterVRApplyMode(uint64_t titleId);
+void PS5Cemu_BetterVRApplyMode(uint64_t titleId);
 
 namespace ps5emu
 {
@@ -101,17 +101,6 @@ namespace ps5emu
 		bool s_firstStart = false;
 		bool s_coreStarted = false; // Cemu's settings are loaded: this session is Cemu's
 		bool s_keepGameList = false; // Options::keepGameList, for LibraryInit
-		// BotW VR runs with Cemu's accurate barriers off, as BetterVR's Windows launcher sets it; the player's
-		// value (s_barriersWere) goes back into settings.xml, and stays what flat play reads
-		bool s_barriersOverridden = false;
-		bool s_barriersWere = false;
-		void RestoreBarriers()
-		{
-			if (!s_barriersOverridden)
-				return;
-			GetConfig().vk_accurate_barriers = s_barriersWere;
-			s_barriersOverridden = false;
-		}
 		std::atomic<bool> s_exitAfterGame{false}; // SetExitAfterGame: read by the in-game menus' threads
 		// the draws Cemu records in a command buffer before it submits it (PS5Cemu_SubmitDraws)
 		constexpr uint32_t kCemuSubmitDraws = 300;
@@ -329,7 +318,7 @@ namespace ps5emu
 			AES128_init();
 			GetConfigHandle().Load();
 			ApplyPlatformSettings();
-			SaveConfig();
+			GetConfigHandle().Save();
 			if (NetworkConfig::XMLExists())
 				n_config.Load();
 			PS5Cemu_BetterVRPrepareGraphicPack(); // BotW-BetterVR: its pack in graphicPacks/
@@ -402,7 +391,7 @@ namespace ps5emu
 		void SaveInGameSettings()
 		{
 			auto& config = GetConfig();
-			SaveConfig();
+			GetConfigHandle().Save();
 			const ps5settings::Launcher before = s_gameSettings ? *s_gameSettings : ps5settings::Load();
 			ps5settings::Launcher after = before;
 			after.upscaleFilter = config.upscale_filter;
@@ -442,7 +431,6 @@ namespace ps5emu
 			}).detach();
 			CafeSystem::ShutdownTitle();
 			s_stopped = true;
-			RestoreBarriers(); // a launcher save from here on must keep the player's value
 			ps5log::Line("[emu] the game stopped in {} ms",
 				(long long)std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started).count());
 		}
@@ -568,7 +556,7 @@ namespace ps5emu
 		if (s_firstStart)
 		{
 			ApplyPlatformSettings();
-			SaveConfig();
+			GetConfigHandle().Save();
 		}
 		if (!CreateDefaultMlcFiles(ActiveSettings::GetMlcPath()))
 		{
@@ -665,7 +653,7 @@ namespace ps5emu
 			archives::StartScan(config.game_paths);
 			ps5log::Line("[emu] games folder is now {}", options.gamesFolder);
 		}
-		SaveConfig();
+		GetConfigHandle().Save();
 	}
 
 	void SetSubmitDraws(int draws)
@@ -772,21 +760,7 @@ namespace ps5emu
 	bool LaunchGame(const Game& game, std::string& error)
 	{
 		ps5log::Line("[emu] launching {} ({:016x}) from {}", game.name, game.titleId, _pathToUtf8(game.path));
-		// BotW VR: BetterVR's pack on for VR, off for the TV; and for VR, Cemu's accurate barriers off
-		const bool vr = PS5Cemu_BetterVRApplyMode(game.titleId);
-		if (vr && !s_barriersOverridden)
-		{
-			s_barriersWere = GetConfig().vk_accurate_barriers;
-			GetConfig().vk_accurate_barriers = false;
-			s_barriersOverridden = true;
-			ps5log::Line("[vr] Cemu's accurate barriers off for VR (BetterVR's launcher does that too); settings.xml keeps {}", s_barriersWere ? "on" : "off");
-		}
-		else if (!vr && s_barriersOverridden)
-		{
-			// a flat start after a VR game in this process: the VR session's setting is not the player's
-			RestoreBarriers();
-			ps5log::Line("[vr] Cemu's accurate barriers back to the player's ({}) for this start", s_barriersWere ? "on" : "off");
-		}
+		PS5Cemu_BetterVRApplyMode(game.titleId); // BotW VR: BetterVR's pack on for VR, off for the TV
 		ps5ingame::SetGame(game); // the in-game menu's top: its name, box art and GameTDB's facts
 		if (!StartSystem(error))
 			return false;
@@ -1056,7 +1030,7 @@ namespace ps5emu
 		// Cemu's settings only where Cemu ran: a 3DS session never read them, and would write its
 		// defaults over them
 		if (s_coreStarted)
-			SaveConfig();
+			GetConfigHandle().Save();
 		// the app's own package as the console mounted it for this process, when this process sees it:
 		// /app0, the form the SDK gives and ProsperoEden starts itself again by, and always the version
 		// running. A copy elsewhere can be another version, or one the console ends this process for
@@ -1158,7 +1132,7 @@ namespace ps5emu
 		ps5update::WaitForCheck(10000);
 		ps5log::Line("[emu] the game is over: PS5Cemu closes (a home screen tile's --exit-after-game)");
 		if (s_coreStarted)
-			SaveConfig();
+			GetConfigHandle().Save();
 		ps5log::FlushAll();
 		LeaveEndingToSystem();
 		// as Forwarder Manager closes itself: the system ends the process
@@ -1177,16 +1151,6 @@ namespace ps5emu
 	bool ExitAfterGame()
 	{
 		return s_exitAfterGame;
-	}
-
-	// settings.xml written with the player's accurate barriers, not the VR session's
-	void SaveConfig()
-	{
-		if (s_barriersOverridden)
-			GetConfig().vk_accurate_barriers = s_barriersWere;
-		GetConfigHandle().Save();
-		if (s_barriersOverridden)
-			GetConfig().vk_accurate_barriers = false;
 	}
 }
 

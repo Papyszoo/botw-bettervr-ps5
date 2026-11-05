@@ -329,7 +329,8 @@ namespace
 		std::vector<std::string> paths; // XrPath n is paths[n - 1]
 		std::deque<XrEventDataBuffer> events;
 		// -- input (M4) --
-		XrPath touchProfile = XR_NULL_PATH, handPath[2] = {XR_NULL_PATH, XR_NULL_PATH};
+		XrPath touchProfile = XR_NULL_PATH;
+		Pose handLocated[2]; // the hand spaces' last located poses, in their base space, for the frame log
 		bool touchSuggested = false, attached = false;
 		std::vector<XrAction_T*> actions;
 		struct Hand
@@ -598,7 +599,17 @@ namespace
 	{
 		if (path == XR_NULL_PATH)
 			return -1;
-		return path == s.handPath[0] ? 0 : path == s.handPath[1] ? 1 : -2;
+		// the hand's path, from the table: the hand paths are cached only at the first xrSyncActions,
+		// which is after xrCreateActionSpace, so asking the cache there gave every space -2 (both hands)
+		if (path <= s.paths.size())
+		{
+			const std::string& name = s.paths[path - 1];
+			if (name == "/user/hand/left")
+				return 0;
+			if (name == "/user/hand/right")
+				return 1;
+		}
+		return -2;
 	}
 
 	// "/user/hand/left/input/x/click" -> left, X
@@ -1392,6 +1403,11 @@ XRAPI_ATTR XrResult XRAPI_CALL xrLocateSpace(XrSpace space, XrSpace base, XrTime
 	else
 		spacePose = SpacePose(space, time);
 	const Pose pose = Compose(Inverse(SpacePose(base, time)), spacePose);
+	if (space->action && space->hand >= 0)
+	{
+		// the hand's located pose, for the frame log: with a wrong hand both spaces show one pose
+		s.handLocated[space->hand] = pose;
+	}
 	location->pose = ToXr(pose);
 	location->locationFlags = XR_SPACE_LOCATION_ORIENTATION_VALID_BIT | XR_SPACE_LOCATION_POSITION_VALID_BIT |
 		XR_SPACE_LOCATION_ORIENTATION_TRACKED_BIT | XR_SPACE_LOCATION_POSITION_TRACKED_BIT;
@@ -1733,11 +1749,12 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
 		const hmd2::FlipInfo flip = hmd2::flip_status();
 		Log("%llu frames: nap %.2f ms, BeginFrame %.2f ms, ahead %.2f ms, step %.2f ms; flip shown %llu pending %d; repeated %d, queue full %d, "
 			"missed %d, errors %d, without layers %llu, skipped %llu, worn %d; render pose found %llu, not found %llu; "
-			"head %.2f %.2f %.2f, hands posed %d %d",
+			"head %.2f %.2f %.2f, hand spaces left %.3f %.3f %.3f right %.3f %.3f %.3f, hands posed %d %d",
 			(unsigned long long)session->frames, pace.nap_ms, pace.call_ms, pace.ahead_ms, pace.step_ms, (unsigned long long)flip.shown, flip.pending,
 			hmd2::repeated_frames(), hmd2::queue_full_waits(), hmd2::missed_frames(), hmd2::frame_errors(), (unsigned long long)session->emptyFrames,
 			(unsigned long long)session->skipped, hmd2::worn() ? 1 : 0, (unsigned long long)session->poseFound,
-			(unsigned long long)session->poseLost, renderHead.p.x, renderHead.p.y, renderHead.p.z, s.hands[0].poseValid ? 1 : 0,
+			(unsigned long long)session->poseLost, renderHead.p.x, renderHead.p.y, renderHead.p.z, s.handLocated[0].p.x, s.handLocated[0].p.y,
+			s.handLocated[0].p.z, s.handLocated[1].p.x, s.handLocated[1].p.y, s.handLocated[1].p.z, s.hands[0].poseValid ? 1 : 0,
 			s.hands[1].poseValid ? 1 : 0);
 	}
 	return XR_SUCCESS;
@@ -1853,17 +1870,6 @@ XRAPI_ATTR XrResult XRAPI_CALL xrSyncActions(XrSession, const XrActionsSyncInfo*
 	std::lock_guard lock(s.lock);
 	if (s.stopped)
 		return Lost();
-	if (s.handPath[0] == XR_NULL_PATH)
-	{
-		// the hands' paths, once: BetterVR names them before it syncs
-		for (int i = 0; i < 2; i++)
-		{
-			const std::string name = std::string("/user/hand/") + HandName(i);
-			for (size_t p = 0; p < s.paths.size(); p++)
-				if (s.paths[p] == name)
-					s.handPath[i] = p + 1;
-		}
-	}
 	for (XrAction_T* action : s.actions)
 		if (action->set)
 			action->set->active = false;

@@ -537,12 +537,12 @@ void PS5Cemu_BetterVRPrepareGraphicPack()
 // app/emulator.cpp, as a game starts, before Cemu activates its graphic packs: for Breath of the
 // Wild, BetterVR's pack and its Graphics pack on when bettervr.json asks for BetterVR and off
 // otherwise, and FPS++ on with it (BetterVR crashes without it), as the player would set them in the
-// game's Graphic packs. True when it is a VR start (app/emulator.cpp then turns Cemu's accurate barriers off)
+// game's Graphic packs
 extern "C" float BetterVR_PS5_Setting(const char* name, float fallback);
-bool PS5Cemu_BetterVRApplyMode(uint64_t titleId)
+void PS5Cemu_BetterVRApplyMode(uint64_t titleId)
 {
 	if (!ps5vr::IsBreathOfTheWild(titleId))
-		return false;
+		return;
 	bool betterVR = true;
 	const bool wanted = ps5vr::ReadSwitch(betterVR) && betterVR;
 	// bettervr.json's "graphicsPack": 1 for the Graphics pack's resolution; off until a console has shown its view right
@@ -564,7 +564,6 @@ bool PS5Cemu_BetterVRApplyMode(uint64_t titleId)
 	}
 	if (wanted && !found)
 		ps5vr::Log("BetterVR's graphic pack is not among Breath of the Wild's: the game will not start in stereo");
-	return wanted;
 }
 
 // Cemu's export for BetterVR, which Cemu defines in src/main.cpp: the PS5's entry point is

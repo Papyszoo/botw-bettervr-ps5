@@ -166,8 +166,6 @@ namespace ps5emu
 		bool enabled = false;
 		std::vector<GraphicPackChoice> choices; // one dropdown each, as in Cemu's window
 	};
-	// Cemu's settings written to settings.xml (a VR session's accurate barriers left out)
-	void SaveConfig();
 	std::vector<GraphicPackInfo> ListGraphicPacks(uint64_t titleId);
 	int EnabledGraphicPackCount(uint64_t titleId);
 	// Turns a pack of the game (by its index in ListGraphicPacks) on or off; returns its new state.
