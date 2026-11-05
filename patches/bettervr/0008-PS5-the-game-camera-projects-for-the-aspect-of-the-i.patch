@@ -1,0 +1,28 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ps5cemu <ps5cemu@localhost>
+Date: Thu, 5 Nov 2026 16:38:34 +0100
+Subject: [PATCH] PS5: the game camera projects for the aspect of the image the
+ game renders
+
+m_gameRenderAspectRatio was set from the image only in the Windows path (framebuffer.cpp); on Linux it stayed 16:9, so a render at the eye's shape (the Graphics pack, 1280x1320) got a 16:9 expanded projection squeezed into a nearly square image, and the crop (which takes the aspect from the image) did not undo it: a wrong field of view and eye offsets.
+---
+ src/rendering/renderer_vulkan.cpp | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/src/rendering/renderer_vulkan.cpp b/src/rendering/renderer_vulkan.cpp
+index 1b5ddc8..037b48d 100644
+--- a/src/rendering/renderer_vulkan.cpp
++++ b/src/rendering/renderer_vulkan.cpp
+@@ -1729,6 +1729,12 @@ void RND_Renderer::LinuxHandleColorClear(OpenXR::EyeSide side, long captureIdx,
+         // Transition source to GENERAL for reading
+         VulkanUtils::TransitionLayout(commandBuffer, image, imageLayout, VK_IMAGE_LAYOUT_GENERAL);
+ 
++        // The game camera projects for this aspect (camera.cpp); only the Windows path took it from the
++        // image, so a Graphics pack that renders at the eye's shape was projected as 16:9
++        if (captureIdx == 0) {
++            m_gameRenderAspectRatio = (float)srcWidth / (float)srcHeight;
++        }
++
+         if (captureIdx == 0) {
+             const bool is3DColorTarget = srcFormat == VK_FORMAT_A2B10G10R10_UNORM_PACK32;
+             if (is3DColorTarget) {

@@ -348,6 +348,7 @@ namespace
 			bool vibrating = false, vibrationLogged = false, poseLogged = false;
 		} hands[2];
 		float gripPitch = 0, aimPitch = 0;
+		bool reproject = true; // bettervr.json's "reproject": 0 submits every frame as rendered from the display time's pose
 		XrTime syncTime = 0;
 		hmd2::Fov fov{1.0f, 1.0f, 1.0f, 1.0f};
 		Vec3 eyeOffset[2] = {{-kHalfIpd, 0, 0}, {kHalfIpd, 0, 0}}; // in the head's frame
@@ -1232,6 +1233,8 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateSession(XrInstance, const XrSessionCreate
 	}
 	s.gripPitch = BetterVR_PS5_Setting("gripPitch", 0.0f);
 	s.aimPitch = BetterVR_PS5_Setting("aimPitch", 0.0f);
+	s.reproject = BetterVR_PS5_Setting("reproject", 1.0f) != 0.0f;
+	Log("reprojection of the game's frames: %s (bettervr.json's reproject)", s.reproject ? "on" : "off");
 	Log("controllers: grip pitch %.1f deg, aim pitch %.1f deg (bettervr.json's gripPitch, aimPitch)", s.gripPitch, s.aimPitch);
 	OpenHands();
 	*out = session;
@@ -1628,7 +1631,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
 		// pose of its display time: no reprojection of an image that is 50 ms old or more
 		bool found = false;
 		for (const auto& located : s.located)
-			if (std::fabs(located.leftEye.x - eyePoses[0].p.x) < 1e-5f && std::fabs(located.leftEye.z - eyePoses[0].p.z) < 1e-5f)
+			if (s.reproject && std::fabs(located.leftEye.x - eyePoses[0].p.x) < 1e-5f && std::fabs(located.leftEye.z - eyePoses[0].p.z) < 1e-5f)
 			{
 				renderHead = located.head;
 				found = true;
