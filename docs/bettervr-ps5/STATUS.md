@@ -41,9 +41,10 @@ so the hook, the gestures and the cameras use `ModSettings`' defaults and Settin
 options (the ini) have no effect; its `bettervr.json` options (3D/flat, the Sense angles) do.
 This was true before 0008 but only now does the input path depend on those settings; not changed in
 this build. The gesture comparison also uses the head pose the renderer lifts to 1.65 m while the
-hand poses are the tracker's (logs5: hands y 0.59-0.61, head 0.98); the shoulder and mouth radii are
-then about 0.7 m short, so those two gestures may not fire. This needs a decision about which frame
-they should use, so it is left for the next console log, not changed here.
+hand poses are the tracker's (logs5: hands y 0.59-0.61, head 0.98). The lifted head is about 0.67 m
+above the tracker head the hands are measured from, so a hand at the real shoulder or mouth is
+0.7-0.85 m outside the 0.35/0.2 m radii; those two gestures may not fire. This needs a decision about
+which frame they should use, so it is left for the next console log, not changed here.
 
 **The view after the Graphics pack (logs5; proven by the code).** The pack was active at 1280x1320
 and the view was offset. BetterVR's game camera projects for `m_gameRenderAspectRatio`, which the
