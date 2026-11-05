@@ -1252,6 +1252,8 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateSession(XrInstance, const XrSessionCreate
 	s.aimPitch = BetterVR_PS5_Setting("aimPitch", 0.0f);
 	s.reproject = BetterVR_PS5_Setting("reproject", 1.0f) != 0.0f;
 	Log("reprojection of the game's frames: %s (bettervr.json's reproject)", s.reproject ? "on" : "off");
+	const bool playerOnce = BetterVR_PS5_Setting("playerOnce", 0.0f) != 0.0f;
+	Log("player update gate: %s (bettervr.json's playerOnce)", playerOnce ? "one run a game frame, whichever pass asks first" : "upstream's, the right-eye pass only");
 	if (!s.tv)
 		Log("TV mirror off (bettervr.json's tv): the TV stays dark while VR runs");
 	else if (hmd2::mirroring())

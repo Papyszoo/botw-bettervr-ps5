@@ -3,6 +3,32 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-05 (player physics): `[phys]` names the updater's owner, and `playerOnce` is a switch (not built, not run)
+
+**Not built, not run.** Patch 0013 counts the player's velocity updater at its entry (the
+`OnlyRunPlayerUpdateJobOnce` gate) and at its tail (the roomscale hook's site) with the PPC core
+(`hCPU->sprNew.UPIR`), the `currentEyeSide` the asm read, and a monotonic game frame added beside
+`currentFrameCounter`. The frame of the last right-eye pass is also kept, because that is the pass
+that dispatches the job; a call there is `expR`, a call in the following left pass is `expL` one
+frame late. Every 2 s in game, at most 1200 lines, `[phys]` writes the gate calls and runs per game
+frame (histogram 0/1/2/3+), the updater tails beside the runs, seen and expected right/left
+ran/skipped, lag and call-gap min/avg/max in frames, late calls, the longest run of frames with no
+run, and the cores for calls, runs and tails. A clean run is `mode=upstream`, `calls/f 1:N`,
+`runs/f 1:N`, `tails == runs`, `expR r/s=N/0`, `expL r/s=0/0`. Candidate (a) is `mode=upstream`
+with calls every frame but `expL` calls (the right pass's job ran in the following left pass, where
+the eye check dropped it) or `expR` skips (the side read after the eye switched);
+(b) is `calls/f` with 0 buckets and 2/3+ bursts, `gap max` > 1 or `late` > 0 (the job queue fell
+behind); (c) is `runs/f 1:N` with `tails` well below `runs` (the updater returned before its
+tail). `bettervr.json {"playerOnce":1}` replaces the eye check with a per-frame latch keyed on the
+new game frame: one run a frame, whichever pass or core asks first, cleared with
+`currentFrameCounter`; default off keeps upstream's right-eye check in effect. The
+session-start line says `player update gate: one run a game frame, ...` or `... upstream's, the
+right-eye pass only`. No default behaviour changed; the TV, hands and seated code are untouched.
+The thirteen BetterVR patches apply in order on pin `2e06b31` (13/13, tree identical to the
+patched tree); `entity_controller.cpp` and `controls.cpp` pass `clang++ -std=c++23 -fsyntax-only
+-D__PROSPERO__` (0 errors), and `runtime.cpp` passes with its pre-existing `-Wreturn-type-c-linkage`
+warning. Test request 15.
+
 ## 2026-11-05 (seated height): the calibration runs on the first in-game frame if the loading screen was missed
 
 **Not built, not run.** Build 4e0676d has no `Seated height calibrated` line in logs8 or logs10. The
@@ -806,6 +832,54 @@ Cloud session, scheduled run. Nothing was built for the console and nothing was 
 - **Next:** M1, the baseline build and release (see `PLAN.md`).
 
 ## Open test requests
+
+### Test request 15: the player's physics owner, and the once-a-frame gate (this build)
+
+**Which build.** The next console build of `fix/vr-first-frame-sigill`, with `patches/bettervr`
+0001-0013. At VR start the boot log should have `player update gate: upstream's, the right-eye
+pass only` (runs A and C) or `player update gate: one run a game frame, whichever pass asks first`
+(run B); the first `[phys]` line appears within a few seconds of `in_game=1`.
+
+**Three runs at the same spot, about 3 minutes each.** Quit the app fully between runs: both
+`playerOnce` and the camera mode are read at the start of a session. Keep `{"vr": true}` in
+`/data/botwvr/launcher/bettervr.json` throughout; make only the change named for each run.
+
+1. **A, first person, default.** No `playerOnce` key (or `"playerOnce":0`). Play first person:
+   walk forward and back, jump from a flat spot, and fall off a small ledge. Note the boot log's
+   times for the jump and the fall.
+2. **B, first person, `"playerOnce":1`.** Add the key, restart the app and the game, and do the
+   same at the same spot: the same walk, jump and fall.
+3. **C, third person, default.** Remove `playerOnce` (or set it to 0), set Settings > VR > Camera
+   to third person, restart, and do the same again.
+
+**Send back:** every `[phys]` line from each run (they are at most one every 2 s, capped at 1200;
+if that is too many, the lines around the jump, the fall and the walk are the ones needed), the
+`player update gate:` line, the `[diag]` lines with `pos` around the jump and fall, and the
+`[perf]` lines from the same times. Say what the jump looked like (roughly how high and how long
+before the body moved) and whether it kept moving after the stick was released.
+
+**What `[phys]` decides.**
+
+- **A clean run** is `mode=upstream`, `calls/f 1:N`, `runs/f 1:N`, `tails` equal to `runs`,
+  `expR r/s=N/0`, `expL r/s=0/0`, `gap` about 1 and `zero-run max` 0 or 1. If A looks like that
+  and the physics is normal, the gate is not the owner.
+- **Candidate (a), the eye-side race:** `mode=upstream`, `calls/f` still 1 per frame, but `expL`
+  has calls and skips (the right pass's job ran in the following left pass, where the eye check
+  dropped it) or `expR` has skips, and `zero-run max` rises with the held-velocity time. `expL`
+  runs appear only with `mode=once`, where the latch deliberately runs in the left pass. `cores`
+  shows which core ran it; core 0 is the main PPC core, 1 and 2 are workers.
+- **Candidate (b), the job queue:** `calls/f` has 0 buckets and 2/3+ bursts, `gap max` above 1,
+  `late` above 0, or `frames` well below the `[diag]` calls for the same time. The gate is not
+  being asked every frame, so the eye check is not what starves it.
+- **Candidate (c), the updater's own early return:** `calls/f` and `runs/f` are 1 per frame but
+  `tails` is well below `runs` (`tails/f 0:…` is large). The gate lets it in; the updater returns
+  before the tail the roomscale hook sits at, which is the `m_81_getCalcTiming`/LOD path.
+- **A against B:** if B's physics is fixed and B's `runs/f` is exactly 1:1 (with `mode=once`), (a)
+  was the owner and the latch is the fix. If B still shows the staircase while `runs/f` is 1:1
+  and `tails` is below `runs`, it is (c). If B still has 0-call frames or `late` calls, it is (b).
+- **C against A:** if third person is normal and its `[phys]` is clean, the first-person camera
+  path is involved; if C is broken with the same `[phys]` pattern as A, the camera mode is not the
+  owner.
 
 ### Test request 14: the TV during VR (this build)
 
