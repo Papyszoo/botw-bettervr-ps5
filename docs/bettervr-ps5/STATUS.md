@@ -37,7 +37,8 @@ taken only while a rumble is active. The `[diag] VPADRead hook` line is one line
 
 **What the new path still does not have.** BetterVR's own settings (`bettervr_settings.ini`) are
 loaded in the ImGui overlay's constructor, which is Win32-only: the log has no `VR Settings Loaded`,
-so the hook, the gestures and the cameras use `ModSettings`' defaults and Settings > VR has no effect.
+so the hook, the gestures and the cameras use `ModSettings`' defaults and Settings > VR's BetterVR
+options (the ini) have no effect; its `bettervr.json` options (3D/flat, the Sense angles) do.
 This was true before 0008 but only now does the input path depend on those settings; not changed in
 this build. The gesture comparison also uses the head pose the renderer lifts to 1.65 m while the
 hand poses are the tracker's (logs5: hands y 0.59-0.61, head 0.98); the shoulder and mouth radii are
