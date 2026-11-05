@@ -3,27 +3,28 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
-## 2026-11-05 (player physics): `[phys]` names the updater's owner, and `playerOnce` is a switch (not built, not run)
+## 2026-11-06 (player physics): the gate is armed once a game frame, and `playerOnce` is on by default (not built, not run)
 
-**Not built, not run.** Patch 0013 counts the player's velocity updater at its entry (the
-`OnlyRunPlayerUpdateJobOnce` gate) and at its tail (the roomscale hook's site) with the PPC core
-(`hCPU->sprNew.UPIR`), the `currentEyeSide` the asm read, and a monotonic game frame added beside
-`currentFrameCounter`. The frame of the last right-eye pass is also kept, because that is the pass
-that dispatches the job; a call there is `expR`, a call in the following left pass is `expL` one
-frame late. Every 2 s in game, at most 1200 lines, `[phys]` writes the gate calls and runs per game
-frame (histogram 0/1/2/3+), the updater tails beside the runs, seen and expected right/left
-ran/skipped, lag and call-gap min/avg/max in frames, late calls, the longest run of frames with no
-run, and the cores for calls, runs and tails. A clean run is `mode=upstream`, `calls/f 1:N`,
-`runs/f 1:N`, `tails == runs`, `expR r/s=N/0`, `expL r/s=0/0`. Candidate (a) is `mode=upstream`
-with calls every frame but `expL` calls (the right pass's job ran in the following left pass, where
-the eye check dropped it) or `expR` skips (the side read after the eye switched);
-(b) is `calls/f` with 0 buckets and 2/3+ bursts, `gap max` > 1 or `late` > 0 (the job queue fell
-behind); (c) is `runs/f 1:N` with `tails` well below `runs` (the updater returned before its
-tail). `bettervr.json {"playerOnce":1}` replaces the eye check with a per-frame latch keyed on the
-new game frame: one run a frame, whichever pass or core asks first, cleared with
-`currentFrameCounter`; default off keeps upstream's right-eye check in effect. The
-session-start line says `player update gate: one run a game frame, ...` or `... upstream's, the
-right-eye pass only`. No default behaviour changed; the TV, hands and seated code are untouched.
+**Not built, not run.** Patch 0013 replaces the host frame latch with Opus's guest-memory design.
+`custom_sead_GameFramework_procFrame` arms `playerVelocityUpdateDue` where it writes
+`currentEyeSide = 1` for the right-eye pass (after `playerVelocityUpdateDueFrame` gets the game
+frame). `OnlyRunPlayerUpdateJobOnce` takes that word with an `lwarx`/`stwcx.` loop: the first call
+after the arm runs the player's velocity update and clears the word, whichever pass or core asks
+first, and a call that arrives in a later frame still consumes that frame's due instead of being
+dropped. `bettervr.json {"playerOnce":0}` writes 0 into the guest `playerOnceEnabled` flag once and
+the asm then runs upstream's `currentEyeSide != 0` test exactly; the default is on. The host caches
+`playerOnce` in `BetterVR_PS5_PlayerOnce()`, writes the flag at the first `hook_PhysFrame`, and the
+session-start line names the same cached value, so restarting only the game cannot mislabel the gate.
+The `0x0344DCF8` tail hook is removed, so the roomscale entry's registers (r5 included) are the
+upstream ones again.
+
+**`[phys]` (2 s, at most 1200 lines).** The line is now only what decides the fix:
+`[phys] t=… frames=… mode=once|upstream entries L=… R=… runs=… skips=… runs/f 1.00 late=…
+cores entries 0:… 1:… 2:… runs 0:… 1:… 2:…`. `frames` is the game-frame count from
+`physFrameCounter`; `runs/f` is the one number: about 0.02-0.04 before the fix, 1.00 expected after;
+`late` counts runs that took a due word armed in an earlier game frame. The old tail, lag, gap,
+expected-pass and zero-run instrumentation (review findings 2, 3, 4, 7) is gone.
+
 The thirteen BetterVR patches apply in order on pin `2e06b31` (13/13, tree identical to the
 patched tree); `entity_controller.cpp` and `controls.cpp` pass `clang++ -std=c++23 -fsyntax-only
 -D__PROSPERO__` (0 errors), and `runtime.cpp` passes with its pre-existing `-Wreturn-type-c-linkage`
@@ -833,53 +834,42 @@ Cloud session, scheduled run. Nothing was built for the console and nothing was 
 
 ## Open test requests
 
-### Test request 15: the player's physics owner, and the once-a-frame gate (this build)
+### Test request 15: the player's physics gate, on by default (this build)
 
 **Which build.** The next console build of `fix/vr-first-frame-sigill`, with `patches/bettervr`
-0001-0013. At VR start the boot log should have `player update gate: upstream's, the right-eye
-pass only` (runs A and C) or `player update gate: one run a game frame, whichever pass asks first`
-(run B); the first `[phys]` line appears within a few seconds of `in_game=1`.
+0001-0013. The fix is on with no key: at VR start the boot log should have `player update gate:
+one run a game frame, whichever pass asks first (bettervr.json's playerOnce, default on)`, and the
+first `[phys]` line appears within a few seconds of `in_game=1`.
 
-**Three runs at the same spot, about 3 minutes each.** Quit the app fully between runs: both
-`playerOnce` and the camera mode are read at the start of a session. Keep `{"vr": true}` in
-`/data/botwvr/launcher/bettervr.json` throughout; make only the change named for each run.
+**Run 1, normal play, about 3 minutes.** Keep `{"vr": true}` in
+`/data/botwvr/launcher/bettervr.json` and leave `playerOnce` out. Play normally: walk forward and
+back, jump from a flat spot, fall off a small ledge, and swim. Note the boot log's times for the
+jump, the fall and the swim. A jump should peak about 1-1.5 m above the ground and land within
+about 1 s, and the body should answer the stick at once, not 0.9-1.7 s later.
 
-1. **A, first person, default.** No `playerOnce` key (or `"playerOnce":0`). Play first person:
-   walk forward and back, jump from a flat spot, and fall off a small ledge. Note the boot log's
-   times for the jump and the fall.
-2. **B, first person, `"playerOnce":1`.** Add the key, restart the app and the game, and do the
-   same at the same spot: the same walk, jump and fall.
-3. **C, third person, default.** Remove `playerOnce` (or set it to 0), set Settings > VR > Camera
-   to third person, restart, and do the same again.
+**Run 2 (optional control), `"playerOnce":0`.** Quit the app fully, add `"playerOnce":0` beside
+`"vr": true`, restart, and repeat the same walk, jump and fall. The boot log should now say
+`player update gate: upstream's, the right-eye pass only (bettervr.json's playerOnce=0)` and the
+old 30 m jump and delayed motion should return. Remove the key afterwards.
 
-**Send back:** every `[phys]` line from each run (they are at most one every 2 s, capped at 1200;
-if that is too many, the lines around the jump, the fall and the walk are the ones needed), the
-`player update gate:` line, the `[diag]` lines with `pos` around the jump and fall, and the
-`[perf]` lines from the same times. Say what the jump looked like (roughly how high and how long
-before the body moved) and whether it kept moving after the stick was released.
+**Send back:** the `player update gate:` line from each run; every `[phys]` line (at most one every
+2 s, capped at 1200; the lines around the jump, fall and swim are the ones needed); the `[diag]`
+lines with `pos` around the jump and fall; and the `[perf]` lines from the same times. Say roughly
+how high the jump went, how long before the body moved, and whether it kept moving after the stick
+was released.
 
 **What `[phys]` decides.**
 
-- **A clean run** is `mode=upstream`, `calls/f 1:N`, `runs/f 1:N`, `tails` equal to `runs`,
-  `expR r/s=N/0`, `expL r/s=0/0`, `gap` about 1 and `zero-run max` 0 or 1. If A looks like that
-  and the physics is normal, the gate is not the owner.
-- **Candidate (a), the eye-side race:** `mode=upstream`, `calls/f` still 1 per frame, but `expL`
-  has calls and skips (the right pass's job ran in the following left pass, where the eye check
-  dropped it) or `expR` has skips, and `zero-run max` rises with the held-velocity time. `expL`
-  runs appear only with `mode=once`, where the latch deliberately runs in the left pass. `cores`
-  shows which core ran it; core 0 is the main PPC core, 1 and 2 are workers.
-- **Candidate (b), the job queue:** `calls/f` has 0 buckets and 2/3+ bursts, `gap max` above 1,
-  `late` above 0, or `frames` well below the `[diag]` calls for the same time. The gate is not
-  being asked every frame, so the eye check is not what starves it.
-- **Candidate (c), the updater's own early return:** `calls/f` and `runs/f` are 1 per frame but
-  `tails` is well below `runs` (`tails/f 0:…` is large). The gate lets it in; the updater returns
-  before the tail the roomscale hook sits at, which is the `m_81_getCalcTiming`/LOD path.
-- **A against B:** if B's physics is fixed and B's `runs/f` is exactly 1:1 (with `mode=once`), (a)
-  was the owner and the latch is the fix. If B still shows the staircase while `runs/f` is 1:1
-  and `tails` is below `runs`, it is (c). If B still has 0-call frames or `late` calls, it is (b).
-- **C against A:** if third person is normal and its `[phys]` is clean, the first-person camera
-  path is involved; if C is broken with the same `[phys]` pattern as A, the camera mode is not the
-  owner.
+- **The fix working:** `mode=once` and `runs/f` near 1.00 (one update a game frame), with `late`
+  small. The jump peaks about 1-1.5 m and lands within about 1 s.
+- **The gate still starving the update:** `mode=once` but `runs/f` far below 1.00, or `entries`
+  well below `frames` on both sides: the calls themselves are missing (the job queue), not the
+  due word.
+- **The fix running but the physics still wrong:** `mode=once`, `runs/f` near 1.00, and the jump
+  still huge. Then the gate is no longer the owner, and the next step is the velocity writes
+  after the update.
+- **The control run:** `mode=upstream`, `runs/f` about 0.02-0.04 and the old behaviour; this shows
+  the two gates really differ on the console.
 
 ### Test request 14: the TV during VR (this build)
 

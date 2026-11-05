@@ -1,0 +1,335 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Patryk Kowalczyk <papyszoo@gmail.com>
+Date: Thu, 5 Nov 2026 23:49:42 +0100
+Subject: [PATCH] PS5: the player physics gate is armed once a game frame
+
+The right-eye pass arms a due word before its calcDraw; OnlyRunPlayerUpdateJobOnce takes it atomically (lwarx/stwcx.) so the player's velocity update runs exactly once a game frame whichever pass or core asks first, and a late call still consumes its frame's due. bettervr.json {"playerOnce":0} keeps upstream's right-eye check, read from a guest flag the host writes once at the start from the same cached value the boot log names. The [phys] line reports gate entries per eye side, runs and skips, runs per game frame, the PPC core, and runs that took an earlier frame's due. The tail hook is gone.
+---
+ .../patch_RND_StereoRendering.asm             |  39 +++++
+ .../patch_RND_StereoRendering_ActorJobs.asm   |  37 +++++
+ src/hooking/cemu_hooks.h                      |   5 +
+ src/hooking/controls.cpp                      |   1 +
+ src/hooking/entity_controller.cpp             | 138 ++++++++++++++++++
+ 5 files changed, 220 insertions(+)
+
+diff --git a/resources/BreathOfTheWild_BetterVR/patch_RND_StereoRendering.asm b/resources/BreathOfTheWild_BetterVR/patch_RND_StereoRendering.asm
+index 576ae00..871ae1e 100644
+--- a/resources/BreathOfTheWild_BetterVR/patch_RND_StereoRendering.asm
++++ b/resources/BreathOfTheWild_BetterVR/patch_RND_StereoRendering.asm
+@@ -21,6 +21,24 @@ currentEyeSide:
+ currentFrameCounter:
+ .int 0
+ 
++; PS5 physics: a monotonic game frame, increased with currentFrameCounter. The right-eye pass arms the
++; player's velocity update once a game frame: the frame is stored first, then the due word, and the first
++; update call after it takes the word (OnlyRunPlayerUpdateJobOnce), so the update runs once whichever
++; pass or core asks first and a late call still consumes its frame's due.
++physFrameCounter:
++.int 0
++
++playerVelocityUpdateDue:
++.int 0
++
++playerVelocityUpdateDueFrame:
++.int 0
++
++; Written once by the host when the pack starts: bettervr.json's playerOnce (default on), or 0 for
++; upstream's right-eye check (hook_PhysFrame, entity_controller.cpp; the boot log names the same value).
++playerOnceEnabled:
++.int 1
++
+ 0x10463EB0 = FadeProgress__sInstance:
+ 0x031FB1B4 = sub_31FB1B4_getTimeForGameUpdateMaybe:
+ 0x0309F72C = sead_GameFramework_lockFrameDrawContext:
+@@ -158,6 +176,16 @@ li r3, 0
+ skip_resetFrameCounter:
+ stw r3, currentFrameCounter@l(r12)
+ 
++; PS5 physics: one game frame more. The host keeps the frame for the [phys] line, and writes playerOnce
++; (default on) into playerOnceEnabled once, before the first gate call.
++lis r12, physFrameCounter@ha
++lwz r3, physFrameCounter@l(r12)
++addi r3, r3, 1
++stw r3, physFrameCounter@l(r12)
++lis r4, playerOnceEnabled@ha
++addi r4, r4, playerOnceEnabled@l
++bla import.coreinit.hook_PhysFrame
++
+ ; start rendering for the left eye
+ li r0, 0
+ lis r12, currentEyeSide@ha
+@@ -227,6 +255,17 @@ bl import.coreinit.hook_EndCameraSide
+ li r0, 1
+ lis r12, currentEyeSide@ha
+ stw r0, currentEyeSide@l(r12)
++
++; PS5 physics: this game frame's player velocity update is due. The frame goes first, then the due word,
++; so the call that takes it can say whether it was armed in an earlier frame (the [phys] line's late runs).
++lis r12, physFrameCounter@ha
++lwz r0, physFrameCounter@l(r12)
++lis r12, playerVelocityUpdateDueFrame@ha
++stw r0, playerVelocityUpdateDueFrame@l(r12)
++li r0, 1
++lis r12, playerVelocityUpdateDue@ha
++stw r0, playerVelocityUpdateDue@l(r12)
++
+ li r3, 1
+ bl import.coreinit.hook_BeginCameraSide
+ 
+diff --git a/resources/BreathOfTheWild_BetterVR/patch_RND_StereoRendering_ActorJobs.asm b/resources/BreathOfTheWild_BetterVR/patch_RND_StereoRendering_ActorJobs.asm
+index 025bcd9..47ed53b 100644
+--- a/resources/BreathOfTheWild_BetterVR/patch_RND_StereoRendering_ActorJobs.asm
++++ b/resources/BreathOfTheWild_BetterVR/patch_RND_StereoRendering_ActorJobs.asm
+@@ -956,10 +956,46 @@ stw r0, 0x24(r1)
+ stw r3, 0x1C(r1)
+ stw r4, 0x18(r1)
+ stw r5, 0x14(r1)
++stw r6, 0x10(r1)
++
++; PS5 physics: bettervr.json's playerOnce (default on) takes the due word that the right-eye pass armed.
++; The update runs once a game frame, whichever pass or core asks first after the arm, and a late call still
++; consumes its frame's due. playerOnce=0 keeps upstream's right-eye check exactly. The host hook only
++; records the side, frame, due frame and core, and returns run/skip in r3.
++li r6, 0
++lis r3, playerOnceEnabled@ha
++lwz r3, playerOnceEnabled@l(r3)
++cmpwi r3, 0
++beq upstream_OnlyRunPlayerUpdateJobOnce
++
++lis r4, playerVelocityUpdateDue@ha
++addi r4, r4, playerVelocityUpdateDue@l
++takePlayerVelocityUpdate:
++lwarx r3, 0, r4
++cmpwi r3, 0
++beq record_PlayerUpdateGate
++li r5, 0
++stwcx. r5, 0, r4
++bne takePlayerVelocityUpdate
++li r6, 1
++b record_PlayerUpdateGate
+ 
++upstream_OnlyRunPlayerUpdateJobOnce:
+ lis r3, currentEyeSide@ha
+ lwz r3, currentEyeSide@l(r3)
+ cmpwi r3, 0
++beq record_PlayerUpdateGate
++li r6, 1
++
++record_PlayerUpdateGate:
++lis r3, currentEyeSide@ha
++lwz r3, currentEyeSide@l(r3)
++lis r4, physFrameCounter@ha
++lwz r4, physFrameCounter@l(r4)
++lis r5, playerVelocityUpdateDueFrame@ha
++lwz r5, playerVelocityUpdateDueFrame@l(r5)
++bla import.coreinit.hook_PlayerUpdateGate
++cmpwi r3, 0
+ beq exit_OnlyRunPlayerUpdateJobOnce
+ 
+ lis r3, originalPlayerVelocityUpdater@ha
+@@ -969,6 +1005,7 @@ lwz r3, 0x1C(r1)
+ bctrl
+ 
+ exit_OnlyRunPlayerUpdateJobOnce:
++lwz r6, 0x10(r1)
+ lwz r5, 0x14(r1)
+ lwz r4, 0x18(r1)
+ lwz r3, 0x1C(r1)
+diff --git a/src/hooking/cemu_hooks.h b/src/hooking/cemu_hooks.h
+index e7a1915..3056602 100644
+--- a/src/hooking/cemu_hooks.h
++++ b/src/hooking/cemu_hooks.h
+@@ -33,6 +33,8 @@ public:
+         osLib_registerHLEFunction("coreinit", "hook_SetRigidBodyVelocity", &hook_SetRigidBodyVelocity);
+         osLib_registerHLEFunction("coreinit", "hook_BeginRoomscaleMovement", &hook_BeginRoomscaleMovement);
+         osLib_registerHLEFunction("coreinit", "hook_PrepareRoomscaleRaycast", &hook_PrepareRoomscaleRaycast);
++        osLib_registerHLEFunction("coreinit", "hook_PhysFrame", &hook_PhysFrame);
++        osLib_registerHLEFunction("coreinit", "hook_PlayerUpdateGate", &hook_PlayerUpdateGate);
+         osLib_registerHLEFunction("coreinit", "hook_ConsumeRoomscaleRaycast", &hook_ConsumeRoomscaleRaycast);
+         osLib_registerHLEFunction("coreinit", "hook_BuildRoomscaleWarpTransform", &hook_BuildRoomscaleWarpTransform);
+         osLib_registerHLEFunction("coreinit", "hook_SetRigidBodyTransform", &hook_SetRigidBodyTransform);
+@@ -257,6 +259,9 @@ private:
+ 
+     static void hook_SetRigidBodyVelocity(PPCInterpreter_t* hCPU);
+     static void hook_BeginRoomscaleMovement(PPCInterpreter_t* hCPU);
++    static void hook_PhysFrame(PPCInterpreter_t* hCPU);
++    static void hook_PlayerUpdateGate(PPCInterpreter_t* hCPU);
++    static void LogPhysicsDiagnostics(bool inGame);
+     static void hook_PrepareRoomscaleRaycast(PPCInterpreter_t* hCPU);
+     static void hook_ConsumeRoomscaleRaycast(PPCInterpreter_t* hCPU);
+     static void hook_BuildRoomscaleWarpTransform(PPCInterpreter_t* hCPU);
+diff --git a/src/hooking/controls.cpp b/src/hooking/controls.cpp
+index b2857ab..202cbbd 100644
+--- a/src/hooking/controls.cpp
++++ b/src/hooking/controls.cpp
+@@ -1322,6 +1322,7 @@ void CemuHooks::hook_InjectXRInput(PPCInterpreter_t* hCPU) {
+             g_diagEndCameraSide[0] = g_diagEndCameraSide[1] = 0;
+             g_diagRoomscaleBegin = g_diagRoomscaleCast = g_diagRoomscaleWarp = 0;
+         }
++        CemuHooks::LogPhysicsDiagnostics(gameState.in_game);
+     }
+ 
+     // write the input back to VPADStatus
+diff --git a/src/hooking/entity_controller.cpp b/src/hooking/entity_controller.cpp
+index ef3e57f..52b649e 100644
+--- a/src/hooking/entity_controller.cpp
++++ b/src/hooking/entity_controller.cpp
+@@ -92,6 +92,32 @@ enum class RoomscaleBodyDriveMode : uint8_t {
+ uint32_t g_diagRoomscaleBegin = 0, g_diagRoomscaleCast = 0, g_diagRoomscaleWarp = 0;
+ bool g_diagRoomscaleEnabled = true;
+ 
++// PS5 physics (controls.cpp [phys]): the gate's entries (per eye side), runs and skips, the game frames
++// they fall in, the PPC core, and the runs that took a due word armed in an earlier game frame. The gate
++// itself is decided in the asm (playerOnceEnabled, playerVelocityUpdateDue); nothing here changes a run.
++extern "C" bool BetterVR_PS5_PlayerOnce();
++
++struct PhysDiagnostics {
++    std::atomic<uint32_t> mainFrame{0};
++    std::atomic<uint32_t> entries[2] = {};
++    std::atomic<uint32_t> runs{0};
++    std::atomic<uint32_t> coreEntries[3] = {};
++    std::atomic<uint32_t> coreRuns[3] = {};
++    std::atomic<uint32_t> lateRuns{0};
++};
++static PhysDiagnostics s_phys;
++
++static void RecordPhysGate(uint32_t core, uint32_t eye, uint32_t frame, uint32_t dueFrame, bool run) {
++    const std::memory_order relaxed = std::memory_order_relaxed;
++    s_phys.entries[eye != 0 ? 1 : 0].fetch_add(1, relaxed);
++    if (core < 3) s_phys.coreEntries[core].fetch_add(1, relaxed);
++    if (!run) return;
++    s_phys.runs.fetch_add(1, relaxed);
++    if (core < 3) s_phys.coreRuns[core].fetch_add(1, relaxed);
++    // playerOnce: the run took a due word armed in an earlier game frame (the job queue or pass was late)
++    if (BetterVR_PS5_PlayerOnce() && (int32_t)(frame - dueFrame) > 0) s_phys.lateRuns.fetch_add(1, relaxed);
++}
++
+ static RoomscaleState s_roomscaleState;
+ static std::atomic<float> s_roomscaleFadeAmount = 0.0f;
+ static RoomscaleBodyDriveMode s_roomscaleBodyDriveMode = RoomscaleBodyDriveMode::DisabledNotInGame;
+@@ -633,6 +659,13 @@ static void PrimeRoomscaleBaseline(const glm::fvec3& headPos) {
+ 
+ extern "C" float BetterVR_PS5_Setting(const char* name, float fallback);
+ 
++// PS5: bettervr.json's playerOnce (default on), cached once so the boot log's gate line, the guest flag
++// and the [phys] mode all name the value the gate actually runs (runtime.cpp calls this too).
++extern "C" bool BetterVR_PS5_PlayerOnce() {
++    static const bool s_playerOnce = BetterVR_PS5_Setting("playerOnce", 1.0f) >= 0.5f;
++    return s_playerOnce;
++}
++
+ static bool ShouldDrivePlayerBodyWithVR(const glm::fvec3& currentHeadPos, const PlayerBase& player) {
+     // PS5 experiment: bettervr.json {"roomscale":0} turns the head-driven body movement off (read once). Default on.
+     static const bool s_roomscaleOn = BetterVR_PS5_Setting("roomscale", 1.0f) >= 0.5f;
+@@ -812,6 +845,111 @@ void CemuHooks::hook_BeginRoomscaleMovement(PPCInterpreter_t* hCPU) {
+     BetterVRProfiler::BeginSpan(BetterVRProfiler::Section::RoomscaleResolve);
+ }
+ 
++void CemuHooks::hook_PhysFrame(PPCInterpreter_t* hCPU) {
++    hCPU->instructionPointer = hCPU->sprNew.LR;
++    s_phys.mainFrame.store(hCPU->gpr[3], std::memory_order_relaxed);
++
++    // PS5: write bettervr.json's playerOnce (default on) into the guest gate flag once, from the same
++    // cached value the boot log's line names. r4 is the flag's address (patch_RND_StereoRendering.asm).
++    static std::atomic<bool> s_gateWritten{false};
++    if (!s_gateWritten.exchange(true, std::memory_order_relaxed)) {
++        uint32_t enabled = BetterVR_PS5_PlayerOnce() ? 1u : 0u;
++        writeMemoryBE<uint32_t>(hCPU->gpr[4], &enabled);
++    }
++}
++
++void CemuHooks::hook_PlayerUpdateGate(PPCInterpreter_t* hCPU) {
++    hCPU->instructionPointer = hCPU->sprNew.LR;
++
++    const uint32_t eye = hCPU->gpr[3];
++    const uint32_t frame = hCPU->gpr[4];
++    const uint32_t dueFrame = hCPU->gpr[5];
++    const bool run = hCPU->gpr[6] != 0;
++
++    // The asm already took the due word (or ran upstream's check); this just records it and returns run/skip.
++    RecordPhysGate(hCPU->sprNew.UPIR, eye, frame, dueFrame, run);
++    hCPU->gpr[3] = run ? 1 : 0;
++}
++
++void CemuHooks::LogPhysicsDiagnostics(bool inGame) {
++    static auto s_lastLine = std::chrono::steady_clock::now();
++    static auto s_start = s_lastLine;
++    static uint32_t s_lines = 0;
++    static bool s_wasInGame = false;
++    static uint32_t s_lastFrame = 0;
++    static uint32_t s_lastEntries[2] = {};
++    static uint32_t s_lastRuns = 0;
++    static uint32_t s_lastCoreEntries[3] = {};
++    static uint32_t s_lastCoreRuns[3] = {};
++    static uint32_t s_lastLateRuns = 0;
++
++    if (!inGame) {
++        s_wasInGame = false;
++        return;
++    }
++    if (s_lines >= 1200)
++        return;
++    const auto now = std::chrono::steady_clock::now();
++    const std::memory_order relaxed = std::memory_order_relaxed;
++    if (!s_wasInGame) {
++        // Start at the first in-game frame: the title and loading screens are not a physics sample.
++        s_wasInGame = true;
++        s_lastLine = s_start = now;
++        s_lastFrame = s_phys.mainFrame.load(relaxed);
++        for (int side = 0; side < 2; side++) s_lastEntries[side] = s_phys.entries[side].load(relaxed);
++        s_lastRuns = s_phys.runs.load(relaxed);
++        for (int core = 0; core < 3; core++) {
++            s_lastCoreEntries[core] = s_phys.coreEntries[core].load(relaxed);
++            s_lastCoreRuns[core] = s_phys.coreRuns[core].load(relaxed);
++        }
++        s_lastLateRuns = s_phys.lateRuns.load(relaxed);
++        return;
++    }
++    if (now - s_lastLine < std::chrono::seconds(2))
++        return;
++
++    const uint32_t frame = s_phys.mainFrame.load(relaxed);
++    const uint32_t frames = frame - s_lastFrame;
++    if (frames == 0)
++        return;
++
++    const uint32_t entriesL = s_phys.entries[0].load(relaxed) - s_lastEntries[0];
++    const uint32_t entriesR = s_phys.entries[1].load(relaxed) - s_lastEntries[1];
++    const uint32_t runs = s_phys.runs.load(relaxed) - s_lastRuns;
++    const uint32_t entries = entriesL + entriesR;
++    const uint32_t skips = entries > runs ? entries - runs : 0; // separate atomics: never show an underflow
++    const uint32_t lateRuns = s_phys.lateRuns.load(relaxed) - s_lastLateRuns;
++    uint32_t coreEntries[3], coreRuns[3];
++    for (int core = 0; core < 3; core++) {
++        coreEntries[core] = s_phys.coreEntries[core].load(relaxed) - s_lastCoreEntries[core];
++        coreRuns[core] = s_phys.coreRuns[core].load(relaxed) - s_lastCoreRuns[core];
++    }
++
++    s_lastLine = now;
++    s_lines++;
++    s_lastFrame = frame;
++    s_lastEntries[0] = s_phys.entries[0].load(relaxed);
++    s_lastEntries[1] = s_phys.entries[1].load(relaxed);
++    s_lastRuns = s_phys.runs.load(relaxed);
++    for (int core = 0; core < 3; core++) {
++        s_lastCoreEntries[core] = s_phys.coreEntries[core].load(relaxed);
++        s_lastCoreRuns[core] = s_phys.coreRuns[core].load(relaxed);
++    }
++    s_lastLateRuns = s_phys.lateRuns.load(relaxed);
++
++    const double seconds = std::chrono::duration<double>(now - s_start).count();
++    const double runsPerFrame = (double)runs / (double)frames;
++
++    // One bounded line (2 s, at most 1200): entries per eye side, runs and skips, runs per game frame
++    // (about 0.02-0.04 before the fix, 1.00 after), the PPC cores, and runs that took an older frame's due.
++    Log::print<INFO>("[phys] t={:.1f} frames={} mode={} entries L={} R={} runs={} skips={} runs/f {:.2f} late={} "
++        "cores entries 0:{} 1:{} 2:{} runs 0:{} 1:{} 2:{}",
++        seconds, frames, BetterVR_PS5_PlayerOnce() ? "once" : "upstream",
++        entriesL, entriesR, runs, skips, runsPerFrame, lateRuns,
++        coreEntries[0], coreEntries[1], coreEntries[2],
++        coreRuns[0], coreRuns[1], coreRuns[2]);
++}
++
+ void CemuHooks::hook_PrepareRoomscaleRaycast(PPCInterpreter_t* hCPU) {
+     hCPU->instructionPointer = hCPU->sprNew.LR;
+     uint32_t scratchPtr = hCPU->gpr[3];
