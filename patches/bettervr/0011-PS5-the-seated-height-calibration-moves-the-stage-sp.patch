@@ -4,13 +4,13 @@ Date: Thu, 5 Nov 2026 18:15:26 +0100
 Subject: [PATCH] PS5: the seated height calibration moves the stage space, not
  only the head's views
 
-The Linux backend pinned the head to 1.65 m by shifting the views and left the hands where the runtime located them, so with the head at 1 m the hands were 0.65 m too low against it, and crouching and leaning were flattened. The submit thread now runs UpdateSeatedHeightCalibration as renderer.cpp's StartFrame does, and every thread locates in the current m_stageSpace. On the PS5 the default play position is Seated (calibrates once at the first loading screen to Link's eye height; the tracker's origin is not known to be the floor). Until that calibration has run, the views keep the old 1.65 m lift, so the start height is the one earlier builds had even if the first loading screen passed before the renderer existed.
+The Linux backend pinned the head to 1.65 m by shifting the views and left the hands where the runtime located them, so with the head at 1 m the hands were 0.65 m too low against it, and crouching and leaning were flattened. The submit thread now runs UpdateSeatedHeightCalibration as renderer.cpp's StartFrame does, and every thread locates in the stage space as it is then (OpenXR::GetStageSpace). On the PS5 the default play position is Seated (calibrates once at the first loading screen to Link's eye height; the tracker's origin is not known to be the floor). Until that calibration has run, the views keep the old 1.65 m lift, so the start height is the one earlier builds had even if the first loading screen passed before the renderer existed.
 ---
  src/rendering/openxr.cpp          |  8 ++++----
- src/rendering/openxr.h            |  3 ++-
+ src/rendering/openxr.h            |  5 ++++-
  src/rendering/renderer_vulkan.cpp | 31 +++++++++++++++++++------------
  src/utils/mod_settings.h          |  7 +++++++
- 4 files changed, 32 insertions(+), 17 deletions(-)
+ 4 files changed, 34 insertions(+), 17 deletions(-)
 
 diff --git a/src/rendering/openxr.cpp b/src/rendering/openxr.cpp
 index 4ec7823..e1f685f 100644
@@ -53,7 +53,7 @@ index 4ec7823..e1f685f 100644
  }
  
 diff --git a/src/rendering/openxr.h b/src/rendering/openxr.h
-index dc4a1b8..1d635da 100644
+index dc4a1b8..7e38a4e 100644
 --- a/src/rendering/openxr.h
 +++ b/src/rendering/openxr.h
 @@ -223,6 +223,7 @@ public:
@@ -64,7 +64,16 @@ index dc4a1b8..1d635da 100644
      std::optional<float> GetCalibratedSeatedEyeHeight() const;
  
      void ProcessEvents();
-@@ -257,7 +258,7 @@ private:
+@@ -232,6 +233,8 @@ public:
+     RumbleManager* GetRumbleManager() const { return m_rumbleManager.get(); }
+     XrInstance GetInstance() const { return m_instance; }
+     XrSystemId GetSystemId() const { return m_systemId; }
++    // the stage space as it is now: the seated height calibration replaces it
++    XrSpace GetStageSpace() const { return m_stageSpace; }
+ 
+ #ifndef _WIN32
+     // Current OpenXR session state (updated by ProcessEvents on Linux). The submit
+@@ -257,7 +260,7 @@ private:
      float m_stageFloorOffset = 0.0f;
      std::atomic_bool m_seatedHeightCalibrationRequested = false;
      std::atomic<XrTime> m_seatedHeightCalibrationNotBeforeTime = 0;
@@ -74,7 +83,7 @@ index dc4a1b8..1d635da 100644
      std::optional<PlayMode> m_lastSeenPlayMode;
      std::array<XrSpace, 2> m_inGameHandSpaces = { XR_NULL_HANDLE, XR_NULL_HANDLE };
 diff --git a/src/rendering/renderer_vulkan.cpp b/src/rendering/renderer_vulkan.cpp
-index fdf0fde..fe0d99f 100644
+index fdf0fde..0ec1cca 100644
 --- a/src/rendering/renderer_vulkan.cpp
 +++ b/src/rendering/renderer_vulkan.cpp
 @@ -716,7 +716,7 @@ static void PoseTrackingThreadMain(XrSession session, XrSpace stageSpace) {
@@ -82,7 +91,7 @@ index fdf0fde..fe0d99f 100644
          locateInfo.viewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
          locateInfo.displayTime = target;
 -        locateInfo.space = stageSpace;
-+        locateInfo.space = VRManager::instance().XR->m_stageSpace;
++        locateInfo.space = VRManager::instance().XR->GetStageSpace();
  
          XrViewState viewState = { XR_TYPE_VIEW_STATE };
          uint32_t viewCount = 2;
@@ -92,7 +101,7 @@ index fdf0fde..fe0d99f 100644
          if (currentFrameState.predictedDisplayTime != 0) {
 -            VRManager::instance().XR->UpdateSpaces(currentFrameState.predictedDisplayTime);
 +            // as renderer.cpp's StartFrame: the head in the stage, for the seated height calibration, which
-+            // moves the stage space (the spaces above are read from m_stageSpace each time for that)
++            // moves the stage space (the spaces above are read from it each time for that)
 +            const std::optional<XrSpaceLocation> headLocation = VRManager::instance().XR->UpdateSpaces(currentFrameState.predictedDisplayTime);
 +            VRManager::instance().XR->UpdateSeatedHeightCalibration(currentFrameState.predictedDisplayTime, headLocation);
  
@@ -100,7 +109,7 @@ index fdf0fde..fe0d99f 100644
              locateInfo.viewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
              locateInfo.displayTime = currentFrameState.predictedDisplayTime;
 -            locateInfo.space = stageSpace;
-+            locateInfo.space = VRManager::instance().XR->m_stageSpace;
++            locateInfo.space = VRManager::instance().XR->GetStageSpace();
              XrViewState viewState = { XR_TYPE_VIEW_STATE };
              uint32_t viewCount = 2;
              std::array<XrView, 2> views = { XrView{XR_TYPE_VIEW}, XrView{XR_TYPE_VIEW} };
@@ -109,7 +118,7 @@ index fdf0fde..fe0d99f 100644
                  lateLocateInfo.viewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
                  lateLocateInfo.displayTime = currentFrameState.predictedDisplayTime;
 -                lateLocateInfo.space = stageSpace;
-+                lateLocateInfo.space = VRManager::instance().XR->m_stageSpace;
++                lateLocateInfo.space = VRManager::instance().XR->GetStageSpace();
                  XrViewState lateViewState = { XR_TYPE_VIEW_STATE };
                  uint32_t lateViewCount = 2;
                  auto lateLocateStart = std::chrono::high_resolution_clock::now();
@@ -118,7 +127,7 @@ index fdf0fde..fe0d99f 100644
                      }
                  }
 -                projectionLayer.space = stageSpace;
-+                projectionLayer.space = VRManager::instance().XR->m_stageSpace;
++                projectionLayer.space = VRManager::instance().XR->GetStageSpace();
                  projectionLayer.viewCount = 2;
                  projectionLayer.views = projectionViews.data();
                  projectionLayerReady = true;
@@ -127,7 +136,7 @@ index fdf0fde..fe0d99f 100644
                  constexpr float aspectRatio = 16.0f / 9.0f;
                  hudLayer.layerFlags = has3D ? XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT : 0;
 -                hudLayer.space = stageSpace;
-+                hudLayer.space = VRManager::instance().XR->m_stageSpace;
++                hudLayer.space = VRManager::instance().XR->GetStageSpace();
                  hudLayer.eyeVisibility = XR_EYE_VISIBILITY_BOTH;
                  hudLayer.subImage.swapchain = s_linux->hudSwapchain.handle;
                  hudLayer.subImage.imageRect.offset = { 0, 0 };

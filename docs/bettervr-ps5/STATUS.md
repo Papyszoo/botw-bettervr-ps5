@@ -57,6 +57,8 @@ Cemu's context is not touched. An absent file leaves the defaults; a malformed l
 skipped (an invalid enum resets to its default), so the next log decides. Settings > VR now reaches
 the game.
 
+**CI compile failure (fixed; still not built, not run).** Run 42079383036 stopped in `renderer_vulkan.cpp`: patch 0011's submit and pose threads read `OpenXR::m_stageSpace` directly, and it is private (only `RND_Renderer` is a friend), so patch 0011 now adds `OpenXR::GetStageSpace()` beside the other getters and the five reads go through it; the twelve patches apply in order on the pin, and no other error was found by reading the files the run did not reach against their declarations.
+
 **Accurate barriers (not built, not run).** A BotW VR start sets Cemu's `vk_accurate_barriers` false
 in memory, as BetterVR's Windows launcher does, and every `settings.xml` save (the in-game menu, the
 USB devices switch, graphic packs, accounts, the end of the game) writes the player's value through

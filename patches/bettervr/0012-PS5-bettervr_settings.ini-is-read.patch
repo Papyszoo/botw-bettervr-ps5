@@ -9,7 +9,7 @@ On Windows ImGuiOverlay's constructor creates the ImGui context, adds the settin
  1 file changed, 8 insertions(+)
 
 diff --git a/src/rendering/renderer_vulkan.cpp b/src/rendering/renderer_vulkan.cpp
-index d9e5438..8a521c5 100644
+index 0ec1cca..3a837d0 100644
 --- a/src/rendering/renderer_vulkan.cpp
 +++ b/src/rendering/renderer_vulkan.cpp
 @@ -649,6 +649,14 @@ RND_Renderer::RND_Renderer(XrSession xrSession): m_session(xrSession) {
