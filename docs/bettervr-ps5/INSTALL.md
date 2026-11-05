@@ -157,28 +157,36 @@ Do this once without VR, so a problem with the game itself doesn't look like a V
 
 ## 7. VR
 
+**From `m8` on:** the app opens on Breath of the Wild's page. Choose **Play in VR** or **Play on
+TV**. The app saves the choice in `bettervr.json` and turns BetterVR's graphic pack, and FPS++ for
+VR, on or off as the game starts: no file to edit, no restart. The Sense controllers move through
+the menus too (stick to move, Cross to choose, Circle to go back).
+
+Turn on both Sense controllers and put on the headset before Play in VR.
+
+**Before `m8`** (`m5` to `m7`):
+
 1. Put `{"vr": true}` in `/data/botwvr/launcher/bettervr.json`.
 2. **Close the app and start it again.** BetterVR's graphic pack is put in place when the app starts.
 3. In BotW's graphic packs, **Better VR** should now be listed and on, next to FPS++.
 4. Turn on both Sense controllers, put on the headset, and start the game.
+5. To play flat again, set `{"vr": false}` and restart the app.
 
-Optional settings in the same file:
+Optional settings in `/data/botwvr/launcher/bettervr.json`, with any build:
 
 | Setting | What it does |
 | --- | --- |
-| `{"vr": true, "bettervr": false}` | No BetterVR: the game as a flat screen in the headset (M2), to compare. |
+| `"bettervr": false` | No BetterVR: the game as a flat screen in the headset (M2), to compare. |
 | `"gripPitch": 30`, `"aimPitch": 30` | Tilt the controllers' poses, in degrees, if Link's hands point the wrong way. |
 
 BetterVR's own menu, in the game: long-press the right stick (R3).
-
-To play flat again, set `{"vr": false}` and restart the app.
 
 ## 8. If something goes wrong
 
 - **The game isn't in the Library:** **Settings > Game files > Look for games now.** An encrypted
   WUD/WUX without its key says *"Its disc key is missing from …/keys.txt"* when started.
-- **Better VR isn't in the graphic packs:** the app wasn't restarted after `bettervr.json` changed,
-  or the file isn't valid JSON (check the quotes).
+- **Better VR isn't in the graphic packs** (before `m8`): the app wasn't restarted after
+  `bettervr.json` changed, or the file isn't valid JSON (check the quotes).
 - **It crashes at the title screen with BetterVR:** FPS++ off, or an update other than v208.
 - **Logs:** Settings > Diagnostics > **Copy logs to USB**, or `/data/botwvr/launcher/logs/boot.log` over FTP.
   VR's lines start with `[vr]`, `[vr-xr]` and `[bettervr]`. `STATUS.md`'s Test requests say which
