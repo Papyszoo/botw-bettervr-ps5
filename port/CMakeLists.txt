@@ -213,6 +213,8 @@ add_library(CemuPS5 STATIC
 	frontend/shell.h
 	frontend/shell/host_ps5.cpp
 	frontend/shell/hub.cpp
+	frontend/shell/home.cpp
+	frontend/shell/vr_settings.cpp
 	frontend/shell/installs.cpp
 	frontend/shell/library.cpp
 	frontend/shell/pages.cpp
@@ -333,6 +335,8 @@ set_source_files_properties(
 	frontend/settings.cpp
 	frontend/shell/host_ps5.cpp
 	frontend/shell/hub.cpp
+	frontend/shell/home.cpp
+	frontend/shell/vr_settings.cpp
 	frontend/shell/installs.cpp
 	frontend/shell/library.cpp
 	frontend/shell/pages.cpp

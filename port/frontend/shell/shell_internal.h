@@ -133,6 +133,10 @@ namespace ps5shell
 		std::string opens;		 // Settings: a › row's page, whose rows it stands for
 	};
 
+	// BotW VR (vr_settings.cpp): bettervr.json's "vr", Play in VR or Play on TV
+	bool VrModeOn();
+	void SetVrMode(bool vr);
+
 	struct SettingsPage
 	{
 		std::string id, title, subtitle;
@@ -251,8 +255,17 @@ namespace ps5shell
 		std::string IconOf(Game& game);
 		// BotW VR (port/bettervr/TileArt.cpp): the app's tile and background from Breath of the Wild, once
 		void PollBotwArt();
+		// BotW VR's home in place of the Library (home.cpp), and Settings > VR (vr_settings.cpp)
+		void HomeUpdate(const ui::Press& press);
+		void HomeDraw(Canvas& canvas);
+		std::vector<Hint> HomeHints() const;
+		int BotwGame() const; // Breath of the Wild's index in m_games, or -1
+		void OpenSettingsPage(const std::string& page);
+		std::vector<Row> VrRows();
+		bool VrApplyRow(const Row& row, int step, bool cross);
+		void VrSetIndex(const Row& row, int index);
+		int m_homeItem = 0;
 		bool m_botwArtDone = false;
-		bool m_botwHomeOpened = false; // its page opened as the Library first showed
 		// The backdrop's picture (7.4): a Wii U game's boot screen (looked for at most one a frame,
 		// sharing the icons' budget: each mounts the game), else the box art
 		std::string BackdropOf(Game& game);

@@ -199,6 +199,22 @@ namespace ps5shell
 
 	std::vector<SettingsPage> Shell::SettingsPages() const
 	{
+		// BotW VR (docs/bettervr-ps5): one game's settings, VR first, and none of the emulator's own pages
+		// (Launcher's sides and themes, Play time)
+		if (IsWiiU() && !InGameSettings())
+			return {
+				// tr: Settings' page of BotW VR: BetterVR's options (camera, turning, menus, the Sense controllers)
+				{"vr", Tr("VR"), Tr("Camera, turning, the menus in the headset and the Sense controllers."), Icon::Sparkle},
+				{"graphics", Tr("Graphics"), Tr("The picture on the TV, and the frame rate."), Icon::Monitor},
+				{"controls", Tr("Controls"), Tr("The DualSense, when you play on the TV."), Icon::Pad},
+				{"system", Tr("Sound"), Tr("The game's sound."), Icon::Speaker},
+				{"saves", Tr("Accounts and saves"), Tr("Each account has its own saves. Backups go to USB."), Icon::Save},
+				{"files", Tr("Game files"), Tr("Where the game is, and its update and DLC."), Icon::Folder},
+				{"online", Tr("Online"), Tr("Box art and the community graphic packs."), Icon::Globe},
+				{"ui-language", Tr("Language"), Tr("The language of the menus: the PS5's own, unless you choose another."), Icon::Globe},
+				{"diagnostics", Tr("Diagnostics"), Tr("The Setup check, logs, caches and this session's details."), Icon::Pulse},
+				{"about", TrC("app", "About"), std::string(Tr("Who made what.")) + " · " + Tr("Version") + " " + ps5update::Readable(PS5CEMU_VERSION), Icon::Info},
+			};
 		// the side's pages; the shared ones on every side
 		std::vector<SettingsPage> pages;
 		// the menus' language first, with a globe, which reads in any language
@@ -1382,10 +1398,12 @@ namespace ps5shell
 				if (!account.signedIn)
 					notices->dimmed = true;
 			}
-			action(Kind::Action, "appupdate", Tr("PS5-ECAM updates"), AppUpdateStatus(), Tr("Cross checks GitHub for a newer version."),
-				Tr("PS5-ECAM asks GitHub for its latest release each time it starts. Cross asks again, or installs the newer version it found: "
-				   "the release's files are downloaded, checked and put in place of these, and the app starts again. Your games, saves and "
-				   "settings stay as they are."));
+			// BotW VR updates nothing of its own (app/updates.cpp: kOwnUpdates): no row for it
+			if (!IsWiiU())
+				action(Kind::Action, "appupdate", Tr("PS5-ECAM updates"), AppUpdateStatus(), Tr("Cross checks GitHub for a newer version."),
+					Tr("PS5-ECAM asks GitHub for its latest release each time it starts. Cross asks again, or installs the newer version it found: "
+					   "the release's files are downloaded, checked and put in place of these, and the app starts again. Your games, saves and "
+					   "settings stay as they are."));
 			// the release the last update replaced, kept until the next (ps5update::PreviousVersion)
 			if (const std::string previous = ps5update::PreviousVersion(); !previous.empty())
 			{
@@ -1610,6 +1628,8 @@ namespace ps5shell
 
 	std::vector<Row> Shell::SettingRows(const std::string& page)
 	{
+		if (page == "vr") // BotW VR: BetterVR's settings (vr_settings.cpp)
+			return VrRows();
 		if (IsSwitch() && (page == "nxmods" || page == "nxcheats"))
 			return SwitchExtrasRows(page);
 		// the Switch's rows from Eden's own files (switch_extras.cpp), behind a row of the page they are on: its
@@ -2440,6 +2460,11 @@ namespace ps5shell
 	void Shell::ChangeSetting(const Row& row, int step, bool cross)
 	{
 		const std::string& id = row.id;
+		if (id.starts_with("bvr-")) // BotW VR: Settings > VR (vr_settings.cpp)
+		{
+			VrApplyRow(row, step, cross);
+			return;
+		}
 		if (id.starts_with("nxextra:"))
 		{
 			ChangeSwitchExtra(row, step, cross);
@@ -3230,7 +3255,7 @@ namespace ps5shell
 		// the pages down its left: one short list, each with its icon; above them whose settings they are
 		const float navX = dialog.x + 20, navTop = dialog.y + 30;
 		// tr: above Settings' pages: whose settings they are ({0}: Wii U, Nintendo 3DS or Nintendo DS)
-		const std::string head = InGameSettings() ? m_gameName : TrF("{0} settings", SystemName(m_side));
+		const std::string head = InGameSettings() ? m_gameName : IsWiiU() ? std::string(Tr("Settings")) : TrF("{0} settings", SystemName(m_side));
 		canvas.Text(Style(kOverlineStyle), navX + 22, navTop, head, Tertiary(), navW - 64, 1);
 		const float railTop = navTop + 40, railBottom = dialog.Bottom() - 20, step = 56;
 		const float listHeight = pages.size() * step;

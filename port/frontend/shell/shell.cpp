@@ -201,8 +201,20 @@ namespace ps5shell
 			m_settings.ui.lastVersion = PS5CEMU_VERSION;
 			SaveSettings();
 		}
-		const NewsThen then = firstStart ? NewsThen::Welcome : SetupNeeded() ? NewsThen::Setup : updated ? NewsThen::NewOptions : NewsThen::Side;
-		if (news)
+		NewsThen then = firstStart ? NewsThen::Welcome : SetupNeeded() ? NewsThen::Setup : updated ? NewsThen::NewOptions : NewsThen::Side;
+		// BotW VR: one game's launcher, with no What's new or Make it yours (PS5-ECAM's sides and themes);
+		// the Setup check only when something is missing
+		const bool botw = IsWiiU();
+		if (botw)
+		{
+			if (firstStart)
+			{
+				m_settings.ui.setupDone = true;
+				SaveSettings();
+			}
+			then = SetupNeeded() ? NewsThen::Setup : NewsThen::Side;
+		}
+		if (news && !botw)
 			WhatsNewOpen(then);
 		else if (then == NewsThen::Welcome)
 			WelcomeOpen(true); // then the Setup check, then the side
@@ -675,7 +687,8 @@ namespace ps5shell
 		std::error_code ec;
 		std::filesystem::create_directories(folder, ec); // where your own go, there to be found over FTP
 		m_themes = ui::AllThemes(folder);
-		const ui::Theme theme = ui::FindTheme(m_settings.ui.theme, folder);
+		// BotW VR: its own theme unless another is chosen (ui/theme.cpp)
+		const ui::Theme theme = ui::FindTheme(m_settings.ui.theme.empty() ? std::string("botw-vr") : m_settings.ui.theme, folder);
 		ui::ApplyTheme(theme);
 		ps5log::Line("[ui] theme: {}", theme.id.empty() ? std::string("Light (the default)") : theme.id);
 	}
@@ -1120,15 +1133,6 @@ namespace ps5shell
 
 	void Shell::PollBotwArt()
 	{
-		// BotW VR's home: Breath of the Wild's page, once, as the Library first shows it
-		if (!m_botwHomeOpened && IsWiiU() && m_screen == ScreenId::Library)
-			for (const uint64_t titleId : {0x00050000101C9400ull, 0x00050000101C9500ull, 0x00050000101C9300ull})
-				if (const int index = FindGame(titleId); index >= 0)
-				{
-					m_botwHomeOpened = true;
-					HubOpen(index, ScreenId::Library);
-					break;
-				}
 		// Breath of the Wild's USA, Europe and Japan title IDs; its icon and boot screen mount the game,
 		// one a frame (IconOf, BackdropOf), so this comes back until both were looked for
 		if (m_botwArtDone || !IsWiiU() || !m_status.coreReady)
@@ -1568,6 +1572,8 @@ namespace ps5shell
 		}
 		case ScreenId::Library:
 		{
+			if (IsWiiU())
+				return HomeHints();
 			std::string kicker, title, text;
 			std::vector<std::string> buttons;
 			if (LibraryState(kicker, title, text, buttons))

@@ -7,8 +7,6 @@
 
 #include <fmt/format.h>
 #include <rapidjson/document.h>
-#include <rapidjson/stringbuffer.h>
-#include <rapidjson/writer.h>
 
 #include <cstdio>
 #include <filesystem>
@@ -555,49 +553,6 @@ void PS5Cemu_BetterVRApplyMode(uint64_t titleId)
 	}
 	if (wanted && !found)
 		ps5vr::Log("BetterVR's graphic pack is not among Breath of the Wild's: the game will not start in stereo");
-}
-
-// The launcher's Play in VR and Play on TV (frontend/shell/hub.cpp): bettervr.json's "vr" set, its
-// other settings kept
-void PS5Cemu_SetVrMode(bool vr)
-{
-	const std::string path = ps5paths::Root() + "/bettervr.json";
-	rapidjson::Document json;
-	if (std::FILE* file = std::fopen(path.c_str(), "rb"))
-	{
-		std::string text;
-		char chunk[4096];
-		for (size_t got; (got = std::fread(chunk, 1, sizeof(chunk), file)) > 0;)
-			text.append(chunk, got);
-		std::fclose(file);
-		json.Parse(text.c_str());
-	}
-	if (json.HasParseError() || !json.IsObject())
-		json.SetObject();
-	if (json.HasMember("vr"))
-		json["vr"].SetBool(vr);
-	else
-		json.AddMember("vr", vr, json.GetAllocator());
-	rapidjson::StringBuffer buffer;
-	rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
-	json.Accept(writer);
-	const std::string temporary = path + ".tmp";
-	if (std::FILE* file = std::fopen(temporary.c_str(), "wb"))
-	{
-		const bool written = std::fwrite(buffer.GetString(), 1, buffer.GetSize(), file) == buffer.GetSize();
-		std::fclose(file);
-		std::error_code ec;
-		if (written)
-			std::filesystem::rename(temporary, path, ec);
-		ps5vr::Log(fmt::format("{}: VR {} from the launcher{}", path, vr ? "on" : "off", written && !ec ? "" : " (not saved)"));
-	}
-}
-
-// Whether bettervr.json has VR on, for the launcher's Play buttons
-bool PS5Cemu_VrModeOn()
-{
-	bool betterVR = true;
-	return ps5vr::ReadSwitch(betterVR);
 }
 
 // Cemu's export for BetterVR, which Cemu defines in src/main.cpp: the PS5's entry point is

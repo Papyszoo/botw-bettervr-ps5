@@ -11,11 +11,6 @@
 #include <algorithm>
 #include <cmath>
 
-// BotW VR (port/bettervr/VrPS5.cpp): bettervr.json's "vr" for Play in VR and Play on TV; weak, as the
-// launcher's PC preview has none
-__attribute__((weak)) void PS5Cemu_SetVrMode(bool vr);
-__attribute__((weak)) bool PS5Cemu_VrModeOn();
-
 namespace ps5shell
 {
 	using namespace ui::tokens;
@@ -143,8 +138,8 @@ namespace ps5shell
 			}
 			else if (m_hubAction < plays)
 			{
-				if (plays == 2 && PS5Cemu_SetVrMode)
-					PS5Cemu_SetVrMode(m_hubAction == 0);
+				if (plays == 2)
+					SetVrMode(m_hubAction == 0);
 				Launch(m_hubGame);
 			}
 			else if (packs && m_hubAction == plays)
@@ -254,7 +249,7 @@ namespace ps5shell
 		if (plays == 2)
 		{
 			// both there, Play in VR first; the mode bettervr.json has now is the one drawn as primary
-			const bool vr = !PS5Cemu_VrModeOn || PS5Cemu_VrModeOn();
+			const bool vr = VrModeOn();
 			// tr: Breath of the Wild's page in BotW VR: start the game in the PS VR2 headset
 			b = PillButton(canvas, bx, ay, Tr("Play in VR"), vr, !m_hubAbout && m_hubAction == 0, Icon::Play, true, 72, 420);
 			bx = b.Right() + 20;

@@ -350,6 +350,12 @@ namespace ps5shell
 
 	void Shell::LibraryUpdate(const ui::Press& press)
 	{
+		// BotW VR: one game's home in place of the Library (home.cpp)
+		if (IsWiiU())
+		{
+			HomeUpdate(press);
+			return;
+		}
 		const Button b = press.button;
 		{
 			std::string kicker, title, text;
@@ -579,6 +585,11 @@ namespace ps5shell
 
 	void Shell::LibraryDraw(Canvas& canvas)
 	{
+		if (IsWiiU())
+		{
+			HomeDraw(canvas);
+			return;
+		}
 		DrawBar(canvas, true);
 		{
 			std::string kicker, title, text;

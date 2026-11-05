@@ -110,6 +110,20 @@ namespace ui
 				{"good", "#13a578"}, {"warn", "#c47a00"}, {"bad", "#d23c3c"}, {"focus", "#0d1526"}});
 			list.push_back(light);
 
+			// BotW VR's own (docs/bettervr-ps5), its default: deep teal like its home and its tile art
+			// (tools/render-botwvr-art.py), the app's teal as the accent, nothing moving behind
+			Theme botw;
+			botw.id = "botw-vr";
+			botw.name = "BotW VR";
+			botw.description = "Deep teal glass, as the app's home has it.";
+			botw.colours = Colours({{"ink-0", "#060c12"}, {"ink-1", "#0b161e"}, {"ink-2", "#12222c"}, {"glass", "#12222cc8"},
+				{"glass-2", "#1c3340d8"}, {"glass-edge", "#78d2be33"}, {"line", "#78d2be26"}, {"scrim", "#02060acc"}, {"text", "#eef6f4"},
+				{"text-2", "#bcd0cc"}, {"text-3", "#86a09a"}, {"wiiu", "#78d2be"}, {"wiiu-strong", "#9de3d3"}, {"wiiu-ink", "#0b141b"},
+				{"focus", "#eef6f4"}});
+			botw.corners = 1.1f;
+			botw.motif = Motif::None;
+			list.push_back(botw);
+
 			Theme standard;
 			standard.id = "link-jack";
 			standard.name = "Link Jack";
