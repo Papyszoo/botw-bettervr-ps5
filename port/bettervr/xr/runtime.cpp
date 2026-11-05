@@ -342,7 +342,7 @@ namespace
 			Vec3 linear, angular;
 			XrTime poseTime = 0;
 			XrTime hapticUntil = 0;
-			bool vibrating = false, vibrationLogged = false;
+			bool vibrating = false, vibrationLogged = false, poseLogged = false;
 		} hands[2];
 		float gripPitch = 0, aimPitch = 0;
 		XrTime syncTime = 0;
@@ -486,7 +486,23 @@ namespace
 			if (!hand.registered)
 				continue;
 			float pos[3], quat[4];
-			if (!hmd2::controller_pose(hand.handle, pos, quat))
+			const bool posed = hmd2::controller_pose(hand.handle, pos, quat);
+			// diagnostics, not a fix: whether VrTracker2 gives the hand a pose (unverified on hardware), once
+			// when that changes (at most 20 lines), with the pose and the head's, to read the tracker's origin
+			if (posed != hand.poseLogged)
+			{
+				hand.poseLogged = posed;
+				static int s_poseLogs = 0;
+				if (s_poseLogs++ < 20)
+				{
+					if (posed)
+						Log("%s Sense pose from VrTracker2: pos %.3f %.3f %.3f quat %.3f %.3f %.3f %.3f (head %.3f %.3f %.3f)", HandName(i), pos[0], pos[1],
+							pos[2], quat[0], quat[1], quat[2], quat[3], s.lastHead.p.x, s.lastHead.p.y, s.lastHead.p.z);
+					else
+						Log("%s Sense pose: VrTracker2 gives none (registered %d)", HandName(i), hand.registered ? 1 : 0);
+				}
+			}
+			if (!posed)
 				continue;
 			const Pose pose{{quat[0], quat[1], quat[2], quat[3]}, {pos[0], pos[1], pos[2]}};
 			const double dt = hand.poseTime ? (double)(now - hand.poseTime) / 1e9 : 0.0;
@@ -1698,10 +1714,11 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
 		const hmd2::PaceStats pace = hmd2::take_pace();
 		const hmd2::FlipInfo flip = hmd2::flip_status();
 		Log("%llu frames: nap %.2f ms, BeginFrame %.2f ms, ahead %.2f ms, step %.2f ms; flip shown %llu pending %d; repeated %d, queue full %d, "
-			"missed %d, errors %d, without layers %llu, skipped %llu, worn %d",
+			"missed %d, errors %d, without layers %llu, skipped %llu, worn %d; head %.2f %.2f %.2f, hands posed %d %d",
 			(unsigned long long)session->frames, pace.nap_ms, pace.call_ms, pace.ahead_ms, pace.step_ms, (unsigned long long)flip.shown, flip.pending,
 			hmd2::repeated_frames(), hmd2::queue_full_waits(), hmd2::missed_frames(), hmd2::frame_errors(), (unsigned long long)session->emptyFrames,
-			(unsigned long long)session->skipped, hmd2::worn() ? 1 : 0);
+			(unsigned long long)session->skipped, hmd2::worn() ? 1 : 0, renderHead.p.x, renderHead.p.y, renderHead.p.z,
+			s.hands[0].poseValid ? 1 : 0, s.hands[1].poseValid ? 1 : 0);
 	}
 	return XR_SUCCESS;
 }
