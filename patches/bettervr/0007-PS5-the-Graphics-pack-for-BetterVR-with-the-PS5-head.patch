@@ -1,0 +1,112 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ps5cemu <ps5cemu@localhost>
+Date: Thu, 5 Nov 2026 14:08:32 +0100
+Subject: [PATCH] PS5: the Graphics pack for BetterVR with the PS5 headset's
+ eye sizes, 0.5x by default
+
+The launcher fills the pack's __BETTERVR_*__ placeholders from the headset's eye size; the PS5 app copies the pack as it is, so they are put in here, for 1984x2048 per eye (the same search as launcher/main.cpp's GetNearestRulesCompatibleEyeResolution, with its texture redefines' penalty). The default preset is 0.5x, 1280x1320 per eye.
+---
+ resources/BreathOfTheWild_Graphics/rules.txt | 56 ++++++++++----------
+ 1 file changed, 28 insertions(+), 28 deletions(-)
+
+diff --git a/resources/BreathOfTheWild_Graphics/rules.txt b/resources/BreathOfTheWild_Graphics/rules.txt
+index a836345..858eacc 100644
+--- a/resources/BreathOfTheWild_Graphics/rules.txt
++++ b/resources/BreathOfTheWild_Graphics/rules.txt
+@@ -44,68 +44,68 @@ $recordingOutput:int = 2
+ # VR Resolution Multiplier (BetterVR)
+ 
+ [Preset]
+-name = __BETTERVR_05_NAME__ (0.5x, Not Recommended Except For 8K VR headsets)
++name = 1280x1320 (0.5x, Default on the PS5)
+ category = VR Resolution Multiplier
+ condition = ($recordingOutput == 0)
+-$width = __BETTERVR_05_WIDTH__
+-$height = __BETTERVR_05_HEIGHT__
++default = 1
++$width = 1280
++$height = 1320
+ 
+ [Preset]
+-name = __BETTERVR_075_NAME__ (0.75x, Lower GPU Cost)
++name = 1480x1560 (0.75x, Lower GPU Cost)
+ category = VR Resolution Multiplier
+ condition = ($recordingOutput == 0)
+-$width = __BETTERVR_075_WIDTH__
+-$height = __BETTERVR_075_HEIGHT__
++$width = 1480
++$height = 1560
+ 
+ [Preset]
+-name = __BETTERVR_10_NAME__ (1x, Native Headset Resolution, Default)
++name = 2000x2040 (1x, Native Headset Resolution)
+ category = VR Resolution Multiplier
+ condition = ($recordingOutput == 0)
+-default = 1
+-$width = __BETTERVR_10_WIDTH__
+-$height = __BETTERVR_10_HEIGHT__
++$width = 2000
++$height = 2040
+ 
+ [Preset]
+-name = __BETTERVR_125_NAME__ (1.25x, Slightly Sharper)
++name = 2480x2576 (1.25x, Slightly Sharper)
+ category = VR Resolution Multiplier
+ condition = ($recordingOutput == 0)
+-$width = __BETTERVR_125_WIDTH__
+-$height = __BETTERVR_125_HEIGHT__
++$width = 2480
++$height = 2576
+ 
+ [Preset]
+-name = __BETTERVR_15_NAME__ (1.5x, Balanced Quality)
++name = 2960x3072 (1.5x, Balanced Quality)
+ category = VR Resolution Multiplier
+ condition = ($recordingOutput == 0)
+-$width = __BETTERVR_15_WIDTH__
+-$height = __BETTERVR_15_HEIGHT__
++$width = 2960
++$height = 3072
+ 
+ [Preset]
+-name = __BETTERVR_175_NAME__ (1.75x, Sharper Image)
++name = 3480x3600 (1.75x, Sharper Image)
+ category = VR Resolution Multiplier
+ condition = ($recordingOutput == 0)
+-$width = __BETTERVR_175_WIDTH__
+-$height = __BETTERVR_175_HEIGHT__
++$width = 3480
++$height = 3600
+ 
+ [Preset]
+-name = __BETTERVR_20_NAME__ (2x, Better Anti-Aliasing, Recommended)
++name = 3960x4080 (2x, Better Anti-Aliasing, Recommended)
+ category = VR Resolution Multiplier
+ condition = ($recordingOutput == 0)
+-$width = __BETTERVR_20_WIDTH__
+-$height = __BETTERVR_20_HEIGHT__
++$width = 3960
++$height = 4080
+ 
+ [Preset]
+-name = __BETTERVR_225_NAME__ (2.25x, High Clarity)
++name = 4480x4624 (2.25x, High Clarity)
+ category = VR Resolution Multiplier
+ condition = ($recordingOutput == 0)
+-$width = __BETTERVR_225_WIDTH__
+-$height = __BETTERVR_225_HEIGHT__
++$width = 4480
++$height = 4624
+ 
+ [Preset]
+-name = __BETTERVR_30_NAME__ (3x, Best Anti-Aliasing, Requires A Good GPU)
++name = 5960x6120 (3x, Best Anti-Aliasing, Requires A Good GPU)
+ category = VR Resolution Multiplier
+ condition = ($recordingOutput == 0)
+-$width = __BETTERVR_30_WIDTH__
+-$height = __BETTERVR_30_HEIGHT__
++$width = 5960
++$height = 6120
+ 
+ [Preset]
+ name = 1920x1080 (16:9 Recording)

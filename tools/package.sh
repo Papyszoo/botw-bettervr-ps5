@@ -166,11 +166,12 @@ done
 # the compatibility list the game pages show a status from (app/compatibility.h)
 cp "$PS5CEMU_ROOT/docs/COMPATIBILITY.md" "$app/assets/compatibility.md"
 cp -a "$deps/Cemu/bin/resources/sharedFonts" "$app/assets/cemu/resources/"
-# BotW-BetterVR on PS5: BetterVR's graphic pack, without its debug patches (as its own release),
-# which the app puts in graphicPacks/ while bettervr.json asks for BetterVR (port/bettervr/VrPS5.cpp)
+# BotW-BetterVR on PS5: BetterVR's graphic pack, without its debug patches (as its own release), and
+# its Graphics pack (patches/bettervr 0007 fills in the eye resolutions), which the app puts in
+# graphicPacks/ while bettervr.json asks for BetterVR (port/bettervr/VrPS5.cpp)
 rm -rf "$app/assets/bettervr"
 mkdir -p "$app/assets/bettervr"
-cp -a "$deps/BotW-BetterVR/resources/BreathOfTheWild_BetterVR" "$app/assets/bettervr/"
+cp -a "$deps/BotW-BetterVR/resources/BreathOfTheWild_BetterVR" "$deps/BotW-BetterVR/resources/BreathOfTheWild_Graphics" "$app/assets/bettervr/"
 rm -f "$app/assets/bettervr/BreathOfTheWild_BetterVR"/patch_debug_*.asm
 
 # BotW VR (docs/bettervr-ps5): Cemu alone. No Switch side (Eden), EmulationStation or retro runtimes.
