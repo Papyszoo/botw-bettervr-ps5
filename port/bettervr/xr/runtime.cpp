@@ -601,7 +601,7 @@ namespace
 			return -1;
 		// the hand's path, from the table: the hand paths are cached only at the first xrSyncActions,
 		// which is after xrCreateActionSpace, so asking the cache there gave every space -2 (both hands)
-		if (path <= s.paths.size())
+		if (path != XR_NULL_PATH && path <= s.paths.size())
 		{
 			const std::string& name = s.paths[path - 1];
 			if (name == "/user/hand/left")
