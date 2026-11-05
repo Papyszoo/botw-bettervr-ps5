@@ -34,6 +34,12 @@ namespace ps5shell
 		constexpr const char* kCamera[] = {"FIRST_PERSON", "THIRD_PERSON"};
 		constexpr const char* kCutscenes[] = {"FOLLOW_DEFAULT_EVENT_SETTINGS", "ALWAYS_FIRST_PERSON", "ALWAYS_THIRD_PERSON"};
 		constexpr const char* kPosition[] = {"STANDING", "SEATED"};
+		// mod_settings.h's PlayPosition default: Seated on the PS5 (the tracker's origin is not the floor), Standing elsewhere
+#ifdef __PROSPERO__
+		constexpr int kPositionDefault = 1;
+#else
+		constexpr int kPositionDefault = 0;
+#endif
 		constexpr const char* kTurn[] = {"SNAP_30", "SNAP_45", "SNAP_60", "SMOOTH_SLOW", "SMOOTH_NORMAL", "SMOOTH_FAST"};
 		constexpr const char* kWalk[] = {"CAMERA", "CONTROLLER"};
 		constexpr const char* kSwing[] = {"SWING_NORMAL", "SWING_EASY"};
@@ -286,7 +292,7 @@ namespace ps5shell
 		Row& cutscenes = add(Kind::Choice, "bvr-cutscenes", Tr("Cutscenes"), Tr("Mixed shows each scene as it works best."));
 		options(cutscenes, {Tr("Mixed"), Tr("First person"), Tr("Third person")}, IniIndex("CutsceneCameraMode", kCutscenes, 0));
 		Row& position = add(Kind::Segmented, "bvr-position", Tr("Play position"), "");
-		options(position, {Tr("Standing"), Tr("Seated")}, IniIndex("PlayPosition", kPosition, 0));
+		options(position, {Tr("Standing"), Tr("Seated")}, IniIndex("PlayPosition", kPosition, kPositionDefault));
 		Row& height = add(Kind::Choice, "bvr-height", Tr("Height"), Tr("Raises or lowers your eyes in the game."));
 		options(height, Centimetres(), (int)std::lround(IniFloat("PlayerHeightOffset", 0) * 100 / 5) + 10);
 
