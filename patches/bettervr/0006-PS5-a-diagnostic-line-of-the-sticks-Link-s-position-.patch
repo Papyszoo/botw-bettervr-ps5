@@ -1,0 +1,58 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 5 Nov 2026 14:13:57 +0100
+Subject: [PATCH] PS5: a diagnostic line of the sticks, Link's position and
+ FPS++'s speed
+
+One line every 4th VPADRead while a stick or button is held, else every 5 s (900 at most):
+the sticks and hold word the game is given, Link's position, and FPS++'s fps and animation
+factor read from its codecave. A delay between the stick and the movement, or an FPS++ value
+away from the real frame rate, shows in the boot log. Logging only.
+---
+ src/hooking/controls.cpp | 30 ++++++++++++++++++++++++++++++
+ 1 file changed, 30 insertions(+)
+
+diff --git a/src/hooking/controls.cpp b/src/hooking/controls.cpp
+index 7d0e835..09d26e3 100644
+--- a/src/hooking/controls.cpp
++++ b/src/hooking/controls.cpp
+@@ -1248,6 +1248,36 @@ void CemuHooks::hook_InjectXRInput(PPCInterpreter_t* hCPU) {
+     // motion
+     OpenXRMotionBridge::UpdateVPADStatus(inputs, vpadStatus);
+ 
++    // PS5 diagnostics, not a fix: what the game is given and what it does with it, on one line and one clock, so a
++    // physics or input delay shows as the gap between the stick and the player's movement. the VPADRead
++    // calls since the last line (one a game frame), the sticks the game reads, its hold word, Link's position, and
++    // FPS++'s fps and animation factor (its codecave: BotW_Gamespeed_V208 starts at 0x01800C00, averageFPS30 is 0x38
++    // in, averageFPS1Inv 0x4C). Every 4th call while a stick or button is held, else every 5 s; at most 900 lines.
++    {
++        static uint32_t s_diagCalls = 0, s_diagLines = 0;
++        static auto s_diagLast = std::chrono::steady_clock::now();
++        s_diagCalls++;
++        const float lsx = vpadStatus.leftStick.x.getLE(), lsy = vpadStatus.leftStick.y.getLE();
++        const float rsx = vpadStatus.rightStick.x.getLE(), rsy = vpadStatus.rightStick.y.getLE();
++        const bool active = std::abs(lsx) + std::abs(lsy) + std::abs(rsx) + std::abs(rsy) > 0.2f || (combinedHold & ~0u) != 0;
++        const auto diagNow = std::chrono::steady_clock::now();
++        const bool due = active ? (s_diagCalls % 4 == 0) : (diagNow - s_diagLast >= std::chrono::seconds(5));
++        if (due && s_diagLines < 900) {
++            s_diagLines++;
++            s_diagLast = diagNow;
++            glm::fvec3 pos = {};
++            if (s_playerMtxAddress != 0) {
++                pos = getMemory<BEMatrix34>(s_playerMtxAddress).getPos().getLE();
++            }
++            const float fpsPlusPlusFps = getMemory<BEType<float>>(0x01800C38).getLE();
++            const float fpsPlusPlusAnim = getMemory<BEType<float>>(0x01800C4C).getLE();
++            Log::print<INFO>("[diag] calls={} stick L {:.2f},{:.2f} R {:.2f},{:.2f} hold {:08X} pos {:.3f} {:.3f} {:.3f} fps++ {:.2f} anim {:.3f} in_game={}",
++                s_diagCalls, lsx, lsy, rsx, rsy,
++                combinedHold, pos.x, pos.y, pos.z, fpsPlusPlusFps, fpsPlusPlusAnim, gameState.in_game ? 1 : 0);
++            s_diagCalls = 0;
++        }
++    }
++
+     // write the input back to VPADStatus
+     writeMemory(vpadStatusOffset, &vpadStatus);
+ 
+-- 
+2.50.1 (Apple Git-155)
+

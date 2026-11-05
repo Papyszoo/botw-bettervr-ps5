@@ -960,6 +960,20 @@ namespace ps5emu
 						percent(gpuWaits[4] - gpuWaitAt[4]), percent(gpuWaits[5] - gpuWaitAt[5]), percent(async - asyncAt), DrawsPerFrame(), gpu,
 						GetConfig().vk_accurate_barriers ? "on" : "off", pipelines, HeapMiB(), performanceMonitor.vk.numDescriptorSets.get(),
 						performanceMonitor.vk.numDescriptorSamplerTextures.get());
+				// diagnostics: Cemu's guest clock (OSGetSystemTime, 62,156,250 ticks a second) against the host's over
+				// the same window, and the game frame rate it gives; FPS++ and the game's physics take their speed
+				// from that clock, so a ratio away from 1.000 would put the game in slow motion or fast forward
+				{
+					static uint64_t guestAt = 0;
+					const uint64_t guest = PPCInterpreter_getMainCoreCycleCounter() / 20;
+					if (guestAt && now > loggedAt)
+					{
+						const double guestSeconds = (guest - guestAt) / 62156250.0, hostSeconds = (now - loggedAt) / 1e6;
+						ps5log::Line("[clock] guest clock {:.3f} s over {:.3f} s of host time (ratio {:.3f}); {:.1f} game frames per guest second",
+							guestSeconds, hostSeconds, guestSeconds / hostSeconds, guestSeconds > 0 ? (frames - loggedFrames) / guestSeconds : 0.0);
+					}
+					guestAt = guest;
+				}
 				loggedFrames = frames;
 				loggedAt = now;
 				idleAt = idle, hostGpuAt = hostGpu, asyncAt = async, gpuBusyAt = gpuBusy;
