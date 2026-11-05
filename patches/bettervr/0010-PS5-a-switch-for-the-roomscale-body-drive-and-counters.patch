@@ -1,0 +1,197 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 5 Nov 2026 18:11:09 +0100
+Subject: [PATCH] PS5: a switch for the roomscale body drive, and counters for
+ the physics diagnosis
+
+bettervr.json {"roomscale":0} turns off the head-driven movement of Link's body (default on, as now):
+it is the only BetterVR code that writes Link's physics body, through Havok sweeps run in the
+middle of the player's velocity update. The [diag] line gains the roomscale hook calls, casts and
+warps per interval, the player's actor jobs per eye pass and the passes that ended, and is also
+written while Link's height changes by 15 cm between calls, so a launch or a fall is on record.
+Logging and a switch only; nothing changes with the defaults.
+---
+ src/hooking/camera.cpp            |  3 +++
+ src/hooking/controls.cpp          | 44 +++++++++++++++++++++----------
+ src/hooking/entity_controller.cpp | 18 +++++++++++++
+ src/hooking/settings.cpp          | 16 +++++++++++
+ 4 files changed, 67 insertions(+), 14 deletions(-)
+
+diff --git a/src/hooking/camera.cpp b/src/hooking/camera.cpp
+index 320592c..b96e87c 100644
+--- a/src/hooking/camera.cpp
++++ b/src/hooking/camera.cpp
+@@ -1151,8 +1151,11 @@ void CemuHooks::hook_ModifyPixelUniformBlockData(PPCInterpreter_t* hCPU) {
+     writeMemory(hCPU->gpr[5], &ubData);
+ }
+ 
++extern uint32_t g_diagEndCameraSide[2];
++
+ void CemuHooks::hook_EndCameraSide(PPCInterpreter_t* hCPU) {
+     hCPU->instructionPointer = hCPU->sprNew.LR;
++    g_diagEndCameraSide[hCPU->gpr[3] == 0 ? 0 : 1]++;
+ 
+     OpenXR::EyeSide side = hCPU->gpr[3] == 0 ? OpenXR::EyeSide::LEFT : OpenXR::EyeSide::RIGHT;
+ 
+diff --git a/src/hooking/controls.cpp b/src/hooking/controls.cpp
+index 474d3f9..7750dfe 100644
+--- a/src/hooking/controls.cpp
++++ b/src/hooking/controls.cpp
+@@ -1269,32 +1269,48 @@ void CemuHooks::hook_InjectXRInput(PPCInterpreter_t* hCPU) {
+     OpenXRMotionBridge::UpdateVPADStatus(inputs, vpadStatus);
+ 
+     // PS5 diagnostics, not a fix: what the game is given and what it does with it, on one line and one clock, so a
+-    // physics or input delay shows as the gap between the stick and the player's movement. the VPADRead
+-    // calls since the last line (one a game frame), the sticks the game reads, its hold word, Link's position, and
+-    // FPS++'s fps and animation factor (its codecave: BotW_Gamespeed_V208 starts at 0x01800C00, averageFPS30 is 0x38
+-    // in, averageFPS1Inv 0x4C). Every 4th call while a stick or button is held, else every 5 s; at most 900 lines.
++    // physics or input delay shows as the gap between the stick and the player's movement. The VPADRead calls since
++    // the last line (one a game frame), the sticks the game reads, its hold word, Link's position, FPS++'s fps and
++    // animation factor (its codecave: BotW_Gamespeed_V208 starts at 0x01800C00, averageFPS30 is 0x38 in, averageFPS1Inv
++    // 0x4C), and what ran since the last line: roomscale hook calls / casts / warps written to Link's body (and whether
++    // the drive is on), the player's actor jobs per eye pass (job0_1 job0_2 job1_1 job1_2 ragdoll job2_2 job4, each
++    // left/right) and the passes that ended (left/right). Every 4th call while a stick or button is held or Link's height
++    // changes by 15 cm between calls, else every 5 s; at most 2400 lines.
+     {
++        extern uint32_t g_diagPlayerJobRuns[8][2], g_diagEndCameraSide[2], g_diagRoomscaleBegin, g_diagRoomscaleCast, g_diagRoomscaleWarp;
++        extern bool g_diagRoomscaleEnabled;
+         static uint32_t s_diagCalls = 0, s_diagLines = 0;
++        static float s_diagLastY = 0.0f;
+         static auto s_diagLast = std::chrono::steady_clock::now();
+         s_diagCalls++;
+         const float lsx = vpadStatus.leftStick.x.getLE(), lsy = vpadStatus.leftStick.y.getLE();
+         const float rsx = vpadStatus.rightStick.x.getLE(), rsy = vpadStatus.rightStick.y.getLE();
+-        const bool active = std::abs(lsx) + std::abs(lsy) + std::abs(rsx) + std::abs(rsy) > 0.2f || (combinedHold & ~0u) != 0;
++        glm::fvec3 pos = {};
++        if (s_playerMtxAddress != 0) {
++            pos = getMemory<BEMatrix34>(s_playerMtxAddress).getPos().getLE();
++        }
++        const bool active = std::abs(lsx) + std::abs(lsy) + std::abs(rsx) + std::abs(rsy) > 0.2f || combinedHold != 0;
++        const bool yMoving = std::abs(pos.y - s_diagLastY) > 0.15f;
++        s_diagLastY = pos.y;
+         const auto diagNow = std::chrono::steady_clock::now();
+-        const bool due = active ? (s_diagCalls % 4 == 0) : (diagNow - s_diagLast >= std::chrono::seconds(5));
+-        if (due && s_diagLines < 900) {
++        const bool due = (active || yMoving) ? (s_diagCalls % 4 == 0) : (diagNow - s_diagLast >= std::chrono::seconds(5));
++        if (due && s_diagLines < 2400) {
+             s_diagLines++;
+             s_diagLast = diagNow;
+-            glm::fvec3 pos = {};
+-            if (s_playerMtxAddress != 0) {
+-                pos = getMemory<BEMatrix34>(s_playerMtxAddress).getPos().getLE();
+-            }
+             const float fpsPlusPlusFps = getMemory<BEType<float>>(0x01800C38).getLE();
+             const float fpsPlusPlusAnim = getMemory<BEType<float>>(0x01800C4C).getLE();
+-            Log::print<INFO>("[diag] calls={} stick L {:.2f},{:.2f} R {:.2f},{:.2f} hold {:08X} pos {:.3f} {:.3f} {:.3f} fps++ {:.2f} anim {:.3f} in_game={}",
+-                s_diagCalls, lsx, lsy, rsx, rsy,
+-                combinedHold, pos.x, pos.y, pos.z, fpsPlusPlusFps, fpsPlusPlusAnim, gameState.in_game ? 1 : 0);
++            Log::print<INFO>("[diag] calls={} stick L {:.2f},{:.2f} R {:.2f},{:.2f} hold {:08X} pos {:.3f} {:.3f} {:.3f} fps++ {:.2f} anim {:.3f} in_game={} "
++                "rs{} {}/{}/{} jobs {}/{} {}/{} {}/{} {}/{} {}/{} {}/{} {}/{} pass {}/{}",
++                s_diagCalls, lsx, lsy, rsx, rsy, combinedHold, pos.x, pos.y, pos.z, fpsPlusPlusFps, fpsPlusPlusAnim, gameState.in_game ? 1 : 0,
++                g_diagRoomscaleEnabled ? "on" : "off", g_diagRoomscaleBegin, g_diagRoomscaleCast, g_diagRoomscaleWarp,
++                g_diagPlayerJobRuns[0][0], g_diagPlayerJobRuns[0][1], g_diagPlayerJobRuns[1][0], g_diagPlayerJobRuns[1][1],
++                g_diagPlayerJobRuns[2][0], g_diagPlayerJobRuns[2][1], g_diagPlayerJobRuns[3][0], g_diagPlayerJobRuns[3][1],
++                g_diagPlayerJobRuns[4][0], g_diagPlayerJobRuns[4][1], g_diagPlayerJobRuns[5][0], g_diagPlayerJobRuns[5][1],
++                g_diagPlayerJobRuns[6][0], g_diagPlayerJobRuns[6][1], g_diagEndCameraSide[0], g_diagEndCameraSide[1]);
+             s_diagCalls = 0;
++            std::memset(g_diagPlayerJobRuns, 0, sizeof(g_diagPlayerJobRuns));
++            g_diagEndCameraSide[0] = g_diagEndCameraSide[1] = 0;
++            g_diagRoomscaleBegin = g_diagRoomscaleCast = g_diagRoomscaleWarp = 0;
+         }
+     }
+ 
+diff --git a/src/hooking/entity_controller.cpp b/src/hooking/entity_controller.cpp
+index 47f717a..ef3e57f 100644
+--- a/src/hooking/entity_controller.cpp
++++ b/src/hooking/entity_controller.cpp
+@@ -88,6 +88,10 @@ enum class RoomscaleBodyDriveMode : uint8_t {
+     Enabled,
+ };
+ 
++// PS5 diagnostics (controls.cpp [diag]): roomscale hook calls, and the warps it wrote to Link's body
++uint32_t g_diagRoomscaleBegin = 0, g_diagRoomscaleCast = 0, g_diagRoomscaleWarp = 0;
++bool g_diagRoomscaleEnabled = true;
++
+ static RoomscaleState s_roomscaleState;
+ static std::atomic<float> s_roomscaleFadeAmount = 0.0f;
+ static RoomscaleBodyDriveMode s_roomscaleBodyDriveMode = RoomscaleBodyDriveMode::DisabledNotInGame;
+@@ -392,6 +396,7 @@ static void AdvanceRoomscaleCommittedStep(glm::fvec3 appliedHeadDelta) {
+ }
+ 
+ static void FinishRoomscaleResolveWarp(PPCInterpreter_t* hCPU, bool blocked, bool blockedByCollision) {
++    g_diagRoomscaleWarp++;
+     s_roomscaleState.isBlocked = blocked;
+     s_roomscaleState.isBlockedByCollision = blocked && blockedByCollision;
+     UpdateRoomscaleFade();
+@@ -626,7 +631,18 @@ static void PrimeRoomscaleBaseline(const glm::fvec3& headPos) {
+     UpdateRoomscaleFade();
+ }
+ 
++extern "C" float BetterVR_PS5_Setting(const char* name, float fallback);
++
+ static bool ShouldDrivePlayerBodyWithVR(const glm::fvec3& currentHeadPos, const PlayerBase& player) {
++    // PS5 experiment: bettervr.json {"roomscale":0} turns the head-driven body movement off (read once). Default on.
++    static const bool s_roomscaleOn = BetterVR_PS5_Setting("roomscale", 1.0f) >= 0.5f;
++    g_diagRoomscaleEnabled = s_roomscaleOn;
++    if (!s_roomscaleOn) {
++        SetRoomscaleBodyDriveMode(RoomscaleBodyDriveMode::DisabledNoPositional);
++        PrimeRoomscaleBaseline(currentHeadPos);
++        return false;
++    }
++
+     if (!CemuHooks::IsFirstPerson()) {
+         SetRoomscaleBodyDriveMode(RoomscaleBodyDriveMode::DisabledNotFirstPerson);
+         PrimeRoomscaleBaseline(currentHeadPos);
+@@ -740,6 +756,7 @@ void CemuHooks::hook_BeginRoomscaleMovement(PPCInterpreter_t* hCPU) {
+     uint32_t controller = hCPU->gpr[3];
+     hCPU->gpr[3] = RoomscaleHookResult_Skip;
+     ClearRoomscaleResolveState();
++    g_diagRoomscaleBegin++;
+ 
+     PlayerBase player = {};
+     if (!GameUtils::TryReadPlayerBase(player)) {
+@@ -895,6 +912,7 @@ void CemuHooks::hook_ConsumeRoomscaleRaycast(PPCInterpreter_t* hCPU) {
+         return;
+     }
+ 
++    g_diagRoomscaleCast++;
+     uint32_t remainingSteps = s_roomscaleState.maxAttempts - s_roomscaleState.attemptIndex;
+     if (remainingSteps == 0) {
+         ClearRoomscaleResolveState();
+diff --git a/src/hooking/settings.cpp b/src/hooking/settings.cpp
+index cd208d1..06088eb 100644
+--- a/src/hooking/settings.cpp
++++ b/src/hooking/settings.cpp
+@@ -213,6 +213,18 @@ void CemuHooks::hook_OSReportToConsole(PPCInterpreter_t* hCPU) {
+     }
+ }
+ 
++// PS5 diagnostics (controls.cpp [diag]): how often the player's actor jobs ran, per job and eye pass, and how often
++// each pass ended (hook_EndCameraSide): one of each per game frame if the stereo frame is as upstream's
++uint32_t g_diagPlayerJobRuns[8][2] = {};
++uint32_t g_diagEndCameraSide[2] = {};
++static int DiagPlayerJobIndex(const std::string& job) {
++    static const char* const names[8] = { "job0_1", "job0_2", "job1_1", "job1_2", "job2_1_ragdoll_related", "job2_2", "job4", "" };
++    for (int i = 0; i < 7; i++)
++        if (job == names[i])
++            return i;
++    return 7;
++}
++
+ constexpr uint32_t playerVtable = 0x101E5FFC;
+ void CemuHooks::hook_RouteActorJob(PPCInterpreter_t* hCPU) {
+     hCPU->instructionPointer = hCPU->sprNew.LR;
+@@ -282,6 +294,10 @@ void CemuHooks::hook_RouteActorJob(PPCInterpreter_t* hCPU) {
+         }
+     }
+ 
++    if (actorName == "GameROMPlayer" && hCPU->gpr[3] != 1 && side < 2) {
++        g_diagPlayerJobRuns[DiagPlayerJobIndex(jobNameStr)][side]++;
++    }
++
+     if (hCPU->gpr[3] == 0) {
+         //Log::print<INFO>("[{}] Ran {}", actorName, jobNameStr);
+     }
+-- 
+2.50.1 (Apple Git-155)
+
