@@ -694,8 +694,10 @@ app again after copying it; a copy over `/data/homebrew/PPSA98720` alone leaves 
 1. **Default: pack off.** Start the app and Breath of the Wild in VR, and play about 3 minutes in the
    world. Walk with the DualSense; press every Sense button (A/B/X/Y, L1/R1, both sticks, the grips,
    the triggers and Plus); and hold a grip while raising each hand to your shoulder, your waist and
-   your mouth. The view should be the 1280x720 one from the earlier builds. The boot log should have
-   a `[diag] VPADRead hook: N calls in 5 s` line every 5 s, and `[diag] calls=…` lines while you move.
+   your mouth. The view should be the 1280x720 one from the earlier builds, and the first-person
+   hands should be at the controllers (say if they sit at the waist/knees instead). The boot log
+   should have a `[diag] VPADRead hook: N calls in 5 s` line every 5 s, and `[diag] calls=…` lines
+   while you move.
 2. **Pack on.** Quit to the library and put `{"vr": true, "graphicsPack": 1}` in
    `/data/botwvr/launcher/bettervr.json` (keep `"bettervr": false` if you use the flat screen).
    Start the game again, not the app. Cemu should log the pack on, the picture should be sharper, and
@@ -707,7 +709,8 @@ app again after copying it; a copy over `/data/homebrew/PPSA98720` alone leaves 
 **Send back:** the `[diag] VPADRead hook` and `[diag] calls=` lines; the `Sense pose`/`hands posed`/
 `head` lines; the app's `graphic pack … turned` lines and Cemu's `Activate graphic pack` lines for
 each step; `reprojection of the game's frames`; any `[crash]`; what the Sense buttons and gestures
-did; whether the picture was right in each step; and whether the slow/late physics and gravity still
+did; where the first-person hands appeared; whether the picture was right in each step; and whether
+the slow/late physics and gravity still
 happen (say when, against the boot log's clock). No console result is claimed here.
 
 **What it decides:** whether the hook now runs and injects at all (the `[diag]` lines), whether the
