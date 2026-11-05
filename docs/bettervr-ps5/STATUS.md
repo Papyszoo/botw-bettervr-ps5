@@ -3,6 +3,42 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-05: the green screen's cause (m6-vr-diag's log), m7-vr-layer, and the launcher for BotW
+
+**Reported by Patryk** (`m6-vr-diag`, VR on): the green screen again. His boot log:
+
+- `Cemu's Vulkan device through BetterVR's layer: 0`, `Cemu takes its device functions from
+  BetterVR's layer`, `Cemu's first vkCmdClearColorImage`, and three `Cemu clears with BetterVR's eye
+  colour` lines: the graphic pack works, and Cemu's clears reach the stand-in.
+- No `[bettervr] [INFO] PS5: the layer's ... runs` line, for any hook: none of BetterVR's device
+  hooks ran.
+
+**The cause:** vkroots' `vkGetInstanceProcAddr` answers instance functions only and passes every
+other name, `vkGetDeviceProcAddr` among them, to the next one down: RADV's. So Cemu's device
+functions were RADV's, and BetterVR never saw a clear, never started OpenXR, and the eye colours
+stayed on screen. A loader takes device functions from the layer's `vkGetDeviceProcAddr`, the one
+negotiation gives; the stand-in now does (VulkanLayerPS5.cpp, `194b6e5`), and routes the four device
+functions Cemu takes through the instance (`vkQueuePresentKHR`, which BetterVR hooks,
+`vkDeviceWaitIdle`, `vkDestroyDevice`, `vkSetDebugUtilsObjectNameEXT`) through it as a loader's
+trampolines would.
+
+**[m7-vr-layer](https://github.com/Papyszoo/botw-bettervr-ps5/releases/tag/m7-vr-layer)** (built,
+untested on console): that fix alone. Test request 7.
+
+**Next build (m8), on `main`:** what Patryk asked for besides VR.
+
+- **BotW's page is the app's home:** it opens on start, with **Play in VR** and **Play on TV** in
+  place of Play (`frontend/shell/hub.cpp`). They set `bettervr.json`'s `"vr"` and start the game; the
+  file's other settings stay.
+- **No restart to switch:** BetterVR's graphic pack is always installed, and turned on (VR) or off
+  (TV) as Breath of the Wild starts, with FPS++ on for VR (`PS5Cemu_BetterVRApplyMode`).
+- **The Sense controllers move through the menus:** their buttons and, as they have no d-pad, their
+  sticks (`port/bettervr/SensePS5.cpp`, `ui/input.cpp`).
+- **The home screen pictures** log what they were made from, or why not: `m5`/`m6` logged nothing
+  there.
+- **The launcher's PC preview** links again (stand-ins for ES-DE and the libretro cores), and showed
+  the page with the new buttons (`build/shell-preview`).
+
 ## 2026-11-05: Patryk's first console results (m5-botw-vr), and m6-vr-diag
 
 **Reported by Patryk on his PS5** (firmware 13.59, `m5-botw-vr`, BotW EUR v208 with DLC, unpacked):
@@ -408,6 +444,19 @@ Cloud session, scheduled run. Nothing was built for the console and nothing was 
 - **Next:** M1, the baseline build and release (see `PLAN.md`).
 
 ## Open test requests
+
+### Test request 7: VR through BetterVR's layer (m7-vr-layer)
+
+**Which build.** `m7-vr-layer`, over the installed app.
+
+**Try:** `{"vr": true}` in `/data/botwvr/launcher/bettervr.json`, the headset on and connected, both
+Sense controllers on. Start the game, give it a few minutes (the first start compiles shaders), then
+quit to the library.
+
+**Send back:** what the TV and the headset showed, and `/data/botwvr/launcher/logs/boot.log`. Now
+there should be `[bettervr] [INFO] PS5: the layer's ... runs`, `PS5: the first clear through the
+layer`, then `[vr-xr]` lines (the OpenXR instance, the session, the headset), or the error that
+stopped them.
 
 ### Test request 6: why BetterVR's layer misses the clears (m6-vr-diag)
 
