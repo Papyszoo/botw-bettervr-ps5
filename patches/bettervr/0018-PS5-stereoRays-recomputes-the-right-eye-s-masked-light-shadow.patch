@@ -1,0 +1,132 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Patryk Kowalczyk <papyszoo@gmail.com>
+Date: Fri, 6 Nov 2026 15:41:47 +0100
+Subject: [PATCH] PS5: stereoRays recomputes the right eye's masked-light
+ shadow
+
+The Graphics pack's Normal quality draws the volume mask in both eyes, but the
+right-eye pass skipped ModelSceneShadow::calcViewMaskedLightShadow, so the right
+eye's mask used the left eye's masked-light shadow. bettervr.json's stereoRays
+(default on) now runs that calc for side 1 as well; 0 keeps upstream's right-eye
+skip exactly. The depth shadow map itself is still the left eye's and its matrix
+is still skipped: running depthShadow_updateShadowMatrix for the right eye would
+fit a new projection to a map that was not redrawn. The host writes the setting
+into a guest flag once at the start of the first game frame and the session-start
+line names the same cached value.
+---
+ .../patch_RND_StereoRendering.asm             | 13 +++++++++++++
+ ...atch_RND_StereoRendering_Optimizations.asm |  9 +++++++++
+ src/hooking/cemu_hooks.h                      |  2 ++
+ src/hooking/entity_controller.cpp             | 19 +++++++++++++++++++
+ 4 files changed, 43 insertions(+)
+
+diff --git a/resources/BreathOfTheWild_BetterVR/patch_RND_StereoRendering.asm b/resources/BreathOfTheWild_BetterVR/patch_RND_StereoRendering.asm
+index 266b59b..aaf5676 100644
+--- a/resources/BreathOfTheWild_BetterVR/patch_RND_StereoRendering.asm
++++ b/resources/BreathOfTheWild_BetterVR/patch_RND_StereoRendering.asm
+@@ -39,6 +39,12 @@ playerVelocityUpdateDueFrame:
+ playerOnceEnabled:
+ .int 1
+ 
++; Written once by the host at the start of the first game frame: bettervr.json's stereoRays (default on).
++; 1 recalculates the right eye's masked-light shadow for the volume mask; 0 is upstream's right-eye skip
++; (hook_StereoRaysFlag, entity_controller.cpp; the session-start line names the same value).
++stereoRaysEnabled:
++.int 1
++
+ 0x10463EB0 = FadeProgress__sInstance:
+ 0x031FB1B4 = sub_31FB1B4_getTimeForGameUpdateMaybe:
+ 0x0309F72C = sead_GameFramework_lockFrameDrawContext:
+@@ -147,6 +153,13 @@ addi r3, r3, calculateUIMaybe@l
+ mtctr r3
+ bctrl ; bl calculateUIMaybe
+ 
++; PS5 stereo rays: write bettervr.json's stereoRays (default on) into stereoRaysEnabled once, before
++; either eye's shadow calc. 1 recomputes the right eye's masked-light shadow for the volume mask; 0 keeps
++; upstream's right-eye skip exactly (hook_StereoRaysFlag, entity_controller.cpp).
++lis r4, stereoRaysEnabled@ha
++addi r4, r4, stereoRaysEnabled@l
++bla import.coreinit.hook_StereoRaysFlag
++
+ ; ========================================================================
+ ; FIRST EYE SIDE
+ ; ========================================================================
+diff --git a/resources/BreathOfTheWild_BetterVR/patch_RND_StereoRendering_Optimizations.asm b/resources/BreathOfTheWild_BetterVR/patch_RND_StereoRendering_Optimizations.asm
+index 43921e3..ed60337 100644
+--- a/resources/BreathOfTheWild_BetterVR/patch_RND_StereoRendering_Optimizations.asm
++++ b/resources/BreathOfTheWild_BetterVR/patch_RND_StereoRendering_Optimizations.asm
+@@ -77,8 +77,17 @@ stw r4, 0x08(r1)
+ lis r3, currentEyeSide@ha
+ lwz r3, currentEyeSide@l(r3)
+ cmpwi r3, 1
++bne run_ShadowCalcViewMasked
++
++; PS5 stereo rays: the right eye's volume mask needs its own masked-light shadow. bettervr.json's
++; stereoRays=0 keeps upstream's skip exactly; the default (1) recomputes it for side 1. The depth
++; shadow map itself is still the left eye's, so depthShadow_updateShadowMatrix stays skipped.
++lis r3, stereoRaysEnabled@ha
++lwz r3, stereoRaysEnabled@l(r3)
++cmpwi r3, 0
+ beq exit_SkipShadowCalcViewMasked
+ 
++run_ShadowCalcViewMasked:
+ 0x039DEA48 = modelSceneShadow_calcViewMaskedLightShadow:
+ lis r3, modelSceneShadow_calcViewMaskedLightShadow@ha
+ addi r3, r3, modelSceneShadow_calcViewMaskedLightShadow@l
+diff --git a/src/hooking/cemu_hooks.h b/src/hooking/cemu_hooks.h
+index 3056602..1d5a429 100644
+--- a/src/hooking/cemu_hooks.h
++++ b/src/hooking/cemu_hooks.h
+@@ -35,6 +35,7 @@ public:
+         osLib_registerHLEFunction("coreinit", "hook_PrepareRoomscaleRaycast", &hook_PrepareRoomscaleRaycast);
+         osLib_registerHLEFunction("coreinit", "hook_PhysFrame", &hook_PhysFrame);
+         osLib_registerHLEFunction("coreinit", "hook_PlayerUpdateGate", &hook_PlayerUpdateGate);
++        osLib_registerHLEFunction("coreinit", "hook_StereoRaysFlag", &hook_StereoRaysFlag);
+         osLib_registerHLEFunction("coreinit", "hook_ConsumeRoomscaleRaycast", &hook_ConsumeRoomscaleRaycast);
+         osLib_registerHLEFunction("coreinit", "hook_BuildRoomscaleWarpTransform", &hook_BuildRoomscaleWarpTransform);
+         osLib_registerHLEFunction("coreinit", "hook_SetRigidBodyTransform", &hook_SetRigidBodyTransform);
+@@ -261,6 +262,7 @@ private:
+     static void hook_BeginRoomscaleMovement(PPCInterpreter_t* hCPU);
+     static void hook_PhysFrame(PPCInterpreter_t* hCPU);
+     static void hook_PlayerUpdateGate(PPCInterpreter_t* hCPU);
++    static void hook_StereoRaysFlag(PPCInterpreter_t* hCPU);
+     static void LogPhysicsDiagnostics(bool inGame);
+     static void hook_PrepareRoomscaleRaycast(PPCInterpreter_t* hCPU);
+     static void hook_ConsumeRoomscaleRaycast(PPCInterpreter_t* hCPU);
+diff --git a/src/hooking/entity_controller.cpp b/src/hooking/entity_controller.cpp
+index aa0b2f7..8c6fb3c 100644
+--- a/src/hooking/entity_controller.cpp
++++ b/src/hooking/entity_controller.cpp
+@@ -675,6 +675,13 @@ extern "C" bool BetterVR_PS5_Fades() {
+     return s_fades;
+ }
+ 
++// PS5 stereo rays: bettervr.json's stereoRays (default on), cached once so the session-start line and
++// the guest flag name the value the asm runs.
++extern "C" bool BetterVR_PS5_StereoRays() {
++    static const bool s_stereoRays = BetterVR_PS5_Setting("stereoRays", 1.0f) >= 0.5f;
++    return s_stereoRays;
++}
++
+ static bool ShouldDrivePlayerBodyWithVR(const glm::fvec3& currentHeadPos, const PlayerBase& player) {
+     // PS5 experiment: bettervr.json {"roomscale":0} turns the head-driven body movement off (read once). Default on.
+     static const bool s_roomscaleOn = BetterVR_PS5_Setting("roomscale", 1.0f) >= 0.5f;
+@@ -867,6 +874,18 @@ void CemuHooks::hook_PhysFrame(PPCInterpreter_t* hCPU) {
+     }
+ }
+ 
++void CemuHooks::hook_StereoRaysFlag(PPCInterpreter_t* hCPU) {
++    hCPU->instructionPointer = hCPU->sprNew.LR;
++
++    // PS5 stereo rays: write bettervr.json's stereoRays (default on) into the guest flag once, before
++    // either eye's shadow calc. r4 is the flag's address (patch_RND_StereoRendering.asm).
++    static std::atomic<bool> s_flagWritten{false};
++    if (!s_flagWritten.exchange(true, std::memory_order_relaxed)) {
++        uint32_t enabled = BetterVR_PS5_StereoRays() ? 1u : 0u;
++        writeMemoryBE<uint32_t>(hCPU->gpr[4], &enabled);
++    }
++}
++
+ void CemuHooks::hook_PlayerUpdateGate(PPCInterpreter_t* hCPU) {
+     hCPU->instructionPointer = hCPU->sprNew.LR;
+ 
