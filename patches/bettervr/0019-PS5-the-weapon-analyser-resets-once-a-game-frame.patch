@@ -1,0 +1,108 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Patryk Kowalczyk <papyszoo@gmail.com>
+Date: Fri, 6 Nov 2026 16:40:10 +0100
+Subject: [PATCH] PS5: the weapon analyser resets once a game frame
+
+---
+ src/hooking/weapon.cpp                    |  7 +++++-
+ src/rendering/renderer_members_vulkan.inc |  5 +++++
+ src/rendering/renderer_vulkan.cpp         | 27 +++++++++++++++++++++++
+ 3 files changed, 38 insertions(+), 1 deletion(-)
+
+diff --git a/src/hooking/weapon.cpp b/src/hooking/weapon.cpp
+index fe16ea7..84e5d32 100644
+--- a/src/hooking/weapon.cpp
++++ b/src/hooking/weapon.cpp
+@@ -101,6 +101,9 @@ namespace {
+         }
+     };
+     HandSpeedTracker s_handSpeeds;
++    // Analyser Update() calls per hand: before patch 0019 this stopped at 2 for the whole session
++    // because nothing cleared RenderFrame::ranMotionAnalysis on the Linux path.
++    std::array<uint32_t, 2> s_motionAnalysisUpdates = { 0, 0 };
+ 
+     const char* WeaponTypeName(WeaponType type) {
+         switch (type) {
+@@ -139,11 +142,12 @@ namespace {
+ 
+         const HandSpeedTracker& speed = s_handSpeeds;
+         const WeaponDebugSnapshot snapshot = motionIndex >= 0 ? CemuHooks::m_motionAnalyzers[motionIndex].GetDebugSnapshot() : WeaponDebugSnapshot{};
+-        Log::print<INFO>("[weapon] first person {} | hand {} weapon in hand {} type {} | speed L {:.2f} (max {:.2f}) R {:.2f} (max {:.2f}) m/s | analyser {} active {} | slash {:.2f} (gate {:.2f}) rad/s accel {:.2f} (gate {:.2f}) | stab {:.2f} (gate {:.2f}) m/s accel {:.2f} (gate {:.2f})",
++        Log::print<INFO>("[weapon] first person {} | hand {} weapon in hand {} type {} | upd L {} R {} | speed L {:.2f} (max {:.2f}) R {:.2f} (max {:.2f}) m/s | analyser {} active {} | slash {:.2f} (gate {:.2f}) rad/s accel {:.2f} (gate {:.2f}) | stab {:.2f} (gate {:.2f}) m/s accel {:.2f} (gate {:.2f})",
+             firstPerson ? "yes" : "no",
+             motionIndex < 0 ? "-" : (motionIndex == 0 ? "L" : "R"),
+             weaponInHand ? "yes" : "no",
+             WeaponTypeName(weaponType),
++            s_motionAnalysisUpdates[0], s_motionAnalysisUpdates[1],
+             speed.current[0], speed.MaxLastSecond(0), speed.current[1], speed.MaxLastSecond(1),
+             AttackTypeName(snapshot.lockedAttackType), snapshot.attackActive ? "yes" : "no",
+             snapshot.slashAngularSpeed, snapshot.slashVelocityThreshold, snapshot.slashAngularAcceleration, snapshot.slashAccThreshold,
+@@ -603,6 +607,7 @@ void CemuHooks::hook_EnableWeaponAttackSensor(PPCInterpreter_t* hCPU) {
+ 
+     motionAnalyser.ResetIfWeaponTypeChanged(weaponType);
+     motionAnalyser.ApplyProfile(GetSettings().GetSwingSensitivity());
++    s_motionAnalysisUpdates[motionIndex]++;
+     motionAnalyser.Update(inputs.shared.poseLocation[motionIndex], inputs.shared.poseVelocity[motionIndex], headset.value(), inputs.shared.inputTime);
+     TraceWeaponSwing(motionIndex, weaponType, motionAnalyser.GetDebugSnapshot(), inputs.shared.inputTime);
+ 
+diff --git a/src/rendering/renderer_members_vulkan.inc b/src/rendering/renderer_members_vulkan.inc
+index bcf7ddd..5f13b54 100644
+--- a/src/rendering/renderer_members_vulkan.inc
++++ b/src/rendering/renderer_members_vulkan.inc
+@@ -3,6 +3,11 @@
+ // #ifndef _WIN32. Definitions live in renderer_vulkan.cpp. This is a pure relocation
+ // of what were inline #ifndef _WIN32 members — no logic changes.
+ 
++// upstream's BeginStereoCaptureGeneration at the left eye's 3D color clear: RenderFrame::Reset(),
++// which also clears the per-frame weapon motion-analysis slots. The Linux path has no EndFrame
++// RenderFrame::Reset(), so it runs the same reset at the start of every game frame's stereo pair.
++void LinuxBeginStereoCaptureGeneration(long frameIdx);
++
+ // Cemu framebuffer capture entry points, driven by the clear hooks in framebuffer.cpp.
+ void LinuxCopyColorToSwapchain(OpenXR::EyeSide side, VkCommandBuffer cmdBuffer, VkImage srcImage, uint32_t srcWidth, uint32_t srcHeight, long frameIdx);
+ void LinuxCopyDepthToSwapchain(OpenXR::EyeSide side, VkCommandBuffer cmdBuffer, VkImage srcImage, uint32_t srcWidth, uint32_t srcHeight, long frameIdx);
+diff --git a/src/rendering/renderer_vulkan.cpp b/src/rendering/renderer_vulkan.cpp
+index c4e6bc9..e23e286 100644
+--- a/src/rendering/renderer_vulkan.cpp
++++ b/src/rendering/renderer_vulkan.cpp
+@@ -2299,6 +2299,26 @@ static RenderUtils::UvTransform ComputeEyeUvTransform(OpenXR::EyeSide side, floa
+     return RenderUtils::GetPresentationUvTransform(rawFov, renderAspectRatio);
+ }
+ 
++// upstream renderer.cpp:509-521: BeginStereoCaptureGeneration() -> RenderFrame::BeginStereoCapture()
++// -> Reset() runs at the left eye's 3D color clear, before that eye's color is accepted. Reset()
++// clears every per-capture field, including both ranMotionAnalysis slots; BeginStereoCapture()
++// keeps CaptureIssue_MonoCapture and starts a new stereo generation. The Linux path has no
++// Windows EndFrame that resets the frame, so it runs the same reset here, once per game frame.
++void RND_Renderer::LinuxBeginStereoCaptureGeneration(long frameIdx) {
++    if (frameIdx < 0 || frameIdx >= (long)m_renderFrames.size()) {
++        return;
++    }
++    RenderFrame& frame = m_renderFrames[frameIdx];
++    const bool preserveMonoCapture = (frame.issueFlags & CaptureIssue_MonoCapture) != 0;
++    frame.Reset();
++    if (preserveMonoCapture) {
++        frame.AddIssue(CaptureIssue_MonoCapture);
++    }
++    frame.recordKind = CaptureRecordKind::Stereo3D;
++    frame.activeStereoGeneration = m_nextStereoGeneration++;
++    frame.lastActivityOrdinal = NextCaptureActivityOrdinal();
++}
++
+ // Linux capture dispatch for the CmdClearColorImage hook. Moved verbatim out of the
+ // shared framebuffer.cpp so that hook stays a thin dispatcher. Runs the 3D-color
+ // (captureIdx 0) and 2D-HUD (captureIdx 2) capture paths, then issues the transparent
+@@ -2370,6 +2390,13 @@ void RND_Renderer::LinuxHandleColorClear(OpenXR::EyeSide side, long captureIdx,
+                             this, side, frameIdx, srcFormat, srcWidth, srcHeight);
+                     }
+                 }
++                // upstream framebuffer.cpp:211-219: the left eye's 3D color clear starts the stereo
++                // generation and resets the frame. That Reset() is what clears ranMotionAnalysis
++                // on the Windows path; run the same reset here, once per game frame, before the
++                // left color copy.
++                if (side == OpenXR::EyeSide::LEFT) {
++                    LinuxBeginStereoCaptureGeneration(frameIdx);
++                }
+                 // Keep the normal startup capture path alive even while inventory screens
+                 // are visible; suppressing these copies can strand the submit thread in
+                 // HUD-only mode if the pause screen state lingers after close.
