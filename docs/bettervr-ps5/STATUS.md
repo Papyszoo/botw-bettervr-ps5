@@ -3,6 +3,40 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-06 (hook host cost): the hot hooks stop copying, and `[diag]` says what they cost (not built, not run)
+
+**Not built, not run.** Patch 0014 keeps every hook's decisions the same and removes the per-call work
+around them: `hook_RouteActorJob` reads only the actor name (0x4C bytes, in place, compared without a
+`std::string`) instead of copying `ActorWiiU` (0x538 bytes) and building two strings per actor job;
+`hook_ModifyBoneMatrix` compares the model name without a `std::string` and keeps the bone name as a
+`string_view` (heterogeneous skeleton map), so a non-player bone no longer allocates;
+`hook_CheckIfCameraCanSeePos` reads the XR views and the gameplay base pose once per call instead of
+once per eye and passes those views into the eye pose; `hook_SetActorOpacity` reads only
+`modelOpacity`; `IsTrackedPlayerBody` reads three player fields instead of copying `PlayerBase`
+(0x12A8 bytes) per rigid-body setter, and the ROOMSCALE setters return before reading when that log
+category is off; `ApplyStoredActionFloatParamOverrides` asks `IsFirstPerson()` once a frame; the
+profile hooks return at once when the profiler is off.
+
+**`[diag]` timing.** Every 64th call of the five hottest hooks is timed with `steady_clock`, and the
+existing `[diag]` line ends `hooks ms/s route … bone … cam … prof … vpad … calls/f …` (`prof` is
+begin+end). The next console log must show which of the five dominates; expected in the current
+31.6 fps world: `cam` and `bone` the largest, `route` and `prof` next, `vpad` last. `calls/f` says how
+many times each hook runs per game frame. No game logic, gating, default or 0013 word changed.
+
+**`fastTls` (report only, default unchanged).** Every HLE call returns through
+`PPCInterpreter_getCurrentInstance()`, a `thread_local` read; with `fastTls` off that is a libkernel
+`pthread_getspecific` per hook call, so it adds to all five. `fastTls=1` would help most where
+`calls/f` is highest, but it stays off until a console A/B measures it.
+
+**Test request 16.** Install the build, play the same world spot for one minute, and send the first
+and last `[diag]` lines carrying `hooks ms/s` plus the `[phys]` line. The five `ms/s` values and
+`calls/f` are what the ranking lacked; the game must behave as in the previous build.
+
+The fourteen BetterVR patches apply in order on pin `2e06b31` (14/14); `settings.cpp`,
+`skeleton.cpp`, `camera.cpp`, `controls.cpp`, `entity_controller.cpp` and `profiler_hooks.cpp` pass
+`clang++ -std=c++23 -fsyntax-only -D__PROSPERO__` (0 errors, pre-existing offsetof/memcall warnings
+only). Not compiled for the console.
+
 ## 2026-11-06 (player physics): the gate is armed once a game frame, and `playerOnce` is on by default (not built, not run)
 
 **Not built, not run.** Patch 0013 replaces the host frame latch with Opus's guest-memory design.
