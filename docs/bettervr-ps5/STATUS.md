@@ -3,6 +3,46 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-06 (VR presentation): the flat view, cutscene bars and comfort fades (not built, not run)
+
+**Not built, not run.** Patch 0015 ports the three presentations upstream's `renderer.cpp` had and
+our `renderer_vulkan.cpp` did not. **Flat view:** in the scope, the Camera rune, and anywhere else
+`UseFlatCameraPresentation()` holds, the game's flat image now goes to both eyes as one 16:9
+window at `HudDistance`/`HudSize`, black around it, instead of a stereo view of a flat camera; the
+Linux mono helper also covers those modes, as upstream's Windows one did (the camera anchor is
+still recorded). **Cutscene black bars:** with `UseBlackBarsForCutscenes=1` in
+`bettervr_settings.ini` (default off, upstream's default), a third-person cutscene uses the same
+window instead of filling the view. **Comfort fades:** the game's fade screens and the snap-turn
+and roomscale fades are applied over the scene (the eye image, by a small full-screen pass created
+on first use) the way upstream's present shader does it: the stronger of the game fade (the 2D
+capture's corner texel) and the custom fade wins, and lerps over the scene; the HUD quad stays the
+normal 2D layer on top. The normal HUD quad keeps its 2.0 m/1.0 m geometry; only the flat window
+uses `HudDistance`/`HudSize` (defaults 1.85 m/0.85 m).
+
+**Review fixes.** The fade state is published in the same `latestMutex` block as the 2D content it
+samples, so a fade cannot lead its texture. The flat/black-bar state is latched once per game frame
+at the left-eye copy and both eyes use that value. A flat frame is not reused when a later frame
+publishes only 2D/HUD content (upstream `renderer.cpp:54-66`), so the window does not outlive the
+scope, and a flat frame submits no scene depth.
+
+**Log lines, one per switch.** `Flat view on/off (scope=…, CameraFinder=…)`,
+`Cutscene black bars on/off`, `Comfort fade on/off (game=…, custom=…)`. They print once per change,
+not per frame.
+
+**Test request 17.** Install the build. Look through the scope and the Camera rune (one line
+`Flat view on` each), a third-person cutscene with `UseBlackBarsForCutscenes=true` added under
+`[BetterVR][Settings]` in `/data/ps5cemu/bettervr_settings.ini` (one `Cutscene black bars on`), a
+snap turn with `TurnMode=SNAP_45` in the same section (`Comfort fade on (… custom=…)` for about
+110 ms), and any loading or shrine fade (`Comfort fade on (game=yes …)`). Send those lines and say
+whether the window is centred with black around it, the HUD is on top and unchanged in normal play,
+and **the window disappears when the scope/rune is left** (also when the pause menu or a loading
+screen then publishes only 2D/HUD content). Defaults change only for the flat window's geometry:
+`UseBlackBarsForCutscenes` and `TurnMode` stay as they are unless the lines above are added.
+
+The fifteen BetterVR patches apply in order on pin `2e06b31` (15/15); `camera.cpp` and
+`renderer_vulkan.cpp` pass `clang++ -std=c++23 -fsyntax-only -D__PROSPERO__` (0 errors,
+pre-existing warnings only). Not compiled for the console.
+
 ## 2026-11-06 (hook host cost): the hot hooks stop copying, and `[diag]` says what they cost (not built, not run)
 
 **Not built, not run.** Patch 0014 keeps every hook's decisions the same and removes the per-call work
