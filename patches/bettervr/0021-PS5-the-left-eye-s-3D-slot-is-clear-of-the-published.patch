@@ -1,0 +1,394 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Patryk Kowalczyk <papyszoo@gmail.com>
+Date: Fri, 6 Nov 2026 18:03:40 +0100
+Subject: [PATCH] PS5: the left eye's 3D slot is clear of the published pair
+
+---
+ src/hooking/entity_controller.cpp |  17 ++++
+ src/rendering/renderer_vulkan.cpp | 146 ++++++++++++++++++++++++++----
+ 2 files changed, 145 insertions(+), 18 deletions(-)
+
+diff --git a/src/hooking/entity_controller.cpp b/src/hooking/entity_controller.cpp
+index 14cc5f6..d51f3d9 100644
+--- a/src/hooking/entity_controller.cpp
++++ b/src/hooking/entity_controller.cpp
+@@ -684,6 +684,23 @@ extern "C" bool BetterVR_PS5_FlatScene() {
+     return s_flatScene;
+ }
+ 
++// PS5: bettervr.json's leftSlot (default on), cached once. On, the left eye's 3D colour and depth
++// copies go to a slot neither the published pair nor the completed, unpublished pair holds, so the
++// game's 0/1 counter cannot overwrite the published left image before the submit thread copies it;
++// off keeps the game's 0/1 slot for both eyes, as before. The renderer reads this and runtime.cpp
++// logs the same value.
++extern "C" bool BetterVR_PS5_LeftSlot() {
++    static const bool s_leftSlot = BetterVR_PS5_Setting("leftSlot", 1.0f) >= 0.5f;
++    return s_leftSlot;
++}
++
++// PS5: bettervr.json's eyeSource (default 0 = normal), cached once. Diagnostic only: 1 shows the
++// right eye's image to both eyes, 2 the left eye's, with that eye's pose. The renderer reads this.
++extern "C" int BetterVR_PS5_EyeSource() {
++    static const int s_eyeSource = (int)BetterVR_PS5_Setting("eyeSource", 0.0f);
++    return s_eyeSource;
++}
++
+ // PS5: bettervr.json's poseFreeze (default on), cached once. On, the left eye's BeginCameraSide
+ // promotes one view pair and both eyes of that pair render and copy it; off is the old per-read
+ // latch. The renderer reads this and runtime.cpp logs the same value.
+diff --git a/src/rendering/renderer_vulkan.cpp b/src/rendering/renderer_vulkan.cpp
+index 870f6c0..bb80e16 100644
+--- a/src/rendering/renderer_vulkan.cpp
++++ b/src/rendering/renderer_vulkan.cpp
+@@ -45,6 +45,10 @@ static constexpr float kHudSize = 1.0f;
+ extern "C" bool BetterVR_PS5_Fades();
+ // PS5: bettervr.json's flatScene switch (default on), read once in entity_controller.cpp.
+ extern "C" bool BetterVR_PS5_FlatScene();
++// PS5: bettervr.json's leftSlot switch (default on), read once in entity_controller.cpp.
++extern "C" bool BetterVR_PS5_LeftSlot();
++// PS5: bettervr.json's eyeSource (default 0 = normal), read once in entity_controller.cpp.
++extern "C" int BetterVR_PS5_EyeSource();
+ // PS5: bettervr.json's poseFreeze switch (default on), read once in entity_controller.cpp.
+ extern "C" bool BetterVR_PS5_PoseFreeze();
+ 
+@@ -140,15 +144,20 @@ struct LinuxRenderState {
+     // from latest.readBufferIdx. This avoids a single-intermediate race when
+     // Cemu starts writing the next frame while submit thread is still reading
+     // previous content.
+-    // First index is eye (or unused for HUD), second is buffer (0 or 1).
+-    VulkanTexture* intermediateColor[2][2] = { { nullptr, nullptr }, { nullptr, nullptr } };
+-    VulkanTexture* intermediateDepth[2][2] = { { nullptr, nullptr }, { nullptr, nullptr } };
++    // First index is eye (or unused for HUD), second is buffer. The right eye keeps the game's
++    // 0/1 slots; with bettervr.json's leftSlot on, the left eye has a third (2) that neither the
++    // published pair nor the completed, unpublished pair holds (LinuxCopyColorToSwapchain).
++    VulkanTexture* intermediateColor[2][3] = { { nullptr, nullptr, nullptr }, { nullptr, nullptr, nullptr } };
++    VulkanTexture* intermediateDepth[2][3] = { { nullptr, nullptr, nullptr }, { nullptr, nullptr, nullptr } };
+     VulkanTexture* intermediateHud[2] = { nullptr, nullptr };
+     struct Captured3DFrame {
+         bool eyeCopied[2] = { false, false };
+         bool depthCopied[2] = { false, false };
+         bool complete = false;
+         bool hasRenderViews = false;
++        // leftSlot proof: the colour write generation this slot carried when the copy was recorded
++        // (LinuxRenderState::slotWrites). The submit thread compares it before it submits.
++        uint64_t slotWrite = 0;
+         std::array<XrView, 2> renderViews = { XrView{ XR_TYPE_VIEW }, XrView{ XR_TYPE_VIEW } };
+         XrTime renderDisplayTime = 0;
+         std::array<std::chrono::high_resolution_clock::time_point, 2> colorCopyAt = {};
+@@ -160,6 +169,7 @@ struct LinuxRenderState {
+             depthCopied[1] = false;
+             complete = false;
+             hasRenderViews = false;
++            slotWrite = 0;
+             renderViews = { XrView{ XR_TYPE_VIEW }, XrView{ XR_TYPE_VIEW } };
+             renderDisplayTime = 0;
+             colorCopyAt[0] = {};
+@@ -170,6 +180,7 @@ struct LinuxRenderState {
+     struct Captured3DPair {
+         bool eyeCopied[2] = { false, false };
+         int bufferIdx[2] = { -1, -1 };
++        uint64_t slotWrite[2] = { 0, 0 }; // the generation each eye's bufferIdx carried
+         bool hasRenderViews = false;
+         bool flatWindow = false; // the eyes carry the cutscene black-bar window
+         std::array<XrView, 2> renderViews = { XrView{ XR_TYPE_VIEW }, XrView{ XR_TYPE_VIEW } };
+@@ -184,6 +195,8 @@ struct LinuxRenderState {
+             eyeCopied[1] = false;
+             bufferIdx[0] = -1;
+             bufferIdx[1] = -1;
++            slotWrite[0] = 0;
++            slotWrite[1] = 0;
+             hasRenderViews = false;
+             flatWindow = false;
+             renderViews = { XrView{ XR_TYPE_VIEW }, XrView{ XR_TYPE_VIEW } };
+@@ -206,10 +219,22 @@ struct LinuxRenderState {
+     // as the observed left-to-right pair. The main pause menu can perturb the
+     // encoded slot cadence; carrying a per-eye slot pair avoids publishing a
+     // fresh left eye with a stale right eye after the menu closes.
+-    std::array<Captured3DFrame, 2> captured3DFrames;
++    // Three records: the left eye's third slot (2) needs its own.
++    std::array<Captured3DFrame, 3> captured3DFrames;
+     Captured3DPair pending3DPair;
+     Captured3DPair completed3DPair;
+ 
++    // leftSlot: the slot the left eye's next copy must avoid. Both are written on Cemu's GPU
++    // thread only (the colour/depth copies and EndFrame); the submit thread never reads them.
++    int publishedLeftSlot = -1;
++    int eyeSlot[2] = { 0, 0 };
++    // leftSlot proof, read by the app's per-600-frame line (runtime.cpp): each recorded 3D colour
++    // write bumps its slot's generation, the pair carries the generations it was copied with, and
++    // the submit thread counts a copy whose slot was written again before it was submitted.
++    std::atomic<uint64_t> slotWrites[2][3] = {};
++    std::atomic<uint64_t> copyOverwritten[2] = {};
++    std::atomic<uint64_t> copies3D{0};
++
+     int currentWriteIdx_hud = 0; // Cemu writes intermediateHud here
+ 
+     std::array<XrCompositionLayerProjectionView, 2> projectionViews = {};
+@@ -354,6 +379,10 @@ struct LinuxRenderState {
+             bool flatView = false;
+             // The 3D pair was copied by this publish; false means the sticky pair is a reuse.
+             bool pairFresh = false;
++            // leftSlot proof: the colour write generation each eye's read buffer carried when the
++            // pair was published. The submit thread compares it with the live counter before it
++            // submits the copy; a mismatch means the game wrote the slot again in between.
++            uint64_t slotWrite[2] = { 0, 0 };
+             // The published pair is a mono image (the flat camera). A menu after a flat frame must
+             // not project it as stereo; only a pair published from normal play is reused behind it.
+             bool pairMono = false;
+@@ -521,7 +550,7 @@ struct LinuxRenderState {
+             if (copyPool) dispatch->DestroyCommandPool(device, copyPool, nullptr);
+         }
+         for (int e = 0; e < 2; e++) {
+-            for (int b = 0; b < 2; b++) {
++            for (int b = 0; b < 3; b++) {
+                 delete intermediateColor[e][b]; intermediateColor[e][b] = nullptr;
+                 delete intermediateDepth[e][b]; intermediateDepth[e][b] = nullptr;
+             }
+@@ -553,6 +582,22 @@ extern "C" void BetterVR_PS5_PoseProof(uint64_t* leftStale, uint64_t* rightStale
+     if (guardClears) *guardClears = clears;
+ }
+ 
++// The leftSlot proof, read by the app's per-600-frame line (runtime.cpp): per eye, the 3D copies
++// whose intermediate slot was written again (by the game) before the submit thread submitted the
++// copy, and the number of 3D pairs copied. right is the control: it keeps the game's 0/1 slot,
++// which the game only rewrites after the next publish, so it should stay 0.
++extern "C" void BetterVR_PS5_CopyProof(uint64_t* leftOverwritten, uint64_t* rightOverwritten, uint64_t* copies) {
++    uint64_t left = 0, right = 0, copyCount = 0;
++    if (s_linux) {
++        left = s_linux->copyOverwritten[0].load(std::memory_order_relaxed);
++        right = s_linux->copyOverwritten[1].load(std::memory_order_relaxed);
++        copyCount = s_linux->copies3D.load(std::memory_order_relaxed);
++    }
++    if (leftOverwritten) *leftOverwritten = left;
++    if (rightOverwritten) *rightOverwritten = right;
++    if (copies) *copies = copyCount;
++}
++
+ // The comfort fade applied to the eye image: a solid colour whose alpha is the combined fade.
+ // Unlike upstream's presentDepthHLSL (shader.h:54-69), this fragment shader has no sampler: the
+ // game fade is a ramp at the submit thread, never a texel of the 2D/HUD capture, so two capture
+@@ -630,7 +675,7 @@ struct FadeOverlayPipeline {
+     VkRenderPass renderPass = VK_NULL_HANDLE;
+     VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
+     VkPipeline pipeline = VK_NULL_HANDLE;
+-    VkFramebuffer framebuffers[2][2] = { { VK_NULL_HANDLE, VK_NULL_HANDLE }, { VK_NULL_HANDLE, VK_NULL_HANDLE } };
++    VkFramebuffer framebuffers[2][3] = { { VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE }, { VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE } };
+     bool ready = false;
+     bool failed = false;
+ };
+@@ -798,9 +843,10 @@ static bool EnsureFadeOverlayPipeline() {
+     if (result != VK_SUCCESS) return fail("CreateGraphicsPipelines", result);
+ 
+     for (int eye = 0; eye < 2; eye++) {
+-        for (int buf = 0; buf < 2; buf++) {
++        for (int buf = 0; buf < 3; buf++) {
+             VulkanTexture* texture = s_linux->intermediateColor[eye][buf];
+-            if (texture == nullptr) return fail("intermediateColor", VK_ERROR_INITIALIZATION_FAILED);
++            // The right eye has no third slot, and the left one only exists with leftSlot on.
++            if (texture == nullptr) continue;
+             VkFramebufferCreateInfo framebufferInfo = { VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO };
+             framebufferInfo.renderPass = s_fadeOverlay.renderPass;
+             framebufferInfo.attachmentCount = 1;
+@@ -829,7 +875,7 @@ static void DestroyFadeOverlayPipeline() {
+         VkDevice device = VRManager::instance().VK->GetDevice();
+         if (dispatch && device) {
+             for (int eye = 0; eye < 2; eye++) {
+-                for (int buf = 0; buf < 2; buf++) {
++                for (int buf = 0; buf < 3; buf++) {
+                     if (s_fadeOverlay.framebuffers[eye][buf] != VK_NULL_HANDLE) {
+                         dispatch->DestroyFramebuffer(device, s_fadeOverlay.framebuffers[eye][buf], nullptr);
+                     }
+@@ -989,12 +1035,15 @@ RND_Renderer::RND_Renderer(XrSession xrSession): m_session(xrSession) {
+     }
+     s_linux->swapchainCreated = true;
+ 
+-    // Create DOUBLE-BUFFERED intermediate textures matching swapchain resolution.
+-    // Two of each so Cemu writes to one while submit thread reads the other.
++    // Create intermediate textures matching swapchain resolution. The right eye keeps the game's
++    // two 0/1 slots; with leftSlot on the left eye gets a third, because the game's counter brings
++    // the left slot back after one frame, before the submit thread has copied the published pair
++    // (see LinuxCopyColorToSwapchain).
+     for (int eye = 0; eye < 2; eye++) {
+         uint32_t w = viewConfs[eye].recommendedImageRectWidth;
+         uint32_t h = viewConfs[eye].recommendedImageRectHeight;
+-        for (int b = 0; b < 2; b++) {
++        const int slots = (eye == 0 && BetterVR_PS5_LeftSlot()) ? 3 : 2;
++        for (int b = 0; b < slots; b++) {
+             s_linux->intermediateColor[eye][b] = new VulkanTexture(w, h,
+                 VK_FORMAT_R8G8B8A8_SRGB,
+                 VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT
+@@ -1003,9 +1052,21 @@ RND_Renderer::RND_Renderer(XrSession xrSession): m_session(xrSession) {
+                 VK_FORMAT_D32_SFLOAT,
+                 VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
+         }
+-        Log::print<INFO>("Created double-buffered intermediate textures eye={}: {}x{} (2x)", eye, w, h);
++        if (slots == 2) {
++            Log::print<INFO>("Created double-buffered intermediate textures eye={}: {}x{} (2x)", eye, w, h);
++        } else {
++            Log::print<INFO>("Created intermediate textures eye={}: {}x{} ({} slots)", eye, w, h, slots);
++        }
+     }
+ 
++    // With the left slot ring on, the submit thread has about one and a half game frames to copy
++    // a pair before the game reuses its left slot. That margin only holds if nothing long runs
++    // between its snapshot and the copy: the fade overlay's first pipeline creation used to run
++    // there, and a cold shader compile can outlast the ring, so the game then overwrites the slot
++    // the copy is about to read. Create it once here, before the submit thread starts.
++    // "leftSlot":0 keeps the old lazy creation, exactly as before.
++    if (BetterVR_PS5_LeftSlot()) EnsureFadeOverlayPipeline();
++
+     // Create command pool/buffer/fence for intermediate→swapchain copies
+     {
+         auto* dispatch = VRManager::instance().VK->GetDeviceDispatch();
+@@ -1427,7 +1488,7 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
+             auto recordColorCopy = [&](int eye) {
+                 if (!latest.eyeCopied[eye]) return;
+                 int readIdx = latest.readBufferIdx_3D[eye];
+-                if (readIdx < 0 || readIdx >= 2) return;
++                if (readIdx < 0 || readIdx >= 3) return;
+                 auto* srcTex = s_linux->intermediateColor[eye][readIdx];
+                 if (!srcTex) return;
+                 VkImage srcImg = srcTex->GetImage();
+@@ -1495,7 +1556,7 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
+             auto recordDepthCopy = [&](int eye) {
+                 if (!latest.depthCopied[eye]) return;
+                 int readIdx = latest.readBufferIdx_3D[eye];
+-                if (readIdx < 0 || readIdx >= 2) return;
++                if (readIdx < 0 || readIdx >= 3) return;
+                 auto* srcTex = s_linux->intermediateDepth[eye][readIdx];
+                 if (!srcTex) return;
+                 VkImage srcImg = srcTex->GetImage();
+@@ -1584,6 +1645,20 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
+             VkResult sr;
+             {
+                 BETTERVR_PS5_QUEUE_LOCK();
++                // leftSlot proof: this submission is the copy the headset will show. If the game
++                // recorded another write to an eye's slot after the pair was published, the copy
++                // may read the newer image; count it per eye. The right eye is the control.
++                if (has3D && latest.pairFresh) {
++                    for (int eye = 0; eye < 2; eye++) {
++                        if (!latest.eyeCopied[eye]) continue;
++                        const int readIdx = latest.readBufferIdx_3D[eye];
++                        if (readIdx < 0 || readIdx >= 3) continue;
++                        if (s_linux->slotWrites[eye][readIdx].load(std::memory_order_relaxed) != latest.slotWrite[eye]) {
++                            s_linux->copyOverwritten[eye].fetch_add(1, std::memory_order_relaxed);
++                        }
++                    }
++                    s_linux->copies3D.fetch_add(1, std::memory_order_relaxed);
++                }
+                 sr = dispatch->QueueSubmit(submitQueue, 1, &subInfo, s_linux->copyFence);
+             }
+             auto queueSubmitStop = std::chrono::high_resolution_clock::now();
+@@ -1718,9 +1793,13 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
+                         Log::print<WARNING>("Submit thread: 3D content has no render-pose snapshot; using fresh pose fallback");
+                     }
+                 }
++                const int forcedEye = monoPresentation ? -1 : BetterVR_PS5_EyeSource();
+                 for (int eye = 0; eye < 2; eye++) {
+                     // A mono picture is one image: both eyes sample the left eye's capture.
+-                    const int sourceEye = monoPresentation ? 0 : eye;
++                    // bettervr.json's eyeSource (diagnostic): 1 shows the right eye's image to
++                    // both, 2 the left's, with that eye's pose, to tell a bad left capture from a
++                    // bad left pose.
++                    const int sourceEye = monoPresentation ? 0 : (forcedEye == 1 ? 1 : (forcedEye == 2 ? 0 : eye));
+                     if (hasDepth) {
+                         auto& di = depthInfos[eye];
+                         di.type = XR_TYPE_COMPOSITION_LAYER_DEPTH_INFO_KHR;
+@@ -2081,6 +2160,15 @@ void RND_Renderer::EndFrame() {
+             s_lastBlackBars = blackBars;
+             Log::print<INFO>("Cutscene black bars {}", blackBars ? "on" : "off");
+         }
++        // Diagnostic eyeSource: log the forced source once (the value is cached at the first read).
++        static int s_lastEyeSource = 0;
++        const int eyeSource = BetterVR_PS5_EyeSource();
++        if (eyeSource != s_lastEyeSource) {
++            s_lastEyeSource = eyeSource;
++            Log::print<INFO>("Eye source: {} (bettervr.json's eyeSource={})",
++                eyeSource == 1 ? "right eye's image to both" : (eyeSource == 2 ? "left eye's image to both" : "each eye's own"),
++                eyeSource);
++        }
+         // One line per switch, at most one a second: a menu that flickers for a frame cannot flood
+         // the log. `projection` names what the headset sees for the menu/mono frame.
+         const auto menuNow = std::chrono::steady_clock::now();
+@@ -2123,7 +2211,7 @@ void RND_Renderer::EndFrame() {
+     auto pairDepthCopied = [&](int eye) {
+         if (eye < 0 || eye >= 2) return false;
+         int bufferIdx = published3DPair.bufferIdx[eye];
+-        return bufferIdx >= 0 && bufferIdx < 2 && s_linux->captured3DFrames[bufferIdx].depthCopied[eye];
++        return bufferIdx >= 0 && bufferIdx < 3 && s_linux->captured3DFrames[bufferIdx].depthCopied[eye];
+     };
+     bool hasDepth = !s_linux->disableDepthReprojection
+         && hasCompleted3DPair
+@@ -2204,6 +2292,10 @@ void RND_Renderer::EndFrame() {
+                     s_linux->submit.latest.pairMono = monoPair;
+                     s_linux->submit.latest.readBufferIdx_3D[0] = published3DPair.bufferIdx[0];
+                     s_linux->submit.latest.readBufferIdx_3D[1] = published3DPair.bufferIdx[1];
++                    s_linux->submit.latest.slotWrite[0] = published3DPair.slotWrite[0];
++                    s_linux->submit.latest.slotWrite[1] = published3DPair.slotWrite[1];
++                    // The left slot the game may not write until this pair has been copied.
++                    s_linux->publishedLeftSlot = published3DPair.bufferIdx[0];
+                     s_linux->submit.latest.renderViews = published3DPair.hasRenderViews
+                         ? published3DPair.renderViews
+                         : *currentViews;
+@@ -2544,6 +2636,17 @@ void RND_Renderer::LinuxCopyColorToSwapchain(OpenXR::EyeSide side, VkCommandBuff
+     }
+ 
+     int wIdx = (int)frameIdx;
++    // The game's 0/1 counter brings the left eye back to the same slot one frame later, but the
++    // submit thread copies the published pair up to a display period after the next present: L(j+2)
++    // can overwrite the left image of pair j before it is copied. With leftSlot on, take a slot
++    // neither the published pair nor the completed, unpublished pair holds. The right eye already
++    // has a full frame of margin: the game rewrites its slot only after the next publish.
++    if (sideIdx == 0 && BetterVR_PS5_LeftSlot()) {
++        const int completedLeft = s_linux->frameHasContent ? s_linux->completed3DPair.bufferIdx[0] : -1;
++        wIdx = 0;
++        while (wIdx == s_linux->publishedLeftSlot || wIdx == completedLeft) wIdx++;
++    }
++    s_linux->eyeSlot[sideIdx] = wIdx;
+     if (!s_linux->intermediateColor[sideIdx][wIdx]) return;
+     if (s_linux->captureDiagnosticsEnabled) {
+         s_linux->stats.diag3DColorCopies[sideIdx].fetch_add(1, std::memory_order_relaxed);
+@@ -2657,6 +2760,10 @@ void RND_Renderer::LinuxCopyColorToSwapchain(OpenXR::EyeSide side, VkCommandBuff
+         dstImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+         1, &blitRegion, VK_FILTER_LINEAR);
+ 
++    // leftSlot proof: this recorded write bumps the slot's generation. The pair carries it to the
++    // submit thread, which compares it with the live counter before it submits the copy.
++    const uint64_t slotWrite = s_linux->slotWrites[sideIdx][wIdx].fetch_add(1, std::memory_order_relaxed) + 1;
++
+     LinuxDesktopMirror::CaptureColor(sideIdx, cmdBuffer, srcImage, srcWidth, srcHeight, frameIdx);
+ 
+     // Leave intermediate in TRANSFER_SRC for EndFrame to copy to swapchain
+@@ -2679,6 +2786,7 @@ void RND_Renderer::LinuxCopyColorToSwapchain(OpenXR::EyeSide side, VkCommandBuff
+     captured.hasRenderViews = hasRenderViewsSnapshot;
+     captured.eyeCopied[sideIdx] = true;
+     captured.depthCopied[sideIdx] = false;
++    captured.slotWrite = slotWrite;
+     captured.colorCopyAt[sideIdx] = std::chrono::high_resolution_clock::now();
+     captured.complete = captured.eyeCopied[0] && captured.eyeCopied[1];
+ 
+@@ -2746,6 +2854,7 @@ void RND_Renderer::LinuxCopyColorToSwapchain(OpenXR::EyeSide side, VkCommandBuff
+         pair.Reset();
+         pair.eyeCopied[0] = true;
+         pair.bufferIdx[0] = wIdx;
++        pair.slotWrite[0] = captured.slotWrite;
+         pair.flatWindow = s_linux->frameBlackBars;
+         pair.colorCopyAt[0] = captured.colorCopyAt[0];
+         pair.cameraDisplayTime[0] = eyeCameraDisplayTime;
+@@ -2773,6 +2882,7 @@ void RND_Renderer::LinuxCopyColorToSwapchain(OpenXR::EyeSide side, VkCommandBuff
+ 
+     pair.eyeCopied[1] = true;
+     pair.bufferIdx[1] = wIdx;
++    pair.slotWrite[1] = captured.slotWrite;
+     pair.colorCopyAt[1] = captured.colorCopyAt[1];
+     pair.cameraDisplayTime[1] = eyeCameraDisplayTime;
+     pair.cameraTimeValid[1] = hasEyeCameraDisplayTime;
+@@ -2823,7 +2933,7 @@ void RND_Renderer::LinuxCopyDepthToSwapchain(OpenXR::EyeSide side, VkCommandBuff
+         return;
+     }
+ 
+-    int wIdx = (int)frameIdx;
++    int wIdx = BetterVR_PS5_LeftSlot() ? s_linux->eyeSlot[sideIdx] : (int)frameIdx;
+     if (!s_linux->intermediateDepth[sideIdx][wIdx]) return;
+     if (s_linux->captureDiagnosticsEnabled) {
+         s_linux->stats.diag3DDepthCopies[sideIdx].fetch_add(1, std::memory_order_relaxed);

@@ -3,6 +3,51 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-06 (shrine left-eye judder): the left eye's 3D slot is clear of the published pair (not built, not run)
+
+**Not built, not run.** The 3D intermediates are double-buffered on the game's 0/1 magic frame
+counter. The game draws R then L, so pair j lives in slot C_j. At 52-58 fps the submit thread's
+60 Hz copy of pair j can be queued after the game has recorded L(j+2) into left[C_j]; the left half
+then shows a two-game-frame-newer image with pair j's pose, while the right half is exact. At about
+32 fps (the overworld) the left copy always happens before the overwrite, so it is smooth.
+
+**Patch 0021.** With `bettervr.json`'s `leftSlot` on (default), the left eye's colour and depth copy
+goes to the slot neither the published pair nor the completed-but-unpublished pair holds; with
+three slots that is always exactly one. The right eye keeps the game's 0/1 slot, which the game
+only rewrites after the next publish. The third left intermediate is 1984x2048 RGBA8 plus D32,
+about 31 MB (at 2000x2040, about 31.1 MB); with `"leftSlot":0` nothing extra is allocated. Depth
+follows the colour slot. The flat view / menu mono path samples the published left slot through the
+same bounds, and the comfort fade has a framebuffer for the third slot. With `leftSlot` on the fade
+overlay pipeline is created with the renderer, before the submit thread starts: its first shader
+compile must not sit between the submit thread's pair snapshot and the copy, where a cold compile
+could outlast the ring and let the game reuse the slot being read. `"leftSlot":0` keeps the old lazy
+creation and the old double-buffered boot line.
+
+**Proof counters.** The `[vr-xr] ... frames:` line now carries
+`leftCopyOverwritten <n> rightCopyOverwritten <n> of <n> copies`: each recorded 3D colour write
+bumps its slot's generation, the pair carries the generation it was copied with, and the submit
+thread counts a copy whose slot's generation changed before it queued the copy. With
+`"leftSlot":0` the left counter should rise in a shrine (the predicted race) and the right stay 0;
+with the default the left must stay 0. The counter compares recorded writes, so a write recorded
+but not yet submitted can over-count slightly; the right eye is the control.
+
+**Diagnostic `eyeSource`.** `bettervr.json` `"eyeSource":1` shows the right eye's image and pose to
+both eyes, 2 shows the left's, 0 is normal. One line in the projection loop, about 20 lines with its
+cached read and log; it is not needed for the fix.
+
+**Test request 25 (shrine left eye).** Install the build. In a shrine, turn your head fast left and
+right for 30 s and report whether the left eye still jumps (and whether it is as smooth as the
+right). Send the `[vr-xr] ... frames:` lines, the `[perf]` lines, and the session line
+`left eye's 3D slot: ...`. Then add `"leftSlot":0` to `/data/ps5cemu/bettervr.json`, restart, repeat
+the same head turns, and send the same lines plus whether the jump came back. Expected: default
+`leftCopyOverwritten 0`; `"leftSlot":0` `leftCopyOverwritten > 0`, rising in bursts;
+`rightCopyOverwritten 0` both times.
+
+The twenty-one BetterVR patches apply in order on pin `2e06b31` (21/21; 0021 is new);
+`entity_controller.cpp`, `renderer_vulkan.cpp` and `port/bettervr/xr/runtime.cpp` pass
+`clang++ -std=c++23 -fsyntax-only -D__PROSPERO__` (0 errors, pre-existing warnings only). Not
+compiled for the console.
+
 ## 2026-11-06 (melee hits, flat view, inventory): the weapon guard resets each game frame; flat shows the scene, a menu's mono frame is shown once (not built, not run)
 
 **Not built, not run.** Two bugs, one cause each.

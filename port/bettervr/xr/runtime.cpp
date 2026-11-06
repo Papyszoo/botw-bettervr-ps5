@@ -68,6 +68,11 @@ bool BetterVR_PS5_PoseFreeze();
 // BetterVR's renderer (renderer_vulkan.cpp): the poseFreeze proof counters, per eye, and the
 // StartFrame guard clears
 void BetterVR_PS5_PoseProof(uint64_t* leftStale, uint64_t* rightStale, double* maxAgeMs, uint64_t* guardClears);
+// BetterVR's renderer (renderer_vulkan.cpp): the leftSlot proof counters, per eye, and the number
+// of 3D pairs copied
+void BetterVR_PS5_CopyProof(uint64_t* leftOverwritten, uint64_t* rightOverwritten, uint64_t* copies);
+// BetterVR's renderer (entity_controller.cpp): bettervr.json's leftSlot, default on
+bool BetterVR_PS5_LeftSlot();
 // BetterVR's stereo rays (entity_controller.cpp): bettervr.json's stereoRays, default on
 bool BetterVR_PS5_StereoRays();
 }
@@ -1316,6 +1321,10 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateSession(XrInstance, const XrSessionCreate
 	Log("flat/menu presentation: %s (bettervr.json's flatScene%s)",
 		flatScene ? "the mono/left scene with the HUD over it, a menu's mono frame once" : "upstream's HUD-only flat quad and stereo menu",
 		flatScene ? ", default on" : "=0");
+	const bool leftSlot = BetterVR_PS5_LeftSlot();
+	Log("left eye's 3D slot: %s (bettervr.json's leftSlot%s)",
+		leftSlot ? "a third intermediate, clear of the published pair" : "the game's 0/1 slot, as before",
+		leftSlot ? ", default on" : "=0");
 	const bool poseFreeze = BetterVR_PS5_PoseFreeze();
 	Log("stereo pose freeze: %s (bettervr.json's poseFreeze%s)",
 		poseFreeze ? "on, one view pair for both eyes of a pair" : "off, the per-read latch", poseFreeze ? ", default on" : "=0");
@@ -1836,9 +1845,12 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
 		uint64_t leftPoseStale = 0, rightPoseStale = 0, poseGuardClears = 0;
 		double poseAgeMaxMs = 0.0;
 		BetterVR_PS5_PoseProof(&leftPoseStale, &rightPoseStale, &poseAgeMaxMs, &poseGuardClears);
+		uint64_t leftCopyOverwritten = 0, rightCopyOverwritten = 0, copies3D = 0;
+		BetterVR_PS5_CopyProof(&leftCopyOverwritten, &rightCopyOverwritten, &copies3D);
 		Log("%llu frames: nap %.2f ms, BeginFrame %.2f ms, ahead %.2f ms, step %.2f ms; flip shown %llu pending %d; repeated %d, queue full %d, "
 			"missed %d, errors %d, without layers %llu, skipped %llu, worn %d; render pose found %llu, not found %llu; "
 			"leftPoseStale %llu rightPoseStale %llu poseAgeMax %.2f ms poseGuardClears %llu; "
+			"leftCopyOverwritten %llu rightCopyOverwritten %llu of %llu copies; "
 			"head %.2f %.2f %.2f, hand spaces left %.3f %.3f %.3f right %.3f %.3f %.3f, hands posed %d %d; "
 			"TV mirror %s, shown %llu skipped %llu",
 			(unsigned long long)session->frames, pace.nap_ms, pace.call_ms, pace.ahead_ms, pace.step_ms, (unsigned long long)flip.shown, flip.pending,
@@ -1846,6 +1858,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
 			(unsigned long long)session->skipped, hmd2::worn() ? 1 : 0, (unsigned long long)session->poseFound,
 			(unsigned long long)session->poseLost, (unsigned long long)leftPoseStale, (unsigned long long)rightPoseStale, poseAgeMaxMs,
 			(unsigned long long)poseGuardClears,
+			(unsigned long long)leftCopyOverwritten, (unsigned long long)rightCopyOverwritten, (unsigned long long)copies3D,
 			renderHead.p.x, renderHead.p.y, renderHead.p.z, s.handLocated[0].p.x, s.handLocated[0].p.y,
 			s.handLocated[0].p.z, s.handLocated[1].p.x, s.handLocated[1].p.y, s.handLocated[1].p.z, s.hands[0].poseValid ? 1 : 0,
 			s.hands[1].poseValid ? 1 : 0, s.tv ? "on" : "off", (unsigned long long)session->tvShown, (unsigned long long)session->tvSkipped);
