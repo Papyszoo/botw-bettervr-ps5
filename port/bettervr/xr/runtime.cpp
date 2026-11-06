@@ -63,8 +63,9 @@ bool BetterVR_PS5_PlayerOnce();
 bool BetterVR_PS5_Fades();
 // BetterVR's stereo pose freeze (entity_controller.cpp): bettervr.json's poseFreeze, default on
 bool BetterVR_PS5_PoseFreeze();
-// BetterVR's renderer (renderer_vulkan.cpp): the poseFreeze proof counters, per eye
-void BetterVR_PS5_PoseProof(uint64_t* leftStale, uint64_t* rightStale, double* maxAgeMs);
+// BetterVR's renderer (renderer_vulkan.cpp): the poseFreeze proof counters, per eye, and the
+// StartFrame guard clears
+void BetterVR_PS5_PoseProof(uint64_t* leftStale, uint64_t* rightStale, double* maxAgeMs, uint64_t* guardClears);
 // BetterVR's stereo rays (entity_controller.cpp): bettervr.json's stereoRays, default on
 bool BetterVR_PS5_StereoRays();
 }
@@ -1826,18 +1827,19 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
 	{
 		const hmd2::PaceStats pace = hmd2::take_pace();
 		const hmd2::FlipInfo flip = hmd2::flip_status();
-		uint64_t leftPoseStale = 0, rightPoseStale = 0;
+		uint64_t leftPoseStale = 0, rightPoseStale = 0, poseGuardClears = 0;
 		double poseAgeMaxMs = 0.0;
-		BetterVR_PS5_PoseProof(&leftPoseStale, &rightPoseStale, &poseAgeMaxMs);
+		BetterVR_PS5_PoseProof(&leftPoseStale, &rightPoseStale, &poseAgeMaxMs, &poseGuardClears);
 		Log("%llu frames: nap %.2f ms, BeginFrame %.2f ms, ahead %.2f ms, step %.2f ms; flip shown %llu pending %d; repeated %d, queue full %d, "
 			"missed %d, errors %d, without layers %llu, skipped %llu, worn %d; render pose found %llu, not found %llu; "
-			"leftPoseStale %llu rightPoseStale %llu poseAgeMax %.2f ms; "
+			"leftPoseStale %llu rightPoseStale %llu poseAgeMax %.2f ms poseGuardClears %llu; "
 			"head %.2f %.2f %.2f, hand spaces left %.3f %.3f %.3f right %.3f %.3f %.3f, hands posed %d %d; "
 			"TV mirror %s, shown %llu skipped %llu",
 			(unsigned long long)session->frames, pace.nap_ms, pace.call_ms, pace.ahead_ms, pace.step_ms, (unsigned long long)flip.shown, flip.pending,
 			hmd2::repeated_frames(), hmd2::queue_full_waits(), hmd2::missed_frames(), hmd2::frame_errors(), (unsigned long long)session->emptyFrames,
 			(unsigned long long)session->skipped, hmd2::worn() ? 1 : 0, (unsigned long long)session->poseFound,
 			(unsigned long long)session->poseLost, (unsigned long long)leftPoseStale, (unsigned long long)rightPoseStale, poseAgeMaxMs,
+			(unsigned long long)poseGuardClears,
 			renderHead.p.x, renderHead.p.y, renderHead.p.z, s.handLocated[0].p.x, s.handLocated[0].p.y,
 			s.handLocated[0].p.z, s.handLocated[1].p.x, s.handLocated[1].p.y, s.handLocated[1].p.z, s.hands[0].poseValid ? 1 : 0,
 			s.hands[1].poseValid ? 1 : 0, s.tv ? "on" : "off", (unsigned long long)session->tvShown, (unsigned long long)session->tvSkipped);

@@ -25,18 +25,19 @@ runs the old per-read latch unchanged. The session-start line names the value:
 `rightPoseStale` and `poseAgeMax` (ms): each completed pair compares the display time each eye's
 camera was built with against the pose the pair is submitted with. With the freeze on, all three
 stay `0`/`0`/`0.00`; the control run with `"poseFreeze":0` should show `leftPoseStale` rising during
-fast yaw at ~53 fps, which is the stale left half.
+fast yaw at ~53 fps, which is the stale left half. The same line carries `poseGuardClears`: the
+StartFrame guard clears a freeze that outlived four frames, and that count must stay `0`.
 
-**Test request 20.** Install the build, enter a shrine and move the head quickly left and right for
+**Test request 21.** Install the build, enter a shrine and move the head quickly left and right for
 ~10 s. Send the `... frames:` lines that contain `leftPoseStale`. Default run: `leftPoseStale 0
 rightPoseStale 0 poseAgeMax 0.00 ms`, and the left image must be as smooth as the right. Optional
 control: add `"poseFreeze":0` to `/data/ps5cemu/bettervr.json`, restart the game, and send the same
 lines; the session line must say `off`, and the stale counters may rise.
 
-The seventeen BetterVR patches apply in order on pin `2e06b31` (17/17, tree identical to the
-patched tree); `camera.cpp`, `entity_controller.cpp`, `renderer_vulkan.cpp` and
-`port/bettervr/xr/runtime.cpp` pass `clang++ -std=c++23 -fsyntax-only -D__PROSPERO__` (0 errors,
-pre-existing warnings only). Not compiled for the console.
+The eighteen BetterVR patches apply in order on pin `2e06b31` (18/18; 0018 is rebased on 0017);
+`camera.cpp`, `entity_controller.cpp`, `renderer_vulkan.cpp` and `port/bettervr/xr/runtime.cpp`
+pass `clang++ -std=c++23 -fsyntax-only -D__PROSPERO__` (0 errors, pre-existing warnings only). Not
+compiled for the console.
 ## 2026-11-06 (stereo god rays): the right eye's volume mask gets its own masked-light shadow, behind `stereoRays` (not built, not run)
 
 **Not built, not run.** At the Graphics pack's Normal quality the volume mask (god rays) is drawn in
@@ -65,10 +66,10 @@ With `1`, the rays/volume mask should sit in the same place in both eyes and the
 soreness should be gone; with `0`, the previous one-eye behaviour must return. An outdoor sun-ray
 spot is a useful second look for new shadow acne; say which eye and where if anything is still off.
 
-The seventeen BetterVR patches apply in order on pin `2e06b31` (17/17); `entity_controller.cpp` and
-`port/bettervr/xr/runtime.cpp` pass `clang++ -std=c++23 -fsyntax-only -D__PROSPERO__` (0 errors,
-pre-existing warnings only), and the pack's address-materialization check is clean on all 32 asm
-files. Not compiled for the console.
+The eighteen BetterVR patches apply in order on pin `2e06b31` (18/18; 0018 is rebased on 0017);
+`entity_controller.cpp` and `port/bettervr/xr/runtime.cpp` pass
+`clang++ -std=c++23 -fsyntax-only -D__PROSPERO__` (0 errors, pre-existing warnings only), and the
+pack's address-materialization check is clean on all 32 asm files. Not compiled for the console.
 
 ## 2026-11-06 (melee swings): the hand velocity is always published, and `[weapon]` says what the analyser decides (not built, not run)
 

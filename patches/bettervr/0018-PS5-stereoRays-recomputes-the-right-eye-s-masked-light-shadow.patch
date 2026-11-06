@@ -94,11 +94,11 @@ index 3056602..1d5a429 100644
      static void hook_PrepareRoomscaleRaycast(PPCInterpreter_t* hCPU);
      static void hook_ConsumeRoomscaleRaycast(PPCInterpreter_t* hCPU);
 diff --git a/src/hooking/entity_controller.cpp b/src/hooking/entity_controller.cpp
-index aa0b2f7..8c6fb3c 100644
+index 17c5c0d..b83b98d 100644
 --- a/src/hooking/entity_controller.cpp
 +++ b/src/hooking/entity_controller.cpp
-@@ -675,6 +675,13 @@ extern "C" bool BetterVR_PS5_Fades() {
-     return s_fades;
+@@ -683,6 +683,13 @@ extern "C" bool BetterVR_PS5_PoseFreeze() {
+     return s_poseFreeze;
  }
  
 +// PS5 stereo rays: bettervr.json's stereoRays (default on), cached once so the session-start line and
@@ -111,7 +111,7 @@ index aa0b2f7..8c6fb3c 100644
  static bool ShouldDrivePlayerBodyWithVR(const glm::fvec3& currentHeadPos, const PlayerBase& player) {
      // PS5 experiment: bettervr.json {"roomscale":0} turns the head-driven body movement off (read once). Default on.
      static const bool s_roomscaleOn = BetterVR_PS5_Setting("roomscale", 1.0f) >= 0.5f;
-@@ -867,6 +874,18 @@ void CemuHooks::hook_PhysFrame(PPCInterpreter_t* hCPU) {
+@@ -875,6 +882,18 @@ void CemuHooks::hook_PhysFrame(PPCInterpreter_t* hCPU) {
      }
  }
  
