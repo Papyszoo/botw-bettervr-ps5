@@ -59,6 +59,8 @@ int scePadSetVibrationMode(int handle, int mode);
 float BetterVR_PS5_Setting(const char* name, float fallback);
 // BetterVR's gate (entity_controller.cpp): the playerOnce value it cached and the asm runs, default on
 bool BetterVR_PS5_PlayerOnce();
+// BetterVR's comfort fades (entity_controller.cpp): bettervr.json's fades, default on
+bool BetterVR_PS5_Fades();
 }
 
 #include <algorithm>
@@ -1256,6 +1258,8 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateSession(XrInstance, const XrSessionCreate
 	Log("reprojection of the game's frames: %s (bettervr.json's reproject)", s.reproject ? "on" : "off");
 	const bool playerOnce = BetterVR_PS5_PlayerOnce();
 	Log("player update gate: %s (bettervr.json's playerOnce%s)", playerOnce ? "one run a game frame, whichever pass asks first" : "upstream's, the right-eye pass only", playerOnce ? ", default on" : "=0");
+	const bool fades = BetterVR_PS5_Fades();
+	Log("game comfort fades: %s (bettervr.json's fades%s)", fades ? "on, ramped over 0.2 s" : "off", fades ? ", default on" : "=0");
 	if (!s.tv)
 		Log("TV mirror off (bettervr.json's tv): the TV stays dark while VR runs");
 	else if (hmd2::mirroring())

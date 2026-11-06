@@ -3,45 +3,45 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
-## 2026-11-06 (VR presentation): the flat view, cutscene bars and comfort fades (not built, not run)
+## 2026-11-06 (VR presentation): the game fade is a ramp, the scope is its 2D capture (not built, not run)
 
-**Not built, not run.** Patch 0015 ports the three presentations upstream's `renderer.cpp` had and
-our `renderer_vulkan.cpp` did not. **Flat view:** in the scope, the Camera rune, and anywhere else
-`UseFlatCameraPresentation()` holds, the game's flat image now goes to both eyes as one 16:9
-window at `HudDistance`/`HudSize`, black around it, instead of a stereo view of a flat camera; the
-Linux mono helper also covers those modes, as upstream's Windows one did (the camera anchor is
-still recorded). **Cutscene black bars:** with `UseBlackBarsForCutscenes=1` in
-`bettervr_settings.ini` (default off, upstream's default), a third-person cutscene uses the same
-window instead of filling the view. **Comfort fades:** the game's fade screens and the snap-turn
-and roomscale fades are applied over the scene (the eye image, by a small full-screen pass created
-on first use) the way upstream's present shader does it: the stronger of the game fade (the 2D
-capture's corner texel) and the custom fade wins, and lerps over the scene; the HUD quad stays the
-normal 2D layer on top. The normal HUD quad keeps its 2.0 m/1.0 m geometry; only the flat window
-uses `HudDistance`/`HudSize` (defaults 1.85 m/0.85 m).
+**Not built, not run.** Patch 0015 keeps upstream's flat view, cutscene bars and comfort fades, and
+changes two of them where the last build was wrong. **The game fade is never sampled from the 2D/HUD
+capture any more.** The submit thread ramps a solid black overlay over the eye image: while
+`IsAnyFadeScreenVisible()` is true the target is 1, when it ends the target is 0, and the applied
+value moves at most 1/12 per presented fresh 3D pair (a full swing in 12 frames, ~0.2 s at 60 fps).
+The target is the stronger of that game fade and the snap-turn/roomscale amount, so a fade screen
+that appears and disappears every frame cannot strobe the scene fade; the on/off decision is still
+taken once per Cemu frame. The HUD quad is unchanged and never faded. `bettervr.json`'s `"fades": 0` (read once,
+default on) turns the game fade off; `BetterVR_PS5_Fades` serves the same cached value to the
+renderer and the session-start line (`game comfort fades: on/off`).
 
-**Review fixes.** The fade state is published in the same `latestMutex` block as the 2D content it
-samples, so a fade cannot lead its texture. The flat/black-bar state is latched once per game frame
-at the left-eye copy and both eyes use that value. A flat frame is not reused when a later frame
-publishes only 2D/HUD content (upstream `renderer.cpp:54-66`), so the window does not outlive the
-scope, and a flat frame submits no scene depth.
+**The HUD quad is deterministic.** The old Linux path took the first `captureIdx==2` image of either
+eye and reopened the once-a-frame window at every 3D color clear, so the two 2D images could swap.
+It now takes the **left eye's first** capture per presented frame, exactly where upstream accepts
+`CaptureMask_Hud` and rejects the rest (`framebuffer.cpp:262-290`, `TryAcceptCapture`), and the only
+reset is `QueuePresentKHR` (`framebuffer.cpp:680`). The once-per-fade line reports what the quad
+carried: `[fade] game fade <start>-<end>s (first-frame clock): max applied <v>, HUD capture idx 2
+<w>x<h> image <ptr>, changed <n> time(s)`. A next log with `changed 0` shows one image and size for
+the whole fade.
 
-**Log lines, one per switch.** `Flat view on/off (scope=…, CameraFinder=…)`,
-`Cutscene black bars on/off`, `Comfort fade on/off (game=…, custom=…)`. They print once per change,
-not per frame.
+**The scope is the 2D capture.** In the scope and the Camera rune the eye image is no longer baked
+with a window from the 3D eye (that capture is black in this mode). The 2D capture is submitted as
+the **opaque** HUD quad at the normal 2.0 m/1.0 m window size and no projection layer, as upstream's
+flat camera presentation does; normal play keeps source-alpha blending. Black-bar cutscenes keep the
+baked window. A flat frame is still never reused when the next frame publishes only 2D/HUD content.
 
-**Test request 17.** Install the build. Look through the scope and the Camera rune (one line
-`Flat view on` each), a third-person cutscene with `UseBlackBarsForCutscenes=true` added under
-`[BetterVR][Settings]` in `/data/ps5cemu/bettervr_settings.ini` (one `Cutscene black bars on`), a
-snap turn with `TurnMode=SNAP_45` in the same section (`Comfort fade on (… custom=…)` for about
-110 ms), and any loading or shrine fade (`Comfort fade on (game=yes …)`). Send those lines and say
-whether the window is centred with black around it, the HUD is on top and unchanged in normal play,
-and **the window disappears when the scope/rune is left** (also when the pause menu or a loading
-screen then publishes only 2D/HUD content). Defaults change only for the flat window's geometry:
-`UseBlackBarsForCutscenes` and `TurnMode` stay as they are unless the lines above are added.
+**Test request 18.** Install the build. Enter a shrine (the Magnesis one was the strobe) and send
+the `[fade] game fade …` line; with the fix it should say `changed 0`, and `max applied 1.00` if the
+fade lasted more than ~0.2 s. Look through the scope and the Camera rune: the scope picture should
+be opaque, centred, at the normal HUD size, and the screen should not go black; normal play's HUD
+must look as before. Optional control run: add `"fades": 0` to `/data/ps5cemu/bettervr.json` and
+confirm the session line says `game comfort fades: off` and shrine fades no longer darken the scene.
 
-The fifteen BetterVR patches apply in order on pin `2e06b31` (15/15); `camera.cpp` and
-`renderer_vulkan.cpp` pass `clang++ -std=c++23 -fsyntax-only -D__PROSPERO__` (0 errors,
-pre-existing warnings only). Not compiled for the console.
+The fifteen BetterVR patches apply in order on pin `2e06b31` (15/15); `renderer_vulkan.cpp`,
+`entity_controller.cpp` and `port/bettervr/xr/runtime.cpp` pass
+`clang++ -std=c++23 -fsyntax-only -D__PROSPERO__` (0 errors, pre-existing warnings only). Not
+compiled for the console.
 
 ## 2026-11-06 (hook host cost): the hot hooks stop copying, and `[diag]` says what they cost (not built, not run)
 

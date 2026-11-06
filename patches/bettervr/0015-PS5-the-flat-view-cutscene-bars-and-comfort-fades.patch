@@ -9,36 +9,38 @@ the flat camera in the scope and Camera rune, the black-bar cutscene view, and
 the game/snap-turn/roomscale comfort fades. The hook side is upstream's and
 was already in this tree; only the presentation was missing.
 
-Flat view: the Linux mono helper now includes IsFlatCameraModeActive() (and a
-fade guard), as the Windows helper does, so the flat camera keeps the game's
-projection instead of a per-eye stereo one. renderer_vulkan.cpp bakes the
-flat image into both eye images as upstream's 2D quad shows it: the capture at
-its own aspect, centred in the HudDistance/HudSize window, black around it.
-UseBlackBarsForCutscenes=1 (default off) uses the same window for a
-third-person cutscene. Both eyes get the same image, so there is no stereo.
+Flat view: the Linux mono helper now includes IsFlatCameraModeActive(), as the
+Windows helper does, so the flat camera keeps the game's projection instead of
+a per-eye stereo one. In the scope and the Camera rune the game's 2D capture is
+submitted as the opaque HUD quad at the normal 2.0 m/1.0 m window size, with no
+projection layer, exactly upstream's flat camera presentation; the eye image is
+no longer baked from the 3D eye, which is black in this mode. A black-bar
+cutscene keeps the baked window (UseBlackBarsForCutscenes=1, default off).
+Both eyes get the same flat image, so there is no stereo.
 
-Comfort fades: EndFrame now reads IsAnyFadeScreenVisible(),
-GetRoomscaleFadeAmount() and the snap-turn times exactly as upstream does.
-The submit thread applies the game fade (the 2D capture's corner texel) and the
-snap/roomscale fade (black) over the eye image with one full-screen pass:
-max(game, custom) and a lerp, exactly upstream's presentDepthHLSL, so the HUD
-quad stays the normal 2D layer on top. The pass is created on first use and is
-skipped if the device refuses it.
+Comfort fades: EndFrame reads IsAnyFadeScreenVisible(),
+GetRoomscaleFadeAmount() and the snap-turn times once per Cemu frame, as
+upstream does. The submit thread no longer samples the 2D/HUD capture: it ramps
+a solid black overlay over the eye image toward the game fade (and back when
+it ends), at most 1/12 per presented fresh 3D pair, so a full swing takes about
+0.2 s at 60 fps whatever the fade screens do. The target is max(game, custom),
+so snap-turn and roomscale keep working; the HUD quad is never faded.
+bettervr.json's "fades": 0 (default on, read once) turns the game fade off.
 
-Review fixes: the fade state is published in the same latestMutex block as the
-2D content it samples, so a fade cannot lead its texture. The flat/black-bar
-state is latched once per game frame at the left-eye copy and both eyes use
-that value. A flat frame is never reused for a HUD-only publish (upstream
-renderer.cpp:54-66), so the window cannot outlive the scope, and the flat
-frame submits no scene depth. The normal HUD quad keeps its 2.0 m/1.0 m
-geometry; only the flat window uses HudDistance/HudSize.
+HUD capture: the left eye's first captureIdx==2 image per presented frame, as
+upstream's CaptureMask_Hud acceptance does; the right eye is ignored and the
+3D clear no longer reopens the once-a-frame window, so the HUD quad cannot
+switch between the two 2D images. A flat frame is still never reused for a
+HUD-only publish (upstream renderer.cpp:54-66), so it cannot outlive the scope.
 
-One log line per feature on each switch: "Flat view on/off", "Cutscene black
-bars on/off", "Comfort fade on/off".
+One log line per game fade: start/end, the largest applied fade, and the HUD
+capture image/size with how many times it changed, so the next console log can
+show that it did not alternate.
 ---
  src/hooking/camera.cpp            |  13 +-
- src/rendering/renderer_vulkan.cpp | 623 +++++++++++++++++++++++++++++-
- 2 files changed, 618 insertions(+), 18 deletions(-)
+ src/hooking/entity_controller.cpp |   7 +
+ src/rendering/renderer_vulkan.cpp | 645 +++++++++++++++++++++++++++++-
+ 3 files changed, 641 insertions(+), 24 deletions(-)
 
 diff --git a/src/hooking/camera.cpp b/src/hooking/camera.cpp
 index 047836d..574cd5c 100644
@@ -81,11 +83,29 @@ index 047836d..574cd5c 100644
  #endif
      if (suppressCamera) {
          return;
+diff --git a/src/hooking/entity_controller.cpp b/src/hooking/entity_controller.cpp
+index b87afd4..aa0b2f7 100644
+--- a/src/hooking/entity_controller.cpp
++++ b/src/hooking/entity_controller.cpp
+@@ -668,6 +668,13 @@ extern "C" bool BetterVR_PS5_PlayerOnce() {
+     return s_playerOnce;
+ }
+ 
++// PS5: bettervr.json's fades (default on), cached once. Off turns the game comfort fade off; the
++// snap-turn and roomscale fades stay. The renderer reads this and runtime.cpp logs the same value.
++extern "C" bool BetterVR_PS5_Fades() {
++    static const bool s_fades = BetterVR_PS5_Setting("fades", 1.0f) >= 0.5f;
++    return s_fades;
++}
++
+ static bool ShouldDrivePlayerBodyWithVR(const glm::fvec3& currentHeadPos, const PlayerBase& player) {
+     // PS5 experiment: bettervr.json {"roomscale":0} turns the head-driven body movement off (read once). Default on.
+     static const bool s_roomscaleOn = BetterVR_PS5_Setting("roomscale", 1.0f) >= 0.5f;
 diff --git a/src/rendering/renderer_vulkan.cpp b/src/rendering/renderer_vulkan.cpp
-index 3a837d0..cb47b51 100644
+index 3a837d0..d9e80a8 100644
 --- a/src/rendering/renderer_vulkan.cpp
 +++ b/src/rendering/renderer_vulkan.cpp
-@@ -5,12 +5,42 @@
+@@ -5,12 +5,50 @@
  #include "instance.h"
  #include "rendering/linux_desktop_mirror.h"
  #include "utils/vulkan_utils.h"
@@ -119,24 +139,32 @@ index 3a837d0..cb47b51 100644
 +    return (float)eased;
 +}
 +
-+// Geometry of the head-locked 2D layer: the HUD quad in normal play and the flat window baked
-+// into the eye image use the same distance and size, so the 2D UI lines up with the window
-+// (upstream renderer.cpp:38-66 uses one size for both).
++// Geometry of the head-locked 2D layer: the HUD quad in normal play, the flat camera's own quad
++// and the black-bar window baked into the eye image use the same distance and size, so the 2D UI
++// lines up with the window (upstream renderer.cpp:38-66 uses one size for both).
 +static constexpr float kHudDistance = 2.0f;
 +static constexpr float kHudSize = 1.0f;
++
++// PS5: bettervr.json's fades switch (default on), read once in entity_controller.cpp.
++extern "C" bool BetterVR_PS5_Fades();
++
++// The combined comfort fade may move by at most one step per presented frame, so even a fade
++// screen that appears and disappears every frame cannot strobe: a full swing takes 12 frames
++// (~0.2 s at 60 fps).
++static constexpr float kFadeStepPerFrame = 1.0f / 12.0f;
 +
  static bool LinuxEnvFlagEnabled(const char* name) {
      const char* value = std::getenv(name);
      if (value == nullptr || value[0] == '\0') return false;
-@@ -129,6 +159,7 @@ struct LinuxRenderState {
+@@ -129,6 +167,7 @@ struct LinuxRenderState {
          bool eyeCopied[2] = { false, false };
          int bufferIdx[2] = { -1, -1 };
          bool hasRenderViews = false;
-+        bool flatWindow = false; // both eyes were baked with the flat/cutscene window
++        bool flatWindow = false; // the eyes carry the cutscene black-bar window
          std::array<XrView, 2> renderViews = { XrView{ XR_TYPE_VIEW }, XrView{ XR_TYPE_VIEW } };
          XrTime renderDisplayTime = 0;
          std::array<std::chrono::high_resolution_clock::time_point, 2> colorCopyAt = {};
-@@ -139,6 +170,7 @@ struct LinuxRenderState {
+@@ -139,6 +178,7 @@ struct LinuxRenderState {
              bufferIdx[0] = -1;
              bufferIdx[1] = -1;
              hasRenderViews = false;
@@ -144,10 +172,19 @@ index 3a837d0..cb47b51 100644
              renderViews = { XrView{ XR_TYPE_VIEW }, XrView{ XR_TYPE_VIEW } };
              renderDisplayTime = 0;
              colorCopyAt[0] = {};
-@@ -166,6 +198,10 @@ struct LinuxRenderState {
+@@ -166,6 +206,19 @@ struct LinuxRenderState {
      bool swapchainCreated = false;
      bool frameHasContent = false;
      bool hudCopied = false;
++    // What the last HUD capture took, for the once-per-game-fade line: the source image and its
++    // size show whether the HUD quad's image changed while the fade was on.
++    VkImage hudSourceImage = VK_NULL_HANDLE;
++    uint32_t hudSourceWidth = 0;
++    uint32_t hudSourceHeight = 0;
++    uint64_t hudSourceSeq = 0;
++    // The combined comfort fade the submit thread last wrote into the eye image. The Cemu thread
++    // only reads it for the fade line.
++    std::atomic<float> appliedFadeAmount{0.0f};
 +    // Latched once at the first 3D color copy of a game frame, so both eyes and EndFrame use one
 +    // value (upstream renderer.cpp:309-317 evaluates these once per frame).
 +    bool frameFlatView = false;
@@ -155,24 +192,35 @@ index 3a837d0..cb47b51 100644
      bool disableDepthReprojection = false;
      bool frameTimingStatsEnabled = false;
      bool captureDiagnosticsEnabled = false;
-@@ -251,6 +287,9 @@ struct LinuxRenderState {
+@@ -251,11 +304,19 @@ struct LinuxRenderState {
              bool has3D = false;
              bool hasHud = false;
              bool hasDepth = false;
++            // The 3D pair carries the black-bar window baked into the eye image (upstream's flat
++            // camera is a 2D quad instead, see flatView).
 +            bool flatWindow = false;
++            // The scope / Camera rune is active this frame. Upstream presents its 2D capture as
++            // an opaque quad and no projection layer (renderer.cpp:38-66, IsCurrent3DPresentationAllowed).
++            bool flatView = false;
 +            // The 3D pair was copied by this publish; false means the sticky pair is a reuse.
 +            bool pairFresh = false;
              bool eyeCopied[2] = { false, false };
              bool depthCopied[2] = { false, false };
              bool hudCopied = false;
-@@ -430,6 +469,375 @@ struct LinuxRenderState {
+             float customFadeAmount = 0.0f;
+-            bool fadeActive = false;
++            bool gameFadeActive = false;
+             uint64_t contentSeq = 0;
+             std::chrono::high_resolution_clock::time_point publishedAt;
+             std::array<XrView, 2> renderViews = { XrView{ XR_TYPE_VIEW }, XrView{ XR_TYPE_VIEW } };
+@@ -430,6 +491,296 @@ struct LinuxRenderState {
  
  static std::unique_ptr<LinuxRenderState> s_linux;
  
-+// upstream's presentDepthHLSL (shader.h:54-69) applied to the eye image: the game fade is the
-+// 2D capture's texel (0,0) colour and alpha, the custom fade is a solid colour, the stronger one
-+// wins and lerps over the scene. The 2D/HUD layer is still drawn on top by the runtime, so this
-+// path only needs the fade sample, not the scene. Blend state does the lerp.
++// The comfort fade applied to the eye image: a solid colour whose alpha is the combined fade.
++// Unlike upstream's presentDepthHLSL (shader.h:54-69), this fragment shader has no sampler: the
++// game fade is a ramp at the submit thread, never a texel of the 2D/HUD capture, so two capture
++// images swapping cannot move it. Blend state does the lerp; the HUD layer stays on top.
 +static const uint32_t k_fadeVertSpirv[] = {
 +    0x07230203,0x00010000,0x0008000b,0x0000002b,0x00000000,0x00020011,0x00000001,0x0006000b,
 +    0x00000001,0x4c534c47,0x6474732e,0x3035342e,0x00000000,0x0003000e,0x00000000,0x00000001,
@@ -213,77 +261,39 @@ index 3a837d0..cb47b51 100644
 +};
 +
 +static const uint32_t k_fadeFragSpirv[] = {
-+    0x07230203,0x00010000,0x0008000b,0x0000004f,0x00000000,0x00020011,0x00000001,0x0006000b,
++    0x07230203,0x00010000,0x0008000b,0x00000021,0x00000000,0x00020011,0x00000001,0x0006000b,
 +    0x00000001,0x4c534c47,0x6474732e,0x3035342e,0x00000000,0x0003000e,0x00000000,0x00000001,
-+    0x0006000f,0x00000004,0x00000004,0x6e69616d,0x00000000,0x00000048,0x00030010,0x00000004,
++    0x0006000f,0x00000004,0x00000004,0x6e69616d,0x00000000,0x00000009,0x00030010,0x00000004,
 +    0x00000007,0x00030003,0x00000002,0x000001c2,0x00040005,0x00000004,0x6e69616d,0x00000000,
-+    0x00050005,0x00000009,0x706d6173,0x6f43656c,0x00726f6c,0x00040005,0x0000000d,0x65646166,
-+    0x00786554,0x00050005,0x00000016,0x656d6167,0x65646146,0x00000000,0x00040005,0x00000017,
-+    0x61726150,0x0000736d,0x00050006,0x00000017,0x00000000,0x65646166,0x00000000,0x00050006,
-+    0x00000017,0x00000001,0x6f6c6f63,0x00000072,0x00030005,0x00000019,0x00006370,0x00050005,
-+    0x0000002b,0x74737563,0x61466d6f,0x00006564,0x00050005,0x00000031,0x616e6966,0x6461466c,
-+    0x00000065,0x00050005,0x00000037,0x616e6966,0x6c6f436c,0x0000726f,0x00050005,0x00000048,
-+    0x4374756f,0x726f6c6f,0x00000000,0x00040047,0x0000000d,0x00000021,0x00000000,0x00040047,
-+    0x0000000d,0x00000022,0x00000000,0x00030047,0x00000017,0x00000002,0x00050048,0x00000017,
-+    0x00000000,0x00000023,0x00000000,0x00050048,0x00000017,0x00000001,0x00000023,0x00000010,
-+    0x00040047,0x00000048,0x0000001e,0x00000000,0x00020013,0x00000002,0x00030021,0x00000003,
-+    0x00000002,0x00030016,0x00000006,0x00000020,0x00040017,0x00000007,0x00000006,0x00000004,
-+    0x00040020,0x00000008,0x00000007,0x00000007,0x00090019,0x0000000a,0x00000006,0x00000001,
-+    0x00000000,0x00000000,0x00000000,0x00000001,0x00000000,0x0003001b,0x0000000b,0x0000000a,
-+    0x00040020,0x0000000c,0x00000000,0x0000000b,0x0004003b,0x0000000c,0x0000000d,0x00000000,
-+    0x00040015,0x0000000f,0x00000020,0x00000001,0x00040017,0x00000010,0x0000000f,0x00000002,
-+    0x0004002b,0x0000000f,0x00000011,0x00000000,0x0005002c,0x00000010,0x00000012,0x00000011,
-+    0x00000011,0x00040020,0x00000015,0x00000007,0x00000006,0x0004001e,0x00000017,0x00000007,
-+    0x00000007,0x00040020,0x00000018,0x00000009,0x00000017,0x0004003b,0x00000018,0x00000019,
-+    0x00000009,0x00040015,0x0000001a,0x00000020,0x00000000,0x0004002b,0x0000001a,0x0000001b,
-+    0x00000001,0x00040020,0x0000001c,0x00000009,0x00000006,0x0004002b,0x00000006,0x0000001f,
-+    0x3f000000,0x00020014,0x00000020,0x0004002b,0x0000001a,0x00000025,0x00000003,0x0004002b,
-+    0x00000006,0x00000029,0x00000000,0x0004002b,0x0000001a,0x0000002c,0x00000000,0x0004002b,
-+    0x00000006,0x0000002f,0x3f800000,0x00040017,0x00000035,0x00000006,0x00000003,0x00040020,
-+    0x00000036,0x00000007,0x00000035,0x0004002b,0x0000000f,0x00000041,0x00000001,0x00040020,
-+    0x00000042,0x00000009,0x00000007,0x00040020,0x00000047,0x00000003,0x00000007,0x0004003b,
-+    0x00000047,0x00000048,0x00000003,0x00050036,0x00000002,0x00000004,0x00000000,0x00000003,
-+    0x000200f8,0x00000005,0x0004003b,0x00000008,0x00000009,0x00000007,0x0004003b,0x00000015,
-+    0x00000016,0x00000007,0x0004003b,0x00000015,0x00000022,0x00000007,0x0004003b,0x00000015,
-+    0x0000002b,0x00000007,0x0004003b,0x00000015,0x00000031,0x00000007,0x0004003b,0x00000036,
-+    0x00000037,0x00000007,0x0004003b,0x00000036,0x0000003b,0x00000007,0x0004003d,0x0000000b,
-+    0x0000000e,0x0000000d,0x00040064,0x0000000a,0x00000013,0x0000000e,0x0007005f,0x00000007,
-+    0x00000014,0x00000013,0x00000012,0x00000002,0x00000011,0x0003003e,0x00000009,0x00000014,
-+    0x00060041,0x0000001c,0x0000001d,0x00000019,0x00000011,0x0000001b,0x0004003d,0x00000006,
-+    0x0000001e,0x0000001d,0x000500ba,0x00000020,0x00000021,0x0000001e,0x0000001f,0x000300f7,
-+    0x00000024,0x00000000,0x000400fa,0x00000021,0x00000023,0x00000028,0x000200f8,0x00000023,
-+    0x00050041,0x00000015,0x00000026,0x00000009,0x00000025,0x0004003d,0x00000006,0x00000027,
-+    0x00000026,0x0003003e,0x00000022,0x00000027,0x000200f9,0x00000024,0x000200f8,0x00000028,
-+    0x0003003e,0x00000022,0x00000029,0x000200f9,0x00000024,0x000200f8,0x00000024,0x0004003d,
-+    0x00000006,0x0000002a,0x00000022,0x0003003e,0x00000016,0x0000002a,0x00060041,0x0000001c,
-+    0x0000002d,0x00000019,0x00000011,0x0000002c,0x0004003d,0x00000006,0x0000002e,0x0000002d,
-+    0x0008000c,0x00000006,0x00000030,0x00000001,0x0000002b,0x0000002e,0x00000029,0x0000002f,
-+    0x0003003e,0x0000002b,0x00000030,0x0004003d,0x00000006,0x00000032,0x00000016,0x0004003d,
-+    0x00000006,0x00000033,0x0000002b,0x0007000c,0x00000006,0x00000034,0x00000001,0x00000028,
-+    0x00000032,0x00000033,0x0003003e,0x00000031,0x00000034,0x0004003d,0x00000006,0x00000038,
-+    0x00000016,0x0004003d,0x00000006,0x00000039,0x0000002b,0x000500be,0x00000020,0x0000003a,
-+    0x00000038,0x00000039,0x000300f7,0x0000003d,0x00000000,0x000400fa,0x0000003a,0x0000003c,
-+    0x00000040,0x000200f8,0x0000003c,0x0004003d,0x00000007,0x0000003e,0x00000009,0x0008004f,
-+    0x00000035,0x0000003f,0x0000003e,0x0000003e,0x00000000,0x00000001,0x00000002,0x0003003e,
-+    0x0000003b,0x0000003f,0x000200f9,0x0000003d,0x000200f8,0x00000040,0x00050041,0x00000042,
-+    0x00000043,0x00000019,0x00000041,0x0004003d,0x00000007,0x00000044,0x00000043,0x0008004f,
-+    0x00000035,0x00000045,0x00000044,0x00000044,0x00000000,0x00000001,0x00000002,0x0003003e,
-+    0x0000003b,0x00000045,0x000200f9,0x0000003d,0x000200f8,0x0000003d,0x0004003d,0x00000035,
-+    0x00000046,0x0000003b,0x0003003e,0x00000037,0x00000046,0x0004003d,0x00000035,0x00000049,
-+    0x00000037,0x0004003d,0x00000006,0x0000004a,0x00000031,0x00050051,0x00000006,0x0000004b,
-+    0x00000049,0x00000000,0x00050051,0x00000006,0x0000004c,0x00000049,0x00000001,0x00050051,
-+    0x00000006,0x0000004d,0x00000049,0x00000002,0x00070050,0x00000007,0x0000004e,0x0000004b,
-+    0x0000004c,0x0000004d,0x0000004a,0x0003003e,0x00000048,0x0000004e,0x000100fd,0x00010038,
++    0x00050005,0x00000009,0x4374756f,0x726f6c6f,0x00000000,0x00040005,0x0000000a,0x61726150,
++    0x0000736d,0x00050006,0x0000000a,0x00000000,0x65646166,0x00000000,0x00050006,0x0000000a,
++    0x00000001,0x6f6c6f63,0x00000072,0x00030005,0x0000000c,0x00006370,0x00040047,0x00000009,
++    0x0000001e,0x00000000,0x00030047,0x0000000a,0x00000002,0x00050048,0x0000000a,0x00000000,
++    0x00000023,0x00000000,0x00050048,0x0000000a,0x00000001,0x00000023,0x00000010,0x00020013,
++    0x00000002,0x00030021,0x00000003,0x00000002,0x00030016,0x00000006,0x00000020,0x00040017,
++    0x00000007,0x00000006,0x00000004,0x00040020,0x00000008,0x00000003,0x00000007,0x0004003b,
++    0x00000008,0x00000009,0x00000003,0x0004001e,0x0000000a,0x00000007,0x00000007,0x00040020,
++    0x0000000b,0x00000009,0x0000000a,0x0004003b,0x0000000b,0x0000000c,0x00000009,0x00040015,
++    0x0000000d,0x00000020,0x00000001,0x0004002b,0x0000000d,0x0000000e,0x00000001,0x00040017,
++    0x0000000f,0x00000006,0x00000003,0x00040020,0x00000010,0x00000009,0x00000007,0x0004002b,
++    0x0000000d,0x00000014,0x00000000,0x00040015,0x00000015,0x00000020,0x00000000,0x0004002b,
++    0x00000015,0x00000016,0x00000000,0x00040020,0x00000017,0x00000009,0x00000006,0x0004002b,
++    0x00000006,0x0000001a,0x00000000,0x0004002b,0x00000006,0x0000001b,0x3f800000,0x00050036,
++    0x00000002,0x00000004,0x00000000,0x00000003,0x000200f8,0x00000005,0x00050041,0x00000010,
++    0x00000011,0x0000000c,0x0000000e,0x0004003d,0x00000007,0x00000012,0x00000011,0x0008004f,
++    0x0000000f,0x00000013,0x00000012,0x00000012,0x00000000,0x00000001,0x00000002,0x00060041,
++    0x00000017,0x00000018,0x0000000c,0x00000014,0x00000016,0x0004003d,0x00000006,0x00000019,
++    0x00000018,0x0008000c,0x00000006,0x0000001c,0x00000001,0x0000002b,0x00000019,0x0000001a,
++    0x0000001b,0x00050051,0x00000006,0x0000001d,0x00000013,0x00000000,0x00050051,0x00000006,
++    0x0000001e,0x00000013,0x00000001,0x00050051,0x00000006,0x0000001f,0x00000013,0x00000002,
++    0x00070050,0x00000007,0x00000020,0x0000001d,0x0000001e,0x0000001f,0x0000001c,0x0003003e,
++    0x00000009,0x00000020,0x000100fd,0x00010038,
 +};
 +
 +struct FadeOverlayPipeline {
 +    VkRenderPass renderPass = VK_NULL_HANDLE;
-+    VkDescriptorSetLayout setLayout = VK_NULL_HANDLE;
 +    VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
 +    VkPipeline pipeline = VK_NULL_HANDLE;
-+    VkSampler sampler = VK_NULL_HANDLE;
-+    VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
-+    VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
 +    VkFramebuffer framebuffers[2][2] = { { VK_NULL_HANDLE, VK_NULL_HANDLE }, { VK_NULL_HANDLE, VK_NULL_HANDLE } };
 +    bool ready = false;
 +    bool failed = false;
@@ -292,8 +302,8 @@ index 3a837d0..cb47b51 100644
 +static FadeOverlayPipeline s_fadeOverlay;
 +
 +struct FadePushConstants {
-+    float fade[4];  // x = custom amount, y = game fade active
-+    float color[4]; // rgb = custom fade colour (black)
++    float fade[4];  // x = the applied combined fade, y unused
++    float color[4]; // rgb = the fade colour (black)
 +};
 +
 +// Created on the submit thread the first time a fade is drawn. Any failure leaves the flag set
@@ -370,26 +380,16 @@ index 3a837d0..cb47b51 100644
 +    result = dispatch->CreateShaderModule(device, &shaderInfo, nullptr, &fragModule);
 +    if (result != VK_SUCCESS) return fail("CreateShaderModule(fragment)", result);
 +
-+    VkDescriptorSetLayoutBinding binding = {};
-+    binding.binding = 0;
-+    binding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-+    binding.descriptorCount = 1;
-+    binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-+
-+    VkDescriptorSetLayoutCreateInfo setLayoutInfo = { VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO };
-+    setLayoutInfo.bindingCount = 1;
-+    setLayoutInfo.pBindings = &binding;
-+    result = dispatch->CreateDescriptorSetLayout(device, &setLayoutInfo, nullptr, &s_fadeOverlay.setLayout);
-+    if (result != VK_SUCCESS) return fail("CreateDescriptorSetLayout", result);
-+
 +    VkPushConstantRange pushRange = {};
 +    pushRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 +    pushRange.offset = 0;
 +    pushRange.size = sizeof(FadePushConstants);
 +
++    // No descriptor set: the fragment shader only reads the push constants, so it has no path to
++    // the 2D capture's texels at all.
 +    VkPipelineLayoutCreateInfo layoutInfo = { VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO };
-+    layoutInfo.setLayoutCount = 1;
-+    layoutInfo.pSetLayouts = &s_fadeOverlay.setLayout;
++    layoutInfo.setLayoutCount = 0;
++    layoutInfo.pSetLayouts = nullptr;
 +    layoutInfo.pushConstantRangeCount = 1;
 +    layoutInfo.pPushConstantRanges = &pushRange;
 +    result = dispatch->CreatePipelineLayout(device, &layoutInfo, nullptr, &s_fadeOverlay.pipelineLayout);
@@ -461,34 +461,6 @@ index 3a837d0..cb47b51 100644
 +    result = dispatch->CreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &s_fadeOverlay.pipeline);
 +    if (result != VK_SUCCESS) return fail("CreateGraphicsPipelines", result);
 +
-+    VkSamplerCreateInfo samplerInfo = { VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO };
-+    samplerInfo.magFilter = VK_FILTER_LINEAR;
-+    samplerInfo.minFilter = VK_FILTER_LINEAR;
-+    samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
-+    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-+    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-+    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-+    samplerInfo.maxLod = 0.0f;
-+    result = dispatch->CreateSampler(device, &samplerInfo, nullptr, &s_fadeOverlay.sampler);
-+    if (result != VK_SUCCESS) return fail("CreateSampler", result);
-+
-+    VkDescriptorPoolSize poolSize = {};
-+    poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-+    poolSize.descriptorCount = 1;
-+    VkDescriptorPoolCreateInfo poolInfo = { VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO };
-+    poolInfo.maxSets = 1;
-+    poolInfo.poolSizeCount = 1;
-+    poolInfo.pPoolSizes = &poolSize;
-+    result = dispatch->CreateDescriptorPool(device, &poolInfo, nullptr, &s_fadeOverlay.descriptorPool);
-+    if (result != VK_SUCCESS) return fail("CreateDescriptorPool", result);
-+
-+    VkDescriptorSetAllocateInfo allocateInfo = { VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO };
-+    allocateInfo.descriptorPool = s_fadeOverlay.descriptorPool;
-+    allocateInfo.descriptorSetCount = 1;
-+    allocateInfo.pSetLayouts = &s_fadeOverlay.setLayout;
-+    result = dispatch->AllocateDescriptorSets(device, &allocateInfo, &s_fadeOverlay.descriptorSet);
-+    if (result != VK_SUCCESS) return fail("AllocateDescriptorSets", result);
-+
 +    for (int eye = 0; eye < 2; eye++) {
 +        for (int buf = 0; buf < 2; buf++) {
 +            VulkanTexture* texture = s_linux->intermediateColor[eye][buf];
@@ -529,9 +501,6 @@ index 3a837d0..cb47b51 100644
 +            }
 +            if (s_fadeOverlay.pipeline != VK_NULL_HANDLE) dispatch->DestroyPipeline(device, s_fadeOverlay.pipeline, nullptr);
 +            if (s_fadeOverlay.pipelineLayout != VK_NULL_HANDLE) dispatch->DestroyPipelineLayout(device, s_fadeOverlay.pipelineLayout, nullptr);
-+            if (s_fadeOverlay.descriptorPool != VK_NULL_HANDLE) dispatch->DestroyDescriptorPool(device, s_fadeOverlay.descriptorPool, nullptr);
-+            if (s_fadeOverlay.sampler != VK_NULL_HANDLE) dispatch->DestroySampler(device, s_fadeOverlay.sampler, nullptr);
-+            if (s_fadeOverlay.setLayout != VK_NULL_HANDLE) dispatch->DestroyDescriptorSetLayout(device, s_fadeOverlay.setLayout, nullptr);
 +            if (s_fadeOverlay.renderPass != VK_NULL_HANDLE) dispatch->DestroyRenderPass(device, s_fadeOverlay.renderPass, nullptr);
 +        }
 +    }
@@ -541,7 +510,7 @@ index 3a837d0..cb47b51 100644
  static double LinuxDisplayTimeDeltaMs(XrTime value, XrTime reference) {
      if (value == 0 || reference == 0) return 0.0;
      return (double)(value - reference) / 1e6;
-@@ -525,6 +933,9 @@ void RND_Renderer::LinuxUpdateRuntimeFrameTiming(const XrFrameState& frameState,
+@@ -525,6 +876,9 @@ void RND_Renderer::LinuxUpdateRuntimeFrameTiming(const XrFrameState& frameState,
  RND_Renderer::RND_Renderer(XrSession xrSession): m_session(xrSession) {
      Log::print<INFO>("Linux RND_Renderer: Initializing...");
  
@@ -551,7 +520,7 @@ index 3a837d0..cb47b51 100644
      s_linux = std::make_unique<LinuxRenderState>();
      s_linux->frameTimingStatsEnabled =
          LinuxEnvFlagEnabled("BETTERVR_LINUX_FRAME_STATS")
-@@ -581,7 +992,8 @@ RND_Renderer::RND_Renderer(XrSession xrSession): m_session(xrSession) {
+@@ -581,7 +935,8 @@ RND_Renderer::RND_Renderer(XrSession xrSession): m_session(xrSession) {
          for (int b = 0; b < 2; b++) {
              s_linux->intermediateColor[eye][b] = new VulkanTexture(w, h,
                  VK_FORMAT_R8G8B8A8_SRGB,
@@ -561,7 +530,7 @@ index 3a837d0..cb47b51 100644
              s_linux->intermediateDepth[eye][b] = new VulkanTexture(w, h,
                  VK_FORMAT_D32_SFLOAT,
                  VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
-@@ -667,6 +1079,10 @@ void RND_Renderer::EndSession() {
+@@ -667,6 +1022,10 @@ void RND_Renderer::EndSession() {
      if (m_session == XR_NULL_HANDLE) {
          return;
      }
@@ -572,7 +541,7 @@ index 3a837d0..cb47b51 100644
      s_linux.reset();
      if (XrResult result = xrEndSession(m_session); XR_FAILED(result)) {
          Log::print<ERROR>("Failed to end OpenXR session (result {})!", (int)result);
-@@ -674,6 +1090,9 @@ void RND_Renderer::EndSession() {
+@@ -674,6 +1033,9 @@ void RND_Renderer::EndSession() {
  }
  
  RND_Renderer::~RND_Renderer() {
@@ -582,70 +551,68 @@ index 3a837d0..cb47b51 100644
      s_linux.reset();
      if (m_session != XR_NULL_HANDLE) {
          xrEndSession(m_session);
-@@ -910,7 +1329,11 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
+@@ -783,6 +1145,9 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
+ 
+     XrFrameState currentFrameState = { XR_TYPE_FRAME_STATE };
+     uint64_t lastCopiedContentSeq = 0;
++    // The combined comfort fade actually written into the eye image. It moves at most
++    // kFadeStepPerFrame each time it is applied, whatever the fade screens do.
++    float gameFadeApplied = 0.0f;
+ 
+     // Wait + Begin + UpdateViews + UpdateActions. Used for bootstrap AND to
+     // pace each subsequent iteration of the loop (xrWaitFrame blocks until
+@@ -910,7 +1275,12 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
          bool gateOk = latest.intermediateReadyValue > 0;
          bool has3D = gateOk && latest.has3D;
          bool hasHud = gateOk && latest.hasHud;
 -        bool hasDepth = latest.hasDepth && !s_linux->disableDepthReprojection;
-+        // Upstream's flat/black-bar view is a 2D quad with no depth (renderer.cpp:340-350,
-+        // 354-356); our window is baked into the eye image, so submitting the scene depth would
-+        // make the runtime reproject the flat window with the game's depth.
-+        const bool flatWindow = has3D && latest.flatWindow;
++        // Upstream refuses the projection layer while the flat camera is active and presents the
++        // game's 2D capture as an opaque quad (renderer.cpp:38-66, 309-350). The black-bar window
++        // stays baked into the eye image, so it still needs no depth.
++        const bool flatPresentation = latest.flatView;
++        const bool flatWindow = has3D && (latest.flatWindow || flatPresentation);
 +        bool hasDepth = latest.hasDepth && !s_linux->disableDepthReprojection && !flatWindow;
          bool hasAnyLayerContent = has3D || hasHud;
          bool copyNeeded = hasAnyLayerContent
              && latest.contentSeq != 0
-@@ -918,6 +1341,19 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
+@@ -918,6 +1288,28 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
          bool reuseContent = hasAnyLayerContent
              && latest.contentSeq != 0
              && latest.contentSeq == lastCopiedContentSeq;
-+        // upstream renderer.cpp:283-288 and shader.h:54-69: the game's fade screens (texel (0,0)
-+        // of the 2D capture) and the snap-turn/roomscale fade, max() of the two, over the scene.
-+        // The HUD quad keeps its normal content on top, as upstream draws the 2D layer.
-+        const bool fadeFrame = latest.fadeActive || latest.customFadeAmount > 0.01f;
-+        VulkanTexture* fadeTexture = nullptr;
-+        // The fade pass writes the shared 3D intermediate in place, so only the publish that
-+        // copies a fresh pair may apply it: a reused pair already carries its first fade and
-+        // applying it again would darken the same image more than the game's fade.
-+        if (has3D && fadeFrame && latest.pairFresh) {
-+            const int hudIdx = latest.readBufferIdx_hud;
-+            if (hudIdx >= 0 && hudIdx < 2) fadeTexture = s_linux->intermediateHud[hudIdx];
-+            if (fadeTexture != nullptr && !EnsureFadeOverlayPipeline()) fadeTexture = nullptr;
++        // The comfort fade is a ramp, not a sample of the 2D capture. Its target is the game fade
++        // (one on/off decision per Cemu frame) and the snap-turn/roomscale amount, whichever is
++        // stronger; the applied value moves at most 1/12 per presented frame. Only a fresh 3D
++        // pair is written: a reused pair already carries the fade it was copied with.
++        const float fadeTarget = std::max(
++            latest.gameFadeActive ? 1.0f : 0.0f,
++            std::clamp(latest.customFadeAmount, 0.0f, 1.0f));
++        bool applyFade = false;
++        float fadeToApply = 0.0f;
++        if (copyNeeded && has3D && latest.pairFresh) {
++            const float stepped = gameFadeApplied
++                + std::clamp(fadeTarget - gameFadeApplied, -kFadeStepPerFrame, kFadeStepPerFrame);
++            fadeToApply = std::clamp(stepped, 0.0f, 1.0f);
++            if (fadeToApply <= 0.0001f) {
++                gameFadeApplied = 0.0f;
++                s_linux->appliedFadeAmount.store(0.0f, std::memory_order_relaxed);
++            } else if (EnsureFadeOverlayPipeline()) {
++                gameFadeApplied = fadeToApply;
++                applyFade = true;
++                s_linux->appliedFadeAmount.store(fadeToApply, std::memory_order_relaxed);
++            }
 +        }
  
          if (copyNeeded) {
              s_linux->stats.submitFramesWithCopy.fetch_add(1, std::memory_order_relaxed);
-@@ -963,6 +1399,21 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
-             cbBegin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-             dispatch->BeginCommandBuffer(s_linux->copyCmdBuf, &cbBegin);
- 
-+            if (fadeTexture != nullptr) {
-+                // Same frame as the published 2D content: the state and the texture are published
-+                // in one latestMutex block, so the corner alpha cannot lead its texture.
-+                VulkanUtils::TransitionLayout(s_linux->copyCmdBuf, fadeTexture->GetImage(),
-+                    VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-+                VkDescriptorImageInfo imageInfo = { s_fadeOverlay.sampler, fadeTexture->GetImageView(),
-+                    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
-+                VkWriteDescriptorSet write = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
-+                write.dstSet = s_fadeOverlay.descriptorSet;
-+                write.descriptorCount = 1;
-+                write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-+                write.pImageInfo = &imageInfo;
-+                dispatch->UpdateDescriptorSets(device, 1, &write, 0, nullptr);
-+            }
-+
-             auto recordColorCopy = [&](int eye) {
-                 if (!latest.eyeCopied[eye]) return;
-                 int readIdx = latest.readBufferIdx_3D[eye];
-@@ -972,6 +1423,40 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
+@@ -972,6 +1364,38 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
                  VkImage srcImg = srcTex->GetImage();
                  auto& sc = s_linux->colorSwapchains[eye];
                  VkImage dstImg = sc.images[sc.currentImageIdx];
 +
-+                if (fadeTexture != nullptr) {
-+                    // upstream presentDepthHLSL: lerp the scene toward the stronger fade. The
-+                    // intermediate is already the eye image, so the pass covers it 1:1 and the
-+                    // fixed-function blend does the lerp; the HUD quad is composed later.
++                if (applyFade) {
++                    // A solid colour whose alpha is the applied ramp; the intermediate is already
++                    // the eye image, so the pass covers it 1:1 and the blend does the lerp. The
++                    // HUD quad is composed later and is not faded, as upstream does.
 +                    VulkanUtils::TransitionLayout(s_linux->copyCmdBuf, srcImg,
 +                        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
 +                    VkRenderPassBeginInfo fadeBegin = { VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO };
@@ -655,11 +622,9 @@ index 3a837d0..cb47b51 100644
 +                    fadeBegin.renderArea.extent = { srcTex->GetWidth(), srcTex->GetHeight() };
 +                    dispatch->CmdBeginRenderPass(s_linux->copyCmdBuf, &fadeBegin, VK_SUBPASS_CONTENTS_INLINE);
 +                    dispatch->CmdBindPipeline(s_linux->copyCmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, s_fadeOverlay.pipeline);
-+                    dispatch->CmdBindDescriptorSets(s_linux->copyCmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS,
-+                        s_fadeOverlay.pipelineLayout, 0, 1, &s_fadeOverlay.descriptorSet, 0, nullptr);
 +                    FadePushConstants push = {};
-+                    push.fade[0] = std::clamp(latest.customFadeAmount, 0.0f, 1.0f);
-+                    push.fade[1] = latest.fadeActive ? 1.0f : 0.0f;
++                    push.fade[0] = fadeToApply;
++                    push.fade[1] = 0.0f;
 +                    push.color[0] = 0.0f;
 +                    push.color[1] = 0.0f;
 +                    push.color[2] = 0.0f;
@@ -678,19 +643,7 @@ index 3a837d0..cb47b51 100644
                  VkImageMemoryBarrier bar = { VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER };
                  bar.srcAccessMask = 0;
                  bar.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-@@ -1041,6 +1526,11 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
-                     if (hasDepth) recordDepthCopy(eye);
-                 }
-             }
-+            if (fadeTexture != nullptr) {
-+                // Leave the 2D capture in the layout its next capture and this frame's HUD copy use.
-+                VulkanUtils::TransitionLayout(s_linux->copyCmdBuf, fadeTexture->GetImage(),
-+                    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
-+            }
-             if (hasHud && s_linux->intermediateHud[latest.readBufferIdx_hud]) {
-                 VkImage hudSrc = s_linux->intermediateHud[latest.readBufferIdx_hud]->GetImage();
-                 auto& hudSc = s_linux->hudSwapchain;
-@@ -1077,7 +1567,9 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
+@@ -1077,7 +1501,9 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
              VkTimelineSemaphoreSubmitInfo waitTimeline = { VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO };
              waitTimeline.waitSemaphoreValueCount = 1;
              waitTimeline.pWaitSemaphoreValues = &latest.intermediateReadyValue;
@@ -701,7 +654,18 @@ index 3a837d0..cb47b51 100644
              VkSubmitInfo subInfo = { VK_STRUCTURE_TYPE_SUBMIT_INFO };
              subInfo.pNext = &waitTimeline;
              subInfo.waitSemaphoreCount = 1;
-@@ -1273,13 +1765,13 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
+@@ -1204,7 +1630,9 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
+                     (double)(latest.renderDisplayTime - currentFrameState.predictedDisplayTime) / 1e6);
+             }
+ 
+-            if (haveSubmitViews && has3D) {
++            // Upstream's flat camera presentation has no projection layer: the game's 2D capture
++            // is the only layer, an opaque quad (renderer.cpp:38-66, 309-350).
++            if (haveSubmitViews && has3D && !flatPresentation) {
+                 const std::array<XrView, 2>* projectionRenderViews = &submitViews;
+                 if (latest.hasRenderViews) {
+                     projectionRenderViews = &latest.renderViews;
+@@ -1273,13 +1701,13 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
              if (haveSubmitViews && hasHud) {
                  glm::vec3 headPos = (ToGLM(submitViews[0].pose.position) + ToGLM(submitViews[1].pose.position)) * 0.5f;
                  glm::quat headOri = glm::slerp(ToGLM(submitViews[0].pose.orientation), ToGLM(submitViews[1].pose.orientation), 0.5f);
@@ -718,7 +682,7 @@ index 3a837d0..cb47b51 100644
                  glm::vec3 worldUp(0.0f, 1.0f, 0.0f);
                  glm::vec3 right = glm::cross(forward, worldUp);
                  if (glm::length2(right) < 1.0e-6f) {
-@@ -1290,7 +1782,6 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
+@@ -1290,7 +1718,6 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
                  glm::vec3 up = glm::cross(right, forward);
                  glm::quat hudOri = glm::quatLookAt(forward, up);
                  constexpr float aspectRatio = 16.0f / 9.0f;
@@ -726,24 +690,28 @@ index 3a837d0..cb47b51 100644
                  hudLayer.space = VRManager::instance().XR->GetStageSpace();
                  hudLayer.eyeVisibility = XR_EYE_VISIBILITY_BOTH;
                  hudLayer.subImage.swapchain = s_linux->hudSwapchain.handle;
-@@ -1301,7 +1792,8 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
+@@ -1301,7 +1728,11 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
                  };
                  hudLayer.pose.orientation = ToXR(hudOri);
                  hudLayer.pose.position = ToXR(hudPos);
 -                hudLayer.size = { aspectRatio * HUD_SIZE, 1.0f * HUD_SIZE };
 +                hudLayer.size = { aspectRatio * kHudSize, kHudSize };
-+                hudLayer.layerFlags = has3D ? XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT : 0;
++                // In the scope / Camera rune the 2D capture is the whole picture, so its quad is
++                // opaque; normal play keeps source alpha over the scene.
++                hudLayer.layerFlags = (has3D && !flatPresentation)
++                    ? XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT : 0;
                  hudLayerReady = true;
              }
              auto composeStop = std::chrono::high_resolution_clock::now();
-@@ -1452,8 +1944,42 @@ void RND_Renderer::EndFrame() {
+@@ -1452,8 +1883,100 @@ void RND_Renderer::EndFrame() {
      // Phase 7: just signal the timeline semaphore and update the latest content
      // state. The submit thread does all GPU copies + xrEndFrame at native
      // vsync rate, re-presenting copied content between Cemu pushes.
-+    // upstream renderer.cpp:283-288: the game's fade screens (the 2D capture's corner texel is
-+    // their colour and alpha) and the programmatic roomscale/snap-turn fade; the submit thread
-+    // applies max(game, custom) over the scene (shader.h:54-69).
-+    const bool gameFadeActive = CemuHooks::IsAnyFadeScreenVisible();
++    // upstream renderer.cpp:283-288: the game's fade screens and the programmatic
++    // roomscale/snap-turn fade; the submit thread ramps max(game, custom) over the scene. The
++    // game fade's on/off is decided here, once per Cemu frame, and bettervr.json's "fades": 0
++    // turns it off entirely.
++    const bool gameFadeActive = BetterVR_PS5_Fades() && CemuHooks::IsAnyFadeScreenVisible();
 +    const float roomscaleFade = CemuHooks::GetRoomscaleFadeAmount();
 +    const float snapTurnFade = GetSnapTurnFadeAmount();
 +    m_isFadeActive.store(gameFadeActive, std::memory_order_relaxed);
@@ -751,11 +719,68 @@ index 3a837d0..cb47b51 100644
 +    SetCustomFadeAmount(std::max(roomscaleFade, snapTurnFade));
      float fadeAmount = m_customFadeAmount.load(std::memory_order_relaxed);
 -    bool fadeActive = fadeAmount > 0.5f || m_isFadeActive.load(std::memory_order_relaxed);
-+    bool fadeActive = gameFadeActive;
 +    // Latched once at this frame's first 3D copy; both eyes and this frame's publish use it.
 +    const bool flatView = s_linux->frameFlatView;
 +    const bool blackBars = s_linux->frameBlackBars;
 +    const bool flatNow = flatView || blackBars;
++    // One line per game fade, rate-limited by the fade itself: a flicker shorter than ~0.1 s does
++    // not produce a line, so a toggling screen cannot flood the log. The line carries the largest
++    // applied fade and the HUD capture image/size; `changed` counts a different image or size
++    // appearing during the fade, so changed=0 in the next console log proves no alternation.
++    {
++        static const auto s_fadeClockEpoch = std::chrono::steady_clock::now();
++        static bool s_fadeWasActive = false;
++        static std::chrono::steady_clock::time_point s_fadeStart;
++        static int s_fadeFrames = 0;
++        static uint64_t s_fadeSeenHudSeq = 0;
++        static VkImage s_fadeHudImage = VK_NULL_HANDLE;
++        static uint32_t s_fadeHudWidth = 0;
++        static uint32_t s_fadeHudHeight = 0;
++        static int s_fadeHudChanges = 0;
++        static float s_fadeMaxApplied = 0.0f;
++        const auto now = std::chrono::steady_clock::now();
++        if (gameFadeActive && !s_fadeWasActive) {
++            s_fadeWasActive = true;
++            s_fadeStart = now;
++            s_fadeFrames = 0;
++            s_fadeSeenHudSeq = 0;
++            s_fadeHudImage = VK_NULL_HANDLE;
++            s_fadeHudWidth = 0;
++            s_fadeHudHeight = 0;
++            s_fadeHudChanges = 0;
++            s_fadeMaxApplied = s_linux->appliedFadeAmount.load(std::memory_order_relaxed);
++        }
++        if (gameFadeActive) {
++            ++s_fadeFrames;
++            s_fadeMaxApplied = std::max(s_fadeMaxApplied,
++                s_linux->appliedFadeAmount.load(std::memory_order_relaxed));
++            if (s_linux->hudSourceSeq != s_fadeSeenHudSeq) {
++                s_fadeSeenHudSeq = s_linux->hudSourceSeq;
++                if (s_fadeHudImage == VK_NULL_HANDLE) {
++                    s_fadeHudImage = s_linux->hudSourceImage;
++                    s_fadeHudWidth = s_linux->hudSourceWidth;
++                    s_fadeHudHeight = s_linux->hudSourceHeight;
++                } else if (s_fadeHudImage != s_linux->hudSourceImage
++                        || s_fadeHudWidth != s_linux->hudSourceWidth
++                        || s_fadeHudHeight != s_linux->hudSourceHeight) {
++                    ++s_fadeHudChanges;
++                    s_fadeHudImage = s_linux->hudSourceImage;
++                    s_fadeHudWidth = s_linux->hudSourceWidth;
++                    s_fadeHudHeight = s_linux->hudSourceHeight;
++                }
++            }
++        } else if (s_fadeWasActive) {
++            s_fadeWasActive = false;
++            if (s_fadeFrames >= 6) {
++                const double startS = std::chrono::duration<double>(s_fadeStart - s_fadeClockEpoch).count();
++                const double endS = std::chrono::duration<double>(now - s_fadeClockEpoch).count();
++                Log::print<INFO>(
++                    "[fade] game fade {:.1f}-{:.1f}s (first-frame clock): max applied {:.2f}, HUD capture idx 2 {}x{} image {}, changed {} time(s)",
++                    startS, endS, s_fadeMaxApplied,
++                    s_fadeHudWidth, s_fadeHudHeight, (void*)s_fadeHudImage, s_fadeHudChanges);
++            }
++        }
++    }
 +    {
 +        // what the feature is doing, once per change; the test request asks for these lines
 +        static bool s_lastFlatView = false;
@@ -780,7 +805,7 @@ index 3a837d0..cb47b51 100644
      std::optional<std::array<XrView, 2>> currentViews;
      XrTime currentViewsDisplayTime = 0;
      {
-@@ -1473,7 +1999,7 @@ void RND_Renderer::EndFrame() {
+@@ -1473,7 +1996,7 @@ void RND_Renderer::EndFrame() {
          && hasCompleted3DPair
          && pairDepthCopied(0)
          && pairDepthCopied(1);
@@ -789,14 +814,19 @@ index 3a837d0..cb47b51 100644
      bool hasHud = s_linux->hudCopied && s_linux->hudSwapchain.handle != XR_NULL_HANDLE && hasViews;
      if (has3DContent &&
          published3DPair.colorCopyAt[0].time_since_epoch().count() != 0 &&
-@@ -1527,9 +2053,15 @@ void RND_Renderer::EndFrame() {
+@@ -1524,12 +2047,20 @@ void RND_Renderer::EndFrame() {
+             auto publishedAt = std::chrono::high_resolution_clock::now();
+             {
+                 std::lock_guard<std::mutex> lock(s_linux->submit.latestMutex);
++                const bool hadFlatView = s_linux->submit.latest.flatView;
                  s_linux->submit.latest.intermediateReadyValue = signalValue;
                  s_linux->submit.latest.contentSeq++;
                  s_linux->submit.latest.publishedAt = publishedAt;
-+                // Fade state changes with this content, never before it: the submit thread can
-+                // only draw the fade from the texel (0,0) of the 2D capture published here.
-+                s_linux->submit.latest.fadeActive = fadeActive;
++                // Fade state changes with this content, never before it, and the submit thread
++                // ramps it at the presentation rate.
++                s_linux->submit.latest.gameFadeActive = gameFadeActive;
 +                s_linux->submit.latest.customFadeAmount = fadeAmount;
++                s_linux->submit.latest.flatView = flatView;
 +                s_linux->submit.latest.pairFresh = has3DContent;
                  if (has3DContent) {
                      s_linux->submit.latest.has3D = true;
@@ -805,11 +835,11 @@ index 3a837d0..cb47b51 100644
                      s_linux->submit.latest.readBufferIdx_3D[0] = published3DPair.bufferIdx[0];
                      s_linux->submit.latest.readBufferIdx_3D[1] = published3DPair.bufferIdx[1];
                      s_linux->submit.latest.renderViews = published3DPair.hasRenderViews
-@@ -1543,14 +2075,18 @@ void RND_Renderer::EndFrame() {
+@@ -1543,14 +2074,18 @@ void RND_Renderer::EndFrame() {
                      s_linux->submit.latest.eyeCopied[1] = published3DPair.eyeCopied[1];
                      s_linux->submit.latest.depthCopied[0] = pairDepthCopied(0);
                      s_linux->submit.latest.depthCopied[1] = pairDepthCopied(1);
-+                } else if (s_linux->submit.latest.flatWindow || flatNow) {
++                } else if (s_linux->submit.latest.flatWindow || hadFlatView || flatNow) {
 +                    // upstream renderer.cpp:54-66: a flat frame is never reused when the next
 +                    // frame only publishes 2D/HUD content, so the window cannot outlive the scope.
 +                    s_linux->submit.latest.has3D = false;
@@ -826,7 +856,34 @@ index 3a837d0..cb47b51 100644
              }
              s_linux->stats.cemuPublishes.fetch_add(1, std::memory_order_relaxed);
              if (has3DContent) s_linux->stats.cemuPublishes3D.fetch_add(1, std::memory_order_relaxed);
-@@ -1872,13 +2408,68 @@ void RND_Renderer::LinuxCopyColorToSwapchain(OpenXR::EyeSide side, VkCommandBuff
+@@ -1747,7 +2282,9 @@ void RND_Renderer::LinuxHandleColorClear(OpenXR::EyeSide side, long captureIdx,
+                 // from the image, so a Graphics pack that renders at the eye's shape was projected as
+                 // 16:9. A refused target (the log line below) can have another size: it must not set it.
+                 m_gameRenderAspectRatio = (float)srcWidth / (float)srcHeight;
+-                hudCapturedThisFrame = false;
++                // The HUD-once flag is reset only at QueuePresentKHR (framebuffer.cpp), i.e. once
++                // per presented game frame; a 3D clear must not reopen the window between the
++                // two captureIdx==2 images.
+                 // Apply pause transitions only at a left-eye boundary. The menu state
+                 // often flips between the left and right clears; resetting there strands
+                 // the right eye as an orphan and perturbs the next gameplay pair.
+@@ -1782,9 +2319,12 @@ void RND_Renderer::LinuxHandleColorClear(OpenXR::EyeSide side, long captureIdx,
+             pDispatch.CmdClearColorImage(commandBuffer, image, imageLayout, &clearColor, rangeCount, pRanges);
+             return;
+         } else if (captureIdx == 2) {
+-            // 2D HUD - capture first occurrence only per frame (captureIdx=2 fires on two
+-            // images; the second may overwrite valid HUD content).
+-            if (!hudCapturedThisFrame) {
++            // 2D HUD - the left eye's first capture per presented frame, as upstream does
++            // (framebuffer.cpp:262-290 accepts CaptureMask_Hud only on the left and
++            // TryAcceptCapture keeps the first). captureIdx==2 fires on two images per frame;
++            // accepting the right eye too, or reopening the window at a 3D clear, let the HUD
++            // quad switch between them.
++            if (side == OpenXR::EyeSide::LEFT && !hudCapturedThisFrame) {
+                 LinuxCopyHudToSwapchain(commandBuffer, image, srcWidth, srcHeight);
+                 hudCapturedThisFrame = true;
+             }
+@@ -1872,13 +2412,68 @@ void RND_Renderer::LinuxCopyColorToSwapchain(OpenXR::EyeSide side, VkCommandBuff
          }
      }
  
@@ -837,17 +894,17 @@ index 3a837d0..cb47b51 100644
 +        s_linux->frameFlatView = CemuHooks::UseFlatCameraPresentation();
 +        s_linux->frameBlackBars = CemuHooks::UseBlackBarsDuringEvents();
 +    }
-+    // upstream presents the flat camera (scope, Camera rune) and a cutscene's black-bar view on
-+    // the 2D quad: the capture centred at its own aspect inside a 16:9 window sized like the HUD
-+    // quad (renderer.cpp:38-66, vulkan_imgui.cpp:494-497). This path has no 2D
-+    // composite, so bake the same window into the eye image, black around it; both eyes then get
-+    // the same flat image.
-+    const bool flatImage = s_linux->frameFlatView || s_linux->frameBlackBars;
++    // A cutscene's black-bar view is baked into the eye image: the capture centred at its own
++    // aspect inside a 16:9 window sized like the HUD quad (renderer.cpp:38-66,
++    // vulkan_imgui.cpp:494-497), black around it, so both eyes get the same window. The scope /
++    // Camera rune is not baked any more: it has no scene to bake from, and SubmitThreadMain
++    // presents its 2D capture as the opaque quad, as upstream does.
++    const bool bakeBlackBars = s_linux->frameBlackBars;
 +    int32_t dstX0 = 0;
 +    int32_t dstY0 = 0;
 +    int32_t dstX1 = (int32_t)dstW;
 +    int32_t dstY1 = (int32_t)dstH;
-+    if (flatImage) {
++    if (bakeBlackBars) {
 +        const std::optional<XrFovf> fov = GetFOV(side);
 +        float tanV = fov.has_value()
 +            ? 0.5f * (std::tan(std::fabs(fov->angleUp)) + std::tan(std::fabs(fov->angleDown)))
@@ -897,15 +954,26 @@ index 3a837d0..cb47b51 100644
  
      dispatch->CmdBlitImage(cmdBuffer,
          srcImage, VK_IMAGE_LAYOUT_GENERAL,
-@@ -1965,6 +2556,7 @@ void RND_Renderer::LinuxCopyColorToSwapchain(OpenXR::EyeSide side, VkCommandBuff
+@@ -1965,6 +2560,7 @@ void RND_Renderer::LinuxCopyColorToSwapchain(OpenXR::EyeSide side, VkCommandBuff
          pair.Reset();
          pair.eyeCopied[0] = true;
          pair.bufferIdx[0] = wIdx;
-+        pair.flatWindow = flatImage;
++        pair.flatWindow = s_linux->frameBlackBars;
          pair.colorCopyAt[0] = captured.colorCopyAt[0];
          copyCurrentRenderSnapshotToPair(pair);
          if (s_linux->captureDiagnosticsEnabled) {
-@@ -2085,7 +2677,8 @@ void RND_Renderer::LinuxCopyHudToSwapchain(VkCommandBuffer cmdBuffer, VkImage sr
+@@ -2080,12 +2676,19 @@ void RND_Renderer::LinuxCopyHudToSwapchain(VkCommandBuffer cmdBuffer, VkImage sr
+     hudCopyCount++;
+     if (!s_linux) return;
+ 
++    // The game fade line reports what this quad actually carried while the fade ran.
++    s_linux->hudSourceImage = srcImage;
++    s_linux->hudSourceWidth = srcWidth;
++    s_linux->hudSourceHeight = srcHeight;
++    s_linux->hudSourceSeq++;
++
+     // Lazily create BOTH HUD intermediate buffers (double-buffered).
+     for (int b = 0; b < 2; b++) {
          if (!s_linux->intermediateHud[b]) {
              s_linux->intermediateHud[b] = new VulkanTexture(srcWidth, srcHeight,
                  VK_FORMAT_R8G8B8A8_SRGB,
