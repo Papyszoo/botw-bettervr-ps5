@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # BotW-BetterVR on PS5: publishes a console test build as a pre-release (docs/bettervr-ps5/PLAN.md).
-# The build is made in a cloud session, which can push but can neither create releases nor start a
+# The build is made in a remote session, which can push but can neither create releases nor start a
 # workflow by hand. The session pushes the build to a branch named staging/<tag>:
 #   release.env  TAG=<tag>, TARGET=<the full commit ID the build came from>, TITLE=<release title>
 #   notes.md     the release notes

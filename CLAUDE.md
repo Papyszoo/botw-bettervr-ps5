@@ -1,6 +1,6 @@
 # BotW-BetterVR on PS5 (PSVR2) — notes for Claude
 
-This repository is Patryk's **private fork of PS5-ECAM** (premohq/PS5-ECAM). Its goal is to run
+This repository is Patryk's **fork of PS5-ECAM** (premohq/PS5-ECAM). Its goal is to run
 Crementif's BotW-BetterVR (the Breath of the Wild VR mod for Cemu) inside PS5-ECAM's native Cemu
 on a jailbroken PS5, displayed on PlayStation VR2 through PS5XR, the OpenXR runtime from
 theghostonline's HLA-PSVR2/RE7-PSVR2 ports.
@@ -26,25 +26,22 @@ Read these before you plan anything:
 
 ## Hard rules
 
-- **Never claim a console or headset result Patryk did not report.** Nobody in a cloud session can
+- **Never claim a console or headset result Patryk did not report.** Nobody in a remote session can
   run anything on the PS5. Every build is "built, untested on console" until he says otherwise.
   When you need a result from the console, write a numbered **Test request** in `STATUS.md`. Say
   exactly what to install, what to do, and which log lines or numbers to send back.
 - **No game files, keys, firmware, or Sony SDK material** in the repo, in releases, or downloaded
   in a session. Patryk supplies his own dumped game on the console.
 - **The PSVR2 path is `third_party/hmd2/`,** from Patryk's photo-splat-vr, which he has tested on
-  his console. PS5XR (`third_party/ps5xr/`) is optional; cloud sessions can't download it, because
+  his console. PS5XR (`third_party/ps5xr/`) is optional; remote sessions can't download it, because
   theghostonline.dev is blocked.
-- **Commit and push often** to `main` (or a topic branch merged into `main`). Cloud sessions are
+- **Commit and push often** to `main` (or a topic branch merged into `main`). Remote sessions are
   reclaimed when idle, and anything unpushed is lost.
 
-## Working in a cloud session
+## Building and long sessions
 
-- **GitHub access:** call `add_repo` with owner `Papyszoo`, repo `botw-bettervr-ps5` and
-  `access: "push"` before cloning or pushing.
 - **Building:** follow `docs/BUILDING.md` (Ubuntu 24.04, clang-18/lld-18, `make deps`, `make build`,
-  `make release`). The session image is Ubuntu 24.04 with clang-18 already installed. Install
-  the remaining apt packages from that doc.
+  `make release`). Install the apt packages from that doc.
 - **Network:** git clones from GitHub and GitHub *release* downloads work.
   `github.com/<owner>/<repo>/archive/*.tar.gz` downloads are refused (HTTP 403), so clone instead.
   Other hosts are usually blocked. Don't retry a 403; report it.

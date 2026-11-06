@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# BotW VR: builds this branch on the runner a private repository gets (2 vCPU, 7 GB), with
+# BotW VR: builds this branch on a standard GitHub-hosted runner (2 vCPU, 7 GB), with
 # docs/BUILDING.md's packages and `make release`. It only builds: no release, tag or branch is made,
 # and no secret is used beyond the default token's read access. The push trigger is this branch
 # alone; workflow_dispatch starts working once this file is on the default branch.
