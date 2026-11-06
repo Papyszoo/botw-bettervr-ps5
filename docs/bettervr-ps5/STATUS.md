@@ -3,7 +3,7 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
-## 2026-11-06 (melee hits, flat view, inventory): the weapon guard resets each game frame; flat shows the scene, menus keep the last stereo pair (not built, not run)
+## 2026-11-06 (melee hits, flat view, inventory): the weapon guard resets each game frame; flat shows the scene, a menu's mono frame is shown once (not built, not run)
 
 **Not built, not run.** Two bugs, one cause each.
 
@@ -19,11 +19,12 @@ hand: before the fix it stopped at 2 for the session; after it must rise about o
 as an opaque quad, so the scope showed the HUD capture's cleared background (black). It now submits
 the mono/left 3D capture as the flat picture, with the HUD quad blended over it by its alpha, the
 way upstream composites its main background and HUD. A pause/inventory frame is a mono capture; it
-is no longer published as a stereo pair, so the last pair from normal play stays behind the menu
-(upstream's stable-3D reuse) and Link appears once. The flat log line names the quad's source:
+is published marked mono and the submit thread presents that one image to both eyes with the HUD
+over it, so Link appears once. A mono pair is never projected as stereo, and no stale stereo world
+is kept behind the menu. The flat log line names the quad's source:
 `Flat view on (scope=true, CameraFinder=false, quad=2000x2040 side=left)`. A switch line names the
-menu state: `Menu/mono presentation on (pause=yes, frozenFrame=no, projection=last stereo pair, HUD
-over it)` and `... off (...)`. `bettervr.json`'s `"flatScene":0` restores the old HUD-only flat quad
+menu state: `Menu/mono presentation on (pause=yes, frozenFrame=no, projection=mono capture, both
+eyes)` and `... off (...)`. `bettervr.json`'s `"flatScene":0` restores the old HUD-only flat quad
 and the stereo menu; the session line names the value:
 `flat/menu presentation: ... (bettervr.json's flatScene, default on)`.
 
@@ -40,9 +41,8 @@ to `/data/ps5cemu/bettervr.json`, restart, and the old black HUD-only quad must 
 
 **Test request 24 (inventory).** Open the inventory/pause menu. Send the `Menu/mono presentation
 on (...)` line. Link must appear once, not once per eye, and the line must say
-`projection=last stereo pair, HUD over it` (or `projection=none, HUD over black` if the menu was
-opened before any stereo pair). Optional control: `"flatScene":0` should bring the doubled Link
-back.
+`projection=mono capture, both eyes` (or `projection=none, HUD over black` if no mono pair has
+completed yet). Optional control: `"flatScene":0` should bring the doubled Link back.
 
 The twenty BetterVR patches apply in order on pin `2e06b31` (20/20; 0019 and 0020 are new);
 `weapon.cpp`, `entity_controller.cpp`, `renderer_vulkan.cpp` and `port/bettervr/xr/runtime.cpp`

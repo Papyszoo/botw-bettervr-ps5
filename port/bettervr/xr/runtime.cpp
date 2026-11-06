@@ -1314,7 +1314,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateSession(XrInstance, const XrSessionCreate
 	Log("game comfort fades: %s (bettervr.json's fades%s)", fades ? "on, ramped over 0.2 s" : "off", fades ? ", default on" : "=0");
 	const bool flatScene = BetterVR_PS5_FlatScene();
 	Log("flat/menu presentation: %s (bettervr.json's flatScene%s)",
-		flatScene ? "the mono/left scene with the HUD over it, last stereo pair behind menus" : "upstream's HUD-only flat quad and stereo menu",
+		flatScene ? "the mono/left scene with the HUD over it, a menu's mono frame once" : "upstream's HUD-only flat quad and stereo menu",
 		flatScene ? ", default on" : "=0");
 	const bool poseFreeze = BetterVR_PS5_PoseFreeze();
 	Log("stereo pose freeze: %s (bettervr.json's poseFreeze%s)",
