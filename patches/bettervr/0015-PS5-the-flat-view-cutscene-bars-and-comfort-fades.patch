@@ -37,8 +37,8 @@ One log line per feature on each switch: "Flat view on/off", "Cutscene black
 bars on/off", "Comfort fade on/off".
 ---
  src/hooking/camera.cpp            |  13 +-
- src/rendering/renderer_vulkan.cpp | 592 +++++++++++++++++++++++++++++-
- 2 files changed, 590 insertions(+), 15 deletions(-)
+ src/rendering/renderer_vulkan.cpp | 623 +++++++++++++++++++++++++++++-
+ 2 files changed, 618 insertions(+), 18 deletions(-)
 
 diff --git a/src/hooking/camera.cpp b/src/hooking/camera.cpp
 index 047836d..574cd5c 100644
@@ -82,10 +82,10 @@ index 047836d..574cd5c 100644
      if (suppressCamera) {
          return;
 diff --git a/src/rendering/renderer_vulkan.cpp b/src/rendering/renderer_vulkan.cpp
-index 3a837d0..63edd06 100644
+index 3a837d0..cb47b51 100644
 --- a/src/rendering/renderer_vulkan.cpp
 +++ b/src/rendering/renderer_vulkan.cpp
-@@ -5,12 +5,36 @@
+@@ -5,12 +5,42 @@
  #include "instance.h"
  #include "rendering/linux_desktop_mirror.h"
  #include "utils/vulkan_utils.h"
@@ -119,10 +119,16 @@ index 3a837d0..63edd06 100644
 +    return (float)eased;
 +}
 +
++// Geometry of the head-locked 2D layer: the HUD quad in normal play and the flat window baked
++// into the eye image use the same distance and size, so the 2D UI lines up with the window
++// (upstream renderer.cpp:38-66 uses one size for both).
++static constexpr float kHudDistance = 2.0f;
++static constexpr float kHudSize = 1.0f;
++
  static bool LinuxEnvFlagEnabled(const char* name) {
      const char* value = std::getenv(name);
      if (value == nullptr || value[0] == '\0') return false;
-@@ -129,6 +153,7 @@ struct LinuxRenderState {
+@@ -129,6 +159,7 @@ struct LinuxRenderState {
          bool eyeCopied[2] = { false, false };
          int bufferIdx[2] = { -1, -1 };
          bool hasRenderViews = false;
@@ -130,7 +136,7 @@ index 3a837d0..63edd06 100644
          std::array<XrView, 2> renderViews = { XrView{ XR_TYPE_VIEW }, XrView{ XR_TYPE_VIEW } };
          XrTime renderDisplayTime = 0;
          std::array<std::chrono::high_resolution_clock::time_point, 2> colorCopyAt = {};
-@@ -139,6 +164,7 @@ struct LinuxRenderState {
+@@ -139,6 +170,7 @@ struct LinuxRenderState {
              bufferIdx[0] = -1;
              bufferIdx[1] = -1;
              hasRenderViews = false;
@@ -138,7 +144,7 @@ index 3a837d0..63edd06 100644
              renderViews = { XrView{ XR_TYPE_VIEW }, XrView{ XR_TYPE_VIEW } };
              renderDisplayTime = 0;
              colorCopyAt[0] = {};
-@@ -166,6 +192,10 @@ struct LinuxRenderState {
+@@ -166,6 +198,10 @@ struct LinuxRenderState {
      bool swapchainCreated = false;
      bool frameHasContent = false;
      bool hudCopied = false;
@@ -149,15 +155,17 @@ index 3a837d0..63edd06 100644
      bool disableDepthReprojection = false;
      bool frameTimingStatsEnabled = false;
      bool captureDiagnosticsEnabled = false;
-@@ -251,6 +281,7 @@ struct LinuxRenderState {
+@@ -251,6 +287,9 @@ struct LinuxRenderState {
              bool has3D = false;
              bool hasHud = false;
              bool hasDepth = false;
 +            bool flatWindow = false;
++            // The 3D pair was copied by this publish; false means the sticky pair is a reuse.
++            bool pairFresh = false;
              bool eyeCopied[2] = { false, false };
              bool depthCopied[2] = { false, false };
              bool hudCopied = false;
-@@ -430,6 +461,364 @@ struct LinuxRenderState {
+@@ -430,6 +469,375 @@ struct LinuxRenderState {
  
  static std::unique_ptr<LinuxRenderState> s_linux;
  
@@ -291,6 +299,8 @@ index 3a837d0..63edd06 100644
 +// Created on the submit thread the first time a fade is drawn. Any failure leaves the flag set
 +// and the fade is skipped, so a device that refuses the pipeline shows the scene and HUD as
 +// before instead of a wrong overlay.
++static void DestroyFadeOverlayPipeline();
++
 +static bool EnsureFadeOverlayPipeline() {
 +    if (s_fadeOverlay.ready) return true;
 +    if (s_fadeOverlay.failed) return false;
@@ -298,8 +308,17 @@ index 3a837d0..63edd06 100644
 +
 +    auto* dispatch = VRManager::instance().VK->GetDeviceDispatch();
 +    VkDevice device = VRManager::instance().VK->GetDevice();
++    VkShaderModule vertModule = VK_NULL_HANDLE;
++    VkShaderModule fragModule = VK_NULL_HANDLE;
 +    auto fail = [&](const char* what, VkResult result) {
 +        Log::print<ERROR>("Fade overlay: {} failed ({}); the fade stays off", what, (int)result);
++        // Release whatever this attempt created, including the shader modules that are not part
++        // of the struct, then remember the failure so no later frame retries.
++        if (vertModule != VK_NULL_HANDLE) dispatch->DestroyShaderModule(device, vertModule, nullptr);
++        if (fragModule != VK_NULL_HANDLE) dispatch->DestroyShaderModule(device, fragModule, nullptr);
++        vertModule = VK_NULL_HANDLE;
++        fragModule = VK_NULL_HANDLE;
++        DestroyFadeOverlayPipeline();
 +        s_fadeOverlay.failed = true;
 +        return false;
 +    };
@@ -341,8 +360,6 @@ index 3a837d0..63edd06 100644
 +    VkResult result = dispatch->CreateRenderPass(device, &renderPassInfo, nullptr, &s_fadeOverlay.renderPass);
 +    if (result != VK_SUCCESS) return fail("CreateRenderPass", result);
 +
-+    VkShaderModule vertModule = VK_NULL_HANDLE;
-+    VkShaderModule fragModule = VK_NULL_HANDLE;
 +    VkShaderModuleCreateInfo shaderInfo = { VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO };
 +    shaderInfo.codeSize = sizeof(k_fadeVertSpirv);
 +    shaderInfo.pCode = k_fadeVertSpirv;
@@ -497,7 +514,9 @@ index 3a837d0..63edd06 100644
 +}
 +
 +static void DestroyFadeOverlayPipeline() {
-+    if (s_fadeOverlay.ready && VRManager::instance().VK) {
++    // Runs on a partial pipeline after a failed create too, so it destroys every handle that
++    // exists rather than only a ready one.
++    if (VRManager::instance().VK) {
 +        auto* dispatch = VRManager::instance().VK->GetDeviceDispatch();
 +        VkDevice device = VRManager::instance().VK->GetDevice();
 +        if (dispatch && device) {
@@ -522,7 +541,7 @@ index 3a837d0..63edd06 100644
  static double LinuxDisplayTimeDeltaMs(XrTime value, XrTime reference) {
      if (value == 0 || reference == 0) return 0.0;
      return (double)(value - reference) / 1e6;
-@@ -525,6 +914,9 @@ void RND_Renderer::LinuxUpdateRuntimeFrameTiming(const XrFrameState& frameState,
+@@ -525,6 +933,9 @@ void RND_Renderer::LinuxUpdateRuntimeFrameTiming(const XrFrameState& frameState,
  RND_Renderer::RND_Renderer(XrSession xrSession): m_session(xrSession) {
      Log::print<INFO>("Linux RND_Renderer: Initializing...");
  
@@ -532,7 +551,7 @@ index 3a837d0..63edd06 100644
      s_linux = std::make_unique<LinuxRenderState>();
      s_linux->frameTimingStatsEnabled =
          LinuxEnvFlagEnabled("BETTERVR_LINUX_FRAME_STATS")
-@@ -581,7 +973,8 @@ RND_Renderer::RND_Renderer(XrSession xrSession): m_session(xrSession) {
+@@ -581,7 +992,8 @@ RND_Renderer::RND_Renderer(XrSession xrSession): m_session(xrSession) {
          for (int b = 0; b < 2; b++) {
              s_linux->intermediateColor[eye][b] = new VulkanTexture(w, h,
                  VK_FORMAT_R8G8B8A8_SRGB,
@@ -542,7 +561,18 @@ index 3a837d0..63edd06 100644
              s_linux->intermediateDepth[eye][b] = new VulkanTexture(w, h,
                  VK_FORMAT_D32_SFLOAT,
                  VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
-@@ -674,6 +1067,9 @@ void RND_Renderer::EndSession() {
+@@ -667,6 +1079,10 @@ void RND_Renderer::EndSession() {
+     if (m_session == XR_NULL_HANDLE) {
+         return;
+     }
++    // Destroy the fade pipeline while the intermediate views its framebuffers were built from
++    // still exist; the submit thread must be stopped first, as in the destructor.
++    if (s_linux) s_linux->StopSubmitThread();
++    DestroyFadeOverlayPipeline();
+     s_linux.reset();
+     if (XrResult result = xrEndSession(m_session); XR_FAILED(result)) {
+         Log::print<ERROR>("Failed to end OpenXR session (result {})!", (int)result);
+@@ -674,6 +1090,9 @@ void RND_Renderer::EndSession() {
  }
  
  RND_Renderer::~RND_Renderer() {
@@ -552,7 +582,7 @@ index 3a837d0..63edd06 100644
      s_linux.reset();
      if (m_session != XR_NULL_HANDLE) {
          xrEndSession(m_session);
-@@ -910,7 +1306,11 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
+@@ -910,7 +1329,11 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
          bool gateOk = latest.intermediateReadyValue > 0;
          bool has3D = gateOk && latest.has3D;
          bool hasHud = gateOk && latest.hasHud;
@@ -565,7 +595,7 @@ index 3a837d0..63edd06 100644
          bool hasAnyLayerContent = has3D || hasHud;
          bool copyNeeded = hasAnyLayerContent
              && latest.contentSeq != 0
-@@ -918,6 +1318,16 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
+@@ -918,6 +1341,19 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
          bool reuseContent = hasAnyLayerContent
              && latest.contentSeq != 0
              && latest.contentSeq == lastCopiedContentSeq;
@@ -574,7 +604,10 @@ index 3a837d0..63edd06 100644
 +        // The HUD quad keeps its normal content on top, as upstream draws the 2D layer.
 +        const bool fadeFrame = latest.fadeActive || latest.customFadeAmount > 0.01f;
 +        VulkanTexture* fadeTexture = nullptr;
-+        if (has3D && fadeFrame) {
++        // The fade pass writes the shared 3D intermediate in place, so only the publish that
++        // copies a fresh pair may apply it: a reused pair already carries its first fade and
++        // applying it again would darken the same image more than the game's fade.
++        if (has3D && fadeFrame && latest.pairFresh) {
 +            const int hudIdx = latest.readBufferIdx_hud;
 +            if (hudIdx >= 0 && hudIdx < 2) fadeTexture = s_linux->intermediateHud[hudIdx];
 +            if (fadeTexture != nullptr && !EnsureFadeOverlayPipeline()) fadeTexture = nullptr;
@@ -582,7 +615,7 @@ index 3a837d0..63edd06 100644
  
          if (copyNeeded) {
              s_linux->stats.submitFramesWithCopy.fetch_add(1, std::memory_order_relaxed);
-@@ -963,6 +1373,21 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
+@@ -963,6 +1399,21 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
              cbBegin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
              dispatch->BeginCommandBuffer(s_linux->copyCmdBuf, &cbBegin);
  
@@ -604,7 +637,7 @@ index 3a837d0..63edd06 100644
              auto recordColorCopy = [&](int eye) {
                  if (!latest.eyeCopied[eye]) return;
                  int readIdx = latest.readBufferIdx_3D[eye];
-@@ -972,6 +1397,40 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
+@@ -972,6 +1423,40 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
                  VkImage srcImg = srcTex->GetImage();
                  auto& sc = s_linux->colorSwapchains[eye];
                  VkImage dstImg = sc.images[sc.currentImageIdx];
@@ -645,7 +678,7 @@ index 3a837d0..63edd06 100644
                  VkImageMemoryBarrier bar = { VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER };
                  bar.srcAccessMask = 0;
                  bar.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-@@ -1041,6 +1500,11 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
+@@ -1041,6 +1526,11 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
                      if (hasDepth) recordDepthCopy(eye);
                  }
              }
@@ -657,7 +690,7 @@ index 3a837d0..63edd06 100644
              if (hasHud && s_linux->intermediateHud[latest.readBufferIdx_hud]) {
                  VkImage hudSrc = s_linux->intermediateHud[latest.readBufferIdx_hud]->GetImage();
                  auto& hudSc = s_linux->hudSwapchain;
-@@ -1077,7 +1541,9 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
+@@ -1077,7 +1567,9 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
              VkTimelineSemaphoreSubmitInfo waitTimeline = { VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO };
              waitTimeline.waitSemaphoreValueCount = 1;
              waitTimeline.pWaitSemaphoreValues = &latest.intermediateReadyValue;
@@ -668,16 +701,24 @@ index 3a837d0..63edd06 100644
              VkSubmitInfo subInfo = { VK_STRUCTURE_TYPE_SUBMIT_INFO };
              subInfo.pNext = &waitTimeline;
              subInfo.waitSemaphoreCount = 1;
-@@ -1273,6 +1739,8 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
+@@ -1273,13 +1765,13 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
              if (haveSubmitViews && hasHud) {
                  glm::vec3 headPos = (ToGLM(submitViews[0].pose.position) + ToGLM(submitViews[1].pose.position)) * 0.5f;
                  glm::quat headOri = glm::slerp(ToGLM(submitViews[0].pose.orientation), ToGLM(submitViews[1].pose.orientation), 0.5f);
-+                // Normal play keeps the HUD where it has always been; only the flat/cutscene window
-+                // takes its geometry from HudDistance/HudSize.
-                 constexpr float HUD_DISTANCE = 2.0f;
-                 constexpr float HUD_SIZE = 1.0f;
+-                constexpr float HUD_DISTANCE = 2.0f;
+-                constexpr float HUD_SIZE = 1.0f;
++                // Normal play keeps the HUD where it has always been; the flat/cutscene window
++                // bakes the same geometry into the eye image.
                  // Keep the HUD hard-locked to the latest submit pose. Smoothing
-@@ -1290,7 +1758,6 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
+                 // this orientation made the quad lag head rotation and produced
+                 // a single-frame jello/shear artifact in both HUD and 3D content.
+                 glm::vec3 forward = headOri * glm::vec3(0.0f, 0.0f, -1.0f);
+-                glm::vec3 hudPos = headPos + (HUD_DISTANCE * forward);
++                glm::vec3 hudPos = headPos + (kHudDistance * forward);
+                 glm::vec3 worldUp(0.0f, 1.0f, 0.0f);
+                 glm::vec3 right = glm::cross(forward, worldUp);
+                 if (glm::length2(right) < 1.0e-6f) {
+@@ -1290,7 +1782,6 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
                  glm::vec3 up = glm::cross(right, forward);
                  glm::quat hudOri = glm::quatLookAt(forward, up);
                  constexpr float aspectRatio = 16.0f / 9.0f;
@@ -685,17 +726,17 @@ index 3a837d0..63edd06 100644
                  hudLayer.space = VRManager::instance().XR->GetStageSpace();
                  hudLayer.eyeVisibility = XR_EYE_VISIBILITY_BOTH;
                  hudLayer.subImage.swapchain = s_linux->hudSwapchain.handle;
-@@ -1301,7 +1768,8 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
+@@ -1301,7 +1792,8 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
                  };
                  hudLayer.pose.orientation = ToXR(hudOri);
                  hudLayer.pose.position = ToXR(hudPos);
 -                hudLayer.size = { aspectRatio * HUD_SIZE, 1.0f * HUD_SIZE };
-+                hudLayer.size = { aspectRatio * HUD_SIZE, HUD_SIZE };
++                hudLayer.size = { aspectRatio * kHudSize, kHudSize };
 +                hudLayer.layerFlags = has3D ? XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT : 0;
                  hudLayerReady = true;
              }
              auto composeStop = std::chrono::high_resolution_clock::now();
-@@ -1452,8 +1920,42 @@ void RND_Renderer::EndFrame() {
+@@ -1452,8 +1944,42 @@ void RND_Renderer::EndFrame() {
      // Phase 7: just signal the timeline semaphore and update the latest content
      // state. The submit thread does all GPU copies + xrEndFrame at native
      // vsync rate, re-presenting copied content between Cemu pushes.
@@ -739,7 +780,7 @@ index 3a837d0..63edd06 100644
      std::optional<std::array<XrView, 2>> currentViews;
      XrTime currentViewsDisplayTime = 0;
      {
-@@ -1473,7 +1975,7 @@ void RND_Renderer::EndFrame() {
+@@ -1473,7 +1999,7 @@ void RND_Renderer::EndFrame() {
          && hasCompleted3DPair
          && pairDepthCopied(0)
          && pairDepthCopied(1);
@@ -748,7 +789,7 @@ index 3a837d0..63edd06 100644
      bool hasHud = s_linux->hudCopied && s_linux->hudSwapchain.handle != XR_NULL_HANDLE && hasViews;
      if (has3DContent &&
          published3DPair.colorCopyAt[0].time_since_epoch().count() != 0 &&
-@@ -1527,9 +2029,14 @@ void RND_Renderer::EndFrame() {
+@@ -1527,9 +2053,15 @@ void RND_Renderer::EndFrame() {
                  s_linux->submit.latest.intermediateReadyValue = signalValue;
                  s_linux->submit.latest.contentSeq++;
                  s_linux->submit.latest.publishedAt = publishedAt;
@@ -756,6 +797,7 @@ index 3a837d0..63edd06 100644
 +                // only draw the fade from the texel (0,0) of the 2D capture published here.
 +                s_linux->submit.latest.fadeActive = fadeActive;
 +                s_linux->submit.latest.customFadeAmount = fadeAmount;
++                s_linux->submit.latest.pairFresh = has3DContent;
                  if (has3DContent) {
                      s_linux->submit.latest.has3D = true;
                      s_linux->submit.latest.hasDepth = hasDepth;
@@ -763,7 +805,7 @@ index 3a837d0..63edd06 100644
                      s_linux->submit.latest.readBufferIdx_3D[0] = published3DPair.bufferIdx[0];
                      s_linux->submit.latest.readBufferIdx_3D[1] = published3DPair.bufferIdx[1];
                      s_linux->submit.latest.renderViews = published3DPair.hasRenderViews
-@@ -1543,14 +2050,18 @@ void RND_Renderer::EndFrame() {
+@@ -1543,14 +2075,18 @@ void RND_Renderer::EndFrame() {
                      s_linux->submit.latest.eyeCopied[1] = published3DPair.eyeCopied[1];
                      s_linux->submit.latest.depthCopied[0] = pairDepthCopied(0);
                      s_linux->submit.latest.depthCopied[1] = pairDepthCopied(1);
@@ -784,7 +826,7 @@ index 3a837d0..63edd06 100644
              }
              s_linux->stats.cemuPublishes.fetch_add(1, std::memory_order_relaxed);
              if (has3DContent) s_linux->stats.cemuPublishes3D.fetch_add(1, std::memory_order_relaxed);
-@@ -1872,13 +2383,68 @@ void RND_Renderer::LinuxCopyColorToSwapchain(OpenXR::EyeSide side, VkCommandBuff
+@@ -1872,13 +2408,68 @@ void RND_Renderer::LinuxCopyColorToSwapchain(OpenXR::EyeSide side, VkCommandBuff
          }
      }
  
@@ -796,8 +838,8 @@ index 3a837d0..63edd06 100644
 +        s_linux->frameBlackBars = CemuHooks::UseBlackBarsDuringEvents();
 +    }
 +    // upstream presents the flat camera (scope, Camera rune) and a cutscene's black-bar view on
-+    // the 2D quad: the capture centred at its own aspect inside a 16:9 window sized by
-+    // HudDistance/HudSize (renderer.cpp:38-66, vulkan_imgui.cpp:494-497). This path has no 2D
++    // the 2D quad: the capture centred at its own aspect inside a 16:9 window sized like the HUD
++    // quad (renderer.cpp:38-66, vulkan_imgui.cpp:494-497). This path has no 2D
 +    // composite, so bake the same window into the eye image, black around it; both eyes then get
 +    // the same flat image.
 +    const bool flatImage = s_linux->frameFlatView || s_linux->frameBlackBars;
@@ -806,8 +848,6 @@ index 3a837d0..63edd06 100644
 +    int32_t dstX1 = (int32_t)dstW;
 +    int32_t dstY1 = (int32_t)dstH;
 +    if (flatImage) {
-+        const float hudDistance = std::clamp((float)GetSettings().hudDistance, 0.5f, 2.5f);
-+        const float hudSize = std::clamp((float)GetSettings().hudSize, 0.4f, 1.75f);
 +        const std::optional<XrFovf> fov = GetFOV(side);
 +        float tanV = fov.has_value()
 +            ? 0.5f * (std::tan(std::fabs(fov->angleUp)) + std::tan(std::fabs(fov->angleDown)))
@@ -818,7 +858,9 @@ index 3a837d0..63edd06 100644
 +        if (!(tanV > 0.01f)) tanV = 1.0f;
 +        if (!(tanH > 0.01f)) tanH = 1.0f;
 +        const float aspect = srcWidth > 0 && srcHeight > 0 ? (float)srcWidth / (float)srcHeight : 16.0f / 9.0f;
-+        const float fracV = std::clamp(std::tan(std::atan(0.5f * hudSize / hudDistance)) / tanV, 0.05f, 1.0f);
++        // The HUD quad in normal play uses the same 2.0 m / 1.0 m, so the 2D UI lines up with
++        // the window's edge (upstream uses one size for both).
++        const float fracV = std::clamp(std::tan(std::atan(0.5f * kHudSize / kHudDistance)) / tanV, 0.05f, 1.0f);
 +        int32_t winH = (int32_t)std::lround((double)(fracV * (float)dstH));
 +        int32_t winW = (int32_t)std::lround((double)winH * aspect * ((float)dstW / (float)dstH) * (tanV / tanH));
 +        if (winW > (int32_t)dstW) {
@@ -855,7 +897,7 @@ index 3a837d0..63edd06 100644
  
      dispatch->CmdBlitImage(cmdBuffer,
          srcImage, VK_IMAGE_LAYOUT_GENERAL,
-@@ -1965,6 +2531,7 @@ void RND_Renderer::LinuxCopyColorToSwapchain(OpenXR::EyeSide side, VkCommandBuff
+@@ -1965,6 +2556,7 @@ void RND_Renderer::LinuxCopyColorToSwapchain(OpenXR::EyeSide side, VkCommandBuff
          pair.Reset();
          pair.eyeCopied[0] = true;
          pair.bufferIdx[0] = wIdx;
@@ -863,7 +905,7 @@ index 3a837d0..63edd06 100644
          pair.colorCopyAt[0] = captured.colorCopyAt[0];
          copyCurrentRenderSnapshotToPair(pair);
          if (s_linux->captureDiagnosticsEnabled) {
-@@ -2085,7 +2652,8 @@ void RND_Renderer::LinuxCopyHudToSwapchain(VkCommandBuffer cmdBuffer, VkImage sr
+@@ -2085,7 +2677,8 @@ void RND_Renderer::LinuxCopyHudToSwapchain(VkCommandBuffer cmdBuffer, VkImage sr
          if (!s_linux->intermediateHud[b]) {
              s_linux->intermediateHud[b] = new VulkanTexture(srcWidth, srcHeight,
                  VK_FORMAT_R8G8B8A8_SRGB,
