@@ -63,6 +63,10 @@ bool BetterVR_PS5_PlayerOnce();
 bool BetterVR_PS5_Fades();
 // BetterVR's flat/menu presentation (entity_controller.cpp): bettervr.json's flatScene, default on
 bool BetterVR_PS5_FlatScene();
+// BetterVR's menu pictures (entity_controller.cpp): bettervr.json's monoQuad, menuLock and quadPlane, default on
+bool BetterVR_PS5_MonoQuad();
+bool BetterVR_PS5_MenuLock();
+bool BetterVR_PS5_QuadPlane();
 // BetterVR's stereo pose freeze (entity_controller.cpp): bettervr.json's poseFreeze, default on
 bool BetterVR_PS5_PoseFreeze();
 // BetterVR's renderer (renderer_vulkan.cpp): the poseFreeze proof counters, per eye, and the
@@ -295,6 +299,7 @@ struct XrSession_T
 	uint64_t frames = 0, emptyFrames = 0, skipped = 0;
 	// frames whose render pose was found among the located views, and frames where it was not
 	uint64_t poseFound = 0, poseLost = 0;
+	uint64_t monoOnQuad = 0, planeQuads = 0; // frames whose mono picture rode the HUD quad, frames whose quad was drawn as a plane
 	// frames Hmd2's TV mirror took, and frames it was asked for but did not take
 	uint64_t tvShown = 0, tvSkipped = 0;
 };
@@ -379,6 +384,7 @@ namespace
 			bool vibrating = false, vibrationLogged = false, poseLogged = false;
 		} hands[2];
 		float gripPitch = 0, aimPitch = 0;
+		bool monoQuad = true, quadPlane = true; // bettervr.json's "monoQuad", "quadPlane": 0 is build15's picture across the eye, upright box quad
 		bool reproject = true; // bettervr.json's "reproject": 0 submits every frame as rendered from the display time's pose
 		bool tv = true; // bettervr.json's "tv": 0 keeps the TV dark while VR runs
 		XrTime syncTime = 0;
@@ -945,7 +951,7 @@ namespace
 		result = vk.vkCreateDescriptorSetLayout(session->device, &setInfo, nullptr, &session->setLayout);
 		if (result != VK_SUCCESS)
 			return Fail("vkCreateDescriptorSetLayout", result);
-		const VkPushConstantRange push{VK_SHADER_STAGE_COMPUTE_BIT, 0, 80};
+		const VkPushConstantRange push{VK_SHADER_STAGE_COMPUTE_BIT, 0, 120};
 		VkPipelineLayoutCreateInfo layoutInfo{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
 		layoutInfo.setLayoutCount = 1;
 		layoutInfo.pSetLayouts = &session->setLayout;
@@ -1077,6 +1083,51 @@ namespace
 		}
 		rect[0] = u0, rect[1] = v0, rect[2] = u1, rect[3] = v1;
 		return u1 > u0 && v1 > v0;
+	}
+
+	float Dot(const Vec3& a, const Vec3& b)
+	{
+		return a.x * b.x + a.y * b.y + a.z * b.z;
+	}
+
+	// The quad's bounding box as the compose shader's mapping (a box is a plane facing the eye).
+	void QuadFromRect(const float rect[4], float out[9])
+	{
+		const float w = rect[2] - rect[0], h = rect[3] - rect[1];
+		const float rows[9] = {1.0f / w, 0, -rect[0] / w, 0, 1.0f / h, -rect[1] / h, 0, 0, 1};
+		std::copy(rows, rows + 9, out);
+	}
+
+	// The quad as the plane it is, seen from one eye: eye UV (u, v) to quad UV by a homography, so
+	// a quad that is tilted, rolled or off-axis keeps its shape instead of the upright bounding
+	// box of QuadInEye. A pixel's ray is d = (tl + (tr-tl)u, tu + (td-tu)v, -1) in the eye; it hits
+	// the plane (normal n, through the centre C) at t = n.C / n.d, and the quad UV is
+	// h = 0.5 + (t d - C) . axis. Multiplying by n.d makes both numerators and the divisor linear
+	// in d, hence in (u, v, 1). False when the plane is edge-on or behind the eye.
+	bool QuadPlaneInEye(const XrCompositionLayerQuad& quad, const Pose& quadPose, const Pose& eye, const XrFovf& fov, float out[9])
+	{
+		const Pose toEye = Inverse(eye);
+		const Vec3 centre = Add(toEye.p, Rotate(toEye.q, quadPose.p));
+		const Quat q = Mul(toEye.q, quadPose.q);
+		Vec3 n = Rotate(q, Vec3{0, 0, 1});
+		float nc = Dot(n, centre);
+		if (nc < 0)
+			n = {-n.x, -n.y, -n.z}, nc = -nc;
+		if (!(nc > 1e-3f) || !(quad.size.width > 0) || !(quad.size.height > 0))
+			return false;
+		const Vec3 right = Rotate(q, Vec3{1.0f / quad.size.width, 0, 0}), down = Rotate(q, Vec3{0, -1.0f / quad.size.height, 0});
+		const float tl = Tan(fov.angleLeft), tr = Tan(fov.angleRight), tu = Tan(fov.angleUp), td = Tan(fov.angleDown);
+		const auto row = [&](const Vec3& v, float* r) {
+			r[0] = v.x * (tr - tl), r[1] = v.y * (td - tu), r[2] = v.x * tl + v.y * tu - v.z;
+		};
+		const auto numerator = [&](const Vec3& axis, float* r) {
+			const float ca = Dot(centre, axis);
+			row({0.5f * n.x + nc * axis.x - ca * n.x, 0.5f * n.y + nc * axis.y - ca * n.y, 0.5f * n.z + nc * axis.z - ca * n.z}, r);
+		};
+		numerator(right, out);
+		numerator(down, out + 3);
+		row(n, out + 6);
+		return true;
 	}
 
 	XrResult Lost()
@@ -1321,6 +1372,12 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateSession(XrInstance, const XrSessionCreate
 	Log("flat/menu presentation: %s (bettervr.json's flatScene%s)",
 		flatScene ? "the mono scene with the HUD over it, one picture in both eyes, a menu's mono frame once" : "upstream's HUD-only flat quad and stereo menu",
 		flatScene ? ", default on" : "=0");
+	s.monoQuad = BetterVR_PS5_MonoQuad();
+	s.quadPlane = BetterVR_PS5_QuadPlane();
+	const bool menuLock = BetterVR_PS5_MenuLock();
+	Log("menu/flat picture: %s (bettervr.json's monoQuad%s)", s.monoQuad ? "on the HUD quad, one 16:9 screen in both eyes" : "across each eye, as build15", s.monoQuad ? ", default on" : "=0");
+	Log("menus and popups: %s (bettervr.json's menuLock%s)", menuLock ? "fixed in the room while open, latched when they open" : "head-locked", menuLock ? ", default on" : "=0");
+	Log("HUD quad: %s (bettervr.json's quadPlane%s)", s.quadPlane ? "drawn as the plane it is, tilt and roll keep its shape" : "its upright bounding box", s.quadPlane ? ", default on" : "=0");
 	const bool leftSlot = BetterVR_PS5_LeftSlot();
 	Log("left eye's 3D slot: %s (bettervr.json's leftSlot%s)",
 		leftSlot ? "a third intermediate, clear of the published pair" : "the game's 0/1 slot, as before",
@@ -1708,7 +1765,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
 		uint32_t flags;
 		uint32_t pad;
 		float source[2][4];
-		float hudRect[2][4];
+		float quad[2][9]; // per eye, eye UV (u, v, 1) to quad UV: the numerators of x and y, then the divisor
 	} params{{(int32_t)kEyeWidth, (int32_t)kEyeHeight}, 0, 0, {}, {}};
 	VkImageView eyeViews[2] = {session->dummyView, session->dummyView};
 	VkImage eyeImages[2] = {};
@@ -1794,10 +1851,17 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
 		bool any = false;
 		for (int eye = 0; eye < 2; eye++)
 		{
-			if (!QuadInEye(*quad, quadPose, hudPoses[eye], hudFov[eye], params.hudRect[eye]))
-				params.hudRect[eye][0] = params.hudRect[eye][1] = 2.0f, params.hudRect[eye][2] = params.hudRect[eye][3] = 3.0f;
-			else
+			float rect[4];
+			const bool placed = s.quadPlane ? QuadPlaneInEye(*quad, quadPose, hudPoses[eye], hudFov[eye], params.quad[eye])
+											: QuadInEye(*quad, quadPose, hudPoses[eye], hudFov[eye], rect);
+			if (placed)
+			{
+				if (!s.quadPlane)
+					QuadFromRect(rect, params.quad[eye]);
 				any = true;
+			}
+			else
+				std::fill(params.quad[eye], params.quad[eye] + 9, 0.0f), params.quad[eye][8] = -1.0f; // a divisor below 0: nowhere
 		}
 		if (any)
 		{
@@ -1806,6 +1870,17 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
 			params.flags |= 4u;
 			if (quad->layerFlags & XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT)
 				params.flags |= 8u;
+			if (s.quadPlane)
+				session->planeQuads++;
+			// A mono menu/scope picture rides the HUD quad, as one 16:9 screen in both eyes, not
+			// across each eye: the compositor shows a view's pixels 1:1 whatever the view's FOV, and
+			// the two eyes' FOVs are mirrored, so across the eye the one picture fell ~1/3 of the
+			// eye apart (the doubled Link). Outside the quad is black.
+			if (monoViews && s.monoQuad && (params.flags & 1u))
+			{
+				params.flags |= 16u;
+				session->monoOnQuad++;
+			}
 		}
 	}
 	if ((params.flags & 7u) == 0)
@@ -1879,6 +1954,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
 			"leftPoseStale %llu rightPoseStale %llu poseAgeMax %.2f ms poseGuardClears %llu; "
 			"leftCopyOverwritten %llu rightCopyOverwritten %llu of %llu copies; "
 			"head %.2f %.2f %.2f, hand spaces left %.3f %.3f %.3f right %.3f %.3f %.3f, hands posed %d %d; "
+			"mono on quad %llu, plane quads %llu; "
 			"TV mirror %s, shown %llu skipped %llu",
 			(unsigned long long)session->frames, pace.nap_ms, pace.call_ms, pace.ahead_ms, pace.step_ms, (unsigned long long)flip.shown, flip.pending,
 			hmd2::repeated_frames(), hmd2::queue_full_waits(), hmd2::missed_frames(), hmd2::frame_errors(), (unsigned long long)session->emptyFrames,
@@ -1888,7 +1964,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
 			(unsigned long long)leftCopyOverwritten, (unsigned long long)rightCopyOverwritten, (unsigned long long)copies3D,
 			renderHead.p.x, renderHead.p.y, renderHead.p.z, s.handLocated[0].p.x, s.handLocated[0].p.y,
 			s.handLocated[0].p.z, s.handLocated[1].p.x, s.handLocated[1].p.y, s.handLocated[1].p.z, s.hands[0].poseValid ? 1 : 0,
-			s.hands[1].poseValid ? 1 : 0, s.tv ? "on" : "off", (unsigned long long)session->tvShown, (unsigned long long)session->tvSkipped);
+			s.hands[1].poseValid ? 1 : 0, (unsigned long long)session->monoOnQuad, (unsigned long long)session->planeQuads, s.tv ? "on" : "off", (unsigned long long)session->tvShown, (unsigned long long)session->tvSkipped);
 	}
 	return XR_SUCCESS;
 }

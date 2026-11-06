@@ -3,6 +3,36 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-07 (menus): the mono picture rides the HUD quad, menus stay fixed in the room, quads are planes (not built, not run)
+
+**Not built, not run.** Three switches in bettervr.json, all default 1; 0 gives the old behaviour.
+
+- **monoQuad (runtime.cpp, compose.comp).** The compositor copied the one mono image 1:1 into both
+  eyes, whose display FOVs are mirrored, so the right eye saw it about a third of the eye width to
+  the right: each eye its own Link. Now a mono projection is drawn on the HUD quad (the 16:9 screen,
+  the same in both eyes) with black around it, and the HUD blends over it.
+- **menuLock (patch 0023, renderer).** While a menu, popup (message dialog, shop) or flat view is
+  open, the HUD quad is latched in the stage in front of the head (2 m, pitch limited to 25 deg) and
+  stays; it follows the head again after 15 submit frames (~0.25 s) with no menu, so a flicker does
+  not re-latch. A black-bar cutscene window is baked into the eye image, so it is never locked.
+- **quadPlane (runtime.cpp, compose.comp).** The quad was drawn as the upright bounding box of its
+  corners, so head roll stretched it. Now a per-eye homography draws the real plane (needed for a
+  quad fixed in the room, seen off-axis).
+
+Logs: session lines `menu/flat picture:`, `menus and popups:`, `HUD quad:`; `Menu lock on/off` (yaw,
+position); the `Menu/mono presentation` line ends with `monoQuad=, menuLock=, quadPlane=`; the
+600-frame `[vr-xr]` line gains `mono on quad N, plane quads N`.
+
+**Test request 27 (build with patch 0023).**
+1. Open the inventory and keep it open 10+ s; look around and tilt your head. Is there one Link in
+   his frame, and does the menu stay put in the room, undistorted by the tilt?
+2. Trigger a popup (an item get, a message box) and look around while it is up. Does it stay put?
+3. Use the scope or binoculars: one picture under the reticle? (Locked in the room too; tell me if
+   that is wrong for the scope.)
+4. Send the `boot.log` lines `Menu lock`, `Menu/mono presentation` and `[vr-xr]` (the last 2).
+5. A/B: run with each of `"monoQuad":0`, `"menuLock":0`, `"quadPlane":0` in bettervr.json and say
+   what comes back.
+
 ## 2026-11-06 (inventory and scope HUD): a menu keeps its mono frame, the HUD keeps each eye's place (not built, not run)
 
 **Not built, not run.** Two symptoms, two causes. The inventory's Link was still doubled and its

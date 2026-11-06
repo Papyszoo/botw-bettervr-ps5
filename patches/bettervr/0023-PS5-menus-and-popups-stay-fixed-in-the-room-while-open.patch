@@ -1,0 +1,193 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Patryk Kowalczyk <papyszoo@gmail.com>
+Date: Sat, 7 Nov 2026 00:18:53 +0100
+Subject: [PATCH] PS5: menus and popups stay fixed in the room while open
+
+---
+ src/hooking/entity_controller.cpp | 22 ++++++++
+ src/rendering/renderer_vulkan.cpp | 83 ++++++++++++++++++++++++++++++-
+ 2 files changed, 103 insertions(+), 2 deletions(-)
+
+diff --git a/src/hooking/entity_controller.cpp b/src/hooking/entity_controller.cpp
+index d51f3d9..f0f2b98 100644
+--- a/src/hooking/entity_controller.cpp
++++ b/src/hooking/entity_controller.cpp
+@@ -694,6 +694,28 @@ extern "C" bool BetterVR_PS5_LeftSlot() {
+     return s_leftSlot;
+ }
+ 
++// PS5: bettervr.json's monoQuad (default on), cached once. On, a mono menu or scope picture is drawn
++// on the HUD quad (one 16:9 screen, the same in both eyes) with black around it; off copies it
++// across each eye as before. runtime.cpp reads it; the renderer and runtime log the same value.
++extern "C" bool BetterVR_PS5_MonoQuad() {
++    static const bool s_monoQuad = BetterVR_PS5_Setting("monoQuad", 1.0f) >= 0.5f;
++    return s_monoQuad;
++}
++
++// PS5: bettervr.json's menuLock (default on), cached once. On, the HUD quad is fixed in the room
++// while a menu, popup or flat view is open (latched when it opens); off keeps it head-locked.
++extern "C" bool BetterVR_PS5_MenuLock() {
++    static const bool s_menuLock = BetterVR_PS5_Setting("menuLock", 1.0f) >= 0.5f;
++    return s_menuLock;
++}
++
++// PS5: bettervr.json's quadPlane (default on), cached once. On, runtime.cpp draws the HUD quad as the
++// plane it is (a tilted or rolled quad keeps its shape); off draws its upright bounding box.
++extern "C" bool BetterVR_PS5_QuadPlane() {
++    static const bool s_quadPlane = BetterVR_PS5_Setting("quadPlane", 1.0f) >= 0.5f;
++    return s_quadPlane;
++}
++
+ // PS5: bettervr.json's eyeSource (default 0 = normal), cached once. Diagnostic only: 1 shows the
+ // right eye's image to both eyes, 2 the left eye's, with that eye's pose. The renderer reads this.
+ extern "C" int BetterVR_PS5_EyeSource() {
+diff --git a/src/rendering/renderer_vulkan.cpp b/src/rendering/renderer_vulkan.cpp
+index a8d5dbc..a733760 100644
+--- a/src/rendering/renderer_vulkan.cpp
++++ b/src/rendering/renderer_vulkan.cpp
+@@ -40,6 +40,11 @@ static float GetSnapTurnFadeAmount() {
+ // lines up with the window (upstream renderer.cpp:38-66 uses one size for both).
+ static constexpr float kHudDistance = 2.0f;
+ static constexpr float kHudSize = 1.0f;
++// menuLock: submit frames the menu must stay closed before the HUD quad follows the head again.
++static constexpr uint32_t kMenuLockReleaseFrames = 15;
++// menuLock: the latched quad's pitch is limited so a menu opened while looking at the floor or the
++// sky still appears in front of the user (sin of 25 degrees).
++static constexpr float kMenuLockMaxPitchSin = 0.42f;
+ 
+ // PS5: bettervr.json's fades switch (default on), read once in entity_controller.cpp.
+ extern "C" bool BetterVR_PS5_Fades();
+@@ -51,6 +56,10 @@ extern "C" bool BetterVR_PS5_LeftSlot();
+ extern "C" int BetterVR_PS5_EyeSource();
+ // PS5: bettervr.json's poseFreeze switch (default on), read once in entity_controller.cpp.
+ extern "C" bool BetterVR_PS5_PoseFreeze();
++// PS5: bettervr.json's menuLock, monoQuad and quadPlane switches (default on), read once in entity_controller.cpp.
++extern "C" bool BetterVR_PS5_MenuLock();
++extern "C" bool BetterVR_PS5_MonoQuad();
++extern "C" bool BetterVR_PS5_QuadPlane();
+ 
+ // The combined comfort fade may move by at most one step per presented frame, so even a fade
+ // screen that appears and disappears every frame cannot strobe: a full swing takes 12 frames
+@@ -388,6 +397,9 @@ struct LinuxRenderState {
+             // behind it. Both eyes sample the left image with the same pose (one picture); the
+             // runtime places the HUD quad with the real per-eye poses (runtime.cpp QuadInEye).
+             bool pairMono = false;
++            // A message dialog or the shop screen is open (read on the Cemu thread at publish: the
++            // submit thread must not read guest memory), for the menuLock latch.
++            bool menuScreen = false;
+             bool eyeCopied[2] = { false, false };
+             bool depthCopied[2] = { false, false };
+             bool hudCopied = false;
+@@ -1270,6 +1282,14 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
+ 
+     XrFrameState currentFrameState = { XR_TYPE_FRAME_STATE };
+     uint64_t lastCopiedContentSeq = 0;
++    // menuLock: the HUD quad's pose latched in the stage while a menu, popup or flat view is open.
++    // It is released only after the menu has been closed for kMenuLockReleaseFrames submit frames
++    // in a row (~0.25 s), so a menu state that flickers for a few frames does not re-latch.
++    bool menuLocked = false;
++    uint32_t menuClosedFrames = 0;
++    glm::vec3 menuLockPos(0.0f);
++    glm::quat menuLockOri(1.0f, 0.0f, 0.0f, 0.0f);
++    std::chrono::steady_clock::time_point menuLockLogged{};
+     // The combined comfort fade actually written into the eye image. It moves at most
+     // kFadeStepPerFrame each time it is applied, whatever the fade screens do.
+     float gameFadeApplied = 0.0f;
+@@ -1874,6 +1894,60 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
+                 right = glm::normalize(right);
+                 glm::vec3 up = glm::cross(right, forward);
+                 glm::quat hudOri = glm::quatLookAt(forward, up);
++                // menuLock (upstream renderer.cpp:892-904 locks the UI while PauseMenuInfo_00 is
++                // open; photo-splat-vr's PanelAnchor): while a menu, popup or flat view is up, the
++                // quad is world content, latched in front of the head when it opened and kept
++                // there. A head-locked image inside Hmd2's reprojected eye layer is pushed
++                // against the head's motion and swims. The black-bar window is baked into the
++                // eye image, so it stays head-locked and the quad with it.
++                const bool menuUp = !latest.flatWindow
++                    && (latest.pairMono || latest.flatView || latest.menuScreen);
++                if (BetterVR_PS5_MenuLock()) {
++                    bool released = false;
++                    if (menuUp) menuClosedFrames = 0;
++                    else if (menuLocked && ++menuClosedFrames >= kMenuLockReleaseFrames) menuLocked = false, released = true;
++                    const auto lockNow = std::chrono::steady_clock::now();
++                    const bool logOk = menuLockLogged.time_since_epoch().count() == 0
++                        || lockNow - menuLockLogged >= std::chrono::seconds(1);
++                    if (menuUp && !menuLocked) {
++                        // the gaze's heading with its pitch limited (looking straight up or down
++                        // heads along the head's up axis instead)
++                        glm::vec3 heading(forward.x, 0.0f, forward.z);
++                        if (glm::length2(heading) < 1.0e-4f) {
++                            const glm::vec3 headUp = headOri * glm::vec3(0.0f, 1.0f, 0.0f);
++                            heading = forward.y < 0.0f ? glm::vec3(headUp.x, 0.0f, headUp.z) : glm::vec3(-headUp.x, 0.0f, -headUp.z);
++                        }
++                        glm::vec3 level = forward;
++                        if (glm::length2(heading) > 1.0e-6f) {
++                            const float pitchSin = std::clamp(forward.y, -kMenuLockMaxPitchSin, kMenuLockMaxPitchSin);
++                            level = glm::normalize(heading) * std::sqrt(1.0f - pitchSin * pitchSin) + glm::vec3(0.0f, pitchSin, 0.0f);
++                        }
++                        glm::vec3 lockRight = glm::cross(level, glm::vec3(0.0f, 1.0f, 0.0f));
++                        if (glm::length2(lockRight) > 1.0e-6f) {
++                            lockRight = glm::normalize(lockRight);
++                            menuLockOri = glm::quatLookAt(level, glm::cross(lockRight, level));
++                            menuLockPos = headPos + (kHudDistance * level);
++                            menuLocked = true;
++                            if (logOk) {
++                                menuLockLogged = lockNow;
++                                Log::print<INFO>("Menu lock on: the HUD quad is fixed in the room at ({:.3f},{:.3f},{:.3f}), yaw {:.1f} deg, pitch {:.1f} deg (mono={}, flatView={}, flatWindow={})",
++                                    menuLockPos.x, menuLockPos.y, menuLockPos.z,
++                                    glm::degrees(std::atan2(-level.x, -level.z)), glm::degrees(std::asin(level.y)),
++                                    latest.pairMono ? "yes" : "no", latest.flatView ? "yes" : "no", latest.flatWindow ? "yes" : "no");
++                            }
++                        }
++                    }
++                    if (released && logOk) {
++                        menuLockLogged = lockNow;
++                        Log::print<INFO>("Menu lock off: the HUD quad follows the head again");
++                    }
++                    if (menuLocked) {
++                        hudPos = menuLockPos;
++                        hudOri = menuLockOri;
++                    }
++                } else {
++                    menuLocked = false;
++                }
+                 constexpr float aspectRatio = 16.0f / 9.0f;
+                 hudLayer.space = VRManager::instance().XR->GetStageSpace();
+                 hudLayer.eyeVisibility = XR_EYE_VISIBILITY_BOTH;
+@@ -2209,7 +2283,7 @@ void RND_Renderer::EndFrame() {
+                 anyPair = s_linux->submit.latest.has3D;
+             }
+             const bool hasPicture = freshPair || anyPair;
+-            Log::print<INFO>("Menu/mono presentation {} (pause={}, frozenFrame={}, flatCamera={}, flatView={}, inGame={}, projection={}, layer={})",
++            Log::print<INFO>("Menu/mono presentation {} (pause={}, frozenFrame={}, flatCamera={}, flatView={}, inGame={}, projection={}, layer={}, monoQuad={}, menuLock={}, quadPlane={})",
+                 monoNow ? "on" : "off",
+                 pauseState,
+                 frozenFrame ? "yes" : "no",
+@@ -2218,7 +2292,10 @@ void RND_Renderer::EndFrame() {
+                 inGame ? "yes" : "no",
+                 monoNow ? (hasPicture ? "mono capture, shared pose" : "none") : "stereo",
+                 monoNow ? (hasPicture ? "projection + HUD quad, head-locked" : "HUD quad, head-locked")
+-                        : "projection + HUD quad");
++                        : "projection + HUD quad",
++                BetterVR_PS5_MonoQuad() ? "on" : "off",
++                BetterVR_PS5_MenuLock() ? "on" : "off",
++                BetterVR_PS5_QuadPlane() ? "on" : "off");
+         }
+         const bool fadeOn = gameFadeActive || fadeAmount > 0.01f;
+         if (fadeOn != s_lastFade) {
+@@ -2302,6 +2379,7 @@ void RND_Renderer::EndFrame() {
+             // it. That is the menu shown once, not once per eye, and no stale stereo world.
+             const bool publish3D = has3DContent;
+             const bool monoPair = BetterVR_PS5_FlatScene() && (flatView || menuMono);
++            const bool menuScreenOpen = CemuHooks::IsScreenOpen(ScreenId::MessageDialog) || CemuHooks::IsScreenOpen(ScreenId::ShopBG_00);
+             {
+                 std::lock_guard<std::mutex> lock(s_linux->submit.latestMutex);
+                 const bool hadFlatView = s_linux->submit.latest.flatView;
+@@ -2313,6 +2391,7 @@ void RND_Renderer::EndFrame() {
+                 s_linux->submit.latest.gameFadeActive = gameFadeActive;
+                 s_linux->submit.latest.customFadeAmount = fadeAmount;
+                 s_linux->submit.latest.flatView = flatView;
++                s_linux->submit.latest.menuScreen = menuScreenOpen;
+                 s_linux->submit.latest.pairFresh = publish3D;
+                 if (publish3D) {
+                     s_linux->submit.latest.has3D = true;
