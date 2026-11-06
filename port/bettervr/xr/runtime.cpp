@@ -65,6 +65,8 @@ bool BetterVR_PS5_Fades();
 bool BetterVR_PS5_PoseFreeze();
 // BetterVR's renderer (renderer_vulkan.cpp): the poseFreeze proof counters, per eye
 void BetterVR_PS5_PoseProof(uint64_t* leftStale, uint64_t* rightStale, double* maxAgeMs);
+// BetterVR's stereo rays (entity_controller.cpp): bettervr.json's stereoRays, default on
+bool BetterVR_PS5_StereoRays();
 }
 
 #include <algorithm>
@@ -1310,6 +1312,8 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateSession(XrInstance, const XrSessionCreate
 	const bool poseFreeze = BetterVR_PS5_PoseFreeze();
 	Log("stereo pose freeze: %s (bettervr.json's poseFreeze%s)",
 		poseFreeze ? "on, one view pair for both eyes of a pair" : "off, the per-read latch", poseFreeze ? ", default on" : "=0");
+	const bool stereoRays = BetterVR_PS5_StereoRays();
+	Log("stereo god rays: %s (bettervr.json's stereoRays%s)", stereoRays ? "right-eye masked-light shadow recomputed" : "upstream's right-eye skip", stereoRays ? ", default on" : "=0");
 	if (!s.tv)
 		Log("TV mirror off (bettervr.json's tv): the TV stays dark while VR runs");
 	else if (hmd2::mirroring())

@@ -37,6 +37,38 @@ The seventeen BetterVR patches apply in order on pin `2e06b31` (17/17, tree iden
 patched tree); `camera.cpp`, `entity_controller.cpp`, `renderer_vulkan.cpp` and
 `port/bettervr/xr/runtime.cpp` pass `clang++ -std=c++23 -fsyntax-only -D__PROSPERO__` (0 errors,
 pre-existing warnings only). Not compiled for the console.
+## 2026-11-06 (stereo god rays): the right eye's volume mask gets its own masked-light shadow, behind `stereoRays` (not built, not run)
+
+**Not built, not run.** At the Graphics pack's Normal quality the volume mask (god rays) is drawn in
+both eyes, but the right-eye pass skipped `gsys::ModelSceneShadow::calcViewMaskedLightShadow`, so the
+right eye's mask was built from the left eye's masked-light shadow. `bettervr.json {"stereoRays":1}`
+(default) now runs that calc for side 1 too; `{"stereoRays":0}` keeps upstream's right-eye skip
+exactly. It is one calc per game frame, not extra draw calls and not a second shadow map.
+
+**`depthShadow_updateShadowMatrix` stays skipped even with `stereoRays:1`.** It fits the cascaded
+shadow-map projection to the camera, while the right eye still reuses the left eye's shadow map
+(`depthShadow_drawShadowMap` is still left-only); running it would apply a right-eye matrix to a map
+that was not redrawn, the mismatch the upstream comment at the top of the file warns about. The
+volume mask's per-eye input is the masked-light shadow that `calcViewMaskedLightShadow` rebuilds; if
+the right eye still shows a sun-shadow offset after this, the next A/B is the depth-shadow matrix (or
+redrawing the map), not this switch.
+
+The host caches `stereoRays` in `BetterVR_PS5_StereoRays()`, writes the guest `stereoRaysEnabled` flag
+once at the start of the first game frame, and the session-start line names the same value:
+`stereo god rays: right-eye masked-light shadow recomputed (bettervr.json's stereoRays, default on)`
+or `upstream's right-eye skip (bettervr.json's stereoRays=0)`.
+
+**Test request 20.** Set the Graphics quality preset to **Normal (Recommended)** and enter the shrine
+from logs12/13. Run once with `stereoRays` absent or `1`, then add `"stereoRays":0` to
+`/data/ps5cemu/bettervr.json` and run the same spot. Send the `stereo god rays:` line from both runs.
+With `1`, the rays/volume mask should sit in the same place in both eyes and the binocular flicker or
+soreness should be gone; with `0`, the previous one-eye behaviour must return. An outdoor sun-ray
+spot is a useful second look for new shadow acne; say which eye and where if anything is still off.
+
+The seventeen BetterVR patches apply in order on pin `2e06b31` (17/17); `entity_controller.cpp` and
+`port/bettervr/xr/runtime.cpp` pass `clang++ -std=c++23 -fsyntax-only -D__PROSPERO__` (0 errors,
+pre-existing warnings only), and the pack's address-materialization check is clean on all 32 asm
+files. Not compiled for the console.
 
 ## 2026-11-06 (melee swings): the hand velocity is always published, and `[weapon]` says what the analyser decides (not built, not run)
 
