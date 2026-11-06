@@ -13,10 +13,12 @@ layout(set = 0, binding = 2, std430) writeonly buffer Out { uint pixels[]; };
 
 layout(push_constant) uniform Params {
 	ivec2 eyeSize;   // one eye of the output, in pixels
-	uint flags;      // 1, 2: left, right eye has a projection view; 4: a HUD; 8: the HUD blends by its alpha
+	uint flags;      // 1, 2: left, right eye has a projection view; 4: a HUD; 8: the HUD blends by its alpha;
+	                 // 16: the mono picture (eye 0's view) rides the HUD quad, black outside it
 	uint pad;
 	vec4 source[2];  // each eye's image rect in its image, as UVs (u0, v0, u1, v1)
-	vec4 hudRect[2]; // where the HUD falls in each eye, in the eye's UVs (u0, v0, u1, v1)
+	float quad[2][9]; // where the HUD quad falls in each eye: eye UV (u, v, 1) dotted with rows 0-2, 3-5 and 6-8
+	                  // gives the quad UV's two numerators and the divisor (a homography); a divisor <= 0 is nowhere
 } p;
 
 vec3 toSrgb(vec3 c) {
@@ -31,18 +33,30 @@ void main() {
 	const int eye = at.x >= p.eyeSize.x ? 1 : 0;
 	const vec2 uv = (vec2(at.x - eye * p.eyeSize.x, at.y) + 0.5) / vec2(p.eyeSize);
 
+	// the quad UV of this pixel, or (-1) when the quad is not here
+	vec2 h = vec2(-1.0);
+	if ((p.flags & 4u) != 0u) {
+		const vec3 a = vec3(uv, 1.0);
+		const float den = dot(vec3(p.quad[eye][6], p.quad[eye][7], p.quad[eye][8]), a);
+		if (den > 1.0e-6)
+			h = vec2(dot(vec3(p.quad[eye][0], p.quad[eye][1], p.quad[eye][2]), a),
+				dot(vec3(p.quad[eye][3], p.quad[eye][4], p.quad[eye][5]), a)) / den;
+	}
+	const bool inQuad = all(greaterThanEqual(h, vec2(0.0))) && all(lessThan(h, vec2(1.0)));
+
 	vec4 color = vec4(0.0, 0.0, 0.0, 1.0);
-	if ((p.flags & (1u << eye)) != 0u) {
+	if ((p.flags & 16u) != 0u) {
+		if (inQuad) {
+			const vec4 s = p.source[0];
+			color = vec4(textureLod(eyeImage[0], mix(s.xy, s.zw, h), 0.0).rgb, 1.0);
+		}
+	} else if ((p.flags & (1u << eye)) != 0u) {
 		const vec4 s = p.source[eye];
 		color = vec4(textureLod(eyeImage[eye], mix(s.xy, s.zw, uv), 0.0).rgb, 1.0);
 	}
-	if ((p.flags & 4u) != 0u) {
-		const vec4 r = p.hudRect[eye];
-		const vec2 h = (uv - r.xy) / (r.zw - r.xy);
-		if (all(greaterThanEqual(h, vec2(0.0))) && all(lessThan(h, vec2(1.0)))) {
-			const vec4 c = textureLod(hud, h, 0.0);
-			color.rgb = (p.flags & 8u) != 0u ? mix(color.rgb, c.rgb, c.a) : c.rgb;
-		}
+	if (inQuad) {
+		const vec4 c = textureLod(hud, h, 0.0);
+		color.rgb = (p.flags & 8u) != 0u ? mix(color.rgb, c.rgb, c.a) : c.rgb;
 	}
 	const uvec4 b = uvec4(round(vec4(toSrgb(color.rgb), 1.0) * 255.0));
 	pixels[at.y * 2 * p.eyeSize.x + at.x] = b.r | (b.g << 8) | (b.b << 16) | (b.a << 24);
