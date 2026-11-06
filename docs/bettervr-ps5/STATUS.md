@@ -3,6 +3,36 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-06 (melee swings): the hand velocity is always published, and `[weapon]` says what the analyser decides (not built, not run)
+
+**Not built, not run.** The runtime's `xrLocateSpace` used to attach `XrSpaceVelocity` only when
+`ReadHands` had two poses within 1-200 ms; otherwise the struct kept `velocityFlags = 0`, which
+BetterVR accepted anyway because `openxr.cpp` tested the velocity bits in the **location** flag word
+(their values are `POSITION_VALID`/`ORIENTATION_VALID`, already required, so the test always
+passed). Every hand now keeps its last three poses; the locate publishes linear velocity from the
+position change and angular velocity from the quaternion delta, with `dt` from Hmd2's display
+timestamps, light smoothing over the two intervals, rotated into the locate call's base space, and
+both valid bits set whenever the pose is valid. BetterVR patch 0016 checks `velocityFlags` (and
+clears it before the locate), so a zero is no longer silently accepted as valid.
+
+**`[weapon]` (INFO, always on; `LogControls` can stay off).** At most one line a second, plus one line
+when the analyser locks a swing or lets a motion end without locking. The line has first person
+yes/no, the hand and whether the weapon is hand-bound, the weapon type, both hands' linear speed in
+m/s (current and the max over the last second), and the analyser's decision against the slash and
+stab gates.
+
+**Test request 19.** Install the build, draw a weapon in first person and swing at an enemy. Send the
+`[weapon]` lines around the swings. `speed L … R …` must be nonzero while the hand moves (a zero
+there is a real measured zero or no pose, never a hidden "velocity invalid"); the `analyser` field
+shows `slash`/`stab`/`none` and `active yes/no`, and the current values against the `gate` values
+show whether a swing misses on speed or acceleration. A `swing accepted` line means the analyser
+armed the hitbox; a `swing rejected` line means the motion ended without it.
+
+The sixteen BetterVR patches apply in order on pin `2e06b31` (16/16); `weapon.cpp`, `weapon.h` and
+`openxr.cpp` pass `clang++ -std=c++23 -fsyntax-only -D__PROSPERO__`, and
+`port/bettervr/xr/runtime.cpp` passes with its pre-existing `-Wreturn-type-c-linkage` warning
+(0 errors). Not compiled for the console.
+
 ## 2026-11-06 (VR presentation): the game fade is a ramp, the scope is its 2D capture (not built, not run)
 
 **Not built, not run.** Patch 0015 keeps upstream's flat view, cutscene bars and comfort fades, and

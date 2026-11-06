@@ -348,10 +348,19 @@ namespace
 			XrTime nextOpen = 0;
 			uint32_t buttons = 0, rawLogged = 0xffffffffu;
 			float stickX = 0, stickY = 0, trigger = 0;
-			bool poseValid = false, velocityValid = false;
+			bool poseValid = false;
+			// hmd2's controller_pose has no velocity: successive poses derive it. Three samples give
+			// the light two-interval average and dt comes from the pose timestamps, not the read times.
+			struct Sample
+			{
+				Pose pose;
+				XrTime time = 0;
+			};
+			static constexpr int kVelocitySamples = 3;
+			Sample samples[kVelocitySamples];
+			int sampleCount = 0, nextSample = 0;
 			Pose pose;
 			Vec3 linear, angular;
-			XrTime poseTime = 0;
 			XrTime hapticUntil = 0;
 			bool vibrating = false, vibrationLogged = false, poseLogged = false;
 		} hands[2];
@@ -382,6 +391,56 @@ namespace
 		event->state = state;
 		event->time = Now();
 		s.events.push_back(buffer);
+	}
+
+	// hmd2 reports the Sense pose (a position and orientation at a display time), not a velocity, so
+	// the hand's velocity is the change between successive samples: the linear part from the
+	// positions, the angular part from the quaternion delta, dt from the samples' own timestamps.
+	// At most three samples (two intervals) are averaged, and a span longer than 100 ms drops the
+	// oldest, so a hitch reads as the newest pair rather than as a very slow swing.
+	void SampleHand(State::Hand& hand, const Pose& pose, XrTime time)
+	{
+		const int newest = (hand.nextSample + State::Hand::kVelocitySamples - 1) % State::Hand::kVelocitySamples;
+		if (hand.sampleCount > 0 && time < hand.samples[newest].time)
+			return; // a stale timestamp: keep the newer samples
+		hand.pose = pose;
+		hand.poseValid = true;
+		if (hand.sampleCount > 0 && time == hand.samples[newest].time)
+			hand.samples[newest].pose = pose; // one predicted frame read twice: no new interval
+		else
+		{
+			hand.samples[hand.nextSample] = {pose, time};
+			hand.nextSample = (hand.nextSample + 1) % State::Hand::kVelocitySamples;
+			hand.sampleCount = std::min(hand.sampleCount + 1, State::Hand::kVelocitySamples);
+		}
+		hand.linear = {};
+		hand.angular = {};
+		if (hand.sampleCount < 2)
+			return;
+
+		int count = hand.sampleCount;
+		int oldest = (hand.nextSample + State::Hand::kVelocitySamples - count) % State::Hand::kVelocitySamples;
+		const int latest = (hand.nextSample + State::Hand::kVelocitySamples - 1) % State::Hand::kVelocitySamples;
+		while (count > 2 && hand.samples[latest].time - hand.samples[oldest].time > 100'000'000)
+		{
+			oldest = (oldest + 1) % State::Hand::kVelocitySamples;
+			count--;
+		}
+		const State::Hand::Sample& from = hand.samples[oldest];
+		const State::Hand::Sample& to = hand.samples[latest];
+		const double dt = (double)(to.time - from.time) / 1e9;
+		if (dt <= 0.001 || dt > 0.2)
+			return;
+		hand.linear = {(float)((to.pose.p.x - from.pose.p.x) / dt), (float)((to.pose.p.y - from.pose.p.y) / dt),
+			(float)((to.pose.p.z - from.pose.p.z) / dt)};
+		// the rotation from the oldest pose to the newest, as an axis times its angle per second
+		Quat d = Mul(to.pose.q, Conj(from.pose.q));
+		if (d.w < 0)
+			d = {-d.x, -d.y, -d.z, -d.w};
+		const float sinHalf = std::sqrt(d.x * d.x + d.y * d.y + d.z * d.z);
+		const float angle = 2.0f * std::atan2(sinHalf, d.w);
+		const float k = sinHalf > 1e-6f ? angle / sinHalf / (float)dt : 0.0f;
+		hand.angular = {d.x * k, d.y * k, d.z * k};
 	}
 
 	void QueueProfileChanged()
@@ -525,25 +584,9 @@ namespace
 			if (!posed)
 				continue;
 			const Pose pose{{quat[0], quat[1], quat[2], quat[3]}, {pos[0], pos[1], pos[2]}};
-			const double dt = hand.poseTime ? (double)(now - hand.poseTime) / 1e9 : 0.0;
-			hand.velocityValid = false;
-			if (dt > 0.001 && dt < 0.2)
-			{
-				hand.linear = {(float)((pose.p.x - hand.pose.p.x) / dt), (float)((pose.p.y - hand.pose.p.y) / dt),
-					(float)((pose.p.z - hand.pose.p.z) / dt)};
-				// the rotation from the last pose to this one, as an axis times its angle per second
-				Quat d = Mul(pose.q, Conj(hand.pose.q));
-				if (d.w < 0)
-					d = {-d.x, -d.y, -d.z, -d.w};
-				const float sinHalf = std::sqrt(d.x * d.x + d.y * d.y + d.z * d.z);
-				const float angle = 2.0f * std::atan2(sinHalf, d.w);
-				const float k = sinHalf > 1e-6f ? angle / sinHalf / (float)dt : 0.0f;
-				hand.angular = {d.x * k, d.y * k, d.z * k};
-				hand.velocityValid = true;
-			}
-			hand.pose = pose;
-			hand.poseTime = now;
-			hand.poseValid = true;
+			// controller_pose asks the tracker at Hmd2's display time, so that is the pose's timestamp
+			const uint64_t display = hmd2::display_time_us();
+			SampleHand(hand, pose, display != 0 ? (XrTime)display * 1000 : now);
 		}
 	}
 
@@ -1411,8 +1454,10 @@ XRAPI_ATTR XrResult XRAPI_CALL xrLocateSpace(XrSpace space, XrSpace base, XrTime
 		spacePose = Compose(Compose(hand->pose, tilt), space->offset);
 		const Pose toBase = Inverse(SpacePose(base, time));
 		for (auto* next = static_cast<XrBaseOutStructure*>(location->next); next; next = next->next)
-			if (next->type == XR_TYPE_SPACE_VELOCITY && hand->velocityValid)
+			if (next->type == XR_TYPE_SPACE_VELOCITY)
 			{
+				// the hand was found above, so its pose is valid: publish both parts even on the first
+				// sample (zero) or after a hitch, so a zero velocity never means "the flags were left off"
 				auto* velocity = reinterpret_cast<XrSpaceVelocity*>(next);
 				const Vec3 linear = Rotate(toBase.q, hand->linear), angular = Rotate(toBase.q, hand->angular);
 				velocity->linearVelocity = {linear.x, linear.y, linear.z};

@@ -1,0 +1,262 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Patryk Kowalczyk <papyszoo@gmail.com>
+Date: Fri, 6 Nov 2026 15:12:36 +0100
+Subject: [PATCH] PS5: the swing analyser sees hand velocity, and [weapon] says
+ what it decides
+
+openxr.cpp tested the XR_SPACE_VELOCITY_*_VALID_BITs in the location flag word:
+their values 1/2 are exactly POSITION_VALID/ORIENTATION_VALID, which the code
+already required above, so a zero XrSpaceVelocity was accepted as valid.  Check
+velocityFlags instead and clear it before the locate.
+
+The melee hook now prints [weapon] once a second (INFO, so LogControls can stay
+off) and on each swing the analyser accepts or rejects: first person, hand and
+weapon type, both hands' linear speed (current and the max over the last second),
+and the analyser's decision against the slash and stab thresholds.  A zero speed
+there is the runtime's velocity, not the hand being still.
+---
+ src/hooking/weapon.cpp   | 150 +++++++++++++++++++++++++++++++++++++--
+ src/hooking/weapon.h     |   2 +
+ src/rendering/openxr.cpp |   3 +-
+ 3 files changed, 149 insertions(+), 6 deletions(-)
+
+diff --git a/src/hooking/weapon.cpp b/src/hooking/weapon.cpp
+index e790c5b..fe16ea7 100644
+--- a/src/hooking/weapon.cpp
++++ b/src/hooking/weapon.cpp
+@@ -58,6 +58,136 @@ static bool IsSwingableWeaponType(WeaponType weaponType) {
+         || weaponType == WeaponType::Spear;
+ }
+ 
++// PS5: what the melee motion path decides, for the "swings never hit" report. LogControls is off by
++// default, so these are INFO lines (always on). The status line is at most one a second; a swing the
++// analyser locks or lets go gets its own line. Both read the per-hand speeds the analyser is fed (the
++// runtime's XrSpaceVelocity), so a zero there means the velocity was zero, not that the hand was still.
++namespace {
++    struct HandSpeedTracker {
++        static constexpr int kBuckets = 8; // 125 ms each: the maximum spans the last second
++        float current[2] = {};
++        float buckets[2][kBuckets] = {};
++        int bucket = 0;
++        std::chrono::steady_clock::time_point bucketStart = std::chrono::steady_clock::now();
++
++        void Update(const std::array<XrSpaceVelocity, 2>& velocities) {
++            const auto now = std::chrono::steady_clock::now();
++            if (now - bucketStart >= std::chrono::seconds(1)) {
++                for (auto& hand : buckets)
++                    for (float& value : hand)
++                        value = 0.0f;
++                bucket = 0;
++                bucketStart = now;
++            }
++            else {
++                while (now - bucketStart >= std::chrono::milliseconds(125)) {
++                    bucket = (bucket + 1) % kBuckets;
++                    for (auto& hand : buckets)
++                        hand[bucket] = 0.0f;
++                    bucketStart += std::chrono::milliseconds(125);
++                }
++            }
++            for (int hand = 0; hand < 2; hand++) {
++                current[hand] = glm::length(ToGLM(velocities[hand].linearVelocity));
++                buckets[hand][bucket] = std::max(buckets[hand][bucket], current[hand]);
++            }
++        }
++
++        float MaxLastSecond(int hand) const {
++            float max = 0.0f;
++            for (float value : buckets[hand])
++                max = std::max(max, value);
++            return max;
++        }
++    };
++    HandSpeedTracker s_handSpeeds;
++
++    const char* WeaponTypeName(WeaponType type) {
++        switch (type) {
++            case WeaponType::SmallSword: return "Small Sword";
++            case WeaponType::LargeSword: return "Large Sword";
++            case WeaponType::Spear: return "Spear";
++            case WeaponType::Bow: return "Bow";
++            case WeaponType::Shield: return "Shield";
++            default: return "Unknown";
++        }
++    }
++
++    const char* AttackTypeName(AttackType type) {
++        switch (type) {
++            case AttackType::Slash: return "slash";
++            case AttackType::Stab: return "stab";
++            default: return "none";
++        }
++    }
++
++    std::chrono::steady_clock::time_point s_weaponLastStatus = {};
++
++    struct SwingTrace {
++        bool candidate = false;
++        bool accepted = false;
++        bool attacking = false;
++        XrTime lastMotion = 0;
++    };
++    std::array<SwingTrace, 2> s_swingTraces = {};
++
++    void LogWeaponStatus(bool firstPerson, int motionIndex, bool weaponInHand, WeaponType weaponType) {
++        const auto now = std::chrono::steady_clock::now();
++        if (now - s_weaponLastStatus < std::chrono::seconds(1))
++            return;
++        s_weaponLastStatus = now;
++
++        const HandSpeedTracker& speed = s_handSpeeds;
++        const WeaponDebugSnapshot snapshot = motionIndex >= 0 ? CemuHooks::m_motionAnalyzers[motionIndex].GetDebugSnapshot() : WeaponDebugSnapshot{};
++        Log::print<INFO>("[weapon] first person {} | hand {} weapon in hand {} type {} | speed L {:.2f} (max {:.2f}) R {:.2f} (max {:.2f}) m/s | analyser {} active {} | slash {:.2f} (gate {:.2f}) rad/s accel {:.2f} (gate {:.2f}) | stab {:.2f} (gate {:.2f}) m/s accel {:.2f} (gate {:.2f})",
++            firstPerson ? "yes" : "no",
++            motionIndex < 0 ? "-" : (motionIndex == 0 ? "L" : "R"),
++            weaponInHand ? "yes" : "no",
++            WeaponTypeName(weaponType),
++            speed.current[0], speed.MaxLastSecond(0), speed.current[1], speed.MaxLastSecond(1),
++            AttackTypeName(snapshot.lockedAttackType), snapshot.attackActive ? "yes" : "no",
++            snapshot.slashAngularSpeed, snapshot.slashVelocityThreshold, snapshot.slashAngularAcceleration, snapshot.slashAccThreshold,
++            snapshot.forwardStabSpeed, snapshot.stabVelocityThreshold, snapshot.forwardStabAcceleration, snapshot.stabAccThreshold);
++    }
++
++    void LogWeaponSwing(const char* result, int motionIndex, WeaponType weaponType, const WeaponDebugSnapshot& snapshot) {
++        const HandSpeedTracker& speed = s_handSpeeds;
++        Log::print<INFO>("[weapon] swing {}: hand {} type {} power {:.2f} | speed L {:.2f} (max {:.2f}) R {:.2f} (max {:.2f}) m/s | slash {:.2f}/{:.2f} rad/s accel {:.2f}/{:.2f} | stab {:.2f}/{:.2f} m/s accel {:.2f}/{:.2f}",
++            result, motionIndex == 0 ? "L" : "R", WeaponTypeName(weaponType), snapshot.swingPower,
++            speed.current[0], speed.MaxLastSecond(0), speed.current[1], speed.MaxLastSecond(1),
++            snapshot.slashAngularSpeed, snapshot.slashVelocityThreshold, snapshot.slashAngularAcceleration, snapshot.slashAccThreshold,
++            snapshot.forwardStabSpeed, snapshot.stabVelocityThreshold, snapshot.forwardStabAcceleration, snapshot.stabAccThreshold);
++    }
++
++    void TraceWeaponSwing(int motionIndex, WeaponType weaponType, const WeaponDebugSnapshot& snapshot, XrTime inputTime) {
++        SwingTrace& trace = s_swingTraces[motionIndex];
++        // A swing starts when the hand actually moves or the analyser's gates open, and ends after a
++        // short quiet gap: a lock that never reached the travel gate is then a rejection.
++        const bool moving = snapshot.slashAngularSpeed > snapshot.slashSpeedThreshold
++            || snapshot.forwardStabSpeed > snapshot.stabVelocityThreshold
++            || snapshot.forwardStabAcceleration > snapshot.stabAccThreshold;
++        const bool gated = snapshot.goodSwingAccumTime > 0.0f || snapshot.goodStabAccumTime > 0.0f || snapshot.lockedAttackType != AttackType::None;
++        const bool motion = moving || gated || snapshot.attackActive;
++        if (motion) {
++            if (!trace.candidate) {
++                trace.candidate = true;
++                trace.accepted = false;
++            }
++            trace.lastMotion = inputTime;
++        }
++        if (snapshot.attackActive && !trace.attacking) {
++            trace.accepted = true;
++            LogWeaponSwing("accepted", motionIndex, weaponType, snapshot);
++        }
++        trace.attacking = snapshot.attackActive;
++        if (trace.candidate && !motion && inputTime - trace.lastMotion > 150'000'000) {
++            if (!trace.accepted)
++                LogWeaponSwing("rejected", motionIndex, weaponType, snapshot);
++            trace = {};
++        }
++    }
++}
++
+ static constexpr float SINGLE_HAND_DAMAGE_MULTIPLIER = 0.85f;
+ static constexpr float TWO_HAND_GRIP_DAMAGE_MULTIPLIER = 1.20f;
+ static constexpr float MULTI_HIT_DAMAGE_MULTIPLIER = 0.50f;
+@@ -405,8 +535,11 @@ void CemuHooks::hook_EnableWeaponAttackSensor(PPCInterpreter_t* hCPU) {
+ 
+     hCPU->instructionPointer = hCPU->sprNew.LR;
+ 
+-    if (GetSettings().GetCameraMode() == CameraMode::THIRD_PERSON)
++    if (GetSettings().GetCameraMode() == CameraMode::THIRD_PERSON) {
++        s_swingTraces = {};
++        LogWeaponStatus(false, -1, false, WeaponType::UnknownWeapon);
+         return;
++    }
+ 
+     uint32_t weaponPtr = hCPU->gpr[3];
+     uint32_t heldIndex = hCPU->gpr[5]; // this is either 0 or 1 depending on which hand the weapon is in
+@@ -417,9 +550,6 @@ void CemuHooks::hook_EnableWeaponAttackSensor(PPCInterpreter_t* hCPU) {
+     readMemory(weaponPtr, &weapon);
+ 
+     WeaponType weaponType = weapon.type.getLE();
+-    if (!IsSwingableWeaponType(weaponType)) {
+-        return;
+-    }
+ 
+     if (heldIndex >= m_motionAnalyzers.size()) {
+         Log::print<CONTROLS>("Invalid heldIndex: {}. Skipping motion analysis.", heldIndex);
+@@ -434,9 +564,19 @@ void CemuHooks::hook_EnableWeaponAttackSensor(PPCInterpreter_t* hCPU) {
+     // lose its swing detection for the frame.
+     bool isHandBoundWeapon = weaponPtr == m_heldWeapons[motionIndex];
+     auto& motionAnalyser = m_motionAnalyzers[motionIndex];
++
++    auto inputs = VRManager::instance().XR->m_input.load();
++    s_handSpeeds.Update(inputs.shared.poseVelocity);
++    LogWeaponStatus(true, (int)motionIndex, isHandBoundWeapon, weaponType);
++
++    if (!IsSwingableWeaponType(weaponType)) {
++        return;
++    }
++
+     const bool canUseWeaponMotion = isHandBoundWeapon && isHeldByPlayer;
+ 
+     if (!canUseWeaponMotion) {
++        s_swingTraces[motionIndex] = {};
+         if (m_heldWeapons[motionIndex] == 0 || isHandBoundWeapon) {
+             motionAnalyser.Reset();
+         }
+@@ -456,7 +596,6 @@ void CemuHooks::hook_EnableWeaponAttackSensor(PPCInterpreter_t* hCPU) {
+     }
+     currFrame.ranMotionAnalysis[heldIndex] = true;
+ 
+-    auto inputs = VRManager::instance().XR->m_input.load();
+     auto headset = VRManager::instance().XR->GetRenderer()->GetMiddlePose();
+     if (!headset.has_value()) {
+         return;
+@@ -465,6 +604,7 @@ void CemuHooks::hook_EnableWeaponAttackSensor(PPCInterpreter_t* hCPU) {
+     motionAnalyser.ResetIfWeaponTypeChanged(weaponType);
+     motionAnalyser.ApplyProfile(GetSettings().GetSwingSensitivity());
+     motionAnalyser.Update(inputs.shared.poseLocation[motionIndex], inputs.shared.poseVelocity[motionIndex], headset.value(), inputs.shared.inputTime);
++    TraceWeaponSwing(motionIndex, weaponType, motionAnalyser.GetDebugSnapshot(), inputs.shared.inputTime);
+ 
+     const bool isTwoHandGrip = motionIndex == OpenXR::EyeSide::RIGHT && s_twoHandGripActive;
+ 
+diff --git a/src/hooking/weapon.h b/src/hooking/weapon.h
+index e37576f..2fdc45c 100644
+--- a/src/hooking/weapon.h
++++ b/src/hooking/weapon.h
+@@ -76,6 +76,7 @@ struct WeaponDebugSnapshot {
+ 
+     float forwardStabSpeed = 0.0f;
+     float stabSpeedThreshold = 0.0f;
++    float stabVelocityThreshold = 0.0f;
+     float forwardStabAcceleration = 0.0f;
+     float stabAccThreshold = 0.0f;
+     float stabDirectionAbsZ = 0.0f;
+@@ -661,6 +662,7 @@ inline WeaponDebugSnapshot WeaponMotionAnalyser::GetDebugSnapshot() const {
+ 
+     snapshot.forwardStabSpeed = -m_localLinVel.z;
+     snapshot.stabSpeedThreshold = m_profile.stabSpeedThreshold;
++    snapshot.stabVelocityThreshold = m_profile.stabVelocityThreshold;
+     snapshot.forwardStabAcceleration = -m_smoothedLinAccelSlow.z;
+     snapshot.stabAccThreshold = m_profile.stabAccThreshold;
+     snapshot.stabAngularXY = glm::length(glm::fvec3(m_localAngVel.x, m_localAngVel.y, 0.0f));
+diff --git a/src/rendering/openxr.cpp b/src/rendering/openxr.cpp
+index 148ab2d..8371325 100644
+--- a/src/rendering/openxr.cpp
++++ b/src/rendering/openxr.cpp
+@@ -612,13 +612,14 @@ std::optional<OpenXR::InputState> OpenXR::UpdateActions(XrTime predictedFrameTim
+                 spaceLocation.next = &spaceVelocity;
+                 outVelocity->linearVelocity = { 0.0f, 0.0f, 0.0f };
+                 outVelocity->angularVelocity = { 0.0f, 0.0f, 0.0f };
++                outVelocity->velocityFlags = 0;
+             }
+ 
+             checkXRResult(xrLocateSpace(handSpace, m_stageSpace, predictedFrameTime, &spaceLocation), "Failed to get location from controllers!");
+             if ((spaceLocation.locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT) != 0 && (spaceLocation.locationFlags & XR_SPACE_LOCATION_ORIENTATION_VALID_BIT) != 0) {
+                 outLocation = spaceLocation;
+ 
+-                if (outVelocity != nullptr && (spaceLocation.locationFlags & XR_SPACE_VELOCITY_LINEAR_VALID_BIT) != 0 && (spaceLocation.locationFlags & XR_SPACE_VELOCITY_ANGULAR_VALID_BIT) != 0) {
++                if (outVelocity != nullptr && (spaceVelocity.velocityFlags & XR_SPACE_VELOCITY_LINEAR_VALID_BIT) != 0 && (spaceVelocity.velocityFlags & XR_SPACE_VELOCITY_ANGULAR_VALID_BIT) != 0) {
+                     // rotate angular velocity to world space when it's using a buggy runtime
+                     auto mode = GetSettings().AngularVelocityFixer_GetMode();
+                     bool isUsingQuestRuntime = m_capabilities.isOculusLinkRuntime;
