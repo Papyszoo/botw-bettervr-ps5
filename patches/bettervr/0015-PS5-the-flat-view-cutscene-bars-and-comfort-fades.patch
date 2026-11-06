@@ -18,6 +18,11 @@ no longer baked from the 3D eye, which is black in this mode. A black-bar
 cutscene keeps the baked window (UseBlackBarsForCutscenes=1, default off).
 Both eyes get the same flat image, so there is no stereo.
 
+The flat view and the black bars are debounced: the renderer changes either
+state only after the raw condition has held its new value for 8 consecutive
+Cemu frames, so a fade screen that flickers in the scope cannot alternate the
+presentation at frame rate. The hook side is unchanged.
+
 Comfort fades: EndFrame reads IsAnyFadeScreenVisible(),
 GetRoomscaleFadeAmount() and the snap-turn times once per Cemu frame, as
 upstream does. The submit thread no longer samples the 2D/HUD capture: it ramps
@@ -39,8 +44,8 @@ show that it did not alternate.
 ---
  src/hooking/camera.cpp            |  13 +-
  src/hooking/entity_controller.cpp |   7 +
- src/rendering/renderer_vulkan.cpp | 645 +++++++++++++++++++++++++++++-
- 3 files changed, 641 insertions(+), 24 deletions(-)
+ src/rendering/renderer_vulkan.cpp | 665 +++++++++++++++++++++++++++++-
+ 3 files changed, 661 insertions(+), 24 deletions(-)
 
 diff --git a/src/hooking/camera.cpp b/src/hooking/camera.cpp
 index 047836d..574cd5c 100644
@@ -102,7 +107,7 @@ index b87afd4..aa0b2f7 100644
      // PS5 experiment: bettervr.json {"roomscale":0} turns the head-driven body movement off (read once). Default on.
      static const bool s_roomscaleOn = BetterVR_PS5_Setting("roomscale", 1.0f) >= 0.5f;
 diff --git a/src/rendering/renderer_vulkan.cpp b/src/rendering/renderer_vulkan.cpp
-index 3a837d0..d9e80a8 100644
+index 3a837d0..2d8606f 100644
 --- a/src/rendering/renderer_vulkan.cpp
 +++ b/src/rendering/renderer_vulkan.cpp
 @@ -5,12 +5,50 @@
@@ -172,7 +177,7 @@ index 3a837d0..d9e80a8 100644
              renderViews = { XrView{ XR_TYPE_VIEW }, XrView{ XR_TYPE_VIEW } };
              renderDisplayTime = 0;
              colorCopyAt[0] = {};
-@@ -166,6 +206,19 @@ struct LinuxRenderState {
+@@ -166,6 +206,37 @@ struct LinuxRenderState {
      bool swapchainCreated = false;
      bool frameHasContent = false;
      bool hudCopied = false;
@@ -185,6 +190,24 @@ index 3a837d0..d9e80a8 100644
 +    // The combined comfort fade the submit thread last wrote into the eye image. The Cemu thread
 +    // only reads it for the fade line.
 +    std::atomic<float> appliedFadeAmount{0.0f};
++    // A presentation switch (flat view, cutscene bars) must not follow a per-frame flicker of the
++    // fade-screen flag: it changes only after the raw condition has held its new value for 8
++    // consecutive Cemu frames. Entering and leaving are both debounced.
++    struct DebouncedSwitch {
++        bool value = false;
++        int held = 0;
++        bool Update(bool raw) {
++            if (raw == value) {
++                held = 0;
++            } else if (++held >= 8) {
++                value = raw;
++                held = 0;
++            }
++            return value;
++        }
++    };
++    DebouncedSwitch flatViewSwitch;
++    DebouncedSwitch blackBarsSwitch;
 +    // Latched once at the first 3D color copy of a game frame, so both eyes and EndFrame use one
 +    // value (upstream renderer.cpp:309-317 evaluates these once per frame).
 +    bool frameFlatView = false;
@@ -192,7 +215,7 @@ index 3a837d0..d9e80a8 100644
      bool disableDepthReprojection = false;
      bool frameTimingStatsEnabled = false;
      bool captureDiagnosticsEnabled = false;
-@@ -251,11 +304,19 @@ struct LinuxRenderState {
+@@ -251,11 +322,19 @@ struct LinuxRenderState {
              bool has3D = false;
              bool hasHud = false;
              bool hasDepth = false;
@@ -213,7 +236,7 @@ index 3a837d0..d9e80a8 100644
              uint64_t contentSeq = 0;
              std::chrono::high_resolution_clock::time_point publishedAt;
              std::array<XrView, 2> renderViews = { XrView{ XR_TYPE_VIEW }, XrView{ XR_TYPE_VIEW } };
-@@ -430,6 +491,296 @@ struct LinuxRenderState {
+@@ -430,6 +509,296 @@ struct LinuxRenderState {
  
  static std::unique_ptr<LinuxRenderState> s_linux;
  
@@ -510,7 +533,7 @@ index 3a837d0..d9e80a8 100644
  static double LinuxDisplayTimeDeltaMs(XrTime value, XrTime reference) {
      if (value == 0 || reference == 0) return 0.0;
      return (double)(value - reference) / 1e6;
-@@ -525,6 +876,9 @@ void RND_Renderer::LinuxUpdateRuntimeFrameTiming(const XrFrameState& frameState,
+@@ -525,6 +894,9 @@ void RND_Renderer::LinuxUpdateRuntimeFrameTiming(const XrFrameState& frameState,
  RND_Renderer::RND_Renderer(XrSession xrSession): m_session(xrSession) {
      Log::print<INFO>("Linux RND_Renderer: Initializing...");
  
@@ -520,7 +543,7 @@ index 3a837d0..d9e80a8 100644
      s_linux = std::make_unique<LinuxRenderState>();
      s_linux->frameTimingStatsEnabled =
          LinuxEnvFlagEnabled("BETTERVR_LINUX_FRAME_STATS")
-@@ -581,7 +935,8 @@ RND_Renderer::RND_Renderer(XrSession xrSession): m_session(xrSession) {
+@@ -581,7 +953,8 @@ RND_Renderer::RND_Renderer(XrSession xrSession): m_session(xrSession) {
          for (int b = 0; b < 2; b++) {
              s_linux->intermediateColor[eye][b] = new VulkanTexture(w, h,
                  VK_FORMAT_R8G8B8A8_SRGB,
@@ -530,7 +553,7 @@ index 3a837d0..d9e80a8 100644
              s_linux->intermediateDepth[eye][b] = new VulkanTexture(w, h,
                  VK_FORMAT_D32_SFLOAT,
                  VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
-@@ -667,6 +1022,10 @@ void RND_Renderer::EndSession() {
+@@ -667,6 +1040,10 @@ void RND_Renderer::EndSession() {
      if (m_session == XR_NULL_HANDLE) {
          return;
      }
@@ -541,7 +564,7 @@ index 3a837d0..d9e80a8 100644
      s_linux.reset();
      if (XrResult result = xrEndSession(m_session); XR_FAILED(result)) {
          Log::print<ERROR>("Failed to end OpenXR session (result {})!", (int)result);
-@@ -674,6 +1033,9 @@ void RND_Renderer::EndSession() {
+@@ -674,6 +1051,9 @@ void RND_Renderer::EndSession() {
  }
  
  RND_Renderer::~RND_Renderer() {
@@ -551,7 +574,7 @@ index 3a837d0..d9e80a8 100644
      s_linux.reset();
      if (m_session != XR_NULL_HANDLE) {
          xrEndSession(m_session);
-@@ -783,6 +1145,9 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
+@@ -783,6 +1163,9 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
  
      XrFrameState currentFrameState = { XR_TYPE_FRAME_STATE };
      uint64_t lastCopiedContentSeq = 0;
@@ -561,7 +584,7 @@ index 3a837d0..d9e80a8 100644
  
      // Wait + Begin + UpdateViews + UpdateActions. Used for bootstrap AND to
      // pace each subsequent iteration of the loop (xrWaitFrame blocks until
-@@ -910,7 +1275,12 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
+@@ -910,7 +1293,12 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
          bool gateOk = latest.intermediateReadyValue > 0;
          bool has3D = gateOk && latest.has3D;
          bool hasHud = gateOk && latest.hasHud;
@@ -575,7 +598,7 @@ index 3a837d0..d9e80a8 100644
          bool hasAnyLayerContent = has3D || hasHud;
          bool copyNeeded = hasAnyLayerContent
              && latest.contentSeq != 0
-@@ -918,6 +1288,28 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
+@@ -918,6 +1306,28 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
          bool reuseContent = hasAnyLayerContent
              && latest.contentSeq != 0
              && latest.contentSeq == lastCopiedContentSeq;
@@ -604,7 +627,7 @@ index 3a837d0..d9e80a8 100644
  
          if (copyNeeded) {
              s_linux->stats.submitFramesWithCopy.fetch_add(1, std::memory_order_relaxed);
-@@ -972,6 +1364,38 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
+@@ -972,6 +1382,38 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
                  VkImage srcImg = srcTex->GetImage();
                  auto& sc = s_linux->colorSwapchains[eye];
                  VkImage dstImg = sc.images[sc.currentImageIdx];
@@ -643,7 +666,7 @@ index 3a837d0..d9e80a8 100644
                  VkImageMemoryBarrier bar = { VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER };
                  bar.srcAccessMask = 0;
                  bar.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-@@ -1077,7 +1501,9 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
+@@ -1077,7 +1519,9 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
              VkTimelineSemaphoreSubmitInfo waitTimeline = { VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO };
              waitTimeline.waitSemaphoreValueCount = 1;
              waitTimeline.pWaitSemaphoreValues = &latest.intermediateReadyValue;
@@ -654,7 +677,7 @@ index 3a837d0..d9e80a8 100644
              VkSubmitInfo subInfo = { VK_STRUCTURE_TYPE_SUBMIT_INFO };
              subInfo.pNext = &waitTimeline;
              subInfo.waitSemaphoreCount = 1;
-@@ -1204,7 +1630,9 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
+@@ -1204,7 +1648,9 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
                      (double)(latest.renderDisplayTime - currentFrameState.predictedDisplayTime) / 1e6);
              }
  
@@ -665,7 +688,7 @@ index 3a837d0..d9e80a8 100644
                  const std::array<XrView, 2>* projectionRenderViews = &submitViews;
                  if (latest.hasRenderViews) {
                      projectionRenderViews = &latest.renderViews;
-@@ -1273,13 +1701,13 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
+@@ -1273,13 +1719,13 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
              if (haveSubmitViews && hasHud) {
                  glm::vec3 headPos = (ToGLM(submitViews[0].pose.position) + ToGLM(submitViews[1].pose.position)) * 0.5f;
                  glm::quat headOri = glm::slerp(ToGLM(submitViews[0].pose.orientation), ToGLM(submitViews[1].pose.orientation), 0.5f);
@@ -682,7 +705,7 @@ index 3a837d0..d9e80a8 100644
                  glm::vec3 worldUp(0.0f, 1.0f, 0.0f);
                  glm::vec3 right = glm::cross(forward, worldUp);
                  if (glm::length2(right) < 1.0e-6f) {
-@@ -1290,7 +1718,6 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
+@@ -1290,7 +1736,6 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
                  glm::vec3 up = glm::cross(right, forward);
                  glm::quat hudOri = glm::quatLookAt(forward, up);
                  constexpr float aspectRatio = 16.0f / 9.0f;
@@ -690,7 +713,7 @@ index 3a837d0..d9e80a8 100644
                  hudLayer.space = VRManager::instance().XR->GetStageSpace();
                  hudLayer.eyeVisibility = XR_EYE_VISIBILITY_BOTH;
                  hudLayer.subImage.swapchain = s_linux->hudSwapchain.handle;
-@@ -1301,7 +1728,11 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
+@@ -1301,7 +1746,11 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
                  };
                  hudLayer.pose.orientation = ToXR(hudOri);
                  hudLayer.pose.position = ToXR(hudPos);
@@ -703,7 +726,7 @@ index 3a837d0..d9e80a8 100644
                  hudLayerReady = true;
              }
              auto composeStop = std::chrono::high_resolution_clock::now();
-@@ -1452,8 +1883,100 @@ void RND_Renderer::EndFrame() {
+@@ -1452,8 +1901,100 @@ void RND_Renderer::EndFrame() {
      // Phase 7: just signal the timeline semaphore and update the latest content
      // state. The submit thread does all GPU copies + xrEndFrame at native
      // vsync rate, re-presenting copied content between Cemu pushes.
@@ -805,7 +828,7 @@ index 3a837d0..d9e80a8 100644
      std::optional<std::array<XrView, 2>> currentViews;
      XrTime currentViewsDisplayTime = 0;
      {
-@@ -1473,7 +1996,7 @@ void RND_Renderer::EndFrame() {
+@@ -1473,7 +2014,7 @@ void RND_Renderer::EndFrame() {
          && hasCompleted3DPair
          && pairDepthCopied(0)
          && pairDepthCopied(1);
@@ -814,7 +837,7 @@ index 3a837d0..d9e80a8 100644
      bool hasHud = s_linux->hudCopied && s_linux->hudSwapchain.handle != XR_NULL_HANDLE && hasViews;
      if (has3DContent &&
          published3DPair.colorCopyAt[0].time_since_epoch().count() != 0 &&
-@@ -1524,12 +2047,20 @@ void RND_Renderer::EndFrame() {
+@@ -1524,12 +2065,20 @@ void RND_Renderer::EndFrame() {
              auto publishedAt = std::chrono::high_resolution_clock::now();
              {
                  std::lock_guard<std::mutex> lock(s_linux->submit.latestMutex);
@@ -835,7 +858,7 @@ index 3a837d0..d9e80a8 100644
                      s_linux->submit.latest.readBufferIdx_3D[0] = published3DPair.bufferIdx[0];
                      s_linux->submit.latest.readBufferIdx_3D[1] = published3DPair.bufferIdx[1];
                      s_linux->submit.latest.renderViews = published3DPair.hasRenderViews
-@@ -1543,14 +2074,18 @@ void RND_Renderer::EndFrame() {
+@@ -1543,14 +2092,18 @@ void RND_Renderer::EndFrame() {
                      s_linux->submit.latest.eyeCopied[1] = published3DPair.eyeCopied[1];
                      s_linux->submit.latest.depthCopied[0] = pairDepthCopied(0);
                      s_linux->submit.latest.depthCopied[1] = pairDepthCopied(1);
@@ -856,7 +879,7 @@ index 3a837d0..d9e80a8 100644
              }
              s_linux->stats.cemuPublishes.fetch_add(1, std::memory_order_relaxed);
              if (has3DContent) s_linux->stats.cemuPublishes3D.fetch_add(1, std::memory_order_relaxed);
-@@ -1747,7 +2282,9 @@ void RND_Renderer::LinuxHandleColorClear(OpenXR::EyeSide side, long captureIdx,
+@@ -1747,7 +2300,9 @@ void RND_Renderer::LinuxHandleColorClear(OpenXR::EyeSide side, long captureIdx,
                  // from the image, so a Graphics pack that renders at the eye's shape was projected as
                  // 16:9. A refused target (the log line below) can have another size: it must not set it.
                  m_gameRenderAspectRatio = (float)srcWidth / (float)srcHeight;
@@ -867,7 +890,7 @@ index 3a837d0..d9e80a8 100644
                  // Apply pause transitions only at a left-eye boundary. The menu state
                  // often flips between the left and right clears; resetting there strands
                  // the right eye as an orphan and perturbs the next gameplay pair.
-@@ -1782,9 +2319,12 @@ void RND_Renderer::LinuxHandleColorClear(OpenXR::EyeSide side, long captureIdx,
+@@ -1782,9 +2337,12 @@ void RND_Renderer::LinuxHandleColorClear(OpenXR::EyeSide side, long captureIdx,
              pDispatch.CmdClearColorImage(commandBuffer, image, imageLayout, &clearColor, rangeCount, pRanges);
              return;
          } else if (captureIdx == 2) {
@@ -883,16 +906,18 @@ index 3a837d0..d9e80a8 100644
                  LinuxCopyHudToSwapchain(commandBuffer, image, srcWidth, srcHeight);
                  hudCapturedThisFrame = true;
              }
-@@ -1872,13 +2412,68 @@ void RND_Renderer::LinuxCopyColorToSwapchain(OpenXR::EyeSide side, VkCommandBuff
+@@ -1872,13 +2430,70 @@ void RND_Renderer::LinuxCopyColorToSwapchain(OpenXR::EyeSide side, VkCommandBuff
          }
      }
  
 +    // Read the flat/black-bar state once per game frame (on the left eye's copy) and use it for
-+    // both eyes, so a scope boundary between the two copies cannot window one eye only. EndFrame
-+    // reads the latched value for its log and publishes it with this pair.
++    // both eyes, so a scope boundary between the two copies cannot window one eye only. Both
++    // switches are debounced, so a fade screen that flickers in the scope cannot alternate the
++    // flat presentation (or the bars) at frame rate. EndFrame reads the latched value for its log
++    // and publishes it with this pair.
 +    if (sideIdx == 0) {
-+        s_linux->frameFlatView = CemuHooks::UseFlatCameraPresentation();
-+        s_linux->frameBlackBars = CemuHooks::UseBlackBarsDuringEvents();
++        s_linux->frameFlatView = s_linux->flatViewSwitch.Update(CemuHooks::UseFlatCameraPresentation());
++        s_linux->frameBlackBars = s_linux->blackBarsSwitch.Update(CemuHooks::UseBlackBarsDuringEvents());
 +    }
 +    // A cutscene's black-bar view is baked into the eye image: the capture centred at its own
 +    // aspect inside a 16:9 window sized like the HUD quad (renderer.cpp:38-66,
@@ -954,7 +979,7 @@ index 3a837d0..d9e80a8 100644
  
      dispatch->CmdBlitImage(cmdBuffer,
          srcImage, VK_IMAGE_LAYOUT_GENERAL,
-@@ -1965,6 +2560,7 @@ void RND_Renderer::LinuxCopyColorToSwapchain(OpenXR::EyeSide side, VkCommandBuff
+@@ -1965,6 +2580,7 @@ void RND_Renderer::LinuxCopyColorToSwapchain(OpenXR::EyeSide side, VkCommandBuff
          pair.Reset();
          pair.eyeCopied[0] = true;
          pair.bufferIdx[0] = wIdx;
@@ -962,7 +987,7 @@ index 3a837d0..d9e80a8 100644
          pair.colorCopyAt[0] = captured.colorCopyAt[0];
          copyCurrentRenderSnapshotToPair(pair);
          if (s_linux->captureDiagnosticsEnabled) {
-@@ -2080,12 +2676,19 @@ void RND_Renderer::LinuxCopyHudToSwapchain(VkCommandBuffer cmdBuffer, VkImage sr
+@@ -2080,12 +2696,19 @@ void RND_Renderer::LinuxCopyHudToSwapchain(VkCommandBuffer cmdBuffer, VkImage sr
      hudCopyCount++;
      if (!s_linux) return;
  
