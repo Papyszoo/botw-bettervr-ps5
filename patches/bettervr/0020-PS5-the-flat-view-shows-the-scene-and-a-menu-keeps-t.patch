@@ -1,0 +1,370 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Patryk Kowalczyk <papyszoo@gmail.com>
+Date: Fri, 6 Nov 2026 16:44:25 +0100
+Subject: [PATCH] PS5: the flat view shows the scene and a menu keeps the last
+ stereo pair
+
+---
+ src/hooking/entity_controller.cpp         |   9 ++
+ src/rendering/renderer_members_vulkan.inc |   2 +-
+ src/rendering/renderer_vulkan.cpp         | 138 ++++++++++++++++------
+ 3 files changed, 110 insertions(+), 39 deletions(-)
+
+diff --git a/src/hooking/entity_controller.cpp b/src/hooking/entity_controller.cpp
+index b83b98d..bad28c2 100644
+--- a/src/hooking/entity_controller.cpp
++++ b/src/hooking/entity_controller.cpp
+@@ -675,6 +675,15 @@ extern "C" bool BetterVR_PS5_Fades() {
+     return s_fades;
+ }
+ 
++// PS5: bettervr.json's flatScene (default on), cached once. On, the scope / Camera rune shows the
++// mono/left 3D scene with the HUD composited over it, and a menu keeps the last stereo pair instead
++// of projecting its mono capture; off is the old HUD-only flat quad and stereo menu. The renderer
++// reads this and runtime.cpp logs the same value.
++extern "C" bool BetterVR_PS5_FlatScene() {
++    static const bool s_flatScene = BetterVR_PS5_Setting("flatScene", 1.0f) >= 0.5f;
++    return s_flatScene;
++}
++
+ // PS5: bettervr.json's poseFreeze (default on), cached once. On, the left eye's BeginCameraSide
+ // promotes one view pair and both eyes of that pair render and copy it; off is the old per-read
+ // latch. The renderer reads this and runtime.cpp logs the same value.
+diff --git a/src/rendering/renderer_members_vulkan.inc b/src/rendering/renderer_members_vulkan.inc
+index 5f13b54..0700f21 100644
+--- a/src/rendering/renderer_members_vulkan.inc
++++ b/src/rendering/renderer_members_vulkan.inc
+@@ -11,7 +11,7 @@ void LinuxBeginStereoCaptureGeneration(long frameIdx);
+ // Cemu framebuffer capture entry points, driven by the clear hooks in framebuffer.cpp.
+ void LinuxCopyColorToSwapchain(OpenXR::EyeSide side, VkCommandBuffer cmdBuffer, VkImage srcImage, uint32_t srcWidth, uint32_t srcHeight, long frameIdx);
+ void LinuxCopyDepthToSwapchain(OpenXR::EyeSide side, VkCommandBuffer cmdBuffer, VkImage srcImage, uint32_t srcWidth, uint32_t srcHeight, long frameIdx);
+-void LinuxCopyHudToSwapchain(VkCommandBuffer cmdBuffer, VkImage srcImage, uint32_t srcWidth, uint32_t srcHeight);
++void LinuxCopyHudToSwapchain(OpenXR::EyeSide side, VkCommandBuffer cmdBuffer, VkImage srcImage, uint32_t srcWidth, uint32_t srcHeight);
+ void LinuxMarkInventoryPauseTransition(bool opened);
+ 
+ // Linux capture dispatch for the CmdClearColorImage hook (defined in renderer_vulkan.cpp);
+diff --git a/src/rendering/renderer_vulkan.cpp b/src/rendering/renderer_vulkan.cpp
+index e23e286..fc87cb5 100644
+--- a/src/rendering/renderer_vulkan.cpp
++++ b/src/rendering/renderer_vulkan.cpp
+@@ -43,6 +43,8 @@ static constexpr float kHudSize = 1.0f;
+ 
+ // PS5: bettervr.json's fades switch (default on), read once in entity_controller.cpp.
+ extern "C" bool BetterVR_PS5_Fades();
++// PS5: bettervr.json's flatScene switch (default on), read once in entity_controller.cpp.
++extern "C" bool BetterVR_PS5_FlatScene();
+ // PS5: bettervr.json's poseFreeze switch (default on), read once in entity_controller.cpp.
+ extern "C" bool BetterVR_PS5_PoseFreeze();
+ 
+@@ -220,6 +222,7 @@ struct LinuxRenderState {
+     VkImage hudSourceImage = VK_NULL_HANDLE;
+     uint32_t hudSourceWidth = 0;
+     uint32_t hudSourceHeight = 0;
++    int hudSourceSide = -1; // the eye whose 2D capture filled the HUD swapchain the quad samples
+     uint64_t hudSourceSeq = 0;
+     // The combined comfort fade the submit thread last wrote into the eye image. The Cemu thread
+     // only reads it for the fade line.
+@@ -345,11 +348,15 @@ struct LinuxRenderState {
+             // The 3D pair carries the black-bar window baked into the eye image (upstream's flat
+             // camera is a 2D quad instead, see flatView).
+             bool flatWindow = false;
+-            // The scope / Camera rune is active this frame. Upstream presents its 2D capture as
+-            // an opaque quad and no projection layer (renderer.cpp:38-66, IsCurrent3DPresentationAllowed).
++            // The scope / Camera rune is active this frame. Upstream refuses the stereo projection
++            // (renderer.cpp:38-52, IsCurrent3DPresentationAllowed); the flatScene path presents the
++            // mono/left 3D capture with the HUD over it, 0 the old opaque 2D quad.
+             bool flatView = false;
+             // The 3D pair was copied by this publish; false means the sticky pair is a reuse.
+             bool pairFresh = false;
++            // The published pair is a mono image (the flat camera). A menu after a flat frame must
++            // not project it as stereo; only a pair published from normal play is reused behind it.
++            bool pairMono = false;
+             bool eyeCopied[2] = { false, false };
+             bool depthCopied[2] = { false, false };
+             bool hudCopied = false;
+@@ -1330,9 +1337,10 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
+         bool gateOk = latest.intermediateReadyValue > 0;
+         bool has3D = gateOk && latest.has3D;
+         bool hasHud = gateOk && latest.hasHud;
+-        // Upstream refuses the projection layer while the flat camera is active and presents the
+-        // game's 2D capture as an opaque quad (renderer.cpp:38-66, 309-350). The black-bar window
+-        // stays baked into the eye image, so it still needs no depth.
++        // Upstream refuses the stereo projection while the flat camera is active
++        // (renderer.cpp:38-52). With flatScene on, the mono/left 3D capture is the flat picture and
++        // the HUD quad is blended over it; with it off, the old opaque 2D quad is the only layer.
++        // The black-bar window stays baked into the eye image, so it still needs no depth.
+         const bool flatPresentation = latest.flatView;
+         const bool flatWindow = has3D && (latest.flatWindow || flatPresentation);
+         bool hasDepth = latest.hasDepth && !s_linux->disableDepthReprojection && !flatWindow;
+@@ -1389,9 +1397,11 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
+             dispatch->ResetFences(device, 1, &s_linux->copyFence);
+ 
+             s_linux->submit.currentStep.store(3); // acquire swapchains
+-            // Acquire swapchain images.
++            // Acquire swapchain images. Only a freshly published pair is copied: while a menu keeps
++            // the last stereo pair, the game's mono captures overwrite the intermediates, so
++            // re-copying them here would replace the stable stereo image with the mono one.
+             auto acquireStart = std::chrono::high_resolution_clock::now();
+-            if (has3D) {
++            if (has3D && latest.pairFresh) {
+                 for (int eye = 0; eye < 2; eye++) {
+                     s_linux->colorSwapchains[eye].Acquire();
+                     if (hasDepth) s_linux->depthSwapchains[eye].Acquire();
+@@ -1514,7 +1524,7 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
+                     0, 0, nullptr, 0, nullptr, 1, &bar);
+             };
+ 
+-            if (has3D) {
++            if (has3D && latest.pairFresh) {
+                 for (int eye = 0; eye < 2; eye++) {
+                     recordColorCopy(eye);
+                     if (hasDepth) recordDepthCopy(eye);
+@@ -1602,7 +1612,7 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
+             s_linux->submit.currentStep.store(7); // release swapchains
+ 
+             auto releaseStart = std::chrono::high_resolution_clock::now();
+-            if (has3D) {
++            if (has3D && latest.pairFresh) {
+                 for (int eye = 0; eye < 2; eye++) {
+                     s_linux->colorSwapchains[eye].Release();
+                     if (hasDepth) s_linux->depthSwapchains[eye].Release();
+@@ -1685,14 +1695,19 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
+                     (double)(latest.renderDisplayTime - currentFrameState.predictedDisplayTime) / 1e6);
+             }
+ 
+-            // Upstream's flat camera presentation has no projection layer: the game's 2D capture
+-            // is the only layer, an opaque quad (renderer.cpp:38-66, 309-350).
+-            if (haveSubmitViews && has3D && !flatPresentation) {
++            // upstream renderer.cpp:39-66: the flat camera is not a stereo projection. The mono/left
++            // 3D capture is the flat picture, with the HUD quad composited over it by its alpha.
++            // A menu after a flat frame keeps the same rule: a mono pair is never projected as
++            // stereo; only the last pair published from normal play is re-presented behind it.
++            const bool flatScene = BetterVR_PS5_FlatScene();
++            const bool monoFlat = flatPresentation && flatScene;
++            const bool monoPairNotFlat = flatScene && latest.pairMono && !flatPresentation;
++            if (haveSubmitViews && has3D && (monoFlat || (!flatPresentation && !monoPairNotFlat))) {
+                 const std::array<XrView, 2>* projectionRenderViews = &submitViews;
+-                if (latest.hasRenderViews) {
++                if (!monoFlat && latest.hasRenderViews) {
+                     projectionRenderViews = &latest.renderViews;
+                     s_linux->stats.projectionFramesUsingContentPose.fetch_add(1, std::memory_order_relaxed);
+-                } else {
++                } else if (!monoFlat) {
+                     s_linux->stats.projectionFramesFreshPoseFallback.fetch_add(1, std::memory_order_relaxed);
+                     static int s_missingRenderViewsWarnings = 0;
+                     if (s_missingRenderViewsWarnings++ < 5) {
+@@ -1700,6 +1715,10 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
+                     }
+                 }
+                 for (int eye = 0; eye < 2; eye++) {
++                    // The flat picture is one mono image: both eyes sample the left eye's capture
++                    // with the left eye's pose/FOV, so it is head-locked and the HUD quad is
++                    // centred on the same pose. Normal play keeps each eye's own image.
++                    const int sourceEye = monoFlat ? 0 : eye;
+                     if (hasDepth) {
+                         auto& di = depthInfos[eye];
+                         di.type = XR_TYPE_COMPOSITION_LAYER_DEPTH_INFO_KHR;
+@@ -1719,27 +1738,27 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
+                     auto& pv = projectionViews[eye];
+                     pv.type = XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW;
+                     pv.next = hasDepth ? &depthInfos[eye] : nullptr;
+-                    pv.pose = (*projectionRenderViews)[eye].pose;
+-                    pv.fov = (*projectionRenderViews)[eye].fov;
+-                    pv.subImage.swapchain = s_linux->colorSwapchains[eye].handle;
++                    pv.pose = (*projectionRenderViews)[sourceEye].pose;
++                    pv.fov = (*projectionRenderViews)[sourceEye].fov;
++                    pv.subImage.swapchain = s_linux->colorSwapchains[sourceEye].handle;
+                     pv.subImage.imageRect.offset = { 0, 0 };
+                     pv.subImage.imageRect.extent = {
+-                        (int32_t)s_linux->colorSwapchains[eye].width,
+-                        (int32_t)s_linux->colorSwapchains[eye].height
++                        (int32_t)s_linux->colorSwapchains[sourceEye].width,
++                        (int32_t)s_linux->colorSwapchains[sourceEye].height
+                     };
+                     pv.subImage.imageArrayIndex = 0;
+ 
+                     static int s_projectionSubmitLogs[2] = {};
+                     if (s_linux->captureDiagnosticsEnabled && s_projectionSubmitLogs[eye]++ < 6) {
+-                        const XrView& rv = (*projectionRenderViews)[eye];
++                        const XrView& rv = (*projectionRenderViews)[sourceEye];
+                         const double renderDeltaMs =
+                             (latest.renderDisplayTime != 0 && currentFrameState.predictedDisplayTime != 0)
+                                 ? (double)(latest.renderDisplayTime - currentFrameState.predictedDisplayTime) / 1e6
+                                 : 0.0;
+                         Log::print<INFO>(
+-                            "Submit projection eye={} poseSource={} depth={} renderDelta={:.2f}ms pos=({:.3f},{:.3f},{:.3f}) fov=({:.1f},{:.1f},{:.1f},{:.1f})",
+-                            eye,
+-                            latest.hasRenderViews ? "content" : "fresh",
++                            "Submit projection eye={} source={} poseSource={} depth={} renderDelta={:.2f}ms pos=({:.3f},{:.3f},{:.3f}) fov=({:.1f},{:.1f},{:.1f},{:.1f})",
++                            eye, sourceEye,
++                            monoFlat ? "mono-left" : (latest.hasRenderViews ? "content" : "fresh"),
+                             hasDepth ? "yes" : "no",
+                             renderDeltaMs,
+                             rv.pose.position.x, rv.pose.position.y, rv.pose.position.z,
+@@ -1784,9 +1803,10 @@ static void SubmitThreadMain(XrSession session, XrSpace stageSpace) {
+                 hudLayer.pose.orientation = ToXR(hudOri);
+                 hudLayer.pose.position = ToXR(hudPos);
+                 hudLayer.size = { aspectRatio * kHudSize, kHudSize };
+-                // In the scope / Camera rune the 2D capture is the whole picture, so its quad is
+-                // opaque; normal play keeps source alpha over the scene.
+-                hudLayer.layerFlags = (has3D && !flatPresentation)
++                // With the flat scene on, the mono/left 3D capture is behind the HUD, so the quad
++                // blends by its alpha there too. "flatScene":0 keeps the old opaque HUD-only quad.
++                const bool flatHudOnly = flatPresentation && !flatScene;
++                hudLayer.layerFlags = (has3D && !flatHudOnly)
+                     ? XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT : 0;
+                 hudLayerReady = true;
+             }
+@@ -1945,6 +1965,12 @@ void RND_Renderer::EndFrame() {
+         }
+     }
+ 
++    // upstream renderer.cpp:39-51: IsCurrent3DPresentationAllowed() refuses the projection layer
++    // for the pause menu and every mono capture. Read the same state once here, before the capture
++    // counter is decremented (upstream checks the frame, then decrements at the end of EndFrame).
++    const bool menuMono = s_linux && BetterVR_PS5_FlatScene() && !s_linux->frameFlatView
++        && CemuHooks::UseMonoFrameBufferTemporarilyDuringMenusOrPictures();
++
+     if (m_cameraIsCapturing3DFrameBuffer > 0) {
+         --m_cameraIsCapturing3DFrameBuffer;
+     }
+@@ -2031,16 +2057,41 @@ void RND_Renderer::EndFrame() {
+         // what the feature is doing, once per change; the test request asks for these lines
+         static bool s_lastFlatView = false;
+         static bool s_lastBlackBars = false;
++        static bool s_lastMenuMono = false;
++        static std::chrono::steady_clock::time_point s_lastMenuMonoLog = {};
+         static bool s_lastFade = false;
+         if (flatView != s_lastFlatView) {
+             s_lastFlatView = flatView;
+-            Log::print<INFO>("Flat view {} (scope={}, CameraFinder={})",
+-                flatView ? "on" : "off", CemuHooks::IsScopeModeActive(), CemuHooks::IsCameraFinderModeActive());
++            Log::print<INFO>("Flat view {} (scope={}, CameraFinder={}, quad={}x{} side={})",
++                flatView ? "on" : "off", CemuHooks::IsScopeModeActive(), CemuHooks::IsCameraFinderModeActive(),
++                s_linux->hudSourceWidth, s_linux->hudSourceHeight,
++                s_linux->hudSourceSide == 0 ? "left" : (s_linux->hudSourceSide == 1 ? "right" : "none"));
+         }
+         if (blackBars != s_lastBlackBars) {
+             s_lastBlackBars = blackBars;
+             Log::print<INFO>("Cutscene black bars {}", blackBars ? "on" : "off");
+         }
++        // One line per switch, at most one a second: a menu that flickers for a frame cannot flood
++        // the log. `projection` names what the headset keeps behind the menu.
++        const auto menuNow = std::chrono::steady_clock::now();
++        if (menuMono != s_lastMenuMono
++            && (s_lastMenuMonoLog.time_since_epoch().count() == 0
++                || menuNow - s_lastMenuMonoLog >= std::chrono::seconds(1))) {
++            s_lastMenuMono = menuMono;
++            s_lastMenuMonoLog = menuNow;
++            const bool pauseOpen = CemuHooks::IsScreenOpen(ScreenId::PauseMenu_00)
++                || CemuHooks::IsScreenOpen(ScreenId::PauseMenuInfo_00);
++            bool stablePair = false;
++            {
++                std::lock_guard<std::mutex> lock(s_linux->submit.latestMutex);
++                stablePair = s_linux->submit.latest.has3D && !s_linux->submit.latest.pairMono;
++            }
++            Log::print<INFO>("Menu/mono presentation {} (pause={}, frozenFrame={}, projection={})",
++                menuMono ? "on" : "off",
++                pauseOpen ? "yes" : "no",
++                IsGameCapturing3DFrameBuffer() ? "yes" : "no",
++                menuMono ? (stablePair ? "last stereo pair, HUD over it" : "none, HUD over black") : "stereo");
++        }
+         const bool fadeOn = gameFadeActive || fadeAmount > 0.01f;
+         if (fadeOn != s_lastFade) {
+             s_lastFade = fadeOn;
+@@ -2116,6 +2167,10 @@ void RND_Renderer::EndFrame() {
+             // otherwise submit thread would read an UNDEFINED buffer.
+             int publishedHud = s_linux->currentWriteIdx_hud;
+             auto publishedAt = std::chrono::high_resolution_clock::now();
++            // upstream renderer.cpp:39-66: the menu's mono capture is not presented. The last pair
++            // published from normal play stays in `latest` and is re-presented behind the menu
++            // (IsStable3DReuseAllowed); a mono pair is never published as stereo.
++            const bool publish3D = has3DContent && !menuMono;
+             {
+                 std::lock_guard<std::mutex> lock(s_linux->submit.latestMutex);
+                 const bool hadFlatView = s_linux->submit.latest.flatView;
+@@ -2127,11 +2182,12 @@ void RND_Renderer::EndFrame() {
+                 s_linux->submit.latest.gameFadeActive = gameFadeActive;
+                 s_linux->submit.latest.customFadeAmount = fadeAmount;
+                 s_linux->submit.latest.flatView = flatView;
+-                s_linux->submit.latest.pairFresh = has3DContent;
+-                if (has3DContent) {
++                s_linux->submit.latest.pairFresh = publish3D;
++                if (publish3D) {
+                     s_linux->submit.latest.has3D = true;
+                     s_linux->submit.latest.hasDepth = hasDepth;
+                     s_linux->submit.latest.flatWindow = published3DPair.flatWindow;
++                    s_linux->submit.latest.pairMono = flatView;
+                     s_linux->submit.latest.readBufferIdx_3D[0] = published3DPair.bufferIdx[0];
+                     s_linux->submit.latest.readBufferIdx_3D[1] = published3DPair.bufferIdx[1];
+                     s_linux->submit.latest.renderViews = published3DPair.hasRenderViews
+@@ -2145,12 +2201,15 @@ void RND_Renderer::EndFrame() {
+                     s_linux->submit.latest.eyeCopied[1] = published3DPair.eyeCopied[1];
+                     s_linux->submit.latest.depthCopied[0] = pairDepthCopied(0);
+                     s_linux->submit.latest.depthCopied[1] = pairDepthCopied(1);
+-                } else if (s_linux->submit.latest.flatWindow || hadFlatView || flatNow) {
++                } else if (!menuMono && !(flatView && BetterVR_PS5_FlatScene())
++                        && (s_linux->submit.latest.flatWindow || hadFlatView || flatNow)) {
+                     // upstream renderer.cpp:54-66: a flat frame is never reused when the next
+                     // frame only publishes 2D/HUD content, so the window cannot outlive the scope.
++                    // While the flat scene is on, the last mono scene stays for the scope's length.
+                     s_linux->submit.latest.has3D = false;
+                     s_linux->submit.latest.hasDepth = false;
+                     s_linux->submit.latest.flatWindow = false;
++                    s_linux->submit.latest.pairMono = false;
+                 }
+                 if (hasHud) {
+                     s_linux->submit.latest.hasHud = true;
+@@ -2159,9 +2218,10 @@ void RND_Renderer::EndFrame() {
+                 }
+             }
+             s_linux->stats.cemuPublishes.fetch_add(1, std::memory_order_relaxed);
+-            if (has3DContent) s_linux->stats.cemuPublishes3D.fetch_add(1, std::memory_order_relaxed);
++            if (publish3D) s_linux->stats.cemuPublishes3D.fetch_add(1, std::memory_order_relaxed);
+             if (hasHud) s_linux->stats.cemuPublishesHud.fetch_add(1, std::memory_order_relaxed);
+-            // 3D buffers are selected by BotW's encoded magic frame index.
++            // 3D buffers are selected by BotW's encoded magic frame index. Clear this even when the
++            // menu's mono pair was not published, so it cannot surface as a stereo pair later.
+             if (has3DContent)  s_linux->frameHasContent = false;
+             if (hasHud)        s_linux->currentWriteIdx_hud ^= 1;
+         }
+@@ -2423,7 +2483,7 @@ void RND_Renderer::LinuxHandleColorClear(OpenXR::EyeSide side, long captureIdx,
+             // accepting the right eye too, or reopening the window at a 3D clear, let the HUD
+             // quad switch between them.
+             if (side == OpenXR::EyeSide::LEFT && !hudCapturedThisFrame) {
+-                LinuxCopyHudToSwapchain(commandBuffer, image, srcWidth, srcHeight);
++                LinuxCopyHudToSwapchain(side, commandBuffer, image, srcWidth, srcHeight);
+                 hudCapturedThisFrame = true;
+             }
+             VulkanUtils::TransitionLayout(commandBuffer, image, VK_IMAGE_LAYOUT_GENERAL, imageLayout);
+@@ -2522,8 +2582,8 @@ void RND_Renderer::LinuxCopyColorToSwapchain(OpenXR::EyeSide side, VkCommandBuff
+     // A cutscene's black-bar view is baked into the eye image: the capture centred at its own
+     // aspect inside a 16:9 window sized like the HUD quad (renderer.cpp:38-66,
+     // vulkan_imgui.cpp:494-497), black around it, so both eyes get the same window. The scope /
+-    // Camera rune is not baked any more: it has no scene to bake from, and SubmitThreadMain
+-    // presents its 2D capture as the opaque quad, as upstream does.
++    // Camera rune is not baked: SubmitThreadMain presents its mono/left 3D capture as the flat
++    // picture and blends the 2D capture over it (flatScene), or the old opaque 2D quad (0).
+     const bool bakeBlackBars = s_linux->frameBlackBars;
+     int32_t dstX0 = 0;
+     int32_t dstY0 = 0;
+@@ -2799,15 +2859,17 @@ void RND_Renderer::LinuxCopyDepthToSwapchain(OpenXR::EyeSide side, VkCommandBuff
+     s_linux->captured3DFrames[wIdx].depthCopied[sideIdx] = true;
+ }
+ 
+-void RND_Renderer::LinuxCopyHudToSwapchain(VkCommandBuffer cmdBuffer, VkImage srcImage, uint32_t srcWidth, uint32_t srcHeight) {
++void RND_Renderer::LinuxCopyHudToSwapchain(OpenXR::EyeSide side, VkCommandBuffer cmdBuffer, VkImage srcImage, uint32_t srcWidth, uint32_t srcHeight) {
+     static uint32_t hudCopyCount = 0;
+     hudCopyCount++;
+     if (!s_linux) return;
+ 
+-    // The game fade line reports what this quad actually carried while the fade ran.
++    // The game fade line reports what this quad actually carried while the fade ran, and the flat
++    // line reports the source size/side the quad samples.
+     s_linux->hudSourceImage = srcImage;
+     s_linux->hudSourceWidth = srcWidth;
+     s_linux->hudSourceHeight = srcHeight;
++    s_linux->hudSourceSide = (int)side;
+     s_linux->hudSourceSeq++;
+ 
+     // Lazily create BOTH HUD intermediate buffers (double-buffered).

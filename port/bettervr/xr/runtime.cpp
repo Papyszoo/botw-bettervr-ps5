@@ -61,6 +61,8 @@ float BetterVR_PS5_Setting(const char* name, float fallback);
 bool BetterVR_PS5_PlayerOnce();
 // BetterVR's comfort fades (entity_controller.cpp): bettervr.json's fades, default on
 bool BetterVR_PS5_Fades();
+// BetterVR's flat/menu presentation (entity_controller.cpp): bettervr.json's flatScene, default on
+bool BetterVR_PS5_FlatScene();
 // BetterVR's stereo pose freeze (entity_controller.cpp): bettervr.json's poseFreeze, default on
 bool BetterVR_PS5_PoseFreeze();
 // BetterVR's renderer (renderer_vulkan.cpp): the poseFreeze proof counters, per eye, and the
@@ -1310,6 +1312,10 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateSession(XrInstance, const XrSessionCreate
 	Log("player update gate: %s (bettervr.json's playerOnce%s)", playerOnce ? "one run a game frame, whichever pass asks first" : "upstream's, the right-eye pass only", playerOnce ? ", default on" : "=0");
 	const bool fades = BetterVR_PS5_Fades();
 	Log("game comfort fades: %s (bettervr.json's fades%s)", fades ? "on, ramped over 0.2 s" : "off", fades ? ", default on" : "=0");
+	const bool flatScene = BetterVR_PS5_FlatScene();
+	Log("flat/menu presentation: %s (bettervr.json's flatScene%s)",
+		flatScene ? "the mono/left scene with the HUD over it, last stereo pair behind menus" : "upstream's HUD-only flat quad and stereo menu",
+		flatScene ? ", default on" : "=0");
 	const bool poseFreeze = BetterVR_PS5_PoseFreeze();
 	Log("stereo pose freeze: %s (bettervr.json's poseFreeze%s)",
 		poseFreeze ? "on, one view pair for both eyes of a pair" : "off, the per-read latch", poseFreeze ? ", default on" : "=0");

@@ -3,6 +3,52 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-06 (melee hits, flat view, inventory): the weapon guard resets each game frame; flat shows the scene, menus keep the last stereo pair (not built, not run)
+
+**Not built, not run.** Two bugs, one cause each.
+
+**Weapon (0019).** On Windows `BeginStereoCaptureGeneration -> RenderFrame::Reset()` clears
+`ranMotionAnalysis` at the left eye's 3D color clear. The Linux path never calls it, so after one
+update per hand the duplicate gate in `weapon.cpp` returned forever; the `[weapon]` line kept printing a
+stale `slash 8.07 / accel 25.79`. Patch 0019 runs the same reset (every `RenderFrame` field, with
+`CaptureIssue_MonoCapture` preserved, and a new stereo generation) at that same left-eye clear, once
+per game frame. The `[weapon]` line now carries `upd L <n> R <n>`, the analyser `Update()` calls per
+hand: before the fix it stopped at 2 for the session; after it must rise about once per game frame.
+
+**Flat view and menu (0020).** The flat path used to suppress the 3D layer and submit the 2D capture
+as an opaque quad, so the scope showed the HUD capture's cleared background (black). It now submits
+the mono/left 3D capture as the flat picture, with the HUD quad blended over it by its alpha, the
+way upstream composites its main background and HUD. A pause/inventory frame is a mono capture; it
+is no longer published as a stereo pair, so the last pair from normal play stays behind the menu
+(upstream's stable-3D reuse) and Link appears once. The flat log line names the quad's source:
+`Flat view on (scope=true, CameraFinder=false, quad=2000x2040 side=left)`. A switch line names the
+menu state: `Menu/mono presentation on (pause=yes, frozenFrame=no, projection=last stereo pair, HUD
+over it)` and `... off (...)`. `bettervr.json`'s `"flatScene":0` restores the old HUD-only flat quad
+and the stereo menu; the session line names the value:
+`flat/menu presentation: ... (bettervr.json's flatScene, default on)`.
+
+**Test request 22 (weapon).** Install the build, draw a weapon in first person and swing at an
+enemy. Send the `[weapon]` lines around the swings. `upd R` must climb by about one per game frame
+(not stay at 2), a swing should print `analyser slash active yes` and `[weapon] swing accepted`.
+If `upd` climbs but the lock stays `none`, send the `slash`/`accel` numbers against their gates; if
+`active yes` appears but the hit does not land, the sensor write is the next suspect.
+
+**Test request 23 (scope/binoculars).** Enter the scope, then the binoculars/Camera rune. Send the
+`Flat view on (...)` line. The headset must show the game scene with the scope UI over it, not a
+black screen; the line must name `quad=<w>x<h> side=left`. Optional control: add `"flatScene":0`
+to `/data/ps5cemu/bettervr.json`, restart, and the old black HUD-only quad must return.
+
+**Test request 24 (inventory).** Open the inventory/pause menu. Send the `Menu/mono presentation
+on (...)` line. Link must appear once, not once per eye, and the line must say
+`projection=last stereo pair, HUD over it` (or `projection=none, HUD over black` if the menu was
+opened before any stereo pair). Optional control: `"flatScene":0` should bring the doubled Link
+back.
+
+The twenty BetterVR patches apply in order on pin `2e06b31` (20/20; 0019 and 0020 are new);
+`weapon.cpp`, `entity_controller.cpp`, `renderer_vulkan.cpp` and `port/bettervr/xr/runtime.cpp`
+pass `clang++ -std=c++23 -fsyntax-only -D__PROSPERO__` (0 errors, pre-existing warnings only). Not
+compiled for the console.
+
 ## 2026-11-06 (stereo pose): one view pair for both eyes, `poseFreeze` on by default (not built, not run)
 
 **Not built, not run.** The left eye could be rendered with one pose and submitted with a newer one.
