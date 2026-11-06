@@ -749,7 +749,7 @@ untested on console): that fix alone. Test request 7.
 
 ## 2026-11-05: Patryk's first console results (m5-botw-vr), and m6-vr-diag
 
-**Reported by Patryk on his PS5** (firmware 13.59, `m5-botw-vr`, BotW EUR v208 with DLC, unpacked):
+**Reported by Patryk on his PS5** (firmware 13.60, `m5-botw-vr`, BotW EUR v208 with DLC, unpacked):
 
 - The app installs and starts as "Breath of the Wild VR", with its data in `/data/botwvr`. No HEN
   was asked: JIT and `/data` were there without one.

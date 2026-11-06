@@ -5,7 +5,7 @@ the Wild VR mod for Cemu) to a jailbroken PS5, shown on PlayStation VR2 with the
 It is a fork of [PS5-ECAM](https://github.com/premohq/PS5-ECAM), whose native Cemu it runs in.
 For what PS5-ECAM itself does (the launcher, other systems, settings), see its repository.
 
-**Status: experimental.** The author tests on his own PS5 (firmware 13.59 and 13.60). What he has
+**Status: experimental.** The author tests on his own PS5 (firmware 13.60). What he has
 reported working on the console: the app starts and the game runs flat at a steady 60 fps; in VR the
 he reports smooth head tracking, and the Sense controllers controlling the game.
 Known problems are below. Everything newer than that is built but not yet tested on a console;
