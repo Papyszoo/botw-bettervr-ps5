@@ -61,6 +61,10 @@ float BetterVR_PS5_Setting(const char* name, float fallback);
 bool BetterVR_PS5_PlayerOnce();
 // BetterVR's comfort fades (entity_controller.cpp): bettervr.json's fades, default on
 bool BetterVR_PS5_Fades();
+// BetterVR's stereo pose freeze (entity_controller.cpp): bettervr.json's poseFreeze, default on
+bool BetterVR_PS5_PoseFreeze();
+// BetterVR's renderer (renderer_vulkan.cpp): the poseFreeze proof counters, per eye
+void BetterVR_PS5_PoseProof(uint64_t* leftStale, uint64_t* rightStale, double* maxAgeMs);
 }
 
 #include <algorithm>
@@ -1303,6 +1307,9 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateSession(XrInstance, const XrSessionCreate
 	Log("player update gate: %s (bettervr.json's playerOnce%s)", playerOnce ? "one run a game frame, whichever pass asks first" : "upstream's, the right-eye pass only", playerOnce ? ", default on" : "=0");
 	const bool fades = BetterVR_PS5_Fades();
 	Log("game comfort fades: %s (bettervr.json's fades%s)", fades ? "on, ramped over 0.2 s" : "off", fades ? ", default on" : "=0");
+	const bool poseFreeze = BetterVR_PS5_PoseFreeze();
+	Log("stereo pose freeze: %s (bettervr.json's poseFreeze%s)",
+		poseFreeze ? "on, one view pair for both eyes of a pair" : "off, the per-read latch", poseFreeze ? ", default on" : "=0");
 	if (!s.tv)
 		Log("TV mirror off (bettervr.json's tv): the TV stays dark while VR runs");
 	else if (hmd2::mirroring())
@@ -1815,14 +1822,19 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
 	{
 		const hmd2::PaceStats pace = hmd2::take_pace();
 		const hmd2::FlipInfo flip = hmd2::flip_status();
+		uint64_t leftPoseStale = 0, rightPoseStale = 0;
+		double poseAgeMaxMs = 0.0;
+		BetterVR_PS5_PoseProof(&leftPoseStale, &rightPoseStale, &poseAgeMaxMs);
 		Log("%llu frames: nap %.2f ms, BeginFrame %.2f ms, ahead %.2f ms, step %.2f ms; flip shown %llu pending %d; repeated %d, queue full %d, "
 			"missed %d, errors %d, without layers %llu, skipped %llu, worn %d; render pose found %llu, not found %llu; "
+			"leftPoseStale %llu rightPoseStale %llu poseAgeMax %.2f ms; "
 			"head %.2f %.2f %.2f, hand spaces left %.3f %.3f %.3f right %.3f %.3f %.3f, hands posed %d %d; "
 			"TV mirror %s, shown %llu skipped %llu",
 			(unsigned long long)session->frames, pace.nap_ms, pace.call_ms, pace.ahead_ms, pace.step_ms, (unsigned long long)flip.shown, flip.pending,
 			hmd2::repeated_frames(), hmd2::queue_full_waits(), hmd2::missed_frames(), hmd2::frame_errors(), (unsigned long long)session->emptyFrames,
 			(unsigned long long)session->skipped, hmd2::worn() ? 1 : 0, (unsigned long long)session->poseFound,
-			(unsigned long long)session->poseLost, renderHead.p.x, renderHead.p.y, renderHead.p.z, s.handLocated[0].p.x, s.handLocated[0].p.y,
+			(unsigned long long)session->poseLost, (unsigned long long)leftPoseStale, (unsigned long long)rightPoseStale, poseAgeMaxMs,
+			renderHead.p.x, renderHead.p.y, renderHead.p.z, s.handLocated[0].p.x, s.handLocated[0].p.y,
 			s.handLocated[0].p.z, s.handLocated[1].p.x, s.handLocated[1].p.y, s.handLocated[1].p.z, s.hands[0].poseValid ? 1 : 0,
 			s.hands[1].poseValid ? 1 : 0, s.tv ? "on" : "off", (unsigned long long)session->tvShown, (unsigned long long)session->tvSkipped);
 	}

@@ -3,6 +3,41 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-06 (stereo pose): one view pair for both eyes, `poseFreeze` on by default (not built, not run)
+
+**Not built, not run.** The left eye could be rendered with one pose and submitted with a newer one.
+The game builds the left camera early in its pass and copies the left image later; `StartFrame` on
+the present path could promote the submit thread's `pendingViews` in between. The pair's submitted
+anchor is the left copy's snapshot, so the left half was reprojected from a pose it was never
+rendered with while the right half (built after the promotion) was exact. At ~53 game fps against
+the 60 Hz present the promotion drifts through the frame, which is the periodic left-only jump on a
+fast back-and-forth; at ~32 fps the present lands at the frame boundary and it does not show.
+
+**The fix.** Patch 0017 adds `bettervr.json`'s `"poseFreeze"` (read once, default on). With it on,
+the left `hook_BeginCameraSide` promotes the pending views once and freezes them; nothing else may
+promote until the right `hook_EndCameraSide`, after the right image is drawn. Both eyes' cameras and
+both copies of the pair therefore use the one view pair the pair is submitted with. `StartFrame`'s
+eager latch is refused while the pair is frozen and the left pass promotes instead. `"poseFreeze":0`
+runs the old per-read latch unchanged. The session-start line names the value:
+`stereo pose freeze: on, one view pair for both eyes of a pair (bettervr.json's poseFreeze, default on)`.
+
+**Proof counters.** The per-600-frame `... frames:` line now carries `leftPoseStale`,
+`rightPoseStale` and `poseAgeMax` (ms): each completed pair compares the display time each eye's
+camera was built with against the pose the pair is submitted with. With the freeze on, all three
+stay `0`/`0`/`0.00`; the control run with `"poseFreeze":0` should show `leftPoseStale` rising during
+fast yaw at ~53 fps, which is the stale left half.
+
+**Test request 20.** Install the build, enter a shrine and move the head quickly left and right for
+~10 s. Send the `... frames:` lines that contain `leftPoseStale`. Default run: `leftPoseStale 0
+rightPoseStale 0 poseAgeMax 0.00 ms`, and the left image must be as smooth as the right. Optional
+control: add `"poseFreeze":0` to `/data/ps5cemu/bettervr.json`, restart the game, and send the same
+lines; the session line must say `off`, and the stale counters may rise.
+
+The seventeen BetterVR patches apply in order on pin `2e06b31` (17/17, tree identical to the
+patched tree); `camera.cpp`, `entity_controller.cpp`, `renderer_vulkan.cpp` and
+`port/bettervr/xr/runtime.cpp` pass `clang++ -std=c++23 -fsyntax-only -D__PROSPERO__` (0 errors,
+pre-existing warnings only). Not compiled for the console.
+
 ## 2026-11-06 (melee swings): the hand velocity is always published, and `[weapon]` says what the analyser decides (not built, not run)
 
 **Not built, not run.** The runtime's `xrLocateSpace` used to attach `XrSpaceVelocity` only when

@@ -1,0 +1,375 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: premohq <premohq@users.noreply.github.com>
+Date: Fri, 6 Nov 2026 15:43:38 +0100
+Subject: [PATCH] PS5: one view pair is frozen for both eyes of a stereo pair
+
+---
+ src/hooking/camera.cpp                    |  30 +++++
+ src/hooking/entity_controller.cpp         |   8 ++
+ src/rendering/renderer_members_vulkan.inc |  14 ++
+ src/rendering/renderer_state_vulkan.inc   |   8 ++
+ src/rendering/renderer_vulkan.cpp         | 148 +++++++++++++++++++++-
+ 5 files changed, 204 insertions(+), 4 deletions(-)
+
+diff --git a/src/hooking/camera.cpp b/src/hooking/camera.cpp
+index 574cd5c..9981867 100644
+--- a/src/hooking/camera.cpp
++++ b/src/hooking/camera.cpp
+@@ -46,6 +46,14 @@ void CemuHooks::hook_BeginCameraSide(PPCInterpreter_t* hCPU) {
+ 
+     OpenXR::EyeSide side = hCPU->gpr[0] == 0 ? OpenXR::EyeSide::LEFT : OpenXR::EyeSide::RIGHT;
+ 
++#ifndef _WIN32
++    // poseFreeze: the left eye's pass starts the stereo pair; promote its views once and hold them
++    // until the right pass ends, so both eyes render the pose the pair is submitted with.
++    if (auto* renderer = VRManager::instance().XR->GetRenderer()) {
++        renderer->LinuxStereoPoseBegin(side);
++    }
++#endif
++
+     Log::print<RENDERING>("");
+     Log::print<RENDERING>("===============================================================================");
+     Log::print<RENDERING>("{0} {0} {0} {0} {0} {0} {0} {0} {0} {0} {0} {0} {0} {0} {0} {0} {0} {0}", side);
+@@ -796,6 +804,15 @@ void CemuHooks::hook_GetRenderCamera(PPCInterpreter_t* hCPU) {
+     uint32_t cameraOut = hCPU->gpr[12];
+     EyeSide side = hCPU->gpr[11] == 0 ? EyeSide::LEFT : EyeSide::RIGHT;
+ 
++#ifndef _WIN32
++    // poseFreeze proof: this eye's camera is about to be built; the note below records the pose it
++    // used. An early return leaves no note, so a copy without a fresh camera is not counted.
++    auto* proofRenderer = VRManager::instance().XR->GetRenderer();
++    if (proofRenderer != nullptr) {
++        proofRenderer->LinuxBeginEyeCameraPose(side);
++    }
++#endif
++
+     bool suppressCamera = UseBlackBarsDuringEvents();
+ #ifndef _WIN32
+     // Linux-only: also suppress the camera write during mono/menu frames. The flat camera below
+@@ -820,6 +837,12 @@ void CemuHooks::hook_GetRenderCamera(PPCInterpreter_t* hCPU) {
+     UpdateGameplayReferenceCameraMtx(gameplayPos, gameplayRot);
+     auto [newPos, newRot] = BuildGameplayCameraPose(gameplayPos, gameplayRot, side);
+ 
++#ifndef _WIN32
++    if (proofRenderer != nullptr) {
++        proofRenderer->LinuxNoteEyeCameraPose(side);
++    }
++#endif
++
+     glm::mat4 newWorldVR = glm::translate(glm::mat4(1.0f), newPos) * glm::mat4_cast(newRot);
+     glm::mat4 newViewVR = glm::inverse(newWorldVR);
+     DebugDraw::instance().UpdateEyeView(side, newViewVR);
+@@ -1183,6 +1206,13 @@ void CemuHooks::hook_EndCameraSide(PPCInterpreter_t* hCPU) {
+ 
+     OpenXR::EyeSide side = hCPU->gpr[3] == 0 ? OpenXR::EyeSide::LEFT : OpenXR::EyeSide::RIGHT;
+ 
++#ifndef _WIN32
++    // poseFreeze: the right pass is the last draw of the pair; the next left pass promotes anew.
++    if (auto* renderer = VRManager::instance().XR->GetRenderer()) {
++        renderer->LinuxStereoPoseEnd(side);
++    }
++#endif
++
+     Log::print<RENDERING>("{0} {0} {0} {0} {0} {0} {0} {0} {0} {0} {0} {0} {0} {0} {0} {0} {0} {0}", side);
+     Log::print<RENDERING>("===============================================================================");
+     Log::print<RENDERING>("");
+diff --git a/src/hooking/entity_controller.cpp b/src/hooking/entity_controller.cpp
+index aa0b2f7..17c5c0d 100644
+--- a/src/hooking/entity_controller.cpp
++++ b/src/hooking/entity_controller.cpp
+@@ -675,6 +675,14 @@ extern "C" bool BetterVR_PS5_Fades() {
+     return s_fades;
+ }
+ 
++// PS5: bettervr.json's poseFreeze (default on), cached once. On, the left eye's BeginCameraSide
++// promotes one view pair and both eyes of that pair render and copy it; off is the old per-read
++// latch. The renderer reads this and runtime.cpp logs the same value.
++extern "C" bool BetterVR_PS5_PoseFreeze() {
++    static const bool s_poseFreeze = BetterVR_PS5_Setting("poseFreeze", 1.0f) >= 0.5f;
++    return s_poseFreeze;
++}
++
+ static bool ShouldDrivePlayerBodyWithVR(const glm::fvec3& currentHeadPos, const PlayerBase& player) {
+     // PS5 experiment: bettervr.json {"roomscale":0} turns the head-driven body movement off (read once). Default on.
+     static const bool s_roomscaleOn = BetterVR_PS5_Setting("roomscale", 1.0f) >= 0.5f;
+diff --git a/src/rendering/renderer_members_vulkan.inc b/src/rendering/renderer_members_vulkan.inc
+index 2054e40..26e3364 100644
+--- a/src/rendering/renderer_members_vulkan.inc
++++ b/src/rendering/renderer_members_vulkan.inc
+@@ -33,3 +33,17 @@ std::optional<std::array<XrView, 2>> CurrentViews() const;
+ // pendingViews into m_currViews (with seated height offset). Called by StartFrame
+ // and CurrentViews.
+ void LatchPendingIfNeeded() const;
++// The latch body: wait for a pendingViews newer than the one last consumed and publish it.
++// PromotePendingViewsLocked is the poseFreeze path and also bumps the promotion generation.
++bool PromotePendingViews() const;
++bool PromotePendingViewsLocked() const;
++
++// poseFreeze: the left BeginCameraSide promotes the stereo pair's views once and both eyes keep
++// them until the right EndCameraSide; off (bettervr.json's poseFreeze=0) the old latch runs.
++void LinuxStereoPoseBegin(OpenXR::EyeSide side) const;
++void LinuxStereoPoseEnd(OpenXR::EyeSide side) const;
++
++// poseFreeze proof: the display time of the views each eye's camera was built with, noted by
++// hook_GetRenderCamera and consumed by that eye's 3D copy.
++void LinuxBeginEyeCameraPose(OpenXR::EyeSide side) const;
++void LinuxNoteEyeCameraPose(OpenXR::EyeSide side) const;
+diff --git a/src/rendering/renderer_state_vulkan.inc b/src/rendering/renderer_state_vulkan.inc
+index 6750606..9320b32 100644
+--- a/src/rendering/renderer_state_vulkan.inc
++++ b/src/rendering/renderer_state_vulkan.inc
+@@ -8,5 +8,13 @@ mutable std::shared_mutex m_viewsMutex; // protects m_currViews (submit thread +
+ // that exchanges it back to false performs the pendingViews -> m_currViews latch.
+ mutable std::atomic_bool m_linuxNeedsLatch = false;
+ mutable std::atomic<uint64_t> m_linuxConsumedFrameId{0};
++// poseFreeze: set at the left BeginCameraSide and cleared at the right EndCameraSide; while it is
++// set, nothing promotes pendingViews except the left pass's own promotion.
++mutable std::atomic_bool m_linuxStereoPoseFrozen = false;
++// Serializes the two promoters (a StartFrame/CurrentViews latch and the left pass) and counts the
++// promotions, so the left pass does not wait for a second pending frame after one already landed.
++mutable std::mutex m_linuxLatchMutex;
++mutable uint64_t m_linuxPromotionGeneration = 0; // guarded by m_linuxLatchMutex
++mutable uint64_t m_linuxLastStereoPromotion = 0; // guarded by m_linuxLatchMutex
+ // The OpenXR predicted display time the latched views were located for (guarded by m_viewsMutex).
+ mutable XrTime m_linuxCurrViewsDisplayTime = 0;
+diff --git a/src/rendering/renderer_vulkan.cpp b/src/rendering/renderer_vulkan.cpp
+index 2d8606f..33f7b54 100644
+--- a/src/rendering/renderer_vulkan.cpp
++++ b/src/rendering/renderer_vulkan.cpp
+@@ -43,6 +43,8 @@ static constexpr float kHudSize = 1.0f;
+ 
+ // PS5: bettervr.json's fades switch (default on), read once in entity_controller.cpp.
+ extern "C" bool BetterVR_PS5_Fades();
++// PS5: bettervr.json's poseFreeze switch (default on), read once in entity_controller.cpp.
++extern "C" bool BetterVR_PS5_PoseFreeze();
+ 
+ // The combined comfort fade may move by at most one step per presented frame, so even a fade
+ // screen that appears and disappears every frame cannot strobe: a full swing takes 12 frames
+@@ -170,6 +172,9 @@ struct LinuxRenderState {
+         bool flatWindow = false; // the eyes carry the cutscene black-bar window
+         std::array<XrView, 2> renderViews = { XrView{ XR_TYPE_VIEW }, XrView{ XR_TYPE_VIEW } };
+         XrTime renderDisplayTime = 0;
++        // poseFreeze proof: the display time each eye's camera was built with, for this pair.
++        XrTime cameraDisplayTime[2] = { 0, 0 };
++        bool cameraTimeValid[2] = { false, false };
+         std::array<std::chrono::high_resolution_clock::time_point, 2> colorCopyAt = {};
+ 
+         void Reset() {
+@@ -181,6 +186,10 @@ struct LinuxRenderState {
+             flatWindow = false;
+             renderViews = { XrView{ XR_TYPE_VIEW }, XrView{ XR_TYPE_VIEW } };
+             renderDisplayTime = 0;
++            cameraDisplayTime[0] = 0;
++            cameraDisplayTime[1] = 0;
++            cameraTimeValid[0] = false;
++            cameraTimeValid[1] = false;
+             colorCopyAt[0] = {};
+             colorCopyAt[1] = {};
+         }
+@@ -247,6 +256,16 @@ struct LinuxRenderState {
+         std::atomic<int> verbose3DCopiesRemaining{0};
+     } pauseDiag;
+ 
++    // poseFreeze proof: the display time of the views each eye's camera was built with (written by
++    // hook_GetRenderCamera, consumed by that eye's 3D copy), and how many completed pairs were
++    // submitted with a pose different from the one an eye was rendered with.
++    struct PoseProof {
++        std::atomic<XrTime> cameraDisplayTime[2] = {0, 0};
++        std::atomic_bool cameraTimeValid[2] = {false, false};
++        std::atomic<uint64_t> stale[2] = {0, 0};
++        std::atomic<uint64_t> maxAgeNs{0};
++    } poseProof;
++
+     // Command resources for intermediate→swapchain copy in EndFrame
+     VkCommandPool copyPool = VK_NULL_HANDLE;
+     VkCommandBuffer copyCmdBuf = VK_NULL_HANDLE;
+@@ -509,6 +528,21 @@ struct LinuxRenderState {
+ 
+ static std::unique_ptr<LinuxRenderState> s_linux;
+ 
++// poseFreeze proof, read by the app's per-600-frame line (runtime.cpp): per eye, the completed
++// pairs whose camera pose differed from the pose the pair was submitted with, and the largest
++// difference in milliseconds.
++extern "C" void BetterVR_PS5_PoseProof(uint64_t* leftStale, uint64_t* rightStale, double* maxAgeMs) {
++    uint64_t left = 0, right = 0, ageNs = 0;
++    if (s_linux) {
++        left = s_linux->poseProof.stale[0].load(std::memory_order_relaxed);
++        right = s_linux->poseProof.stale[1].load(std::memory_order_relaxed);
++        ageNs = s_linux->poseProof.maxAgeNs.load(std::memory_order_relaxed);
++    }
++    if (leftStale) *leftStale = left;
++    if (rightStale) *rightStale = right;
++    if (maxAgeMs) *maxAgeMs = (double)ageNs / 1e6;
++}
++
+ // The comfort fade applied to the eye image: a solid colour whose alpha is the combined fade.
+ // Unlike upstream's presentDepthHLSL (shader.h:54-69), this fragment shader has no sampler: the
+ // game fade is a ramp at the submit thread, never a texel of the 2D/HUD capture, so two capture
+@@ -1867,7 +1901,9 @@ void RND_Renderer::StartFrame() {
+     // checks see valid views even when no camera hook reads poses (e.g., title
+     // screen where Cemu doesn't run VR camera code). LatchPendingIfNeeded is
+     // idempotent; if a camera hook later fires it'll see needsLatch=false and
+-    // proceed with the already-latched m_currViews.
++    // proceed with the already-latched m_currViews. With poseFreeze on, a frozen
++    // stereo pair refuses this latch: the left BeginCameraSide promotes once for
++    // the pair and EndFrame reads that same pair.
+     LatchPendingIfNeeded();
+ 
+     // Reset per-frame state
+@@ -2525,6 +2561,15 @@ void RND_Renderer::LinuxCopyColorToSwapchain(OpenXR::EyeSide side, VkCommandBuff
+     captured.colorCopyAt[sideIdx] = std::chrono::high_resolution_clock::now();
+     captured.complete = captured.eyeCopied[0] && captured.eyeCopied[1];
+ 
++    // poseFreeze proof: the pose this eye's camera was built with, consumed by this copy.
++    XrTime eyeCameraDisplayTime = 0;
++    bool hasEyeCameraDisplayTime = false;
++    {
++        auto& proof = s_linux->poseProof;
++        eyeCameraDisplayTime = proof.cameraDisplayTime[sideIdx].load(std::memory_order_relaxed);
++        hasEyeCameraDisplayTime = proof.cameraTimeValid[sideIdx].exchange(false, std::memory_order_acq_rel);
++    }
++
+     auto copyCurrentRenderSnapshotToPair = [&](LinuxRenderState::Captured3DPair& pair) {
+         if (hasRenderViewsSnapshot) {
+             pair.renderViews = renderViewsSnapshot;
+@@ -2582,6 +2627,8 @@ void RND_Renderer::LinuxCopyColorToSwapchain(OpenXR::EyeSide side, VkCommandBuff
+         pair.bufferIdx[0] = wIdx;
+         pair.flatWindow = s_linux->frameBlackBars;
+         pair.colorCopyAt[0] = captured.colorCopyAt[0];
++        pair.cameraDisplayTime[0] = eyeCameraDisplayTime;
++        pair.cameraTimeValid[0] = hasEyeCameraDisplayTime;
+         copyCurrentRenderSnapshotToPair(pair);
+         if (s_linux->captureDiagnosticsEnabled) {
+             s_linux->stats.diag3DPendingLeftStarts.fetch_add(1, std::memory_order_relaxed);
+@@ -2606,6 +2653,23 @@ void RND_Renderer::LinuxCopyColorToSwapchain(OpenXR::EyeSide side, VkCommandBuff
+     pair.eyeCopied[1] = true;
+     pair.bufferIdx[1] = wIdx;
+     pair.colorCopyAt[1] = captured.colorCopyAt[1];
++    pair.cameraDisplayTime[1] = eyeCameraDisplayTime;
++    pair.cameraTimeValid[1] = hasEyeCameraDisplayTime;
++    // poseFreeze proof: the pair is submitted with the left copy's views. Count an eye when its
++    // camera was built with another pose, and keep the largest age difference.
++    if (pair.hasRenderViews) {
++        for (int eye = 0; eye < 2; ++eye) {
++            if (!pair.cameraTimeValid[eye] || pair.cameraDisplayTime[eye] == 0 || pair.renderDisplayTime == 0) continue;
++            if (pair.cameraDisplayTime[eye] == pair.renderDisplayTime) continue;
++            s_linux->poseProof.stale[eye].fetch_add(1, std::memory_order_relaxed);
++            const XrTime diff = pair.cameraDisplayTime[eye] - pair.renderDisplayTime;
++            const uint64_t ageNs = (uint64_t)(diff < 0 ? -diff : diff);
++            uint64_t previous = s_linux->poseProof.maxAgeNs.load(std::memory_order_relaxed);
++            while (ageNs > previous
++                && !s_linux->poseProof.maxAgeNs.compare_exchange_weak(previous, ageNs, std::memory_order_relaxed)) {
++            }
++        }
++    }
+     s_linux->completed3DPair = pair;
+     s_linux->frameHasContent = true;
+     if (s_linux->captureDiagnosticsEnabled) {
+@@ -2756,13 +2820,37 @@ void RND_Renderer::LinuxCopyHudToSwapchain(VkCommandBuffer cmdBuffer, VkImage sr
+ // will wait for the winner's unique_lock to release in the caller).
+ void RND_Renderer::LatchPendingIfNeeded() const {
+     if (!s_linux) return;
+-    // Fast path: latch already done for this Cemu frame.
++    if (!BetterVR_PS5_PoseFreeze()) {
++        // bettervr.json's poseFreeze=0: the original per-read latch, unchanged.
++        if (!m_linuxNeedsLatch.exchange(false, std::memory_order_acquire)) return;
++        PromotePendingViews();
++        return;
++    }
++
++    // poseFreeze: the left BeginCameraSide promotes one pair for the stereo frame and holds it
++    // until the right EndCameraSide, so both eyes render and copy the pose the pair is submitted
++    // with. Nothing else may promote in between.
++    if (!m_linuxNeedsLatch.load(std::memory_order_acquire)) return;
++    if (m_linuxStereoPoseFrozen.load(std::memory_order_acquire)) return;
++    std::lock_guard<std::mutex> latchLock(m_linuxLatchMutex);
+     if (!m_linuxNeedsLatch.exchange(false, std::memory_order_acquire)) return;
++    if (m_linuxStereoPoseFrozen.load(std::memory_order_acquire)) {
++        // the left pass froze the pair while this caller waited for the lock
++        m_linuxNeedsLatch.store(true, std::memory_order_release);
++        return;
++    }
++    PromotePendingViewsLocked();
++}
++
++// The latch body: wait for a pendingViews newer than the one last consumed and publish it. Returns
++// false when the submit thread is gone or the bounded wait expired (m_currViews stays as it was).
++bool RND_Renderer::PromotePendingViews() const {
++    if (!s_linux) return false;
+ 
+     // If the submit thread has exited (fatal error), don't bother waiting for
+     // new pose data — it'll never come. Proceed with whatever m_currViews
+     // currently holds. Cemu can keep running, just without VR re-presentation.
+-    if (!s_linux->submit.alive.load(std::memory_order_acquire)) return;
++    if (!s_linux->submit.alive.load(std::memory_order_acquire)) return false;
+ 
+     // Wait for submit thread to have prepared pendingViews newer than what we
+     // consumed last. In steady state this is already true (submit thread is
+@@ -2787,7 +2875,7 @@ void RND_Renderer::LatchPendingIfNeeded() const {
+                     s_linux->submit.iterCount.load(std::memory_order_relaxed),
+                     s_linux->submit.currentStep.load(std::memory_order_relaxed));
+             }
+-            return; // proceed with stale m_currViews
++            return false; // proceed with stale m_currViews
+         }
+         views = *s_linux->submit.pendingViews;
+         viewsDisplayTime = s_linux->submit.pendingFrameState.predictedDisplayTime;
+@@ -2811,6 +2899,58 @@ void RND_Renderer::LatchPendingIfNeeded() const {
+         m_currViews = views;
+         m_linuxCurrViewsDisplayTime = viewsDisplayTime;
+     }
++    return true;
++}
++
++bool RND_Renderer::PromotePendingViewsLocked() const {
++    if (!PromotePendingViews()) return false;
++    ++m_linuxPromotionGeneration;
++    return true;
++}
++
++// poseFreeze: called at the left BeginCameraSide, before the game builds that eye's camera.
++void RND_Renderer::LinuxStereoPoseBegin(OpenXR::EyeSide side) const {
++    if (!s_linux || side != OpenXR::EyeSide::LEFT || !BetterVR_PS5_PoseFreeze()) return;
++    std::lock_guard<std::mutex> latchLock(m_linuxLatchMutex);
++    // One promotion per stereo frame. A present-path latch that won the race just before this
++    // point already promoted the pair; waiting for a second pending frame here would stall the
++    // game frame.
++    if (m_linuxPromotionGeneration == m_linuxLastStereoPromotion) {
++        m_linuxNeedsLatch.store(false, std::memory_order_release);
++        PromotePendingViewsLocked();
++    }
++    m_linuxLastStereoPromotion = m_linuxPromotionGeneration;
++    m_linuxStereoPoseFrozen.store(true, std::memory_order_release);
++}
++
++// poseFreeze: called at the right EndCameraSide, after the right image has been drawn.
++void RND_Renderer::LinuxStereoPoseEnd(OpenXR::EyeSide side) const {
++    if (!s_linux || side != OpenXR::EyeSide::RIGHT || !BetterVR_PS5_PoseFreeze()) return;
++    m_linuxStereoPoseFrozen.store(false, std::memory_order_release);
++}
++
++// poseFreeze proof: called by hook_GetRenderCamera before it builds this eye's camera. An early
++// return (menu, flat view, black bars) leaves no time, so that copy is not counted.
++void RND_Renderer::LinuxBeginEyeCameraPose(OpenXR::EyeSide side) const {
++    if (!s_linux) return;
++    const int sideIdx = (int)side;
++    if (sideIdx < 0 || sideIdx >= 2) return;
++    s_linux->poseProof.cameraTimeValid[sideIdx].store(false, std::memory_order_release);
++}
++
++// poseFreeze proof: the display time of the views the camera was just built with. poseFreeze holds
++// them for the whole pair, so this is the time the image is rendered with.
++void RND_Renderer::LinuxNoteEyeCameraPose(OpenXR::EyeSide side) const {
++    if (!s_linux) return;
++    const int sideIdx = (int)side;
++    if (sideIdx < 0 || sideIdx >= 2) return;
++    XrTime displayTime = 0;
++    {
++        std::shared_lock viewsLock(m_viewsMutex);
++        displayTime = m_linuxCurrViewsDisplayTime;
++    }
++    s_linux->poseProof.cameraDisplayTime[sideIdx].store(displayTime, std::memory_order_relaxed);
++    s_linux->poseProof.cameraTimeValid[sideIdx].store(true, std::memory_order_release);
+ }
+ 
+ // Backend-specific view accessor used by the shared pose getters in renderer.h.
