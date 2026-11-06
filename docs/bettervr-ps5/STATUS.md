@@ -16,14 +16,18 @@ the asm then runs upstream's `currentEyeSide != 0` test exactly; the default is 
 `playerOnce` in `BetterVR_PS5_PlayerOnce()`, writes the flag at the first `hook_PhysFrame`, and the
 session-start line names the same cached value, so restarting only the game cannot mislabel the gate.
 The `0x0344DCF8` tail hook is removed, so the roomscale entry's registers (r5 included) are the
-upstream ones again.
+upstream ones again. `OnlyRunPlayerUpdateJobOnce` saves the caller's r3-r12, CR and CTR in its own
+frame and puts them back before the `bctrl`, so the player's update sees the registers and CR0
+upstream's hook gives it even though the take, the host hook and the run/skip branch sit in between.
 
 **`[phys]` (2 s, at most 1200 lines).** The line is now only what decides the fix:
 `[phys] t=… frames=… mode=once|upstream entries L=… R=… runs=… skips=… runs/f 1.00 late=…
 cores entries 0:… 1:… 2:… runs 0:… 1:… 2:…`. `frames` is the game-frame count from
 `physFrameCounter`; `runs/f` is the one number: about 0.02-0.04 before the fix, 1.00 expected after;
-`late` counts runs that took a due word armed in an earlier game frame. The old tail, lag, gap,
-expected-pass and zero-run instrumentation (review findings 2, 3, 4, 7) is gone.
+`late` counts runs that took the due word at least one game frame after the frame it was armed for
+(a take in the same or next frame is on time, `frame - dueFrame` 0 or 1, so `late` stays near 0).
+The old tail, lag, gap, expected-pass and zero-run instrumentation (review findings 2, 3, 4, 7) is
+gone.
 
 The thirteen BetterVR patches apply in order on pin `2e06b31` (13/13, tree identical to the
 patched tree); `entity_controller.cpp` and `controls.cpp` pass `clang++ -std=c++23 -fsyntax-only
@@ -860,8 +864,9 @@ was released.
 
 **What `[phys]` decides.**
 
-- **The fix working:** `mode=once` and `runs/f` near 1.00 (one update a game frame), with `late`
-  small. The jump peaks about 1-1.5 m and lands within about 1 s.
+- **The fix working:** `mode=once` and `runs/f` ≈ 1.00 (one update a game frame), with `late` near
+  0 (a take in the same or next frame is on time; `late` counts takes two or more frames after the
+  arm). The jump peaks about 1-1.5 m and lands within about 1 s.
 - **The gate still starving the update:** `mode=once` but `runs/f` far below 1.00, or `entries`
   well below `frames` on both sides: the calls themselves are missing (the job queue), not the
   due word.
