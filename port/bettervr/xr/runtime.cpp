@@ -1319,7 +1319,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateSession(XrInstance, const XrSessionCreate
 	Log("game comfort fades: %s (bettervr.json's fades%s)", fades ? "on, ramped over 0.2 s" : "off", fades ? ", default on" : "=0");
 	const bool flatScene = BetterVR_PS5_FlatScene();
 	Log("flat/menu presentation: %s (bettervr.json's flatScene%s)",
-		flatScene ? "the mono/left scene with the HUD over it, a menu's mono frame once" : "upstream's HUD-only flat quad and stereo menu",
+		flatScene ? "the mono scene with the HUD over it, one picture in both eyes, a menu's mono frame once" : "upstream's HUD-only flat quad and stereo menu",
 		flatScene ? ", default on" : "=0");
 	const bool leftSlot = BetterVR_PS5_LeftSlot();
 	Log("left eye's 3D slot: %s (bettervr.json's leftSlot%s)",
@@ -1714,9 +1714,14 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
 	VkImage eyeImages[2] = {};
 	Pose eyePoses[2];
 	XrFovf eyeFov[2] = {};
+	bool monoViews = false;
 	if (projection && projection->viewCount >= 2)
 	{
 		const Pose base = SpacePose(projection->space, info->displayTime);
+		// A mono projection (the menu/flat path) submits one eye's pose and FOV in both views so
+		// both eyes see one picture. Detect it so the HUD quad is placed with the real eyes below.
+		monoViews = std::memcmp(&projection->views[0].pose, &projection->views[1].pose, sizeof(XrPosef)) == 0
+			&& std::memcmp(&projection->views[0].fov, &projection->views[1].fov, sizeof(XrFovf)) == 0;
 		for (int eye = 0; eye < 2; eye++)
 		{
 			const XrCompositionLayerProjectionView& view = projection->views[eye];
@@ -1736,15 +1741,21 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
 		}
 		// x and z only: BetterVR lifts the views it renders from to a seated eye height (y) before it
 		// submits them, so a match on y never held and the frame went to Hmd2 as rendered from the
-		// pose of its display time: no reprojection of an image that is 50 ms old or more
-		bool found = false;
-		for (const auto& located : s.located)
-			if (s.reproject && std::fabs(located.leftEye.x - eyePoses[0].p.x) < 1e-5f && std::fabs(located.leftEye.z - eyePoses[0].p.z) < 1e-5f)
-			{
-				renderHead = located.head;
-				found = true;
-				break;
-			}
+		// pose of its display time: no reprojection of an image that is 50 ms old or more.
+		// A mono picture is one head-locked image, not a stereo render: its views carry this frame's
+		// live pose, so the display head is the pose to present it from. The search ignores y for a
+		// raised eye height and scans the ring from the oldest entry, so it can match an older head
+		// at another height or roll and timewarp the menu against the head (the "screen moved"
+		// report).
+		bool found = monoViews;
+		if (!monoViews)
+			for (const auto& located : s.located)
+				if (s.reproject && std::fabs(located.leftEye.x - eyePoses[0].p.x) < 1e-5f && std::fabs(located.leftEye.z - eyePoses[0].p.z) < 1e-5f)
+				{
+					renderHead = located.head;
+					found = true;
+					break;
+				}
 		(found ? session->poseFound : session->poseLost)++;
 	}
 	else
@@ -1758,6 +1769,22 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
 			eyeFov[eye] = eye == 0 ? XrFovf{-out, in, up, -down} : XrFovf{-in, out, up, -down};
 		}
 	}
+	// The HUD quad is placed with the real eyes, not with the projection's shared view: for a mono
+	// picture both views carry the left eye's pose/FOV, and using that for QuadInEye put the right
+	// eye's HUD at the left eye's position (the scope/menu HUD offset). Normal stereo and the
+	// HUD-only path keep the view/eye poses they already use.
+	Pose hudPoses[2] = {eyePoses[0], eyePoses[1]};
+	XrFovf hudFov[2] = {eyeFov[0], eyeFov[1]};
+	if (monoViews)
+	{
+		const Pose head = HeadAt(info->displayTime);
+		const float out = std::atan(s.fov.out), in = std::atan(s.fov.in), up = std::atan(s.fov.top), down = std::atan(s.fov.bottom);
+		for (int eye = 0; eye < 2; eye++)
+		{
+			hudPoses[eye] = {head.q, Add(head.p, Rotate(head.q, s.eyeOffset[eye]))};
+			hudFov[eye] = eye == 0 ? XrFovf{-out, in, up, -down} : XrFovf{-in, out, up, -down};
+		}
+	}
 	VkImageView hudView = session->dummyView;
 	VkImage hudImage = VK_NULL_HANDLE;
 	if (quad && quad->subImage.swapchain && quad->subImage.swapchain->released >= 0 && quad->subImage.swapchain->color)
@@ -1767,7 +1794,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
 		bool any = false;
 		for (int eye = 0; eye < 2; eye++)
 		{
-			if (!QuadInEye(*quad, quadPose, eyePoses[eye], eyeFov[eye], params.hudRect[eye]))
+			if (!QuadInEye(*quad, quadPose, hudPoses[eye], hudFov[eye], params.hudRect[eye]))
 				params.hudRect[eye][0] = params.hudRect[eye][1] = 2.0f, params.hudRect[eye][2] = params.hudRect[eye][3] = 3.0f;
 			else
 				any = true;

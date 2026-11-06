@@ -1,0 +1,137 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Patryk Kowalczyk <papyszoo@gmail.com>
+Date: Fri, 6 Nov 2026 19:00:24 +0100
+Subject: [PATCH] PS5: a menu's mono frame lasts the menu and the HUD keeps
+ per-eye place
+
+---
+ src/rendering/renderer_vulkan.cpp | 73 +++++++++++++++++++++----------
+ 1 file changed, 51 insertions(+), 22 deletions(-)
+
+diff --git a/src/rendering/renderer_vulkan.cpp b/src/rendering/renderer_vulkan.cpp
+index bb80e16..a8d5dbc 100644
+--- a/src/rendering/renderer_vulkan.cpp
++++ b/src/rendering/renderer_vulkan.cpp
+@@ -383,8 +383,10 @@ struct LinuxRenderState {
+             // pair was published. The submit thread compares it with the live counter before it
+             // submits the copy; a mismatch means the game wrote the slot again in between.
+             uint64_t slotWrite[2] = { 0, 0 };
+-            // The published pair is a mono image (the flat camera). A menu after a flat frame must
+-            // not project it as stereo; only a pair published from normal play is reused behind it.
++            // The published pair is a mono image (the flat camera or a menu). A menu after a flat
++            // frame must not project it as stereo; only a pair published from normal play is reused
++            // behind it. Both eyes sample the left image with the same pose (one picture); the
++            // runtime places the HUD quad with the real per-eye poses (runtime.cpp QuadInEye).
+             bool pairMono = false;
+             bool eyeCopied[2] = { false, false };
+             bool depthCopied[2] = { false, false };
+@@ -2048,16 +2050,28 @@ void RND_Renderer::EndFrame() {
+     // upstream renderer.cpp:38-51: IsCurrent3DPresentationAllowed() refuses the projection layer
+     // for the flat camera, a pause menu, a mono capture, and while the game is not in game. Read
+     // the camera's mono state once here, before the capture counter is decremented, so a mono
+-    // frame is never published as a stereo pair. This is
+-    // UseMonoFrameBufferTemporarilyDuringMenusOrPictures() without its fade exclusion: the camera
+-    // helper returns false while any fade screen is visible and follows IsScreenVisible(), so
+-    // using it would publish a menu that is fading in or out as stereo.
++    // frame is never published as a stereo pair.
++    //
++    // The whole pause menu, not only its opening transition, is `!IsInGame()`
++    // (renderer.cpp:42-44, cemu_hooks.h:147-150): the game stops updating the gameplay camera
++    // while the inventory is open (the log's in_game=0 for the whole menu), and the explicit
++    // PauseMenuInfo_00 check is renderer.cpp:48-50. The screen *visible* flags below only cover
++    // the transition (~1 s in the log); the pointer/open check holds, but PauseMenu_00's pointer
++    // also exists outside the menu, so it is only used with the visibility transition. A cutscene
++    // also stops the gameplay camera but is still a stereo frame, so it is excluded.
+     const bool frozenFrame = IsGameCapturing3DFrameBuffer();
+-    const bool cameraMono = frozenFrame
+-        || CemuHooks::IsFlatCameraModeActive()
+-        || CemuHooks::IsScreenOpen(ScreenId::PauseMenuInfo_00)
+-        || CemuHooks::IsScreenVisible(ScreenId::PauseMenu_00)
++    const bool flatCamera = CemuHooks::IsFlatCameraModeActive();
++    const bool pauseInfoOpen = CemuHooks::IsScreenOpen(ScreenId::PauseMenuInfo_00);
++    const bool pauseVisible = CemuHooks::IsScreenVisible(ScreenId::PauseMenu_00)
+         || CemuHooks::IsScreenVisible(ScreenId::PauseMenuInfo_00);
++    const bool inGame = CemuHooks::IsInGame();
++    const bool cutscene = CemuHooks::HasActiveCutscene();
++    const bool outOfGame = !inGame && !cutscene;
++    const bool cameraMono = frozenFrame
++        || flatCamera
++        || pauseInfoOpen
++        || pauseVisible
++        || outOfGame;
+     const bool menuMono = s_linux && BetterVR_PS5_FlatScene() && cameraMono;
+ 
+     if (m_cameraIsCapturing3DFrameBuffer > 0) {
+@@ -2084,6 +2098,11 @@ void RND_Renderer::EndFrame() {
+     const bool flatView = s_linux->frameFlatView;
+     const bool blackBars = s_linux->frameBlackBars;
+     const bool flatNow = flatView || blackBars;
++    // The picture the next publish marks mono, the same expression as pairMono below. The menu
++    // camera can drop before the flat view's 8-frame debounce ends (the log's old "off" line fired
++    // 0.24 s before Flat view off), and the publish still marks that pair mono; the line below
++    // follows this picture, not the raw menu camera.
++    const bool monoNow = BetterVR_PS5_FlatScene() && (flatView || menuMono);
+     // One line per game fade, rate-limited by the fade itself: a flicker shorter than ~0.1 s does
+     // not produce a line, so a toggling screen cannot flood the log. The line carries the largest
+     // applied fade and the HUD capture image/size; `changed` counts a different image or size
+@@ -2151,10 +2170,12 @@ void RND_Renderer::EndFrame() {
+         static bool s_lastFade = false;
+         if (flatView != s_lastFlatView) {
+             s_lastFlatView = flatView;
+-            Log::print<INFO>("Flat view {} (scope={}, CameraFinder={}, quad={}x{} side={})",
++            Log::print<INFO>("Flat view {} (scope={}, CameraFinder={}, quad={}x{} side={}, layer={})",
+                 flatView ? "on" : "off", CemuHooks::IsScopeModeActive(), CemuHooks::IsCameraFinderModeActive(),
+                 s_linux->hudSourceWidth, s_linux->hudSourceHeight,
+-                s_linux->hudSourceSide == 0 ? "left" : (s_linux->hudSourceSide == 1 ? "right" : "none"));
++                s_linux->hudSourceSide == 0 ? "left" : (s_linux->hudSourceSide == 1 ? "right" : "none"),
++                flatView ? (BetterVR_PS5_FlatScene() ? "mono projection, shared pose, HUD quad, head-locked" : "opaque HUD quad")
++                         : "stereo projection, HUD quad");
+         }
+         if (blackBars != s_lastBlackBars) {
+             s_lastBlackBars = blackBars;
+@@ -2169,27 +2190,35 @@ void RND_Renderer::EndFrame() {
+                 eyeSource == 1 ? "right eye's image to both" : (eyeSource == 2 ? "left eye's image to both" : "each eye's own"),
+                 eyeSource);
+         }
+-        // One line per switch, at most one a second: a menu that flickers for a frame cannot flood
+-        // the log. `projection` names what the headset sees for the menu/mono frame.
++        // One line per switch of the picture, at most one a second: a menu that flickers for a
++        // frame cannot flood the log. `pause` is the real screen state (open, only visible during
++        // the transition, or neither); `flatView` is the latched/debounced scope flag that also
++        // holds the mono picture; `inGame=no` is upstream's whole-menu signal. `projection` and
++        // `layer` name what the headset gets for the picture.
+         const auto menuNow = std::chrono::steady_clock::now();
+-        if (menuMono != s_lastMenuMono
++        if (monoNow != s_lastMenuMono
+             && (s_lastMenuMonoLog.time_since_epoch().count() == 0
+                 || menuNow - s_lastMenuMonoLog >= std::chrono::seconds(1))) {
+-            s_lastMenuMono = menuMono;
++            s_lastMenuMono = monoNow;
+             s_lastMenuMonoLog = menuNow;
+-            const bool pauseOpen = CemuHooks::IsScreenOpen(ScreenId::PauseMenu_00)
+-                || CemuHooks::IsScreenOpen(ScreenId::PauseMenuInfo_00);
++            const char* pauseState = pauseInfoOpen ? "open" : (pauseVisible ? "visible" : "no");
+             const bool freshPair = s_linux->frameHasContent && s_linux->completed3DPair.IsComplete();
+             bool anyPair = false;
+             {
+                 std::lock_guard<std::mutex> lock(s_linux->submit.latestMutex);
+                 anyPair = s_linux->submit.latest.has3D;
+             }
+-            Log::print<INFO>("Menu/mono presentation {} (pause={}, frozenFrame={}, projection={})",
+-                menuMono ? "on" : "off",
+-                pauseOpen ? "yes" : "no",
++            const bool hasPicture = freshPair || anyPair;
++            Log::print<INFO>("Menu/mono presentation {} (pause={}, frozenFrame={}, flatCamera={}, flatView={}, inGame={}, projection={}, layer={})",
++                monoNow ? "on" : "off",
++                pauseState,
+                 frozenFrame ? "yes" : "no",
+-                menuMono ? ((freshPair || anyPair) ? "mono capture, both eyes" : "none, HUD over black") : "stereo");
++                flatCamera ? "yes" : "no",
++                flatView ? "yes" : "no",
++                inGame ? "yes" : "no",
++                monoNow ? (hasPicture ? "mono capture, shared pose" : "none") : "stereo",
++                monoNow ? (hasPicture ? "projection + HUD quad, head-locked" : "HUD quad, head-locked")
++                        : "projection + HUD quad");
+         }
+         const bool fadeOn = gameFadeActive || fadeAmount > 0.01f;
+         if (fadeOn != s_lastFade) {

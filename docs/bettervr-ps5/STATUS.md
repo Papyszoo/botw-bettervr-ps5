@@ -3,6 +3,58 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-06 (inventory and scope HUD): a menu keeps its mono frame, the HUD keeps each eye's place (not built, not run)
+
+**Not built, not run.** Two symptoms, two causes. The inventory's Link was still doubled and its
+screen sat in the wrong place; the scope's HUD was offset between the eyes.
+
+**The menu gate (inventory).** `menuMono` was `frozenFrame || flat || IsScreenVisible(PauseMenu_00)
+|| IsScreenVisible(PauseMenuInfo_00)`. `frozenFrame` is the game's temporary layer copy
+(`m_cameraIsCapturing3DFrameBuffer`), which only lasts while the menu is opening (~1 s in the
+log); `IsScreenVisible` covers the same opening transition. The log's `pause=yes` came from
+`IsScreenOpen(PauseMenu_00)`, whose pointer also exists while scoping, so it named nothing. Once
+those expired, the game's mono inventory pair was published as stereo and each eye got its own
+Link. Upstream keeps 3D disallowed for the whole menu with `!IsInGame()`
+(`renderer.cpp:42-44`, `cemu_hooks.h:147-150`): the gameplay camera stops updating while the
+inventory is open (the log is `in_game=0` for the whole menu), plus `IsScreenOpen(PauseMenuInfo_00)`
+(`renderer.cpp:48-50`). Patch 0022 adds that `!IsInGame()` term, excluding an active cutscene
+(which also stops the camera but is still a stereo frame), and logs the real inputs.
+
+**The HUD place (inventory and scope).** The mono projection sent the left eye's pose and FOV in
+both views so both eyes saw one picture. The runtime's `QuadInEye` places the HUD quad from the
+projection views, so the right eye's HUD was placed at the left eye's position: the scope HUD was
+offset between the eyes and the inventory screen sat to one side. `port/bettervr/xr/runtime.cpp`
+now detects a mono projection (identical pose and FOV in both views; ~20 lines) and places the HUD
+quad with the real per-eye poses and FOV from the head/eye offsets. The mono picture is head-locked
+too: it is presented from the display-time head, not from the located stereo render pose (that
+search ignores y, so it could match an older head height and timewarp the menu against the head).
+Normal stereo and the HUD-only path are unchanged. Both eyes still get the same left picture; no
+Link per eye.
+
+**Logs.** `Menu/mono presentation on (pause=open|visible|no, frozenFrame=..., flatCamera=...,
+flatView=..., inGame=..., projection=mono capture, shared pose, layer=projection + HUD quad,
+head-locked)` is one line per switch of the picture, at most one a second; `... off (...)` says
+`projection=stereo`. The line follows the picture, not the raw menu camera: `flatView` is the
+debounced scope flag, so the 8-frame tail after the scope closes is not logged as stereo. The Flat
+view line ends with `layer=mono projection, shared pose, HUD quad, head-locked` (or
+`layer=opaque HUD quad` with `"flatScene":0`). `"flatScene":0` still restores the pre-0020
+behaviour (old HUD-only flat quad and the stereo menu).
+
+**Test request 26 (inventory and scope HUD).** Install the build. Open the inventory and stay in
+it for 10+ s, then turn your head left and right and stand up/crouch; Link must appear once and the
+menu must not be duplicated or shift between the eyes or against the head. Then enter the scope,
+then the binoculars/Camera rune;
+the scope HUD must be at the same place in both eyes. Send the `Menu/mono presentation ...` lines
+around opening/closing the inventory, the `Flat view ...` lines for the scope and binoculars, and
+say whether Link/screen/HUD stayed single and aligned. Optional control: add `"flatScene":0` to
+`/data/ps5cemu/bettervr.json`, restart, and the old doubled/stereo menu and HUD-only flat quad must
+return.
+
+The twenty-two BetterVR patches apply in order on pin `2e06b31` (22/22; 0022 is new);
+`renderer_vulkan.cpp` and `port/bettervr/xr/runtime.cpp` pass
+`clang++ -std=c++23 -fsyntax-only -D__PROSPERO__` (0 errors, pre-existing warnings only). Not
+compiled for the console.
+
 ## 2026-11-06 (shrine left-eye judder): the left eye's 3D slot is clear of the published pair (not built, not run)
 
 **Not built, not run.** The 3D intermediates are double-buffered on the game's 0/1 magic frame
