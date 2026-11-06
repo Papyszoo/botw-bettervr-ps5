@@ -29,7 +29,6 @@ store's check passes with the Switch 2 settings and paths. Not run on a console.
 
 Co-authored-by: Oliv3rmoon <165517657+Oliv3rmoon@users.noreply.github.com>
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_01Ef4Vv4wsGSyy7YgkCfzRaf
 ---
  README.md                                     |  3 +-
  docs/NX2_PORT.md                              | 78 +++++++++++++++++

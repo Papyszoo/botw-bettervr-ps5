@@ -12,7 +12,6 @@ Compiles with clang 18 on Ubuntu 24.04 as libBetterVR_Layer.so.
 Not run on a headset.
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_01S4vb4faGNQDNh9XYn2pvGS
 ---
  .gitignore                                |    6 +
  CMakeLists.txt                            |   32 +-
