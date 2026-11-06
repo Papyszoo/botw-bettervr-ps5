@@ -1,0 +1,13 @@
+GameTDB data
+============
+
+The *.tsv.gz files here are GameTDB's English game information for the Wii U, 3DS, DS
+and Switch (descriptions, developers, publishers, release dates, genres, players,
+ratings), made by tools/render-gametdb.py from the databases at https://www.gametdb.com
+(wiiutdb.zip, 3dstdb.zip, dstdb.zip, switchtdb.zip). The information belongs to GameTDB
+and its contributors, and the app credits them.
+
+GameTDB's terms for redistributing its databases are not vendored in this repository and
+have not been confirmed here: they are to be confirmed against https://www.gametdb.com
+(see its "Terms of use" / licence page) before a release relies on this data. If GameTDB
+objects, remove these files and run the tool for a build that needs no network.
