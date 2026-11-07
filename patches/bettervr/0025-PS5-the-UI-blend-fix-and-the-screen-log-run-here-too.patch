@@ -1,0 +1,103 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Patryk Kowalczyk <papyszoo@gmail.com>
+Date: Sat, 7 Nov 2026 14:42:43 +0100
+Subject: [PATCH] PS5: the UI blend fix and the screen log run here too
+
+---
+ src/hooking/entity_controller.cpp |  8 ++++++++
+ src/hooking/settings.cpp          | 34 +++++++++++++++++++++++++------
+ 2 files changed, 36 insertions(+), 6 deletions(-)
+
+diff --git a/src/hooking/entity_controller.cpp b/src/hooking/entity_controller.cpp
+index 3519fc1..0ba621c 100644
+--- a/src/hooking/entity_controller.cpp
++++ b/src/hooking/entity_controller.cpp
+@@ -725,6 +725,14 @@ extern "C" bool BetterVR_PS5_SaveHold() {
+     return s_saveHold;
+ }
+ 
++// PS5: bettervr.json's uiAlpha (default on), cached once. On, the UI blend hook rewrites the blend
++// upstream does on Windows, so the minimap, dialogue boxes and other 2D elements stop leaving holes
++// in the HUD picture; off keeps patch 0001's untouched alpha blend. settings.cpp reads this.
++extern "C" bool BetterVR_PS5_UiAlpha() {
++    static const bool s_uiAlpha = BetterVR_PS5_Setting("uiAlpha", 1.0f) >= 0.5f;
++    return s_uiAlpha;
++}
++
+ // PS5: bettervr.json's eyeSource (default 0 = normal), cached once. Diagnostic only: 1 shows the
+ // right eye's image to both eyes, 2 the left eye's, with that eye's pose. The renderer reads this.
+ extern "C" int BetterVR_PS5_EyeSource() {
+diff --git a/src/hooking/settings.cpp b/src/hooking/settings.cpp
+index a5fe96c..e94ff14 100644
+--- a/src/hooking/settings.cpp
++++ b/src/hooking/settings.cpp
+@@ -170,25 +170,28 @@ void CemuHooks::hook_UpdateSettings(PPCInterpreter_t* hCPU) {
+ 
+     UpdateHeldWeaponStaleness();
+ 
+-#ifdef _DEBUG
++#if defined(_DEBUG) || defined(__PROSPERO__)
++    // PS5: which screens are visible, one line per change and never per frame. IsScreenVisible,
++    // not IsScreenOpen: some screen pointers persist outside the screen, so open would log a
++    // screen that is not drawn.
+     constexpr uint32_t maxScreenIdx = std::to_underlying(ScreenId::ScreenId_END);
+     std::unordered_set<ScreenId> currentEnabledScreens;
+     for (uint32_t i = 0; i < maxScreenIdx; i++) {
+         ScreenId id = (ScreenId)i;
+-        bool hasScreen = IsScreenOpen(id);
++        bool visible = IsScreenVisible(id);
+ 
+-        if (hasScreen) {            
++        if (visible) {
+ 
+             if (!prevEnabledScreens.contains(id)) {
+                 if (currentEnabledScreens.empty()) {
+                     Log::print<INFO>("---------");
+                 }
+-                Log::print<INFO>("Screen {} is ON", ScreenIdToString((ScreenId)i));
++                Log::print<INFO>("Screen {} visible", ScreenIdToString((ScreenId)i));
+             }
+             currentEnabledScreens.emplace(id);
+         }
+         else if (prevEnabledScreens.contains(id)) {
+-            Log::print<INFO>("Screen {} is OFF", ScreenIdToString((ScreenId)i));
++            Log::print<INFO>("Screen {} hidden", ScreenIdToString((ScreenId)i));
+         }
+     }
+     prevEnabledScreens = currentEnabledScreens;
+@@ -318,6 +321,9 @@ enum class GX2_COMBINEFUNC {
+     DST_MINUS_SRC = 4
+ };
+ 
++// PS5: bettervr.json's uiAlpha (default on), cached once in entity_controller.cpp
++extern "C" bool BetterVR_PS5_UiAlpha();
++
+ void CemuHooks::hook_FixUIBlending(PPCInterpreter_t* hCPU) {
+     hCPU->instructionPointer = hCPU->sprNew.LR;
+ 
+@@ -340,8 +346,24 @@ void CemuHooks::hook_FixUIBlending(PPCInterpreter_t* hCPU) {
+             hCPU->gpr[7] = 1;
+             hCPU->gpr[8] = std::to_underlying(GX2_BLENDFACTOR::ZERO);
+             hCPU->gpr[9] = std::to_underlying(GX2_BLENDFACTOR::DST_ALPHA);
++#elif defined(__PROSPERO__)
++            // PS5: upstream's fix (patch_ImproveGUI.asm), which patch 0001 left to Windows only.
++            // The minimap, dialogue boxes and other 2D elements overwrite the alpha of earlier
++            // draws, which leaves holes inside the HUD picture shown in VR; a separate alpha
++            // (ZERO, DST_ALPHA) keeps it. bettervr.json's uiAlpha (default on) turns it off.
++            if (BetterVR_PS5_UiAlpha()) {
++                hCPU->gpr[7] = 1;
++                hCPU->gpr[8] = std::to_underlying(GX2_BLENDFACTOR::ZERO);
++                hCPU->gpr[9] = std::to_underlying(GX2_BLENDFACTOR::DST_ALPHA);
++                static bool s_uiBlendLogged = false;
++                if (!s_uiBlendLogged) {
++                    s_uiBlendLogged = true;
++                    Log::print<INFO>("UI blend fix: separate alpha was {} (bettervr.json's uiAlpha, default on)", separateAlphaBlend);
++                }
++            }
+ #endif
+-            // Linux: leave alpha blending unmodified so HUD draws write proper alpha
++            // uiAlpha off, or another backend: leave alpha blending unmodified so HUD draws write
++            // proper alpha
+ 
+             //Log::print<VERBOSE>("FixUIBlending called with renderTargetIndex: {}, colorSrcFactor: {}, colorDstFactor: {}, colorCombineFunc: {}, separateAlphaBlend: {}, alphaSrcFactor: {}, alphaDstFactor: {}, alphaCombineFunc: {}", renderTargetIndex, std::to_underlying(colorSrcFactor), std::to_underlying(colorDstFactor), std::to_underlying(colorCombineFunc), separateAlphaBlend, std::to_underlying(alphaSrcFactor), std::to_underlying(alphaDstFactor), std::to_underlying(alphaCombineFunc));
+         }
