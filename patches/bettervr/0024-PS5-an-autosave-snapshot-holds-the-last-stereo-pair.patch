@@ -1,0 +1,140 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Patryk Kowalczyk <papyszoo@gmail.com>
+Date: Sat, 7 Nov 2026 14:40:50 +0100
+Subject: [PATCH] PS5: an autosave snapshot holds the last stereo pair
+
+---
+ src/hooking/entity_controller.cpp |  9 +++++
+ src/rendering/renderer_vulkan.cpp | 57 ++++++++++++++++++++++++++-----
+ 2 files changed, 58 insertions(+), 8 deletions(-)
+
+diff --git a/src/hooking/entity_controller.cpp b/src/hooking/entity_controller.cpp
+index f0f2b98..3519fc1 100644
+--- a/src/hooking/entity_controller.cpp
++++ b/src/hooking/entity_controller.cpp
+@@ -716,6 +716,15 @@ extern "C" bool BetterVR_PS5_QuadPlane() {
+     return s_quadPlane;
+ }
+ 
++// PS5: bettervr.json's saveHold (default on), cached once. On, an autosave snapshot taken while the
++// game is being played holds the last stereo pair for 3 publishes instead of showing the frame the
++// game rendered with its own flat camera; off publishes that frame as before. The renderer reads
++// this and runtime.cpp logs the same value.
++extern "C" bool BetterVR_PS5_SaveHold() {
++    static const bool s_saveHold = BetterVR_PS5_Setting("saveHold", 1.0f) >= 0.5f;
++    return s_saveHold;
++}
++
+ // PS5: bettervr.json's eyeSource (default 0 = normal), cached once. Diagnostic only: 1 shows the
+ // right eye's image to both eyes, 2 the left eye's, with that eye's pose. The renderer reads this.
+ extern "C" int BetterVR_PS5_EyeSource() {
+diff --git a/src/rendering/renderer_vulkan.cpp b/src/rendering/renderer_vulkan.cpp
+index a733760..b7787b7 100644
+--- a/src/rendering/renderer_vulkan.cpp
++++ b/src/rendering/renderer_vulkan.cpp
+@@ -60,6 +60,8 @@ extern "C" bool BetterVR_PS5_PoseFreeze();
+ extern "C" bool BetterVR_PS5_MenuLock();
+ extern "C" bool BetterVR_PS5_MonoQuad();
+ extern "C" bool BetterVR_PS5_QuadPlane();
++// PS5: bettervr.json's saveHold switch (default on), read once in entity_controller.cpp.
++extern "C" bool BetterVR_PS5_SaveHold();
+ 
+ // The combined comfort fade may move by at most one step per presented frame, so even a fade
+ // screen that appears and disappears every frame cannot strobe: a full swing takes 12 frames
+@@ -279,6 +281,12 @@ struct LinuxRenderState {
+     };
+     DebouncedSwitch flatViewSwitch;
+     DebouncedSwitch blackBarsSwitch;
++    // "not in game" for the mono gate: a camera hand-over blinks IsInGame() for a frame or two.
++    DebouncedSwitch outOfGameSwitch;
++    // saveHold: publishes still to hold after an autosave snapshot (3, decremented once per
++    // EndFrame), and the number of snapshots held this session (the app's [vr-xr] line).
++    int snapshotHold = 0;
++    std::atomic<uint64_t> snapshotHolds{0};
+     // Latched once at the first 3D color copy of a game frame, so both eyes and EndFrame use one
+     // value (upstream renderer.cpp:309-317 evaluates these once per frame).
+     bool frameFlatView = false;
+@@ -612,6 +620,13 @@ extern "C" void BetterVR_PS5_CopyProof(uint64_t* leftOverwritten, uint64_t* righ
+     if (copies) *copies = copyCount;
+ }
+ 
++// The saveHold proof, read by the app's per-600-frame line (runtime.cpp): the autosave snapshots
++// whose 3D pair was held back this session, so the console log's Save snapshot lines and the
++// [vr-xr] line can be compared.
++extern "C" void BetterVR_PS5_SnapshotProof(uint64_t* holds) {
++    if (holds) *holds = s_linux ? s_linux->snapshotHolds.load(std::memory_order_relaxed) : 0;
++}
++
+ // The comfort fade applied to the eye image: a solid colour whose alpha is the combined fade.
+ // Unlike upstream's presentDepthHLSL (shader.h:54-69), this fragment shader has no sampler: the
+ // game fade is a ramp at the submit thread, never a texel of the 2D/HUD capture, so two capture
+@@ -2140,13 +2155,7 @@ void RND_Renderer::EndFrame() {
+         || CemuHooks::IsScreenVisible(ScreenId::PauseMenuInfo_00);
+     const bool inGame = CemuHooks::IsInGame();
+     const bool cutscene = CemuHooks::HasActiveCutscene();
+-    const bool outOfGame = !inGame && !cutscene;
+-    const bool cameraMono = frozenFrame
+-        || flatCamera
+-        || pauseInfoOpen
+-        || pauseVisible
+-        || outOfGame;
+-    const bool menuMono = s_linux && BetterVR_PS5_FlatScene() && cameraMono;
++    const bool outOfGameRaw = !inGame && !cutscene;
+ 
+     if (m_cameraIsCapturing3DFrameBuffer > 0) {
+         --m_cameraIsCapturing3DFrameBuffer;
+@@ -2154,6 +2163,29 @@ void RND_Renderer::EndFrame() {
+ 
+     if (!s_linux) return;
+ 
++    // A camera hand-over makes IsInGame() blink for a frame or two (the log's 11-frame window
++    // after "Camera changed"); it is out of game only once it has held for 8 Cemu frames. A menu
++    // still goes mono at once through pauseVisible, so the inventory fix does not wait for this.
++    const bool outOfGame = s_linux->outOfGameSwitch.Update(outOfGameRaw);
++    // An autosave takes a snapshot of the 3D framebuffer while the game is being played: the game
++    // renders that frame with its own flat camera, and the port used to publish it as the picture
++    // (a mono pair, or a game-camera pair as stereo). Instead the last stereo pair is held for a
++    // few publishes, as upstream does for a mono capture, and Hmd2 timewarps it with the live head.
++    // A menu or the Camera rune keeps its mono path unchanged.
++    const bool snapshotOnly = BetterVR_PS5_SaveHold() && frozenFrame && inGame
++        && !flatCamera && !pauseInfoOpen && !pauseVisible;
++    const bool cameraMono = (frozenFrame && !snapshotOnly)
++        || flatCamera
++        || pauseInfoOpen
++        || pauseVisible
++        || outOfGame;
++    const bool menuMono = BetterVR_PS5_FlatScene() && cameraMono;
++    if (snapshotOnly && s_linux->snapshotHold == 0) {
++        s_linux->snapshotHold = 3;
++        s_linux->snapshotHolds.fetch_add(1, std::memory_order_relaxed);
++        Log::print<INFO>("Save snapshot: the last stereo pair is held for 3 publishes, so the game-camera frame never reaches the headset (playing, no menu)");
++    }
++
+     // Phase 7: just signal the timeline semaphore and update the latest content
+     // state. The submit thread does all GPU copies + xrEndFrame at native
+     // vsync rate, re-presenting copied content between Cemu pushes.
+@@ -2377,7 +2409,11 @@ void RND_Renderer::EndFrame() {
+             // the menu's Link preview (captureIdx 2 is the UI buffer), so it publishes the mono
+             // pair marked mono; the submit thread presents it once to both eyes, with the HUD over
+             // it. That is the menu shown once, not once per eye, and no stale stereo world.
+-            const bool publish3D = has3DContent;
++            // saveHold: while the autosave snapshot hold lasts, the pair is not published (the
++            // sticky has3D keeps the last stereo pair on the submit thread, timewarped with the
++            // live head). The pair's buffers are still cleared below, as for a dropped frame.
++            const bool snapshotHold = s_linux->snapshotHold > 0;
++            const bool publish3D = has3DContent && !snapshotHold;
+             const bool monoPair = BetterVR_PS5_FlatScene() && (flatView || menuMono);
+             const bool menuScreenOpen = CemuHooks::IsScreenOpen(ScreenId::MessageDialog) || CemuHooks::IsScreenOpen(ScreenId::ShopBG_00);
+             {
+@@ -2448,6 +2484,11 @@ void RND_Renderer::EndFrame() {
+         }
+     }
+ 
++    // saveHold: one publish of the hold is spent per Cemu frame, whether or not it carried a pair.
++    if (s_linux->snapshotHold > 0) {
++        --s_linux->snapshotHold;
++    }
++
+     auto frameEnd = std::chrono::high_resolution_clock::now();
+     m_lastFrameWorkTimeMs.store(std::chrono::duration<double, std::milli>(frameEnd - m_frameStartTime).count(),
+                                 std::memory_order_relaxed);
