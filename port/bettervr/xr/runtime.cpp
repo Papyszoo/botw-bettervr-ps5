@@ -67,6 +67,8 @@ bool BetterVR_PS5_FlatScene();
 bool BetterVR_PS5_MonoQuad();
 bool BetterVR_PS5_MenuLock();
 bool BetterVR_PS5_QuadPlane();
+// BetterVR's autosave hold (entity_controller.cpp): bettervr.json's saveHold, default on
+bool BetterVR_PS5_SaveHold();
 // BetterVR's stereo pose freeze (entity_controller.cpp): bettervr.json's poseFreeze, default on
 bool BetterVR_PS5_PoseFreeze();
 // BetterVR's renderer (renderer_vulkan.cpp): the poseFreeze proof counters, per eye, and the
@@ -75,6 +77,8 @@ void BetterVR_PS5_PoseProof(uint64_t* leftStale, uint64_t* rightStale, double* m
 // BetterVR's renderer (renderer_vulkan.cpp): the leftSlot proof counters, per eye, and the number
 // of 3D pairs copied
 void BetterVR_PS5_CopyProof(uint64_t* leftOverwritten, uint64_t* rightOverwritten, uint64_t* copies);
+// BetterVR's renderer (renderer_vulkan.cpp): the autosave snapshots whose pair was held
+void BetterVR_PS5_SnapshotProof(uint64_t* holds);
 // BetterVR's renderer (entity_controller.cpp): bettervr.json's leftSlot, default on
 bool BetterVR_PS5_LeftSlot();
 // BetterVR's stereo rays (entity_controller.cpp): bettervr.json's stereoRays, default on
@@ -299,6 +303,8 @@ struct XrSession_T
 	uint64_t frames = 0, emptyFrames = 0, skipped = 0;
 	// frames whose render pose was found among the located views, and frames where it was not
 	uint64_t poseFound = 0, poseLost = 0;
+	// frames whose re-shown pair kept the render pose it was published with (poseKeep)
+	uint64_t poseKept = 0;
 	uint64_t monoOnQuad = 0, planeQuads = 0; // frames whose mono picture rode the HUD quad, frames whose quad was drawn as a plane
 	// frames Hmd2's TV mirror took, and frames it was asked for but did not take
 	uint64_t tvShown = 0, tvSkipped = 0;
@@ -385,6 +391,14 @@ namespace
 		} hands[2];
 		float gripPitch = 0, aimPitch = 0;
 		bool monoQuad = true, quadPlane = true; // bettervr.json's "monoQuad", "quadPlane": 0 is build15's picture across the eye, upright box quad
+		bool poseKeep = true; // bettervr.json's "poseKeep": 0 forgets a re-shown pair's render pose once the located ring drops it
+		// The render pose of the picture the submit thread is showing again: the left view it was
+		// rendered from and the head it was located with, so a pair re-shown beyond the ring still
+		// reprojects from where it was rendered instead of from the live head.
+		bool shownKnown = false, poseKeepLogged = false;
+		Vec3 shownEye{};
+		Pose shownHead{};
+		uint64_t shownAtFrame = 0;
 		bool reproject = true; // bettervr.json's "reproject": 0 submits every frame as rendered from the display time's pose
 		bool tv = true; // bettervr.json's "tv": 0 keeps the TV dark while VR runs
 		XrTime syncTime = 0;
@@ -1378,6 +1392,14 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateSession(XrInstance, const XrSessionCreate
 	Log("menu/flat picture: %s (bettervr.json's monoQuad%s)", s.monoQuad ? "on the HUD quad, one 16:9 screen in both eyes" : "across each eye, as build15", s.monoQuad ? ", default on" : "=0");
 	Log("menus and popups: %s (bettervr.json's menuLock%s)", menuLock ? "fixed in the room while open, latched when they open" : "head-locked", menuLock ? ", default on" : "=0");
 	Log("HUD quad: %s (bettervr.json's quadPlane%s)", s.quadPlane ? "drawn as the plane it is, tilt and roll keep its shape" : "its upright bounding box", s.quadPlane ? ", default on" : "=0");
+	s.poseKeep = BetterVR_PS5_Setting("poseKeep", 1.0f) != 0.0f;
+	Log("re-shown pair's render pose: %s (bettervr.json's poseKeep%s)",
+		s.poseKeep ? "kept past the located ring, and an unknown pose places the HUD with the live eyes" : "the ring only, as build15",
+		s.poseKeep ? ", default on" : "=0");
+	const bool saveHold = BetterVR_PS5_SaveHold();
+	Log("autosave snapshots: %s (bettervr.json's saveHold%s)",
+		saveHold ? "the last stereo pair is held while the game takes its snapshot" : "the game-camera frame is published, as build15",
+		saveHold ? ", default on" : "=0");
 	const bool leftSlot = BetterVR_PS5_LeftSlot();
 	Log("left eye's 3D slot: %s (bettervr.json's leftSlot%s)",
 		leftSlot ? "a third intermediate, clear of the published pair" : "the game's 0/1 slot, as before",
@@ -1772,6 +1794,9 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
 	Pose eyePoses[2];
 	XrFovf eyeFov[2] = {};
 	bool monoViews = false;
+	// whether the submitted views' render pose is known: a mono picture is head-locked, a stereo
+	// pair is found in the located ring or kept from when it was published
+	bool found = true;
 	if (projection && projection->viewCount >= 2)
 	{
 		const Pose base = SpacePose(projection->space, info->displayTime);
@@ -1804,15 +1829,43 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
 		// raised eye height and scans the ring from the oldest entry, so it can match an older head
 		// at another height or roll and timewarp the menu against the head (the "screen moved"
 		// report).
-		bool found = monoViews;
+		found = monoViews;
 		if (!monoViews)
-			for (const auto& located : s.located)
-				if (s.reproject && std::fabs(located.leftEye.x - eyePoses[0].p.x) < 1e-5f && std::fabs(located.leftEye.z - eyePoses[0].p.z) < 1e-5f)
+		{
+			// poseKeep: a pair the submit thread shows again past the located ring keeps the render
+			// pose it was published with, so the frozen picture stays in the room and a head-locked
+			// HUD drawn in that pose stays on the head. Without it the picture is presented from
+			// the live head (glued to the face) and the HUD drifts against it.
+			if (s.reproject && s.poseKeep && s.shownKnown
+				&& std::fabs(s.shownEye.x - eyePoses[0].p.x) < 1e-5f
+				&& std::fabs(s.shownEye.z - eyePoses[0].p.z) < 1e-5f)
+			{
+				renderHead = s.shownHead;
+				found = true;
+				if (!s.poseKeepLogged)
 				{
-					renderHead = located.head;
-					found = true;
-					break;
+					s.poseKeepLogged = true;
+					Log("render pose kept for a re-shown pair (shown %llu frames)",
+						(unsigned long long)(session->frames - s.shownAtFrame));
 				}
+				++session->poseKept;
+			}
+			else
+			{
+				for (const auto& located : s.located)
+					if (s.reproject && std::fabs(located.leftEye.x - eyePoses[0].p.x) < 1e-5f && std::fabs(located.leftEye.z - eyePoses[0].p.z) < 1e-5f)
+					{
+						renderHead = located.head;
+						found = true;
+						s.shownEye = eyePoses[0].p;
+						s.shownHead = located.head;
+						s.shownKnown = true;
+						s.shownAtFrame = session->frames;
+						s.poseKeepLogged = false;
+						break;
+					}
+			}
+		}
 		(found ? session->poseFound : session->poseLost)++;
 	}
 	else
@@ -1828,11 +1881,12 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
 	}
 	// The HUD quad is placed with the real eyes, not with the projection's shared view: for a mono
 	// picture both views carry the left eye's pose/FOV, and using that for QuadInEye put the right
-	// eye's HUD at the left eye's position (the scope/menu HUD offset). Normal stereo and the
-	// HUD-only path keep the view/eye poses they already use.
+	// eye's HUD at the left eye's position (the scope/menu HUD offset). A stereo pair whose render
+	// pose is unknown is placed the same way: Hmd2 is given the live head for it, so the quad must
+	// not be drawn in a different frame from the one it reprojects.
 	Pose hudPoses[2] = {eyePoses[0], eyePoses[1]};
 	XrFovf hudFov[2] = {eyeFov[0], eyeFov[1]};
-	if (monoViews)
+	if (monoViews || (s.poseKeep && !found))
 	{
 		const Pose head = HeadAt(info->displayTime);
 		const float out = std::atan(s.fov.out), in = std::atan(s.fov.in), up = std::atan(s.fov.top), down = std::atan(s.fov.bottom);
@@ -1949,22 +2003,25 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
 		BetterVR_PS5_PoseProof(&leftPoseStale, &rightPoseStale, &poseAgeMaxMs, &poseGuardClears);
 		uint64_t leftCopyOverwritten = 0, rightCopyOverwritten = 0, copies3D = 0;
 		BetterVR_PS5_CopyProof(&leftCopyOverwritten, &rightCopyOverwritten, &copies3D);
+		uint64_t snapshotHolds = 0;
+		BetterVR_PS5_SnapshotProof(&snapshotHolds);
 		Log("%llu frames: nap %.2f ms, BeginFrame %.2f ms, ahead %.2f ms, step %.2f ms; flip shown %llu pending %d; repeated %d, queue full %d, "
-			"missed %d, errors %d, without layers %llu, skipped %llu, worn %d; render pose found %llu, not found %llu; "
+			"missed %d, errors %d, without layers %llu, skipped %llu, worn %d; render pose found %llu, not found %llu, kept %llu; "
 			"leftPoseStale %llu rightPoseStale %llu poseAgeMax %.2f ms poseGuardClears %llu; "
 			"leftCopyOverwritten %llu rightCopyOverwritten %llu of %llu copies; "
 			"head %.2f %.2f %.2f, hand spaces left %.3f %.3f %.3f right %.3f %.3f %.3f, hands posed %d %d; "
-			"mono on quad %llu, plane quads %llu; "
+			"mono on quad %llu, plane quads %llu, snapshot holds %llu; "
 			"TV mirror %s, shown %llu skipped %llu",
 			(unsigned long long)session->frames, pace.nap_ms, pace.call_ms, pace.ahead_ms, pace.step_ms, (unsigned long long)flip.shown, flip.pending,
 			hmd2::repeated_frames(), hmd2::queue_full_waits(), hmd2::missed_frames(), hmd2::frame_errors(), (unsigned long long)session->emptyFrames,
 			(unsigned long long)session->skipped, hmd2::worn() ? 1 : 0, (unsigned long long)session->poseFound,
-			(unsigned long long)session->poseLost, (unsigned long long)leftPoseStale, (unsigned long long)rightPoseStale, poseAgeMaxMs,
-			(unsigned long long)poseGuardClears,
+			(unsigned long long)session->poseLost, (unsigned long long)session->poseKept, (unsigned long long)leftPoseStale,
+			(unsigned long long)rightPoseStale, poseAgeMaxMs, (unsigned long long)poseGuardClears,
 			(unsigned long long)leftCopyOverwritten, (unsigned long long)rightCopyOverwritten, (unsigned long long)copies3D,
 			renderHead.p.x, renderHead.p.y, renderHead.p.z, s.handLocated[0].p.x, s.handLocated[0].p.y,
 			s.handLocated[0].p.z, s.handLocated[1].p.x, s.handLocated[1].p.y, s.handLocated[1].p.z, s.hands[0].poseValid ? 1 : 0,
-			s.hands[1].poseValid ? 1 : 0, (unsigned long long)session->monoOnQuad, (unsigned long long)session->planeQuads, s.tv ? "on" : "off", (unsigned long long)session->tvShown, (unsigned long long)session->tvSkipped);
+			s.hands[1].poseValid ? 1 : 0, (unsigned long long)session->monoOnQuad, (unsigned long long)session->planeQuads,
+			(unsigned long long)snapshotHolds, s.tv ? "on" : "off", (unsigned long long)session->tvShown, (unsigned long long)session->tvSkipped);
 	}
 	return XR_SUCCESS;
 }
