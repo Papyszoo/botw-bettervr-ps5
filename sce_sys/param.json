@@ -10,7 +10,7 @@
   "conceptId": "98720",
   "contentBadgeType": 1,
   "contentId": "UP9000-PPSA98720_00-BOTWVRWIIU000001",
-  "contentVersion": "05.001.100",
+  "contentVersion": "00.001.000",
   "downloadDataSize": 256,
   "gameIntent": {
     "permittedIntents": [
@@ -25,7 +25,7 @@
       "titleName": "Breath of the Wild VR"
     }
   },
-  "masterVersion": "05.01",
+  "masterVersion": "00.01",
   "pubtools": {
     "creationDate": "2026-10-01 00:00:00",
     "loudnessSnd0": "-28.00",

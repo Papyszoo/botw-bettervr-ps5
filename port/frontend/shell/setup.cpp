@@ -27,8 +27,8 @@ namespace ps5shell
 	{
 		constexpr float kListTop = 290, kListWidth = 1000, kRowHeight = 82, kRowGap = 8;
 		constexpr float kAsideX = 1196, kAsideWidth = 628, kAsidePad = 36;
-		constexpr const char* kSite = "github.com/premohq/PS5-ECAM";
-		constexpr const char* kRepository = "https://github.com/premohq/PS5-ECAM";
+		constexpr const char* kSite = "github.com/Papyszoo/botw-bettervr-ps5";
+		constexpr const char* kRepository = "https://github.com/Papyszoo/botw-bettervr-ps5";
 
 		std::string FreeSpace(const char* path)
 		{
