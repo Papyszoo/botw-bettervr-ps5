@@ -67,6 +67,8 @@ bool BetterVR_PS5_FlatScene();
 bool BetterVR_PS5_MonoQuad();
 bool BetterVR_PS5_MenuLock();
 bool BetterVR_PS5_QuadPlane();
+// BetterVR's kept pose (entity_controller.cpp): bettervr.json's poseKeep, default on
+bool BetterVR_PS5_PoseKeep();
 // BetterVR's autosave hold (entity_controller.cpp): bettervr.json's saveHold, default on
 bool BetterVR_PS5_SaveHold();
 // BetterVR's stereo pose freeze (entity_controller.cpp): bettervr.json's poseFreeze, default on
@@ -1392,7 +1394,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateSession(XrInstance, const XrSessionCreate
 	Log("menu/flat picture: %s (bettervr.json's monoQuad%s)", s.monoQuad ? "on the HUD quad, one 16:9 screen in both eyes" : "across each eye, as build15", s.monoQuad ? ", default on" : "=0");
 	Log("menus and popups: %s (bettervr.json's menuLock%s)", menuLock ? "fixed in the room while open, latched when they open" : "head-locked", menuLock ? ", default on" : "=0");
 	Log("HUD quad: %s (bettervr.json's quadPlane%s)", s.quadPlane ? "drawn as the plane it is, tilt and roll keep its shape" : "its upright bounding box", s.quadPlane ? ", default on" : "=0");
-	s.poseKeep = BetterVR_PS5_Setting("poseKeep", 1.0f) != 0.0f;
+	s.poseKeep = BetterVR_PS5_PoseKeep();
 	Log("re-shown pair's render pose: %s (bettervr.json's poseKeep%s)",
 		s.poseKeep ? "kept past the located ring, and an unknown pose places the HUD with the live eyes" : "the ring only, as build15",
 		s.poseKeep ? ", default on" : "=0");
@@ -1832,13 +1834,32 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
 		found = monoViews;
 		if (!monoViews)
 		{
-			// poseKeep: a pair the submit thread shows again past the located ring keeps the render
-			// pose it was published with, so the frozen picture stays in the room and a head-locked
-			// HUD drawn in that pose stays on the head. Without it the picture is presented from
-			// the live head (glued to the face) and the HUD drifts against it.
-			if (s.reproject && s.poseKeep && s.shownKnown
-				&& std::fabs(s.shownEye.x - eyePoses[0].p.x) < 1e-5f
-				&& std::fabs(s.shownEye.z - eyePoses[0].p.z) < 1e-5f)
+			// the same eye, to a hundredth of a millimetre, is the same render: the ring search and
+			// the kept-pose fallback both ask this, x and z only for the reason above
+			const auto sameEye = [](const Vec3& shown, const Vec3& eye) {
+				return std::fabs(shown.x - eye.x) < 1e-5f && std::fabs(shown.z - eye.z) < 1e-5f;
+			};
+			// the ring first: a fresh frame's pair is in it, and so is a pair the submit thread shows
+			// again until the pose thread's 250 Hz writes push it out (256 entries, about a second)
+			for (const auto& located : s.located)
+				if (s.reproject && sameEye(located.leftEye, eyePoses[0].p))
+				{
+					renderHead = located.head;
+					found = true;
+					s.shownEye = eyePoses[0].p;
+					s.shownHead = located.head;
+					s.shownKnown = true;
+					s.shownAtFrame = session->frames;
+					s.poseKeepLogged = false;
+					break;
+				}
+			// poseKeep: only when the ring cannot answer, a pair the submit thread shows again keeps
+			// the render pose it was published with, so the frozen picture stays in the room and a
+			// head-locked HUD drawn in that pose stays on the head. Without it the picture is
+			// presented from the live head (glued to the face) and the HUD drifts against it. This is
+			// the rune window's case, a hold of seconds that outlives the ring; ordinary play finds
+			// its pair in the ring, so it neither counts nor logs a kept frame.
+			if (!found && s.reproject && s.poseKeep && s.shownKnown && sameEye(s.shownEye, eyePoses[0].p))
 			{
 				renderHead = s.shownHead;
 				found = true;
@@ -1849,21 +1870,6 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
 						(unsigned long long)(session->frames - s.shownAtFrame));
 				}
 				++session->poseKept;
-			}
-			else
-			{
-				for (const auto& located : s.located)
-					if (s.reproject && std::fabs(located.leftEye.x - eyePoses[0].p.x) < 1e-5f && std::fabs(located.leftEye.z - eyePoses[0].p.z) < 1e-5f)
-					{
-						renderHead = located.head;
-						found = true;
-						s.shownEye = eyePoses[0].p;
-						s.shownHead = located.head;
-						s.shownKnown = true;
-						s.shownAtFrame = session->frames;
-						s.poseKeepLogged = false;
-						break;
-					}
 			}
 		}
 		(found ? session->poseFound : session->poseLost)++;

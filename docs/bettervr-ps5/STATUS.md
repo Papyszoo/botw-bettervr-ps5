@@ -15,7 +15,8 @@ tested.
   on the submit thread and Hmd2 keeps showing it with live head tracking for 3 publishes (~50 ms
   at 60 Hz). The inventory and the Camera rune keep their mono path unchanged. The "not in game"
   term of the mono gate now waits 8 Cemu frames, so a camera hand-over no longer makes a mono
-  picture. One `Save snapshot: …` line per autosave; the `[vr-xr]` line gains `snapshot holds N`.
+  picture; that wait is saveHold's too, so 0 leaves the raw test. One `Save snapshot: …` line per
+  autosave; the `[vr-xr]` line gains `snapshot holds N`.
 - **poseKeep (runtime.cpp).** When the submit thread shows the same pair again, its render pose is
   kept past the 256-entry located ring (about 0.7 s), instead of falling back to the live head. The
   frozen scene then stays in the room and a head-locked HUD drawn in that pose (the rune/tips
