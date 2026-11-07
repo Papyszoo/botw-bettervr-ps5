@@ -3,6 +3,75 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-07 (build18): autosave flashes, the rune window's pose, and the UI blend fix (built, untested on console)
+
+**Built, untested on console.** Three fixes, each behind a switch in
+`/data/botwvr/launcher/bettervr.json`, default 1; 0 gives build17's behaviour.
+
+- **saveHold (patch 0024, renderer_vulkan.cpp).** The flashes after chests, dialogs and cutscenes
+  are BotW's autosave snapshots. While the game takes one during play, it renders that frame with
+  its own flat camera, and the port published it: a mono picture on the HUD quad, or the
+  game-camera frame as a stereo pair. Now that frame is not published; the last stereo pair stays
+  on the submit thread and Hmd2 keeps showing it with live head tracking for 3 publishes (~50 ms
+  at 60 Hz). The inventory and the Camera rune keep their mono path unchanged. The "not in game"
+  term of the mono gate now waits 8 Cemu frames, so a camera hand-over no longer makes a mono
+  picture. One `Save snapshot: …` line per autosave; the `[vr-xr]` line gains `snapshot holds N`.
+- **poseKeep (runtime.cpp).** When the submit thread shows the same pair again, its render pose is
+  kept past the 256-entry located ring (about 0.7 s), instead of falling back to the live head. The
+  frozen scene then stays in the room and a head-locked HUD drawn in that pose (the rune/tips
+  window) stays on the head. If a stereo pose is still unknown, the HUD quad is placed with the
+  live eyes, the same frame Hmd2 is given, instead of the projection's stale pose. Logs: one
+  `render pose kept for a re-shown pair (shown N frames)` at the onset, and `kept N` in the
+  `[vr-xr]` line.
+- **uiAlpha (patch 0025, settings.cpp).** Upstream's UI blend fix (separate alpha `ZERO, DST_ALPHA`,
+  `patch_ImproveGUI.asm`) was left to Windows by patch 0001, so on PS5 the minimap, dialogue boxes
+  and other 2D elements overwrite the alpha of earlier draws and leave holes in the HUD picture: a
+  rectangle of the frozen picture under the map. It now runs on PS5 too. One
+  `UI blend fix: separate alpha was N` line the first time the hook fires. The same patch turns on
+  upstream's debug screen log for PS5: `Screen X visible` / `Screen X hidden`, one line per change,
+  keyed on `IsScreenVisible` (not `IsOpen`, whose pointers persist).
+
+**Test request 28 (build18).** Install the build and start Breath of the Wild in VR.
+
+1. **Flashes.** Open a chest, finish a dialog and finish a cutscene, then keep playing for ~2 s
+   each. Did anything other than the game flash? If yes: a small flat picture with darkness
+   around it, or the whole view jumping to a closer picture for an instant? Roughly when? Repeat
+   the same three triggers with `"saveHold":0` and say whether the flash returns.
+2. **Rune or tips window.** Use any shrine pedestal, or a tutorial window with a video. Keep your
+   head still 2 s, turn slowly ~20° left and hold, then ~20° right. Does the window (a) run ahead
+   in the direction you turn, (b) lag and drift back when you stop, or (c) stay fixed in the room?
+   Does the shrine behind it stay in the room, or move with your head? Is it right for the first
+   second, then wrong? Repeat with `"poseKeep":0`.
+3. **Map.** Open the map. What does the rectangle look like: solid (which colour), darker or
+   see-through, or a piece of scenery? Does it stay at Link's arrow when you move the cursor or
+   zoom, or at one spot of the view? Does it point the way Link faces? Is it the same with each eye
+   alone? Open the map once right after a cutscene and once from normal play: black in one and
+   scenery in the other? Repeat with `"uiAlpha":0`; does the rectangle change or disappear? With VR
+   off, is it on the TV? Check a dialogue box and the minimap with `uiAlpha` on and off: a dark
+   backing over the bare 3D must not go invisible.
+4. **Magnesis.** With an object held (grip held): T1 keep still and turn your head slowly 45° left
+   and right; does the object swing sideways with your gaze? T2 push the right stick left/right
+   with smooth turn (launcher: turning = smooth); does it move sideways? Then snap turn 45: does
+   one flick jump it sideways? T3 hold the left stick (not right) left/right and tap A / face
+   buttons while holding the object: does anything rotate it? Also say which turn mode you were
+   on, and how you rotated objects on Wii U/Switch/PC.
+5. **A/B.** Run once with each of `"saveHold":0`, `"poseKeep":0`, `"uiAlpha":0` in
+   `/data/botwvr/launcher/bettervr.json` and say what comes back. The session-start lines name
+   each value; `Save snapshot`, `render pose kept` and `UI blend fix` lines stop when their switch
+   is 0.
+6. **Send** `/data/botwvr/launcher/logs/boot.log` (or Settings > Diagnostics > Copy logs to USB):
+   the session-start lines for `saveHold`, `poseKeep` and `uiAlpha`; every `Save snapshot`,
+   `render pose kept`, `UI blend fix`, `Screen … visible/hidden`, `Event`, `Menu/mono
+   presentation` and `Menu lock` line; the `[copy]` lines; and the last two `[vr-xr] … frames`
+   lines from each run. Add the times you opened the map and the window, and which run each log is.
+
+**What it decides.** Flashes gone with `saveHold` on and back with it 0: the autosave frame. Rune
+window fixed with `poseKeep` on, `kept` growing ~540 per window and `not found` flat: the pose
+mismatch. Still trailing only with `poseKeep` 0: Hmd2's half-rate correction, and the room latch is
+the next step. The map rectangle gone or different with `uiAlpha` 0: the alpha hole. Rectangle on
+the TV with VR off: Cemu's side, not this. Magnesis unchanged by every switch: upstream's behaviour,
+not a regression of ours.
+
 ## 2026-11-07 (menus): the mono picture rides the HUD quad, menus stay fixed in the room, quads are planes (not built, not run)
 
 **Not built, not run.** Three switches in bettervr.json, all default 1; 0 gives the old behaviour.
