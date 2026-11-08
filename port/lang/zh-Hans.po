@@ -1614,7 +1614,7 @@ msgstr "已开启{0}/{1}个"
 msgid "Achievements"
 msgstr "成就"
 
-#: port/app/ingame3ds.cpp:587 port/frontend/shell/installs.cpp:377 port/frontend/shell/pages.cpp:325 port/frontend/shell/pages.cpp:841 port/frontend/shell/pages.cpp:1234 port/frontend/shell/shell.cpp:2711
+#: port/app/ingame3ds.cpp:587 port/frontend/shell/installs.cpp:384 port/frontend/shell/pages.cpp:325 port/frontend/shell/pages.cpp:841 port/frontend/shell/pages.cpp:1234 port/frontend/shell/shell.cpp:2711
 #, menu
 msgid "{0} of {1}"
 msgstr "{0}/{1}"
@@ -1889,31 +1889,31 @@ msgid "Shell"
 msgstr "贝壳"
 
 #. {0} and {1} are sizes (2.4 GB)
-#: port/app/install.cpp:231
+#: port/app/install.cpp:238
 msgid "There is not enough space: it needs {0}, and {1} is free."
 msgstr "空间不足：需要{0}，可用{1}。"
 
-#: port/app/install.cpp:296
+#: port/app/install.cpp:305
 msgid "What is installed there now could not be moved aside: {0}"
 msgstr "无法移走当前安装在此处的内容：{0}"
 
-#: port/app/install.cpp:517
+#: port/app/install.cpp:526
 msgid "This one is not unpacked (title.tmd and .app files). Cemu reads it from the game files folder as it is: no install needed."
 msgstr "此内容未解压（title.tmd和.app文件）。Cemu可直接从游戏所在的文件夹读取：无需安装。"
 
-#: port/app/install.cpp:518
+#: port/app/install.cpp:527
 msgid "There is no title here: a game, update or DLC to install is a folder with code, content and meta."
 msgstr "此处没有软件：要安装的游戏、更新或DLC是包含code、content和meta的文件夹。"
 
-#: port/app/install.cpp:524
+#: port/app/install.cpp:533
 msgid "Its meta folder does not describe a Wii U title (meta.xml)."
 msgstr "其meta文件夹未描述Wii U软件（meta.xml）。"
 
-#: port/app/install.cpp:545
+#: port/app/install.cpp:554
 msgid "This is where it is installed already."
 msgstr "已安装在此处。"
 
-#: port/app/install.cpp:561 port/app/install.cpp:627 port/azahar/core.cpp:1110
+#: port/app/install.cpp:570 port/app/install.cpp:636 port/azahar/core.cpp:1110
 #, menu
 msgid "An install is already running."
 msgstr "已有安装正在进行。"
@@ -2249,7 +2249,7 @@ msgstr "无法创建{0}"
 msgid "{0} could not be copied: is the PS5's storage full?"
 msgstr "无法复制{0}：PS5的存储空间是否已满？"
 
-#: port/app/mods.cpp:244 port/app/pack_updates.cpp:268 port/app/updates.cpp:524
+#: port/app/mods.cpp:244 port/app/pack_updates.cpp:268 port/app/updates.cpp:511
 msgid "Stopped for a game"
 msgstr "因启动游戏而停止"
 
@@ -2277,12 +2277,12 @@ msgstr "因启动游戏而停止"
 msgid "the download holds no packs"
 msgstr "下载内容中没有图形包"
 
-#: port/app/pack_updates.cpp:194 port/app/updates.cpp:621
+#: port/app/pack_updates.cpp:194 port/app/updates.cpp:608
 msgid "GitHub could not be found: is the PS5 online?"
 msgstr "找不到GitHub：PS5是否已联网？"
 
 #. why an update did not finish
-#: port/app/pack_updates.cpp:228 port/app/updates.cpp:422
+#: port/app/pack_updates.cpp:228 port/app/updates.cpp:424
 msgid "GitHub did not answer with a release"
 msgstr "GitHub未返回发布版本"
 
@@ -2376,52 +2376,52 @@ msgstr "无法写入{0}（/data是否已满？）"
 msgid "{0} was installed in {1}, but the PS5 started {2} again. Close BotW VR and start it from the home screen; if it is still {2}, copy the release's PPSA98720 folder over by hand."
 msgstr "{0}已安装到{1}，但PS5再次启动了{2}。请关闭BotW VR并从主页启动；如果仍是{2}，需手动复制发布版本的PPSA98720文件夹进行覆盖。"
 
-#: port/app/updates.cpp:429
+#: port/app/updates.cpp:431
 msgid "The latest release's version ({0}) is not one this can read"
 msgstr "无法读取最新发布版本的版本号（{0}）"
 
-#: port/app/updates.cpp:462
+#: port/app/updates.cpp:463
 msgid "The release's checksums could not be downloaded"
 msgstr "无法下载发布版本的校验和"
 
-#: port/app/updates.cpp:491
+#: port/app/updates.cpp:478
 msgid "The releases branch has no checksum for {0}"
 msgstr "releases分支中没有{0}的校验和"
 
-#: port/app/updates.cpp:505
+#: port/app/updates.cpp:492
 msgid "The download could not start"
 msgstr "无法开始下载"
 
-#: port/app/updates.cpp:524
+#: port/app/updates.cpp:511
 msgid "The download did not finish: is the PS5 online?"
 msgstr "下载未完成：PS5是否已联网？"
 
-#: port/app/updates.cpp:533
+#: port/app/updates.cpp:520
 msgid "The download is damaged (SHA-256 {0}, not {1})"
 msgstr "下载内容已损坏（SHA-256为{0}，而非{1}）"
 
-#: port/app/updates.cpp:543
+#: port/app/updates.cpp:530
 msgid "BotW VR runs from an image, whose files can't be replaced: install the new release by hand"
 msgstr "BotW VR从镜像运行，其文件无法替换：需手动安装新发布版本"
 
-#: port/app/updates.cpp:556
+#: port/app/updates.cpp:543
 msgid "It could not be unpacked: {0}"
 msgstr "无法解压：{0}"
 
-#: port/app/updates.cpp:588
+#: port/app/updates.cpp:575
 msgid "{0} could not be replaced ({1}): copy the release's PPSA98720 folder over by hand"
 msgstr "无法替换{0}（{1}）：需手动复制发布版本的PPSA98720文件夹进行覆盖"
 
-#: port/app/updates.cpp:719
+#: port/app/updates.cpp:706
 msgid "No earlier version is kept here."
 msgstr "此处没有保留较早的版本。"
 
-#: port/app/updates.cpp:742
+#: port/app/updates.cpp:729
 msgid "{0} could not be put back ({1}): copy that release's PPSA98720 folder over by hand"
 msgstr "无法放回{0}（{1}）：需手动复制那个发布版本的PPSA98720文件夹进行覆盖"
 
 #. an update is installed, but the app could not start itself again to run it
-#: port/app/updates.cpp:798
+#: port/app/updates.cpp:785
 msgid "The PS5 did not start BotW VR again. Close it and start it from the home screen to finish the update."
 msgstr "PS5没有重新启动BotW VR。请关闭它并从主页启动以完成更新。"
 
@@ -3428,7 +3428,7 @@ msgid "Look for it again"
 msgstr "重新查找"
 
 #. a title's version to install ({0}), and the one installed now ({1})
-#: port/frontend/shell/home.cpp:238 port/frontend/shell/installs.cpp:509 port/frontend/shell/pages.cpp:1277 port/frontend/shell/pages.cpp:1344 port/frontend/shell/settings.cpp:216 port/frontend/shell/settings.cpp:272
+#: port/frontend/shell/home.cpp:238 port/frontend/shell/installs.cpp:516 port/frontend/shell/pages.cpp:1277 port/frontend/shell/pages.cpp:1344 port/frontend/shell/settings.cpp:216 port/frontend/shell/settings.cpp:272
 msgid "Version"
 msgstr "版本"
 
@@ -3498,7 +3498,7 @@ msgstr "发行商"
 msgid "Players"
 msgstr "玩家人数"
 
-#: port/frontend/shell/hub.cpp:316 port/frontend/shell/installs.cpp:510 port/frontend/shell/pages.cpp:1276 port/frontend/shell/pages.cpp:1342
+#: port/frontend/shell/hub.cpp:316 port/frontend/shell/installs.cpp:517 port/frontend/shell/pages.cpp:1276 port/frontend/shell/pages.cpp:1342
 msgid "Title ID"
 msgstr "Title ID"
 
@@ -3616,69 +3616,74 @@ msgstr "更新和DLC"
 msgid "Installing {0} of {1}"
 msgstr "正在安装第{0}个，共{1}个"
 
+#. Updates and DLC, installing: files copied of all of the item's files, beside the bytes ({0} of {1})
+#: port/frontend/shell/installs.cpp:382
+msgid "files {0} / {1}"
+msgstr "文件 {0} / {1}"
+
 #. how fast an install copies, in megabytes a second
-#: port/frontend/shell/installs.cpp:381
+#: port/frontend/shell/installs.cpp:388
 msgid "{0} MB/s"
 msgstr "{0} MB/s"
 
 #. an install's time left, in seconds or minutes
-#: port/frontend/shell/installs.cpp:384
+#: port/frontend/shell/installs.cpp:391
 msgid "about {0} second left"
 msgid_plural "about {0} seconds left"
 msgstr[0] "剩余约{0}秒"
 
-#: port/frontend/shell/installs.cpp:385
+#: port/frontend/shell/installs.cpp:392
 msgid "about {0} minute left"
 msgid_plural "about {0} minutes left"
 msgstr[0] "剩余约{0}分钟"
 
-#: port/frontend/shell/installs.cpp:401
+#: port/frontend/shell/installs.cpp:408
 msgid "Nothing found to install"
 msgstr "未找到可安装的内容"
 
-#: port/frontend/shell/installs.cpp:403
+#: port/frontend/shell/installs.cpp:410
 msgid "Every USB drive and extended storage plugged in, the games folder and /data were searched, four folders deep, for updates, DLC and games as folders with code, content and meta (the format Cemu installs). Put them on a USB drive, or press Triangle to choose a folder anywhere."
 msgstr "已在所有插入的USB存储设备和扩展存储、游戏文件夹以及/data中向下查找四层，寻找以包含code、content和meta的文件夹形式存在的更新、DLC和游戏（Cemu安装的格式）。将其放入USB存储设备，或按三角键选择任意位置的文件夹。"
 
-#: port/frontend/shell/installs.cpp:457
+#: port/frontend/shell/installs.cpp:464
 msgid "v{0} installed"
 msgstr "已安装v{0}"
 
 #. a row of Updates and DLC while it installs ({0}: a percentage)
-#: port/frontend/shell/installs.cpp:478
+#: port/frontend/shell/installs.cpp:485
 msgid "Installing · {0}"
 msgstr "正在安装 · {0}"
 
-#: port/frontend/shell/installs.cpp:480
+#: port/frontend/shell/installs.cpp:487
 msgid "Waiting"
 msgstr "等待中"
 
-#: port/frontend/shell/installs.cpp:502
+#: port/frontend/shell/installs.cpp:509
 msgid "Runs from where it is"
 msgstr "从所在位置运行"
 
-#: port/frontend/shell/installs.cpp:502 port/frontend/shell/pages.cpp:1358
+#: port/frontend/shell/installs.cpp:509 port/frontend/shell/pages.cpp:1358
 msgid "To install"
 msgstr "待安装"
 
 #. a title's version to install ({0}), and the one installed now ({1})
-#: port/frontend/shell/installs.cpp:509 port/frontend/shell/pages.cpp:1344
+#: port/frontend/shell/installs.cpp:516 port/frontend/shell/pages.cpp:1344
 msgid "v{0}, not installed yet"
 msgstr "v{0}，尚未安装"
 
-#: port/frontend/shell/installs.cpp:509 port/frontend/shell/pages.cpp:1345
+#: port/frontend/shell/installs.cpp:516 port/frontend/shell/pages.cpp:1345
 msgid "v{0}, v{1} installed now"
 msgstr "v{0}，当前已安装v{1}"
 
-#: port/frontend/shell/installs.cpp:511
+#: port/frontend/shell/installs.cpp:518
 msgid "Where it is"
 msgstr "位置"
 
-#: port/frontend/shell/installs.cpp:523
+#: port/frontend/shell/installs.cpp:530
 msgid "Cemu runs it straight from the game files folder (title.tmd and .app files): put it there and the library lists it with its game."
 msgstr "Cemu可直接从游戏所在的文件夹运行（title.tmd和.app文件）：放入该文件夹后，游戏库会将其与对应游戏一起列出。"
 
-#: port/frontend/shell/installs.cpp:524
+#: port/frontend/shell/installs.cpp:531
 msgid "It is installed into the Wii U's storage (mlc01). What is installed now is set aside until it finishes, and put back if you stop."
 msgstr "安装到Wii U的存储空间（mlc01）。安装完成前，当前已安装的内容会暂时移开；如果中途停止，则会放回原处。"
 

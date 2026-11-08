@@ -475,7 +475,7 @@ namespace ps5update
 			}
 			if (expected.size() != 64)
 			{
-				Fail(ps5lang::TrF("The release has no checksum for {0}", zipName));
+				Fail(ps5lang::TrF("The releases branch has no checksum for {0}", zipName));
 				return;
 			}
 

@@ -373,7 +373,14 @@ namespace ps5shell
 			canvas.Draw(Icon::Download, {run.x + 26, run.y + 22, 30, 30}, Accent());
 			// tr: Updates and DLC, installing: which of how many ({0} of {1})
 			canvas.Text(Style({24, ui::Weight::SemiBold, 1.0f}), run.x + 68, run.y + 24, TrF("Installing {0} of {1}", m_updates.finished + 1, m_updates.queued),
-				kText, run.w - 96, 1);
+				kText, run.w - 96 - 280, 1);
+			if (status.files)
+			{
+				ui::TextStyle count = Style({20, ui::Weight::Regular, 1.0f});
+				count.tabular = true;
+				// tr: Updates and DLC, installing: files copied of all of the item's files, beside the bytes ({0} of {1})
+				canvas.Text(count, run.Right() - 28 - 260, run.y + 28, TrF("files {0} / {1}", status.filesDone, status.files), Secondary(), 260, 1, ui::Align::Right);
+			}
 			std::string facts = TrF("{0} of {1}", Gigabytes(done), Gigabytes(whole));
 			if (m_updates.speed > 1e6f)
 			{

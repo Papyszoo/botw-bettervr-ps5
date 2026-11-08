@@ -1616,7 +1616,7 @@ msgstr "Ενεργοί: {0} από {1}"
 msgid "Achievements"
 msgstr "Επιτεύγματα"
 
-#: port/app/ingame3ds.cpp:587 port/frontend/shell/installs.cpp:377 port/frontend/shell/pages.cpp:325 port/frontend/shell/pages.cpp:841 port/frontend/shell/pages.cpp:1234 port/frontend/shell/shell.cpp:2711
+#: port/app/ingame3ds.cpp:587 port/frontend/shell/installs.cpp:384 port/frontend/shell/pages.cpp:325 port/frontend/shell/pages.cpp:841 port/frontend/shell/pages.cpp:1234 port/frontend/shell/shell.cpp:2711
 #, menu
 msgid "{0} of {1}"
 msgstr "{0} από {1}"
@@ -1892,31 +1892,31 @@ msgid "Shell"
 msgstr "Περίβλημα"
 
 #. {0} and {1} are sizes (2.4 GB)
-#: port/app/install.cpp:231
+#: port/app/install.cpp:238
 msgid "There is not enough space: it needs {0}, and {1} is free."
 msgstr "Δεν υπάρχει αρκετός χώρος: χρειάζεται {0} και είναι ελεύθερα {1}."
 
-#: port/app/install.cpp:296
+#: port/app/install.cpp:305
 msgid "What is installed there now could not be moved aside: {0}"
 msgstr "Ό,τι είναι εγκατεστημένο εκεί τώρα δεν ήταν δυνατό να μετακινηθεί: {0}"
 
-#: port/app/install.cpp:517
+#: port/app/install.cpp:526
 msgid "This one is not unpacked (title.tmd and .app files). Cemu reads it from the game files folder as it is: no install needed."
 msgstr "Αυτό δεν είναι αποσυμπιεσμένο (title.tmd και αρχεία .app). Το Cemu το διαβάζει όπως είναι από τον φάκελο παιχνιδιών: δεν χρειάζεται εγκατάσταση."
 
-#: port/app/install.cpp:518
+#: port/app/install.cpp:527
 msgid "There is no title here: a game, update or DLC to install is a folder with code, content and meta."
 msgstr "Δεν υπάρχει τίτλος εδώ: ένα παιχνίδι, ενημέρωση ή DLC για εγκατάσταση είναι ένας φάκελος με code, content και meta."
 
-#: port/app/install.cpp:524
+#: port/app/install.cpp:533
 msgid "Its meta folder does not describe a Wii U title (meta.xml)."
 msgstr "Ο φάκελος meta του δεν περιγράφει τίτλο Wii U (meta.xml)."
 
-#: port/app/install.cpp:545
+#: port/app/install.cpp:554
 msgid "This is where it is installed already."
 msgstr "Είναι ήδη εγκατεστημένο εδώ."
 
-#: port/app/install.cpp:561 port/app/install.cpp:627 port/azahar/core.cpp:1110
+#: port/app/install.cpp:570 port/app/install.cpp:636 port/azahar/core.cpp:1110
 #, menu
 msgid "An install is already running."
 msgstr "Μια εγκατάσταση εκτελείται ήδη."
@@ -2252,7 +2252,7 @@ msgstr "Δεν ήταν δυνατή η δημιουργία του {0}"
 msgid "{0} could not be copied: is the PS5's storage full?"
 msgstr "Δεν ήταν δυνατή η αντιγραφή του {0}: είναι γεμάτος ο χώρος αποθήκευσης του PS5;"
 
-#: port/app/mods.cpp:244 port/app/pack_updates.cpp:268 port/app/updates.cpp:524
+#: port/app/mods.cpp:244 port/app/pack_updates.cpp:268 port/app/updates.cpp:511
 msgid "Stopped for a game"
 msgstr "Σταμάτησε για ένα παιχνίδι"
 
@@ -2280,12 +2280,12 @@ msgstr "σταμάτησε για ένα παιχνίδι"
 msgid "the download holds no packs"
 msgstr "η λήψη δεν περιέχει πακέτα"
 
-#: port/app/pack_updates.cpp:194 port/app/updates.cpp:621
+#: port/app/pack_updates.cpp:194 port/app/updates.cpp:608
 msgid "GitHub could not be found: is the PS5 online?"
 msgstr "Το GitHub δεν βρέθηκε: είναι το PS5 συνδεδεμένο;"
 
 #. why an update did not finish
-#: port/app/pack_updates.cpp:228 port/app/updates.cpp:422
+#: port/app/pack_updates.cpp:228 port/app/updates.cpp:424
 msgid "GitHub did not answer with a release"
 msgstr "Το GitHub δεν απάντησε με έκδοση"
 
@@ -2379,52 +2379,52 @@ msgstr "Το {0} δεν ήταν δυνατό να γραφτεί (είναι γ
 msgid "{0} was installed in {1}, but the PS5 started {2} again. Close BotW VR and start it from the home screen; if it is still {2}, copy the release's PPSA98720 folder over by hand."
 msgstr "Το {0} εγκαταστάθηκε στο {1}, αλλά το PS5 ξεκίνησε ξανά το {2}. Κλείστε το BotW VR και ξεκινήστε το από την αρχική οθόνη· αν είναι ακόμη το {2}, αντιγράψτε από πάνω χειροκίνητα τον φάκελο PPSA98720 της κυκλοφορίας."
 
-#: port/app/updates.cpp:429
+#: port/app/updates.cpp:431
 msgid "The latest release's version ({0}) is not one this can read"
 msgstr "Η έκδοση της τελευταίας κυκλοφορίας ({0}) δεν μπορεί να διαβαστεί"
 
-#: port/app/updates.cpp:462
+#: port/app/updates.cpp:463
 msgid "The release's checksums could not be downloaded"
 msgstr "Τα αθροίσματα ελέγχου της κυκλοφορίας δεν ήταν δυνατό να ληφθούν"
 
-#: port/app/updates.cpp:491
+#: port/app/updates.cpp:478
 msgid "The releases branch has no checksum for {0}"
 msgstr "Ο κλάδος κυκλοφοριών δεν έχει άθροισμα ελέγχου για το {0}"
 
-#: port/app/updates.cpp:505
+#: port/app/updates.cpp:492
 msgid "The download could not start"
 msgstr "Η λήψη δεν μπόρεσε να ξεκινήσει"
 
-#: port/app/updates.cpp:524
+#: port/app/updates.cpp:511
 msgid "The download did not finish: is the PS5 online?"
 msgstr "Η λήψη δεν ολοκληρώθηκε: είναι το PS5 συνδεδεμένο;"
 
-#: port/app/updates.cpp:533
+#: port/app/updates.cpp:520
 msgid "The download is damaged (SHA-256 {0}, not {1})"
 msgstr "Η λήψη είναι κατεστραμμένη (SHA-256 {0} αντί για {1})"
 
-#: port/app/updates.cpp:543
+#: port/app/updates.cpp:530
 msgid "BotW VR runs from an image, whose files can't be replaced: install the new release by hand"
 msgstr "Το BotW VR τρέχει από εικόνα της οποίας τα αρχεία δεν αντικαθίστανται: εγκαταστήστε τη νέα κυκλοφορία χειροκίνητα"
 
-#: port/app/updates.cpp:556
+#: port/app/updates.cpp:543
 msgid "It could not be unpacked: {0}"
 msgstr "Δεν ήταν δυνατή η αποσυμπίεση: {0}"
 
-#: port/app/updates.cpp:588
+#: port/app/updates.cpp:575
 msgid "{0} could not be replaced ({1}): copy the release's PPSA98720 folder over by hand"
 msgstr "Το {0} δεν ήταν δυνατό να αντικατασταθεί ({1}): αντιγράψτε από πάνω χειροκίνητα τον φάκελο PPSA98720 της κυκλοφορίας"
 
-#: port/app/updates.cpp:719
+#: port/app/updates.cpp:706
 msgid "No earlier version is kept here."
 msgstr "Δεν φυλάσσεται εδώ παλαιότερη έκδοση."
 
-#: port/app/updates.cpp:742
+#: port/app/updates.cpp:729
 msgid "{0} could not be put back ({1}): copy that release's PPSA98720 folder over by hand"
 msgstr "Το {0} δεν ήταν δυνατό να επιστρέψει ({1}): αντιγράψτε από πάνω χειροκίνητα τον φάκελο PPSA98720 εκείνης της κυκλοφορίας"
 
 #. an update is installed, but the app could not start itself again to run it
-#: port/app/updates.cpp:798
+#: port/app/updates.cpp:785
 msgid "The PS5 did not start BotW VR again. Close it and start it from the home screen to finish the update."
 msgstr "Το PS5 δεν ξεκίνησε ξανά το BotW VR. Κλείστε το και ξεκινήστε το από την αρχική οθόνη για να ολοκληρωθεί η ενημέρωση."
 
@@ -3434,7 +3434,7 @@ msgid "Look for it again"
 msgstr "Αναζήτηση ξανά"
 
 #. a title's version to install ({0}), and the one installed now ({1})
-#: port/frontend/shell/home.cpp:238 port/frontend/shell/installs.cpp:509 port/frontend/shell/pages.cpp:1277 port/frontend/shell/pages.cpp:1344 port/frontend/shell/settings.cpp:216 port/frontend/shell/settings.cpp:272
+#: port/frontend/shell/home.cpp:238 port/frontend/shell/installs.cpp:516 port/frontend/shell/pages.cpp:1277 port/frontend/shell/pages.cpp:1344 port/frontend/shell/settings.cpp:216 port/frontend/shell/settings.cpp:272
 msgid "Version"
 msgstr "Έκδοση"
 
@@ -3506,7 +3506,7 @@ msgstr "Εκδότης"
 msgid "Players"
 msgstr "Παίκτες"
 
-#: port/frontend/shell/hub.cpp:316 port/frontend/shell/installs.cpp:510 port/frontend/shell/pages.cpp:1276 port/frontend/shell/pages.cpp:1342
+#: port/frontend/shell/hub.cpp:316 port/frontend/shell/installs.cpp:517 port/frontend/shell/pages.cpp:1276 port/frontend/shell/pages.cpp:1342
 msgid "Title ID"
 msgstr "ID τίτλου"
 
@@ -3626,71 +3626,76 @@ msgstr "Ενημερώσεις και DLC"
 msgid "Installing {0} of {1}"
 msgstr "Εγκατάσταση {0} από {1}"
 
+#. Updates and DLC, installing: files copied of all of the item's files, beside the bytes ({0} of {1})
+#: port/frontend/shell/installs.cpp:382
+msgid "files {0} / {1}"
+msgstr "αρχεία {0} / {1}"
+
 #. how fast an install copies, in megabytes a second
-#: port/frontend/shell/installs.cpp:381
+#: port/frontend/shell/installs.cpp:388
 msgid "{0} MB/s"
 msgstr "{0} MB/s"
 
 #. an install's time left, in seconds or minutes
-#: port/frontend/shell/installs.cpp:384
+#: port/frontend/shell/installs.cpp:391
 msgid "about {0} second left"
 msgid_plural "about {0} seconds left"
 msgstr[0] "απομένει περίπου {0} δευτερόλεπτο"
 msgstr[1] "απομένουν περίπου {0} δευτερόλεπτα"
 
-#: port/frontend/shell/installs.cpp:385
+#: port/frontend/shell/installs.cpp:392
 msgid "about {0} minute left"
 msgid_plural "about {0} minutes left"
 msgstr[0] "απομένει περίπου {0} λεπτό"
 msgstr[1] "απομένουν περίπου {0} λεπτά"
 
-#: port/frontend/shell/installs.cpp:401
+#: port/frontend/shell/installs.cpp:408
 msgid "Nothing found to install"
 msgstr "Τίποτα για εγκατάσταση"
 
-#: port/frontend/shell/installs.cpp:403
+#: port/frontend/shell/installs.cpp:410
 msgid "Every USB drive and extended storage plugged in, the games folder and /data were searched, four folders deep, for updates, DLC and games as folders with code, content and meta (the format Cemu installs). Put them on a USB drive, or press Triangle to choose a folder anywhere."
 msgstr "Έγινε αναζήτηση σε κάθε συνδεδεμένη μονάδα USB και εκτεταμένο αποθηκευτικό χώρο, στον φάκελο παιχνιδιών και στο /data, έως τέσσερα επίπεδα φακέλων, για ενημερώσεις, DLC και παιχνίδια ως φακέλους με code, content και meta (η μορφή που εγκαθιστά το Cemu). Βάλτε τα σε μια μονάδα USB ή πατήστε Τρίγωνο για να επιλέξετε οποιονδήποτε φάκελο."
 
-#: port/frontend/shell/installs.cpp:457
+#: port/frontend/shell/installs.cpp:464
 msgid "v{0} installed"
 msgstr "Εγκατεστημένη η v{0}"
 
 #. a row of Updates and DLC while it installs ({0}: a percentage)
-#: port/frontend/shell/installs.cpp:478
+#: port/frontend/shell/installs.cpp:485
 msgid "Installing · {0}"
 msgstr "Εγκατάσταση · {0}"
 
-#: port/frontend/shell/installs.cpp:480
+#: port/frontend/shell/installs.cpp:487
 msgid "Waiting"
 msgstr "Σε αναμονή"
 
-#: port/frontend/shell/installs.cpp:502
+#: port/frontend/shell/installs.cpp:509
 msgid "Runs from where it is"
 msgstr "Τρέχει από εκεί που βρίσκεται"
 
-#: port/frontend/shell/installs.cpp:502 port/frontend/shell/pages.cpp:1358
+#: port/frontend/shell/installs.cpp:509 port/frontend/shell/pages.cpp:1358
 msgid "To install"
 msgstr "Προς εγκατάσταση"
 
 #. a title's version to install ({0}), and the one installed now ({1})
-#: port/frontend/shell/installs.cpp:509 port/frontend/shell/pages.cpp:1344
+#: port/frontend/shell/installs.cpp:516 port/frontend/shell/pages.cpp:1344
 msgid "v{0}, not installed yet"
 msgstr "v{0}, δεν έχει εγκατασταθεί ακόμα"
 
-#: port/frontend/shell/installs.cpp:509 port/frontend/shell/pages.cpp:1345
+#: port/frontend/shell/installs.cpp:516 port/frontend/shell/pages.cpp:1345
 msgid "v{0}, v{1} installed now"
 msgstr "v{0}, τώρα είναι εγκατεστημένη η v{1}"
 
-#: port/frontend/shell/installs.cpp:511
+#: port/frontend/shell/installs.cpp:518
 msgid "Where it is"
 msgstr "Πού βρίσκεται"
 
-#: port/frontend/shell/installs.cpp:523
+#: port/frontend/shell/installs.cpp:530
 msgid "Cemu runs it straight from the game files folder (title.tmd and .app files): put it there and the library lists it with its game."
 msgstr "Το Cemu το τρέχει απευθείας από τον φάκελο παιχνιδιών (αρχεία title.tmd και .app): βάλτε το εκεί και η βιβλιοθήκη το εμφανίζει μαζί με το παιχνίδι του."
 
-#: port/frontend/shell/installs.cpp:524
+#: port/frontend/shell/installs.cpp:531
 msgid "It is installed into the Wii U's storage (mlc01). What is installed now is set aside until it finishes, and put back if you stop."
 msgstr "Εγκαθίσταται στη μνήμη του Wii U (mlc01). Ό,τι είναι εγκατεστημένο τώρα μπαίνει στην άκρη μέχρι να τελειώσει και επιστρέφει αν διακόψετε."
 

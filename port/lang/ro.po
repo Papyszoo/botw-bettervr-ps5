@@ -1618,7 +1618,7 @@ msgstr "Activate: {0} din {1}"
 msgid "Achievements"
 msgstr "Realizări"
 
-#: port/app/ingame3ds.cpp:587 port/frontend/shell/installs.cpp:377 port/frontend/shell/pages.cpp:325 port/frontend/shell/pages.cpp:841 port/frontend/shell/pages.cpp:1234 port/frontend/shell/shell.cpp:2711
+#: port/app/ingame3ds.cpp:587 port/frontend/shell/installs.cpp:384 port/frontend/shell/pages.cpp:325 port/frontend/shell/pages.cpp:841 port/frontend/shell/pages.cpp:1234 port/frontend/shell/shell.cpp:2711
 #, menu
 msgid "{0} of {1}"
 msgstr "{0} din {1}"
@@ -1895,31 +1895,31 @@ msgid "Shell"
 msgstr "Carcasă"
 
 #. {0} and {1} are sizes (2.4 GB)
-#: port/app/install.cpp:231
+#: port/app/install.cpp:238
 msgid "There is not enough space: it needs {0}, and {1} is free."
 msgstr "Spațiu insuficient: e nevoie de {0}, iar {1} sunt libere."
 
-#: port/app/install.cpp:296
+#: port/app/install.cpp:305
 msgid "What is installed there now could not be moved aside: {0}"
 msgstr "Ce e instalat acolo acum nu a putut fi mutat deoparte: {0}"
 
-#: port/app/install.cpp:517
+#: port/app/install.cpp:526
 msgid "This one is not unpacked (title.tmd and .app files). Cemu reads it from the game files folder as it is: no install needed."
 msgstr "Acesta nu e despachetat (title.tmd și fișiere .app). Cemu îl citește așa cum e din folderul de jocuri: nu e nevoie de instalare."
 
-#: port/app/install.cpp:518
+#: port/app/install.cpp:527
 msgid "There is no title here: a game, update or DLC to install is a folder with code, content and meta."
 msgstr "Aici nu e niciun titlu: un joc, o actualizare sau un DLC de instalat e un folder cu code, content și meta."
 
-#: port/app/install.cpp:524
+#: port/app/install.cpp:533
 msgid "Its meta folder does not describe a Wii U title (meta.xml)."
 msgstr "Folderul lui meta nu descrie un titlu Wii U (meta.xml)."
 
-#: port/app/install.cpp:545
+#: port/app/install.cpp:554
 msgid "This is where it is installed already."
 msgstr "E deja instalat aici."
 
-#: port/app/install.cpp:561 port/app/install.cpp:627 port/azahar/core.cpp:1110
+#: port/app/install.cpp:570 port/app/install.cpp:636 port/azahar/core.cpp:1110
 #, menu
 msgid "An install is already running."
 msgstr "O instalare rulează deja."
@@ -2255,7 +2255,7 @@ msgstr "{0} nu a putut fi creat"
 msgid "{0} could not be copied: is the PS5's storage full?"
 msgstr "{0} nu a putut fi copiat: este plină stocarea PS5-ului?"
 
-#: port/app/mods.cpp:244 port/app/pack_updates.cpp:268 port/app/updates.cpp:524
+#: port/app/mods.cpp:244 port/app/pack_updates.cpp:268 port/app/updates.cpp:511
 msgid "Stopped for a game"
 msgstr "Oprit pentru un joc"
 
@@ -2283,12 +2283,12 @@ msgstr "oprit pentru un joc"
 msgid "the download holds no packs"
 msgstr "descărcarea nu conține pachete"
 
-#: port/app/pack_updates.cpp:194 port/app/updates.cpp:621
+#: port/app/pack_updates.cpp:194 port/app/updates.cpp:608
 msgid "GitHub could not be found: is the PS5 online?"
 msgstr "GitHub nu a fost găsit: e PS5 online?"
 
 #. why an update did not finish
-#: port/app/pack_updates.cpp:228 port/app/updates.cpp:422
+#: port/app/pack_updates.cpp:228 port/app/updates.cpp:424
 msgid "GitHub did not answer with a release"
 msgstr "GitHub nu a răspuns cu o versiune"
 
@@ -2382,52 +2382,52 @@ msgstr "{0} nu a putut fi scris (e plin /data?)"
 msgid "{0} was installed in {1}, but the PS5 started {2} again. Close BotW VR and start it from the home screen; if it is still {2}, copy the release's PPSA98720 folder over by hand."
 msgstr "{0} a fost instalat în {1}, dar PS5 a pornit din nou {2}. Închide BotW VR și pornește-l de pe ecranul principal; dacă este tot {2}, copiază manual peste el folderul PPSA98720 al lansării."
 
-#: port/app/updates.cpp:429
+#: port/app/updates.cpp:431
 msgid "The latest release's version ({0}) is not one this can read"
 msgstr "Versiunea celei mai noi lansări ({0}) nu poate fi citită"
 
-#: port/app/updates.cpp:462
+#: port/app/updates.cpp:463
 msgid "The release's checksums could not be downloaded"
 msgstr "Sumele de control ale lansării nu au putut fi descărcate"
 
-#: port/app/updates.cpp:491
+#: port/app/updates.cpp:478
 msgid "The releases branch has no checksum for {0}"
 msgstr "Ramura de lansări nu are sumă de control pentru {0}"
 
-#: port/app/updates.cpp:505
+#: port/app/updates.cpp:492
 msgid "The download could not start"
 msgstr "Descărcarea nu a putut porni"
 
-#: port/app/updates.cpp:524
+#: port/app/updates.cpp:511
 msgid "The download did not finish: is the PS5 online?"
 msgstr "Descărcarea nu s-a terminat: e PS5 online?"
 
-#: port/app/updates.cpp:533
+#: port/app/updates.cpp:520
 msgid "The download is damaged (SHA-256 {0}, not {1})"
 msgstr "Descărcarea e deteriorată (SHA-256 {0} în loc de {1})"
 
-#: port/app/updates.cpp:543
+#: port/app/updates.cpp:530
 msgid "BotW VR runs from an image, whose files can't be replaced: install the new release by hand"
 msgstr "BotW VR rulează dintr-o imagine ale cărei fișiere nu pot fi înlocuite: instalează noua lansare manual"
 
-#: port/app/updates.cpp:556
+#: port/app/updates.cpp:543
 msgid "It could not be unpacked: {0}"
 msgstr "Nu a putut fi despachetat: {0}"
 
-#: port/app/updates.cpp:588
+#: port/app/updates.cpp:575
 msgid "{0} could not be replaced ({1}): copy the release's PPSA98720 folder over by hand"
 msgstr "{0} nu a putut fi înlocuit ({1}): copiază manual peste el folderul PPSA98720 al lansării"
 
-#: port/app/updates.cpp:719
+#: port/app/updates.cpp:706
 msgid "No earlier version is kept here."
 msgstr "Nu e păstrată aici nicio versiune anterioară."
 
-#: port/app/updates.cpp:742
+#: port/app/updates.cpp:729
 msgid "{0} could not be put back ({1}): copy that release's PPSA98720 folder over by hand"
 msgstr "{0} nu a putut fi pus înapoi ({1}): copiază manual peste el folderul PPSA98720 al acelei lansări"
 
 #. an update is installed, but the app could not start itself again to run it
-#: port/app/updates.cpp:798
+#: port/app/updates.cpp:785
 msgid "The PS5 did not start BotW VR again. Close it and start it from the home screen to finish the update."
 msgstr "PS5 nu a pornit din nou BotW VR. Închide-l și pornește-l de pe ecranul principal ca să termini actualizarea."
 
@@ -3440,7 +3440,7 @@ msgid "Look for it again"
 msgstr "Caută din nou"
 
 #. a title's version to install ({0}), and the one installed now ({1})
-#: port/frontend/shell/home.cpp:238 port/frontend/shell/installs.cpp:509 port/frontend/shell/pages.cpp:1277 port/frontend/shell/pages.cpp:1344 port/frontend/shell/settings.cpp:216 port/frontend/shell/settings.cpp:272
+#: port/frontend/shell/home.cpp:238 port/frontend/shell/installs.cpp:516 port/frontend/shell/pages.cpp:1277 port/frontend/shell/pages.cpp:1344 port/frontend/shell/settings.cpp:216 port/frontend/shell/settings.cpp:272
 msgid "Version"
 msgstr "Versiune"
 
@@ -3514,7 +3514,7 @@ msgstr "Editor"
 msgid "Players"
 msgstr "Jucători"
 
-#: port/frontend/shell/hub.cpp:316 port/frontend/shell/installs.cpp:510 port/frontend/shell/pages.cpp:1276 port/frontend/shell/pages.cpp:1342
+#: port/frontend/shell/hub.cpp:316 port/frontend/shell/installs.cpp:517 port/frontend/shell/pages.cpp:1276 port/frontend/shell/pages.cpp:1342
 msgid "Title ID"
 msgstr "ID titlu"
 
@@ -3636,73 +3636,78 @@ msgstr "Actualizări și DLC"
 msgid "Installing {0} of {1}"
 msgstr "Se instalează {0} din {1}"
 
+#. Updates and DLC, installing: files copied of all of the item's files, beside the bytes ({0} of {1})
+#: port/frontend/shell/installs.cpp:382
+msgid "files {0} / {1}"
+msgstr "fișiere {0} / {1}"
+
 #. how fast an install copies, in megabytes a second
-#: port/frontend/shell/installs.cpp:381
+#: port/frontend/shell/installs.cpp:388
 msgid "{0} MB/s"
 msgstr "{0} MB/s"
 
 #. an install's time left, in seconds or minutes
-#: port/frontend/shell/installs.cpp:384
+#: port/frontend/shell/installs.cpp:391
 msgid "about {0} second left"
 msgid_plural "about {0} seconds left"
 msgstr[0] "mai e cam {0} secundă"
 msgstr[1] "mai sunt cam {0} secunde"
 msgstr[2] "mai sunt cam {0} de secunde"
 
-#: port/frontend/shell/installs.cpp:385
+#: port/frontend/shell/installs.cpp:392
 msgid "about {0} minute left"
 msgid_plural "about {0} minutes left"
 msgstr[0] "mai e cam {0} minut"
 msgstr[1] "mai sunt cam {0} minute"
 msgstr[2] "mai sunt cam {0} de minute"
 
-#: port/frontend/shell/installs.cpp:401
+#: port/frontend/shell/installs.cpp:408
 msgid "Nothing found to install"
 msgstr "Nimic de instalat"
 
-#: port/frontend/shell/installs.cpp:403
+#: port/frontend/shell/installs.cpp:410
 msgid "Every USB drive and extended storage plugged in, the games folder and /data were searched, four folders deep, for updates, DLC and games as folders with code, content and meta (the format Cemu installs). Put them on a USB drive, or press Triangle to choose a folder anywhere."
 msgstr "Au fost căutate pe fiecare unitate USB și stocare extinsă conectată, în folderul de jocuri și în /data, până la patru niveluri de foldere, actualizări, DLC-uri și jocuri sub formă de foldere cu code, content și meta (formatul pe care îl instalează Cemu). Pune-le pe o unitate USB sau apasă Triunghi pentru a alege orice folder."
 
-#: port/frontend/shell/installs.cpp:457
+#: port/frontend/shell/installs.cpp:464
 msgid "v{0} installed"
 msgstr "v{0} instalată"
 
 #. a row of Updates and DLC while it installs ({0}: a percentage)
-#: port/frontend/shell/installs.cpp:478
+#: port/frontend/shell/installs.cpp:485
 msgid "Installing · {0}"
 msgstr "Se instalează · {0}"
 
-#: port/frontend/shell/installs.cpp:480
+#: port/frontend/shell/installs.cpp:487
 msgid "Waiting"
 msgstr "În așteptare"
 
-#: port/frontend/shell/installs.cpp:502
+#: port/frontend/shell/installs.cpp:509
 msgid "Runs from where it is"
 msgstr "Rulează de unde se află"
 
-#: port/frontend/shell/installs.cpp:502 port/frontend/shell/pages.cpp:1358
+#: port/frontend/shell/installs.cpp:509 port/frontend/shell/pages.cpp:1358
 msgid "To install"
 msgstr "De instalat"
 
 #. a title's version to install ({0}), and the one installed now ({1})
-#: port/frontend/shell/installs.cpp:509 port/frontend/shell/pages.cpp:1344
+#: port/frontend/shell/installs.cpp:516 port/frontend/shell/pages.cpp:1344
 msgid "v{0}, not installed yet"
 msgstr "v{0}, încă neinstalată"
 
-#: port/frontend/shell/installs.cpp:509 port/frontend/shell/pages.cpp:1345
+#: port/frontend/shell/installs.cpp:516 port/frontend/shell/pages.cpp:1345
 msgid "v{0}, v{1} installed now"
 msgstr "v{0}, acum e instalată v{1}"
 
-#: port/frontend/shell/installs.cpp:511
+#: port/frontend/shell/installs.cpp:518
 msgid "Where it is"
 msgstr "Unde se află"
 
-#: port/frontend/shell/installs.cpp:523
+#: port/frontend/shell/installs.cpp:530
 msgid "Cemu runs it straight from the game files folder (title.tmd and .app files): put it there and the library lists it with its game."
 msgstr "Cemu îl rulează direct din folderul de jocuri (fișiere title.tmd și .app): pune-l acolo și biblioteca îl arată lângă jocul lui."
 
-#: port/frontend/shell/installs.cpp:524
+#: port/frontend/shell/installs.cpp:531
 msgid "It is installed into the Wii U's storage (mlc01). What is installed now is set aside until it finishes, and put back if you stop."
 msgstr "Se instalează în memoria Wii U (mlc01). Ce e instalat acum e pus deoparte până termină și e pus înapoi dacă oprești."
 

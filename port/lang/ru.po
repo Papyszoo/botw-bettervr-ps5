@@ -1618,7 +1618,7 @@ msgstr "Включено: {0} из {1}"
 msgid "Achievements"
 msgstr "Достижения"
 
-#: port/app/ingame3ds.cpp:587 port/frontend/shell/installs.cpp:377 port/frontend/shell/pages.cpp:325 port/frontend/shell/pages.cpp:841 port/frontend/shell/pages.cpp:1234 port/frontend/shell/shell.cpp:2711
+#: port/app/ingame3ds.cpp:587 port/frontend/shell/installs.cpp:384 port/frontend/shell/pages.cpp:325 port/frontend/shell/pages.cpp:841 port/frontend/shell/pages.cpp:1234 port/frontend/shell/shell.cpp:2711
 #, menu
 msgid "{0} of {1}"
 msgstr "{0} из {1}"
@@ -1895,31 +1895,31 @@ msgid "Shell"
 msgstr "Корпус"
 
 #. {0} and {1} are sizes (2.4 GB)
-#: port/app/install.cpp:231
+#: port/app/install.cpp:238
 msgid "There is not enough space: it needs {0}, and {1} is free."
 msgstr "Недостаточно места: нужно {0}, а свободно {1}."
 
-#: port/app/install.cpp:296
+#: port/app/install.cpp:305
 msgid "What is installed there now could not be moved aside: {0}"
 msgstr "Не удалось отодвинуть то, что там сейчас установлено: {0}"
 
-#: port/app/install.cpp:517
+#: port/app/install.cpp:526
 msgid "This one is not unpacked (title.tmd and .app files). Cemu reads it from the game files folder as it is: no install needed."
 msgstr "Этот не распакован (title.tmd и файлы .app). Cemu читает его как есть из папки с играми: устанавливать не нужно."
 
-#: port/app/install.cpp:518
+#: port/app/install.cpp:527
 msgid "There is no title here: a game, update or DLC to install is a folder with code, content and meta."
 msgstr "Здесь нет игры: игра, обновление или DLC для установки — это папка с code, content и meta."
 
-#: port/app/install.cpp:524
+#: port/app/install.cpp:533
 msgid "Its meta folder does not describe a Wii U title (meta.xml)."
 msgstr "Его папка meta не описывает игру для Wii U (meta.xml)."
 
-#: port/app/install.cpp:545
+#: port/app/install.cpp:554
 msgid "This is where it is installed already."
 msgstr "Здесь он уже установлен."
 
-#: port/app/install.cpp:561 port/app/install.cpp:627 port/azahar/core.cpp:1110
+#: port/app/install.cpp:570 port/app/install.cpp:636 port/azahar/core.cpp:1110
 #, menu
 msgid "An install is already running."
 msgstr "Установка уже идёт."
@@ -2255,7 +2255,7 @@ msgstr "Не удалось создать {0}"
 msgid "{0} could not be copied: is the PS5's storage full?"
 msgstr "Не удалось скопировать {0}: память PS5 заполнена?"
 
-#: port/app/mods.cpp:244 port/app/pack_updates.cpp:268 port/app/updates.cpp:524
+#: port/app/mods.cpp:244 port/app/pack_updates.cpp:268 port/app/updates.cpp:511
 msgid "Stopped for a game"
 msgstr "Остановлено ради игры"
 
@@ -2283,12 +2283,12 @@ msgstr "остановлено ради игры"
 msgid "the download holds no packs"
 msgstr "в загрузке нет пакетов"
 
-#: port/app/pack_updates.cpp:194 port/app/updates.cpp:621
+#: port/app/pack_updates.cpp:194 port/app/updates.cpp:608
 msgid "GitHub could not be found: is the PS5 online?"
 msgstr "GitHub не найден: PS5 подключена к сети?"
 
 #. why an update did not finish
-#: port/app/pack_updates.cpp:228 port/app/updates.cpp:422
+#: port/app/pack_updates.cpp:228 port/app/updates.cpp:424
 msgid "GitHub did not answer with a release"
 msgstr "GitHub не ответил релизом"
 
@@ -2382,52 +2382,52 @@ msgstr "Не удалось записать {0} (/data заполнен?)"
 msgid "{0} was installed in {1}, but the PS5 started {2} again. Close BotW VR and start it from the home screen; if it is still {2}, copy the release's PPSA98720 folder over by hand."
 msgstr "Версия {0} установлена в {1}, но PS5 снова запустила {2}. Закройте BotW VR и запустите его с главного экрана; если это всё ещё {2}, скопируйте поверх вручную папку PPSA98720 из релиза."
 
-#: port/app/updates.cpp:429
+#: port/app/updates.cpp:431
 msgid "The latest release's version ({0}) is not one this can read"
 msgstr "Версию последнего релиза ({0}) не удаётся прочитать"
 
-#: port/app/updates.cpp:462
+#: port/app/updates.cpp:463
 msgid "The release's checksums could not be downloaded"
 msgstr "Не удалось загрузить контрольные суммы релиза"
 
-#: port/app/updates.cpp:491
+#: port/app/updates.cpp:478
 msgid "The releases branch has no checksum for {0}"
 msgstr "В ветке релизов нет контрольной суммы для {0}"
 
-#: port/app/updates.cpp:505
+#: port/app/updates.cpp:492
 msgid "The download could not start"
 msgstr "Не удалось начать загрузку"
 
-#: port/app/updates.cpp:524
+#: port/app/updates.cpp:511
 msgid "The download did not finish: is the PS5 online?"
 msgstr "Загрузка не завершилась: PS5 подключена к сети?"
 
-#: port/app/updates.cpp:533
+#: port/app/updates.cpp:520
 msgid "The download is damaged (SHA-256 {0}, not {1})"
 msgstr "Загрузка повреждена (SHA-256 {0} вместо {1})"
 
-#: port/app/updates.cpp:543
+#: port/app/updates.cpp:530
 msgid "BotW VR runs from an image, whose files can't be replaced: install the new release by hand"
 msgstr "BotW VR запущен из образа, файлы которого нельзя заменить: установите новый релиз вручную"
 
-#: port/app/updates.cpp:556
+#: port/app/updates.cpp:543
 msgid "It could not be unpacked: {0}"
 msgstr "Не удалось распаковать: {0}"
 
-#: port/app/updates.cpp:588
+#: port/app/updates.cpp:575
 msgid "{0} could not be replaced ({1}): copy the release's PPSA98720 folder over by hand"
 msgstr "Не удалось заменить {0} ({1}): скопируйте поверх вручную папку PPSA98720 из релиза"
 
-#: port/app/updates.cpp:719
+#: port/app/updates.cpp:706
 msgid "No earlier version is kept here."
 msgstr "Здесь не сохранено более ранней версии."
 
-#: port/app/updates.cpp:742
+#: port/app/updates.cpp:729
 msgid "{0} could not be put back ({1}): copy that release's PPSA98720 folder over by hand"
 msgstr "Не удалось вернуть {0} ({1}): скопируйте поверх вручную папку PPSA98720 из того релиза"
 
 #. an update is installed, but the app could not start itself again to run it
-#: port/app/updates.cpp:798
+#: port/app/updates.cpp:785
 msgid "The PS5 did not start BotW VR again. Close it and start it from the home screen to finish the update."
 msgstr "PS5 не перезапустила BotW VR. Закройте его и запустите с главного экрана, чтобы завершить обновление."
 
@@ -3440,7 +3440,7 @@ msgid "Look for it again"
 msgstr "Искать снова"
 
 #. a title's version to install ({0}), and the one installed now ({1})
-#: port/frontend/shell/home.cpp:238 port/frontend/shell/installs.cpp:509 port/frontend/shell/pages.cpp:1277 port/frontend/shell/pages.cpp:1344 port/frontend/shell/settings.cpp:216 port/frontend/shell/settings.cpp:272
+#: port/frontend/shell/home.cpp:238 port/frontend/shell/installs.cpp:516 port/frontend/shell/pages.cpp:1277 port/frontend/shell/pages.cpp:1344 port/frontend/shell/settings.cpp:216 port/frontend/shell/settings.cpp:272
 msgid "Version"
 msgstr "Версия"
 
@@ -3514,7 +3514,7 @@ msgstr "Издатель"
 msgid "Players"
 msgstr "Игроки"
 
-#: port/frontend/shell/hub.cpp:316 port/frontend/shell/installs.cpp:510 port/frontend/shell/pages.cpp:1276 port/frontend/shell/pages.cpp:1342
+#: port/frontend/shell/hub.cpp:316 port/frontend/shell/installs.cpp:517 port/frontend/shell/pages.cpp:1276 port/frontend/shell/pages.cpp:1342
 msgid "Title ID"
 msgstr "ID игры"
 
@@ -3636,73 +3636,78 @@ msgstr "Обновления и DLC"
 msgid "Installing {0} of {1}"
 msgstr "Установка {0} из {1}"
 
+#. Updates and DLC, installing: files copied of all of the item's files, beside the bytes ({0} of {1})
+#: port/frontend/shell/installs.cpp:382
+msgid "files {0} / {1}"
+msgstr "файлы {0} / {1}"
+
 #. how fast an install copies, in megabytes a second
-#: port/frontend/shell/installs.cpp:381
+#: port/frontend/shell/installs.cpp:388
 msgid "{0} MB/s"
 msgstr "{0} МБ/с"
 
 #. an install's time left, in seconds or minutes
-#: port/frontend/shell/installs.cpp:384
+#: port/frontend/shell/installs.cpp:391
 msgid "about {0} second left"
 msgid_plural "about {0} seconds left"
 msgstr[0] "осталось около {0} секунды"
 msgstr[1] "осталось около {0} секунд"
 msgstr[2] "осталось около {0} секунд"
 
-#: port/frontend/shell/installs.cpp:385
+#: port/frontend/shell/installs.cpp:392
 msgid "about {0} minute left"
 msgid_plural "about {0} minutes left"
 msgstr[0] "осталось около {0} минуты"
 msgstr[1] "осталось около {0} минут"
 msgstr[2] "осталось около {0} минут"
 
-#: port/frontend/shell/installs.cpp:401
+#: port/frontend/shell/installs.cpp:408
 msgid "Nothing found to install"
 msgstr "Нечего устанавливать"
 
-#: port/frontend/shell/installs.cpp:403
+#: port/frontend/shell/installs.cpp:410
 msgid "Every USB drive and extended storage plugged in, the games folder and /data were searched, four folders deep, for updates, DLC and games as folders with code, content and meta (the format Cemu installs). Put them on a USB drive, or press Triangle to choose a folder anywhere."
 msgstr "На всех подключённых USB-накопителях и расширенных хранилищах, в папке с играми и в /data, на глубину до четырёх папок, искались обновления, DLC и игры в виде папок с code, content и meta (формат, в котором их устанавливает Cemu). Положите их на USB-накопитель или нажмите Треугольник, чтобы выбрать любую папку."
 
-#: port/frontend/shell/installs.cpp:457
+#: port/frontend/shell/installs.cpp:464
 msgid "v{0} installed"
 msgstr "Установлена v{0}"
 
 #. a row of Updates and DLC while it installs ({0}: a percentage)
-#: port/frontend/shell/installs.cpp:478
+#: port/frontend/shell/installs.cpp:485
 msgid "Installing · {0}"
 msgstr "Установка · {0}"
 
-#: port/frontend/shell/installs.cpp:480
+#: port/frontend/shell/installs.cpp:487
 msgid "Waiting"
 msgstr "Ожидание"
 
-#: port/frontend/shell/installs.cpp:502
+#: port/frontend/shell/installs.cpp:509
 msgid "Runs from where it is"
 msgstr "Работает оттуда, где лежит"
 
-#: port/frontend/shell/installs.cpp:502 port/frontend/shell/pages.cpp:1358
+#: port/frontend/shell/installs.cpp:509 port/frontend/shell/pages.cpp:1358
 msgid "To install"
 msgstr "К установке"
 
 #. a title's version to install ({0}), and the one installed now ({1})
-#: port/frontend/shell/installs.cpp:509 port/frontend/shell/pages.cpp:1344
+#: port/frontend/shell/installs.cpp:516 port/frontend/shell/pages.cpp:1344
 msgid "v{0}, not installed yet"
 msgstr "v{0}, ещё не установлено"
 
-#: port/frontend/shell/installs.cpp:509 port/frontend/shell/pages.cpp:1345
+#: port/frontend/shell/installs.cpp:516 port/frontend/shell/pages.cpp:1345
 msgid "v{0}, v{1} installed now"
 msgstr "v{0}, сейчас установлена v{1}"
 
-#: port/frontend/shell/installs.cpp:511
+#: port/frontend/shell/installs.cpp:518
 msgid "Where it is"
 msgstr "Где лежит"
 
-#: port/frontend/shell/installs.cpp:523
+#: port/frontend/shell/installs.cpp:530
 msgid "Cemu runs it straight from the game files folder (title.tmd and .app files): put it there and the library lists it with its game."
 msgstr "Cemu запускает это прямо из папки с играми (файлы title.tmd и .app): положите это туда, и библиотека покажет его рядом с игрой."
 
-#: port/frontend/shell/installs.cpp:524
+#: port/frontend/shell/installs.cpp:531
 msgid "It is installed into the Wii U's storage (mlc01). What is installed now is set aside until it finishes, and put back if you stop."
 msgstr "Устанавливается в память Wii U (mlc01). То, что установлено сейчас, откладывается до конца установки и возвращается, если вы её остановите."
 

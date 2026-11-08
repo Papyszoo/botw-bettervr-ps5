@@ -56,6 +56,12 @@ namespace ps5emu
 			s_status.copied += bytes;
 		}
 
+		void AddFileDone()
+		{
+			std::lock_guard lock(s_mutex);
+			s_status.filesDone++;
+		}
+
 		// Where folders go to be deleted: inside the MLC, so a move there is a rename on the same drive
 		fs::path TrashFolder()
 		{
@@ -223,6 +229,7 @@ namespace ps5emu
 			{
 				std::lock_guard lock(s_mutex);
 				s_status.total = total;
+				s_status.files = files.size();
 			}
 			const fs::space_info space = fs::space(ActiveSettings::GetMlcPath(), ec);
 			if (!ec && space.available <= total)
@@ -261,7 +268,9 @@ namespace ps5emu
 				std::string why;
 				for (size_t i = next++; i < files.size() && !s_cancel; i = next++)
 				{
-					if (!CopyInPieces(source / files[i].relative, staging / files[i].relative, buffer, why) && !s_cancel)
+					if (CopyInPieces(source / files[i].relative, staging / files[i].relative, buffer, why))
+						AddFileDone();
+					else if (!s_cancel)
 					{
 						std::lock_guard lock(failureMutex);
 						if (failure.empty())

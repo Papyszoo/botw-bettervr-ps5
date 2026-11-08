@@ -303,6 +303,7 @@ namespace ps5emu
 			Cancelled,
 		} state = State::Idle;
 		uint64_t copied = 0, total = 0; // bytes
+		uint64_t filesDone = 0, files = 0;
 		std::string message;			// the reason, when it failed
 	};
 	InstallStatus GetInstallStatus();

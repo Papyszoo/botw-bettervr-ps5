@@ -1616,7 +1616,7 @@ msgstr "{0} av {1} på"
 msgid "Achievements"
 msgstr "Prestasjoner"
 
-#: port/app/ingame3ds.cpp:587 port/frontend/shell/installs.cpp:377 port/frontend/shell/pages.cpp:325 port/frontend/shell/pages.cpp:841 port/frontend/shell/pages.cpp:1234 port/frontend/shell/shell.cpp:2711
+#: port/app/ingame3ds.cpp:587 port/frontend/shell/installs.cpp:384 port/frontend/shell/pages.cpp:325 port/frontend/shell/pages.cpp:841 port/frontend/shell/pages.cpp:1234 port/frontend/shell/shell.cpp:2711
 #, menu
 msgid "{0} of {1}"
 msgstr "{0} av {1}"
@@ -1892,31 +1892,31 @@ msgid "Shell"
 msgstr "Skall"
 
 #. {0} and {1} are sizes (2.4 GB)
-#: port/app/install.cpp:231
+#: port/app/install.cpp:238
 msgid "There is not enough space: it needs {0}, and {1} is free."
 msgstr "Det er ikke nok plass: det trengs {0}, og {1} er ledig."
 
-#: port/app/install.cpp:296
+#: port/app/install.cpp:305
 msgid "What is installed there now could not be moved aside: {0}"
 msgstr "Det som er installert der nå, kunne ikke flyttes til side: {0}"
 
-#: port/app/install.cpp:517
+#: port/app/install.cpp:526
 msgid "This one is not unpacked (title.tmd and .app files). Cemu reads it from the game files folder as it is: no install needed."
 msgstr "Denne er ikke pakket ut (title.tmd og .app-filer). Cemu leser den som den er fra spillmappen: ingen installasjon trengs."
 
-#: port/app/install.cpp:518
+#: port/app/install.cpp:527
 msgid "There is no title here: a game, update or DLC to install is a folder with code, content and meta."
 msgstr "Det er ingen tittel her: et spill, en oppdatering eller et DLC som skal installeres, er en mappe med code, content og meta."
 
-#: port/app/install.cpp:524
+#: port/app/install.cpp:533
 msgid "Its meta folder does not describe a Wii U title (meta.xml)."
 msgstr "meta-mappen beskriver ikke en Wii U-tittel (meta.xml)."
 
-#: port/app/install.cpp:545
+#: port/app/install.cpp:554
 msgid "This is where it is installed already."
 msgstr "Den er allerede installert her."
 
-#: port/app/install.cpp:561 port/app/install.cpp:627 port/azahar/core.cpp:1110
+#: port/app/install.cpp:570 port/app/install.cpp:636 port/azahar/core.cpp:1110
 #, menu
 msgid "An install is already running."
 msgstr "En installasjon pågår allerede."
@@ -2252,7 +2252,7 @@ msgstr "{0} kunne ikke opprettes"
 msgid "{0} could not be copied: is the PS5's storage full?"
 msgstr "{0} kunne ikke kopieres: er lagringen på PS5-en full?"
 
-#: port/app/mods.cpp:244 port/app/pack_updates.cpp:268 port/app/updates.cpp:524
+#: port/app/mods.cpp:244 port/app/pack_updates.cpp:268 port/app/updates.cpp:511
 msgid "Stopped for a game"
 msgstr "Stoppet for et spill"
 
@@ -2280,12 +2280,12 @@ msgstr "stoppet for et spill"
 msgid "the download holds no packs"
 msgstr "nedlastingen inneholder ingen pakker"
 
-#: port/app/pack_updates.cpp:194 port/app/updates.cpp:621
+#: port/app/pack_updates.cpp:194 port/app/updates.cpp:608
 msgid "GitHub could not be found: is the PS5 online?"
 msgstr "GitHub ble ikke funnet: er PS5-en på nett?"
 
 #. why an update did not finish
-#: port/app/pack_updates.cpp:228 port/app/updates.cpp:422
+#: port/app/pack_updates.cpp:228 port/app/updates.cpp:424
 msgid "GitHub did not answer with a release"
 msgstr "GitHub svarte ikke med en utgivelse"
 
@@ -2379,52 +2379,52 @@ msgstr "{0} kunne ikke skrives (er /data full?)"
 msgid "{0} was installed in {1}, but the PS5 started {2} again. Close BotW VR and start it from the home screen; if it is still {2}, copy the release's PPSA98720 folder over by hand."
 msgstr "{0} ble installert i {1}, men PS5 startet {2} igjen. Lukk BotW VR og start det fra startskjermen; er det fortsatt {2}, kopier utgivelsens PPSA98720-mappe over manuelt."
 
-#: port/app/updates.cpp:429
+#: port/app/updates.cpp:431
 msgid "The latest release's version ({0}) is not one this can read"
 msgstr "Versjonen til den nyeste utgivelsen ({0}) kan ikke leses"
 
-#: port/app/updates.cpp:462
+#: port/app/updates.cpp:463
 msgid "The release's checksums could not be downloaded"
 msgstr "Kontrollsummene for utgivelsen kunne ikke lastes ned"
 
-#: port/app/updates.cpp:491
+#: port/app/updates.cpp:478
 msgid "The releases branch has no checksum for {0}"
 msgstr "Utgivelsesgrenen har ingen kontrollsum for {0}"
 
-#: port/app/updates.cpp:505
+#: port/app/updates.cpp:492
 msgid "The download could not start"
 msgstr "Nedlastingen kunne ikke starte"
 
-#: port/app/updates.cpp:524
+#: port/app/updates.cpp:511
 msgid "The download did not finish: is the PS5 online?"
 msgstr "Nedlastingen ble ikke ferdig: er PS5-en på nett?"
 
-#: port/app/updates.cpp:533
+#: port/app/updates.cpp:520
 msgid "The download is damaged (SHA-256 {0}, not {1})"
 msgstr "Nedlastingen er skadet (SHA-256 {0}, ikke {1})"
 
-#: port/app/updates.cpp:543
+#: port/app/updates.cpp:530
 msgid "BotW VR runs from an image, whose files can't be replaced: install the new release by hand"
 msgstr "BotW VR kjører fra et bilde der filene ikke kan erstattes: installer den nye utgivelsen manuelt"
 
-#: port/app/updates.cpp:556
+#: port/app/updates.cpp:543
 msgid "It could not be unpacked: {0}"
 msgstr "Det kunne ikke pakkes ut: {0}"
 
-#: port/app/updates.cpp:588
+#: port/app/updates.cpp:575
 msgid "{0} could not be replaced ({1}): copy the release's PPSA98720 folder over by hand"
 msgstr "{0} kunne ikke erstattes ({1}): kopier utgivelsens PPSA98720-mappe over manuelt"
 
-#: port/app/updates.cpp:719
+#: port/app/updates.cpp:706
 msgid "No earlier version is kept here."
 msgstr "Ingen eldre versjon er tatt vare på her."
 
-#: port/app/updates.cpp:742
+#: port/app/updates.cpp:729
 msgid "{0} could not be put back ({1}): copy that release's PPSA98720 folder over by hand"
 msgstr "{0} kunne ikke legges tilbake ({1}): kopier den utgivelsens PPSA98720-mappe over manuelt"
 
 #. an update is installed, but the app could not start itself again to run it
-#: port/app/updates.cpp:798
+#: port/app/updates.cpp:785
 msgid "The PS5 did not start BotW VR again. Close it and start it from the home screen to finish the update."
 msgstr "PS5 startet ikke BotW VR på nytt. Lukk det og start det fra startskjermen for å fullføre oppdateringen."
 
@@ -3434,7 +3434,7 @@ msgid "Look for it again"
 msgstr "Let igjen"
 
 #. a title's version to install ({0}), and the one installed now ({1})
-#: port/frontend/shell/home.cpp:238 port/frontend/shell/installs.cpp:509 port/frontend/shell/pages.cpp:1277 port/frontend/shell/pages.cpp:1344 port/frontend/shell/settings.cpp:216 port/frontend/shell/settings.cpp:272
+#: port/frontend/shell/home.cpp:238 port/frontend/shell/installs.cpp:516 port/frontend/shell/pages.cpp:1277 port/frontend/shell/pages.cpp:1344 port/frontend/shell/settings.cpp:216 port/frontend/shell/settings.cpp:272
 msgid "Version"
 msgstr "Versjon"
 
@@ -3506,7 +3506,7 @@ msgstr "Utgiver"
 msgid "Players"
 msgstr "Spillere"
 
-#: port/frontend/shell/hub.cpp:316 port/frontend/shell/installs.cpp:510 port/frontend/shell/pages.cpp:1276 port/frontend/shell/pages.cpp:1342
+#: port/frontend/shell/hub.cpp:316 port/frontend/shell/installs.cpp:517 port/frontend/shell/pages.cpp:1276 port/frontend/shell/pages.cpp:1342
 msgid "Title ID"
 msgstr "Tittel-ID"
 
@@ -3626,71 +3626,76 @@ msgstr "Oppdateringer og DLC"
 msgid "Installing {0} of {1}"
 msgstr "Installerer {0} av {1}"
 
+#. Updates and DLC, installing: files copied of all of the item's files, beside the bytes ({0} of {1})
+#: port/frontend/shell/installs.cpp:382
+msgid "files {0} / {1}"
+msgstr "filer {0} / {1}"
+
 #. how fast an install copies, in megabytes a second
-#: port/frontend/shell/installs.cpp:381
+#: port/frontend/shell/installs.cpp:388
 msgid "{0} MB/s"
 msgstr "{0} MB/s"
 
 #. an install's time left, in seconds or minutes
-#: port/frontend/shell/installs.cpp:384
+#: port/frontend/shell/installs.cpp:391
 msgid "about {0} second left"
 msgid_plural "about {0} seconds left"
 msgstr[0] "omtrent {0} sekund igjen"
 msgstr[1] "omtrent {0} sekunder igjen"
 
-#: port/frontend/shell/installs.cpp:385
+#: port/frontend/shell/installs.cpp:392
 msgid "about {0} minute left"
 msgid_plural "about {0} minutes left"
 msgstr[0] "omtrent {0} minutt igjen"
 msgstr[1] "omtrent {0} minutter igjen"
 
-#: port/frontend/shell/installs.cpp:401
+#: port/frontend/shell/installs.cpp:408
 msgid "Nothing found to install"
 msgstr "Ingenting å installere"
 
-#: port/frontend/shell/installs.cpp:403
+#: port/frontend/shell/installs.cpp:410
 msgid "Every USB drive and extended storage plugged in, the games folder and /data were searched, four folders deep, for updates, DLC and games as folders with code, content and meta (the format Cemu installs). Put them on a USB drive, or press Triangle to choose a folder anywhere."
 msgstr "Alle tilkoblede USB-stasjoner og utvidede lagringer, spillmappen og /data ble gjennomsøkt fire mapper dypt etter oppdateringer, DLC og spill som mapper med code, content og meta (formatet Cemu installerer). Legg dem på en USB-stasjon, eller trykk på Trekant for å velge en hvilken som helst mappe."
 
-#: port/frontend/shell/installs.cpp:457
+#: port/frontend/shell/installs.cpp:464
 msgid "v{0} installed"
 msgstr "v{0} installert"
 
 #. a row of Updates and DLC while it installs ({0}: a percentage)
-#: port/frontend/shell/installs.cpp:478
+#: port/frontend/shell/installs.cpp:485
 msgid "Installing · {0}"
 msgstr "Installerer · {0}"
 
-#: port/frontend/shell/installs.cpp:480
+#: port/frontend/shell/installs.cpp:487
 msgid "Waiting"
 msgstr "Venter"
 
-#: port/frontend/shell/installs.cpp:502
+#: port/frontend/shell/installs.cpp:509
 msgid "Runs from where it is"
 msgstr "Kjører der den ligger"
 
-#: port/frontend/shell/installs.cpp:502 port/frontend/shell/pages.cpp:1358
+#: port/frontend/shell/installs.cpp:509 port/frontend/shell/pages.cpp:1358
 msgid "To install"
 msgstr "Skal installeres"
 
 #. a title's version to install ({0}), and the one installed now ({1})
-#: port/frontend/shell/installs.cpp:509 port/frontend/shell/pages.cpp:1344
+#: port/frontend/shell/installs.cpp:516 port/frontend/shell/pages.cpp:1344
 msgid "v{0}, not installed yet"
 msgstr "v{0}, ikke installert ennå"
 
-#: port/frontend/shell/installs.cpp:509 port/frontend/shell/pages.cpp:1345
+#: port/frontend/shell/installs.cpp:516 port/frontend/shell/pages.cpp:1345
 msgid "v{0}, v{1} installed now"
 msgstr "v{0}, v{1} er installert nå"
 
-#: port/frontend/shell/installs.cpp:511
+#: port/frontend/shell/installs.cpp:518
 msgid "Where it is"
 msgstr "Der den ligger"
 
-#: port/frontend/shell/installs.cpp:523
+#: port/frontend/shell/installs.cpp:530
 msgid "Cemu runs it straight from the game files folder (title.tmd and .app files): put it there and the library lists it with its game."
 msgstr "Cemu kjører den rett fra spillmappen (title.tmd- og .app-filer): legg den der, så viser biblioteket den sammen med spillet."
 
-#: port/frontend/shell/installs.cpp:524
+#: port/frontend/shell/installs.cpp:531
 msgid "It is installed into the Wii U's storage (mlc01). What is installed now is set aside until it finishes, and put back if you stop."
 msgstr "Den installeres i Wii U-ens lagring (mlc01). Det som er installert nå, legges til side til den er ferdig, og legges tilbake hvis du stopper."
 
