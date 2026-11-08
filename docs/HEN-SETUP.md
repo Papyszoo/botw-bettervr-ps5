@@ -97,7 +97,7 @@ itself:
 
 1. It asks the HEN to jailbreak it, by writing `{"PID":n}` to `/download0/etahen_jailbreak` — the app
    jailbreak request etaHEN and OnionHEN both answer. The HEN only answers for title IDs in its
-   allowlist, so **`PPSA99360` has to be listed there.** It waits ~5 s for the HEN to take the
+   allowlist, so **`PPSA98720` has to be listed there.** It waits ~5 s for the HEN to take the
    request and ~3 s more for it to finish.
 2. It tests the HEN's JIT memory. If that isn't granted, it makes **executable direct memory**
    itself — no HEN grant needed — and runs a few bytes of real code to prove the kernel allows it.
@@ -122,7 +122,7 @@ always reach the same information later under **Settings > Diagnostics**.
 ## 3. etaHEN (most tested)
 
 1. Load etaHEN (via your firmware's exploit host).
-2. Add `PPSA99360` to etaHEN's **app jailbreak list**, and turn on its **app jailbreak** option (in
+2. Add `PPSA98720` to etaHEN's **app jailbreak list**, and turn on its **app jailbreak** option (in
    etaHEN's advanced or debug settings, depending on the version).
 3. Start PS5-ECAM. Diagnostics should say `HEN: ok`, `JIT available (the HEN's)` and
    `/data reachable`.
@@ -140,17 +140,17 @@ OnionHEN answers the same jailbreak request as etaHEN, but its allowlist is a li
 1. Open OnionHEN's `config.ini` and find the `[app_jailbreak]` section.
 2. Set `enabled=true`. Setting `debug_notifications=true` is worth it too: OnionHEN then shows a
    notification each time it jailbreaks an app, so you can see it worked.
-3. Add `PPSA99360` to the **end** of `exact_title_ids`, with **no comma after it**:
+3. Add `PPSA98720` to the **end** of `exact_title_ids`, with **no comma after it**:
 
    ```ini
    [app_jailbreak]
    enabled=true
    debug_notifications=true
-   exact_title_ids=ITEM00001,NPXS39041,PKGI13337,PKGI12345,TOOL00001,PPSA99360
+   exact_title_ids=ITEM00001,NPXS39041,PKGI13337,PKGI12345,TOOL00001,PPSA98720
    ```
 
    OnionHEN drops the **whole list** if any entry is empty or isn't exactly 9 capital letters and
-   digits. A trailing comma (`...,PPSA99360,`), a space-only entry or a lowercase ID all count, and
+   digits. A trailing comma (`...,PPSA98720,`), a space-only entry or a lowercase ID all count, and
    then no app is jailbroken
    ([#12](https://github.com/premohq/PS5-ECAM/issues/12)). It allows 20 entries at most.
 4. Reload OnionHEN (or restart the console and load it again), so it reads the new list.
@@ -174,7 +174,7 @@ runs — it looks after itself:
    app-jailbreak request; the app got everything it needs another way.
 
 If no ELF loader is running, the app can't reach `/data` and says so at start: load one (or add
-`PPSA99360` to a HEN's allowlist), then start the app again.
+`PPSA98720` to a HEN's allowlist), then start the app again.
 
 > **Note on the port.** The elevation helper connects to elfldr on the standard **port 9021**, which
 > etaHEN, OnionHEN and the common `elfldr.elf` payload all use. If your loader listens on a different
@@ -202,13 +202,13 @@ this:
 | --- | --- |
 | `Firmware 11.60 (0x...)` | Your console's firmware, as its own settings show it. Almost every bug report needs this. `unknown` means the query failed (rare). |
 | `HEN: ok (HEN took the request after N ms ...)` | The HEN jailbroke the app. |
-| `HEN: no (no HEN took the request ...)` | No HEN answered: `PPSA99360` isn't in its allowlist (check the comma for OnionHEN), or the HEN has no app jailbreak. The app carries on without one — this is fine if the next two lines are green. |
+| `HEN: no (no HEN took the request ...)` | No HEN answered: `PPSA98720` isn't in its allowlist (check the comma for OnionHEN), or the HEN has no app jailbreak. The app carries on without one — this is fine if the next two lines are green. |
 | `JIT available (the HEN's)` | The recompilers use the HEN's JIT memory. |
 | `JIT available (executable direct memory, no HEN needed)` | The recompilers use memory the app made itself: full speed, no HEN needed. |
 | `JIT unavailable (interpreter only)` | Neither worked: Wii U games run very slowly. Please report it with your firmware, HEN and `boot.log`. |
 | `; no executable direct memory: 3DS games run on Azahar's interpreter` | The HEN gave JIT memory but the kernel refused executable *direct* memory; the 3DS recompiler needs the latter, so 3DS games run slower. Usually seen only with an app jailbreak on certain firmwares. |
 | `/data reachable` | All good. |
-| `/data unreachable (elevation helper: N)` | Neither the HEN nor elfldr opened `/data`: load an ELF loader on port 9021, or put `PPSA99360` in your HEN's allowlist. |
+| `/data unreachable (elevation helper: N)` | Neither the HEN nor elfldr opened `/data`: load an ELF loader on port 9021, or put `PPSA98720` in your HEN's allowlist. |
 | `... opened by the elevation helper` | A refused drive or folder was opened by the bundled helper through elfldr. |
 
 ---
@@ -217,13 +217,13 @@ this:
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| App shows "cannot reach /data" and quits to a notice | No app jailbreak **and** no elfldr on 9021 | Add `PPSA99360` to your HEN's allowlist, or start an ELF loader on port 9021, then relaunch. |
+| App shows "cannot reach /data" and quits to a notice | No app jailbreak **and** no elfldr on 9021 | Add `PPSA98720` to your HEN's allowlist, or start an ELF loader on port 9021, then relaunch. |
 | Diagnostics: `HEN: no` but `/data reachable`, games full speed | No app jailbreak, but elfldr + executable direct memory covered it | Nothing to fix — this is a fully working no-HEN setup. |
-| Wii U games are extremely slow; `JIT unavailable (interpreter only)` | Neither JIT nor executable memory was granted | Add `PPSA99360` to the HEN's app-jailbreak list; if that's not possible on your HEN, report it with `boot.log` and your firmware — this is the one case the app can't work around alone. |
-| OnionHEN never jailbreaks the app | A trailing comma or a malformed entry voided the **whole** `exact_title_ids` list | Put `PPSA99360` last with **no** trailing comma, all entries exactly 9 chars, ≤ 20 entries; reload OnionHEN. |
+| Wii U games are extremely slow; `JIT unavailable (interpreter only)` | Neither JIT nor executable memory was granted | Add `PPSA98720` to the HEN's app-jailbreak list; if that's not possible on your HEN, report it with `boot.log` and your firmware — this is the one case the app can't work around alone. |
+| OnionHEN never jailbreaks the app | A trailing comma or a malformed entry voided the **whole** `exact_title_ids` list | Put `PPSA98720` last with **no** trailing comma, all entries exactly 9 chars, ≤ 20 entries; reload OnionHEN. |
 | USB / external games "cannot be read" | HEN opened `/data` but not the drives | Make sure elfldr is on 9021; relaunch. Diagnostics should then say the drive was "opened by the elevation helper." |
 | Works once, dead after a reboot | The jailbreak is tethered | Re-run your firmware's exploit and reload the HEN after every cold boot, then start the app. |
-| App won't appear / won't register on the home screen | HEN didn't jailbreak `PPSA99360`, or the folder is in the wrong place | Copy the folder to `/data/homebrew/PPSA99360` and list `PPSA99360` in your HEN before launching. |
+| App won't appear / won't register on the home screen | HEN didn't jailbreak `PPSA98720`, or the folder is in the wrong place | Copy the folder to `/data/homebrew/PPSA98720` and list `PPSA98720` in your HEN before launching. |
 | Everything green but a specific game crashes | Not a firmware/HEN issue | See the [compatibility list](COMPATIBILITY.md) and [report it](#reporting-problems) with logs. |
 
 ---

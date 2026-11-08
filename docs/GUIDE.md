@@ -254,7 +254,7 @@ New in 5.0.0: a side of its own, in the Switch's red, to the right of the DS.
 - **Covers**: GameTDB's box art, or each game's own icon (**Settings > Online > Box art > Switch covers**).
 - Your Switch's **keys** and **firmware** are needed, dumped from your own console: see
   [Game files](#nintendo-switch).
-- Eden reaches `/data` as PS5-ECAM does: through etaHEN with `PPSA99360` in its app jailbreak list
+- Eden reaches `/data` as BotW VR does: through etaHEN with `PPSA98720` in its app jailbreak list
   (or OnionHEN's `exact_title_ids`), else through its own helper and the console's ELF loader on port
   9021. Without it Eden reads no keys or games, and its launcher says so.
 - **Mods and cheats**, each on or off (a game's **Game settings > Mods** and **Cheats**): the ones in
