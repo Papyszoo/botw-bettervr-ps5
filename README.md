@@ -1,9 +1,9 @@
-# Breath of the Wild VR on PS5
+# BotW VR on PS5
 
 An experimental port of [BotW-BetterVR](https://github.com/Crementif/BotW-BetterVR) (the Breath of
 the Wild VR mod for Cemu) to a jailbroken PS5, shown on PlayStation VR2 with the Sense controllers.
-It is a fork of [PS5-ECAM](https://github.com/premohq/PS5-ECAM), whose native Cemu it runs in.
-For what PS5-ECAM itself does (the launcher, other systems, settings), see its repository.
+It is a fork of [PlayTendoh](https://github.com/premohq/PlayTendoh) (formerly PS5-ECAM), whose native Cemu it runs in.
+For what PlayTendoh itself does (the launcher, other systems, settings), see its repository.
 
 **Status: experimental.** The author tests on his own PS5 (firmware 13.60). What he has
 reported working on the console: the app starts and the game runs flat at a steady 60 fps; in VR the
@@ -39,7 +39,7 @@ To build it yourself, see [docs/BUILDING.md](docs/BUILDING.md).
 
 ## Credits
 
-- [premohq](https://github.com/premohq/PS5-ECAM), [JMUtechnologies](https://github.com/JMUtechnologies)
+- [premohq](https://github.com/premohq/PlayTendoh), [JMUtechnologies](https://github.com/JMUtechnologies)
   and the PS5-ECAM contributors: this fork is built on their work. See PS5-ECAM's own credits for the
   emulators, libraries and PS5 homebrew work it relies on.
 - [Cemu](https://github.com/cemu-project/Cemu) by the Cemu team (MPL-2.0).

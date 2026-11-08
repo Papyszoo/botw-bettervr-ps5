@@ -272,7 +272,7 @@ It asks for your **firmware, HEN, app version and logs**, which almost every pro
 them are on the first lines of **Settings > Diagnostics**.
 
 - **Copy logs to USB** (Settings > Diagnostics): puts the logs and settings in a dated
-  `PS5-ECAM-logs-...` folder on a USB drive. The app keeps the last five sessions' logs, so copy
+  `BotW-VR-logs-...` folder on a USB drive. The app keeps the last five sessions' logs, so copy
   them soon after a problem and attach them to your report.
 
 When you report a problem, say which HEN and version you use, your firmware, and attach those logs.

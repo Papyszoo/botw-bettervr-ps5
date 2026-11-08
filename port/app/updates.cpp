@@ -318,7 +318,7 @@ namespace ps5update
 			s_status.latest = version;
 			s_status.installing = true; // the sheet shows it
 			// tr: at a start after an update: {0} the release installed, {1} the folder, {2} this release
-			s_status.message = ps5lang::TrF("{0} was installed in {1}, but the PS5 started {2} again. Close PS5-ECAM and start it from the "
+			s_status.message = ps5lang::TrF("{0} was installed in {1}, but the PS5 started {2} again. Close BotW VR and start it from the "
 											"home screen; if it is still {2}, copy the release's PPSA98720 folder over by hand.",
 				Readable(version), folder, Readable(PS5CEMU_VERSION));
 			return false;
@@ -540,7 +540,7 @@ namespace ps5update
 			if (app.empty())
 			{
 				fs::remove(archive, ec);
-				Fail(ps5lang::Tr("PS5-ECAM runs from an image, whose files can't be replaced: install the new release by hand"));
+				Fail(ps5lang::Tr("BotW VR runs from an image, whose files can't be replaced: install the new release by hand"));
 				return;
 			}
 			ps5log::Line("[update] installing in {}", app.string());
@@ -795,7 +795,7 @@ namespace ps5update
 		std::lock_guard lock(s_mutex);
 		s_restartFailed = true;
 		// tr: an update is installed, but the app could not start itself again to run it
-		s_status.message = ps5lang::Tr("The PS5 did not start PS5-ECAM again. Close it and start it from the home screen to finish the update.");
+		s_status.message = ps5lang::Tr("The PS5 did not start BotW VR again. Close it and start it from the home screen to finish the update.");
 	}
 
 	void Stop()

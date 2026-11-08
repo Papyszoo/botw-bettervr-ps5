@@ -803,7 +803,7 @@ It asks for your firmware, HEN, app version and logs, which almost every problem
 **Settings > Diagnostics** has what a report needs:
 
 - The app version, the firmware, and what the HEN gave the app.
-- **Copy logs to USB:** puts the logs and settings in a dated `PS5-ECAM-logs-...` folder on a USB
+- **Copy logs to USB:** puts the logs and settings in a dated `BotW-VR-logs-...` folder on a USB
   drive. The app keeps the last five sessions' logs, so copy them soon after a problem and attach
   them to your report.
 - **Clear shader caches** (hold Cross): for a game that crashes on a bad or shared cache.

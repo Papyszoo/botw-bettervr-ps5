@@ -144,7 +144,7 @@ namespace ps5actions
 		}
 		for (int drive = 0; drive < 8; drive++)
 		{
-			const std::string folder = fmt::format("/mnt/usb{}/PS5-ECAM-logs-{}", drive, stamp);
+			const std::string folder = fmt::format("/mnt/usb{}/BotW-VR-logs-{}", drive, stamp);
 			if (!IsFolder(fmt::format("/mnt/usb{}", drive)) || mkdir(folder.c_str(), 0777) != 0)
 				continue;
 			int copied = 0;

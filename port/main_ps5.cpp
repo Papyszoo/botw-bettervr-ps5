@@ -595,7 +595,7 @@ int main(int argc, char* argv[])
 	if (!privileges.filesystem)
 	{
 		status.notice = status.notice3ds = status.noticeDs = status.noticeSwitch =
-			ps5lang::Tr("PS5-ECAM cannot reach /data. Load a HEN with PPSA98720 in its app jailbreak list, or elfldr, then restart PS5-ECAM.");
+			ps5lang::Tr("BotW VR cannot reach /data. Load a HEN with PPSA98720 in its app jailbreak list, or elfldr, then restart BotW VR.");
 		ps5log::Line("[main] {}", status.notice);
 		ps5notify::Send(status.notice);
 	}
@@ -700,7 +700,7 @@ int main(int argc, char* argv[])
 		if (ps5retro::IsRetro((int)system))
 		{
 			const int index = (int)system;
-			status.noticeRetro[ps5retro::Slot(index)] = ps5retro::Available(index, settings.retro[ps5retro::Slot(index)].retroBackend) ? std::string() : ps5lang::Tr("This side's emulator is not in this copy of PS5-ECAM.");
+			status.noticeRetro[ps5retro::Slot(index)] = ps5retro::Available(index, settings.retro[ps5retro::Slot(index)].retroBackend) ? std::string() : ps5lang::Tr("This side's emulator is not in this copy of BotW VR.");
 			if (!keepList(system, settings.retro[ps5retro::Slot(index)].gamesFolder)) ps5retro::StartScan(index, settings.retro[ps5retro::Slot(index)].gamesFolder);
 			return;
 		}

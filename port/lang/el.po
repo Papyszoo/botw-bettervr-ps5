@@ -101,12 +101,12 @@ msgid "the PS5 Vulkan driver did not start"
 msgstr "το πρόγραμμα οδήγησης Vulkan του PS5 δεν ξεκίνησε"
 
 #: port/app/emulator.cpp:537 port/frontend/shell/settings.cpp:2865 port/frontend/shell/shell.cpp:2007
-msgid "PS5-ECAM cannot write to {0}. Is the HEN loaded?"
-msgstr "Το PS5-ECAM δεν μπορεί να γράψει στο {0}. Έχει φορτωθεί το HEN;"
+msgid "BotW VR cannot write to {0}. Is the HEN loaded?"
+msgstr "Το BotW VR δεν μπορεί να γράψει στο {0}. Έχει φορτωθεί το HEN;"
 
 #: port/app/emulator.cpp:563
-msgid "PS5-ECAM cannot create the MLC folder {0}"
-msgstr "Το PS5-ECAM δεν μπορεί να δημιουργήσει τον φάκελο MLC {0}"
+msgid "BotW VR cannot create the MLC folder {0}"
+msgstr "Το BotW VR δεν μπορεί να δημιουργήσει τον φάκελο MLC {0}"
 
 #. why a Wii U game did not start
 #: port/app/emulator.cpp:775
@@ -123,8 +123,8 @@ msgid "The game could not be started."
 msgstr "Το παιχνίδι δεν ήταν δυνατό να ξεκινήσει."
 
 #: port/app/emulator.cpp:795
-msgid "This is not a Wii U game PS5-ECAM can start."
-msgstr "Αυτό δεν είναι παιχνίδι Wii U που μπορεί να ξεκινήσει το PS5-ECAM."
+msgid "This is not a Wii U game BotW VR can start."
+msgstr "Αυτό δεν είναι παιχνίδι Wii U που μπορεί να ξεκινήσει το BotW VR."
 
 #. {0} is the app's data folder: /data/ps5cemu, or the PS5CEMU-HAR-data folder on the drive the app is installed on
 #: port/app/emulator.cpp:798
@@ -148,9 +148,9 @@ msgstr "Η απόδοση Vulkan δεν ξεκίνησε: {0}"
 msgid "Touchpad click + Options: the in-game menu (screens, picture, volume, controls, the library)"
 msgstr "Κλικ στην επιφάνεια αφής + OPTIONS: το μενού του παιχνιδιού (οθόνες, εικόνα, ένταση, χειρισμός, βιβλιοθήκη)"
 
-#: port/app/emulator.cpp:1111
-msgid "PS5-ECAM could not start itself again to show the library: start it again from the home screen."
-msgstr "Το PS5-ECAM δεν μπόρεσε να ξεκινήσει ξανά για να δείξει τη βιβλιοθήκη: ξεκινήστε το ξανά από την αρχική οθόνη."
+#: port/app/emulator.cpp:1125
+msgid "BotW VR could not start itself again to show the library: start it again from the home screen."
+msgstr "Το BotW VR δεν μπόρεσε να ξεκινήσει ξανά για να δείξει τη βιβλιοθήκη: ξεκινήστε το ξανά από την αρχική οθόνη."
 
 #: port/app/forwarders.cpp:151
 msgid "elfldr does not answer on port 9021. Home screen tiles need it, to be put in /data/homebrew and to start their games: load elfldr, then try again."
@@ -735,7 +735,7 @@ msgstr "AMD FSR 1"
 
 #. the quick action that puts a gap between the two screens, and its state
 #. a row that opens the remote touch screen's page: the game's second screen in a phone's browser, and its code to scan
-#: port/app/ingame.cpp:182 port/app/ingame.cpp:254 port/app/ingame.cpp:254 port/app/ingame3ds.cpp:476 port/app/ingame3ds.cpp:690 port/app/remote_menu.h:29 port/eden/ingame.cpp:562 port/frontend/shell/pages.cpp:597 port/frontend/shell/settings.cpp:488 port/frontend/shell/settings.cpp:1620 port/frontend/shell/switch_extras.cpp:54 port/frontend/shell/vr_settings.cpp:266
+#: port/app/ingame.cpp:182 port/app/ingame.cpp:254 port/app/ingame.cpp:254 port/app/ingame3ds.cpp:476 port/app/ingame3ds.cpp:690 port/app/remote_menu.h:29 port/eden/ingame.cpp:562 port/frontend/shell/pages.cpp:597 port/frontend/shell/settings.cpp:488 port/frontend/shell/settings.cpp:1620 port/frontend/shell/switch_extras.cpp:54 port/frontend/shell/vr_settings.cpp:283
 #, menu
 msgid "On"
 msgstr "Ενεργό"
@@ -745,7 +745,7 @@ msgstr "Ενεργό"
 #. Settings > Online: a row that opens the box art's settings (GameTDB on or off, downloading the covers again)
 #. Settings > System on the Wii U side: a row that opens Cemu's emulated portals (Skylanders, Disney Infinity, LEGO Dimensions)
 #. a row that opens the remote touch screen's page: the game's second screen in a phone's browser, and its code to scan
-#: port/app/ingame.cpp:182 port/app/ingame.cpp:254 port/app/ingame.cpp:254 port/app/ingame.cpp:280 port/app/ingame3ds.cpp:476 port/app/ingame3ds.cpp:690 port/app/remote_menu.h:29 port/eden/ingame.cpp:81 port/eden/ingame.cpp:562 port/frontend/shell/pages.cpp:597 port/frontend/shell/pages.cpp:605 port/frontend/shell/settings.cpp:75 port/frontend/shell/settings.cpp:488 port/frontend/shell/settings.cpp:697 port/frontend/shell/settings.cpp:1297 port/frontend/shell/settings.cpp:1592 port/frontend/shell/settings.cpp:1620 port/frontend/shell/settings.cpp:1650 port/frontend/shell/settings.cpp:1658 port/frontend/shell/switch_extras.cpp:54 port/frontend/shell/switch_extras.cpp:74 port/frontend/shell/vr_settings.cpp:266 port/ps5/display.h:47
+#: port/app/ingame.cpp:182 port/app/ingame.cpp:254 port/app/ingame.cpp:254 port/app/ingame.cpp:280 port/app/ingame3ds.cpp:476 port/app/ingame3ds.cpp:690 port/app/remote_menu.h:29 port/eden/ingame.cpp:81 port/eden/ingame.cpp:562 port/frontend/shell/pages.cpp:597 port/frontend/shell/pages.cpp:605 port/frontend/shell/settings.cpp:75 port/frontend/shell/settings.cpp:488 port/frontend/shell/settings.cpp:697 port/frontend/shell/settings.cpp:1297 port/frontend/shell/settings.cpp:1592 port/frontend/shell/settings.cpp:1620 port/frontend/shell/settings.cpp:1650 port/frontend/shell/settings.cpp:1658 port/frontend/shell/switch_extras.cpp:54 port/frontend/shell/switch_extras.cpp:74 port/frontend/shell/vr_settings.cpp:283 port/ps5/display.h:47
 #, menu
 msgid "Off"
 msgstr "Ανενεργό"
@@ -1223,8 +1223,8 @@ msgstr "Έξοδος στην αρχική οθόνη"
 
 #: port/app/ingame.cpp:330 port/app/ingame3ds.cpp:646 port/eden/ingame.cpp:641
 #, menu
-msgid "Leaves the game and closes PS5-ECAM, as its home screen tile asks. What you have not saved in the game is lost, so Cross is held."
-msgstr "Αφήνει το παιχνίδι και κλείνει το PS5-ECAM, όπως ζητά το εικονίδιό του στην αρχική οθόνη. Ό,τι δεν έχει αποθηκευτεί στο παιχνίδι χάνεται, γι’ αυτό ο Σταυρός κρατιέται πατημένος."
+msgid "Leaves the game and closes BotW VR, as its home screen tile asks. What you have not saved in the game is lost, so Cross is held."
+msgstr "Αφήνει το παιχνίδι και κλείνει το BotW VR, όπως ζητά το εικονίδιό του στην αρχική οθόνη. Ό,τι δεν έχει αποθηκευτεί στο παιχνίδι χάνεται, γι’ αυτό ο Σταυρός κρατιέται πατημένος."
 
 #: port/app/ingame.cpp:331 port/app/ingame3ds.cpp:647 port/eden/ingame.cpp:642
 #, menu
@@ -1827,7 +1827,7 @@ msgid "Sharp"
 msgstr "Ευκρινές"
 
 #. how the DS's screens are scaled to the TV: the filters' names
-#: port/app/ingame3ds.h:60 port/frontend/shell/settings.cpp:114 port/frontend/shell/vr_settings.cpp:283
+#: port/app/ingame3ds.h:60 port/frontend/shell/settings.cpp:114 port/frontend/shell/vr_settings.cpp:300
 #, menu
 msgid "Smooth"
 msgstr "Απαλό"
@@ -2376,8 +2376,8 @@ msgstr "Το {0} δεν ήταν δυνατό να γραφτεί (είναι γ
 
 #. at a start after an update: {0} the release installed, {1} the folder, {2} this release
 #: port/app/updates.cpp:321
-msgid "{0} was installed in {1}, but the PS5 started {2} again. Close PS5-ECAM and start it from the home screen; if it is still {2}, copy the release's PPSA98720 folder over by hand."
-msgstr "Το {0} εγκαταστάθηκε στο {1}, αλλά το PS5 ξεκίνησε ξανά το {2}. Κλείστε το PS5-ECAM και ξεκινήστε το από την αρχική οθόνη· αν είναι ακόμη το {2}, αντιγράψτε από πάνω χειροκίνητα τον φάκελο PPSA98720 της κυκλοφορίας."
+msgid "{0} was installed in {1}, but the PS5 started {2} again. Close BotW VR and start it from the home screen; if it is still {2}, copy the release's PPSA98720 folder over by hand."
+msgstr "Το {0} εγκαταστάθηκε στο {1}, αλλά το PS5 ξεκίνησε ξανά το {2}. Κλείστε το BotW VR και ξεκινήστε το από την αρχική οθόνη· αν είναι ακόμη το {2}, αντιγράψτε από πάνω χειροκίνητα τον φάκελο PPSA98720 της κυκλοφορίας."
 
 #: port/app/updates.cpp:429
 msgid "The latest release's version ({0}) is not one this can read"
@@ -2404,8 +2404,8 @@ msgid "The download is damaged (SHA-256 {0}, not {1})"
 msgstr "Η λήψη είναι κατεστραμμένη (SHA-256 {0} αντί για {1})"
 
 #: port/app/updates.cpp:543
-msgid "PS5-ECAM runs from an image, whose files can't be replaced: install the new release by hand"
-msgstr "Το PS5-ECAM τρέχει από εικόνα της οποίας τα αρχεία δεν αντικαθίστανται: εγκαταστήστε τη νέα κυκλοφορία χειροκίνητα"
+msgid "BotW VR runs from an image, whose files can't be replaced: install the new release by hand"
+msgstr "Το BotW VR τρέχει από εικόνα της οποίας τα αρχεία δεν αντικαθίστανται: εγκαταστήστε τη νέα κυκλοφορία χειροκίνητα"
 
 #: port/app/updates.cpp:556
 msgid "It could not be unpacked: {0}"
@@ -2425,8 +2425,8 @@ msgstr "Το {0} δεν ήταν δυνατό να επιστρέψει ({1}): �
 
 #. an update is installed, but the app could not start itself again to run it
 #: port/app/updates.cpp:798
-msgid "The PS5 did not start PS5-ECAM again. Close it and start it from the home screen to finish the update."
-msgstr "Το PS5 δεν ξεκίνησε ξανά το PS5-ECAM. Κλείστε το και ξεκινήστε το από την αρχική οθόνη για να ολοκληρωθεί η ενημέρωση."
+msgid "The PS5 did not start BotW VR again. Close it and start it from the home screen to finish the update."
+msgstr "Το PS5 δεν ξεκίνησε ξανά το BotW VR. Κλείστε το και ξεκινήστε το από την αρχική οθόνη για να ολοκληρωθεί η ενημέρωση."
 
 #. the places on the toys' portals that a figure goes on
 #: port/app/usb_devices.cpp:61
@@ -3933,13 +3933,13 @@ msgstr "Τέλος"
 msgid ""
 "What the game sees in this player's hands.\n"
 "\n"
-"Most games want the Wii U GamePad for player 1: its screen is the second one PS5-ECAM shows, and the touchpad touches it. Others take Pro Controllers, or Wii Remotes for games such as New Super Mario Bros. U.\n"
+"Most games want the Wii U GamePad for player 1: its screen is the second one BotW VR shows, and the touchpad touches it. Others take Pro Controllers, or Wii Remotes for games such as New Super Mario Bros. U.\n"
 "A Wii Remote points where a finger rests on the touchpad, or where you aim the DualSense.\n"
 "Cemu has two GamePads at most."
 msgstr ""
 "Τι βλέπει το παιχνίδι στα χέρια αυτού του παίκτη.\n"
 "\n"
-"Τα περισσότερα παιχνίδια θέλουν το Wii U GamePad για τον παίκτη 1: η οθόνη του είναι η δεύτερη που δείχνει το PS5-ECAM, και η επιφάνεια αφής την αγγίζει. Άλλα παίρνουν Pro Controller ή Wii Remote, για παιχνίδια όπως το New Super Mario Bros. U.\n"
+"Τα περισσότερα παιχνίδια θέλουν το Wii U GamePad για τον παίκτη 1: η οθόνη του είναι η δεύτερη που δείχνει το BotW VR, και η επιφάνεια αφής την αγγίζει. Άλλα παίρνουν Pro Controller ή Wii Remote, για παιχνίδια όπως το New Super Mario Bros. U.\n"
 "Ένα Wii Remote δείχνει εκεί όπου ακουμπά ένα δάχτυλο στην επιφάνεια αφής ή εκεί όπου στρέφετε το DualSense.\n"
 "Το Cemu υποστηρίζει έως δύο GamePad."
 
@@ -4196,8 +4196,8 @@ msgid "The folder could not be saved. Please try again."
 msgstr "Ο φάκελος δεν ήταν δυνατό να αποθηκευτεί. Δοκιμάστε ξανά."
 
 #: port/frontend/shell/pages.cpp:1118
-msgid "Saved. PS5-ECAM is looking for games there."
-msgstr "Αποθηκεύτηκε. Το PS5-ECAM ψάχνει παιχνίδια εκεί."
+msgid "Saved. BotW VR is looking for games there."
+msgstr "Αποθηκεύτηκε. Το BotW VR ψάχνει παιχνίδια εκεί."
 
 #: port/frontend/shell/pages.cpp:1119
 msgid "Saved. That side looks for games there when it opens."
@@ -4601,7 +4601,7 @@ msgid "A light background with dark text."
 msgstr "Ανοιχτόχρωμο φόντο με σκούρο κείμενο."
 
 #. Settings' page of BotW VR: BetterVR's options (camera, turning, menus, the Sense controllers)
-#: port/frontend/shell/settings.cpp:207 port/frontend/shell/vr_settings.cpp:356
+#: port/frontend/shell/settings.cpp:207 port/frontend/shell/vr_settings.cpp:374
 msgid "VR"
 msgstr "VR"
 
@@ -4765,20 +4765,20 @@ msgid "Backups hold every side's saves."
 msgstr "Τα αντίγραφα ασφαλείας περιέχουν τις αποθηκεύσεις όλων των πλευρών."
 
 #: port/frontend/shell/settings.cpp:263
-msgid "Box art, graphic packs and PS5-ECAM's updates."
-msgstr "Εξώφυλλα, πακέτα γραφικών και ενημερώσεις του PS5-ECAM."
+msgid "Box art, graphic packs and BotW VR's updates."
+msgstr "Εξώφυλλα, πακέτα γραφικών και ενημερώσεις του BotW VR."
 
 #: port/frontend/shell/settings.cpp:264
-msgid "Box art, RetroAchievements and PS5-ECAM's updates."
-msgstr "Εξώφυλλα, RetroAchievements και ενημερώσεις του PS5-ECAM."
+msgid "Box art, RetroAchievements and BotW VR's updates."
+msgstr "Εξώφυλλα, RetroAchievements και ενημερώσεις του BotW VR."
 
 #: port/frontend/shell/settings.cpp:265
-msgid "Box art, Artic Base and PS5-ECAM's updates."
-msgstr "Εξώφυλλα, Artic Base και ενημερώσεις του PS5-ECAM."
+msgid "Box art, Artic Base and BotW VR's updates."
+msgstr "Εξώφυλλα, Artic Base και ενημερώσεις του BotW VR."
 
 #: port/frontend/shell/settings.cpp:266
-msgid "Box art, multiplayer rooms and PS5-ECAM's updates."
-msgstr "Εξώφυλλα, δωμάτια για πολλούς παίκτες και ενημερώσεις του PS5-ECAM."
+msgid "Box art, multiplayer rooms and BotW VR's updates."
+msgstr "Εξώφυλλα, δωμάτια για πολλούς παίκτες και ενημερώσεις του BotW VR."
 
 #: port/frontend/shell/settings.cpp:268
 msgid "Launcher"
@@ -4992,8 +4992,8 @@ msgid "The menus' language, and the games' names where they have one in it."
 msgstr "Η γλώσσα των μενού και των ονομάτων των παιχνιδιών, όπου το παιχνίδι έχει όνομα σε αυτήν."
 
 #: port/frontend/shell/settings.cpp:564
-msgid "PS5-ECAM speaks the PS5's own language unless you choose another here; the first start's Setup check has the same choice. A game's name follows it where the game has one in that language, as on a console set to it; otherwise it is the English one. Descriptions come from GameTDB in English, and graphic packs from their authors, as they wrote them."
-msgstr "Το PS5-ECAM μιλά τη γλώσσα του PS5, εκτός αν επιλέξετε εδώ άλλη· ο έλεγχος προετοιμασίας της πρώτης εκκίνησης δίνει την ίδια επιλογή. Το όνομα ενός παιχνιδιού την ακολουθεί όπου το παιχνίδι έχει όνομα σε αυτή τη γλώσσα, όπως σε μια κονσόλα ρυθμισμένη σε αυτήν· αλλιώς είναι το αγγλικό. Οι περιγραφές προέρχονται από το GameTDB στα αγγλικά και τα πακέτα γραφικών από τους δημιουργούς τους, όπως τα έγραψαν."
+msgid "BotW VR speaks the PS5's own language unless you choose another here; the first start's Setup check has the same choice. A game's name follows it where the game has one in that language, as on a console set to it; otherwise it is the English one. Descriptions come from GameTDB in English, and graphic packs from their authors, as they wrote them."
+msgstr "Το BotW VR μιλά τη γλώσσα του PS5, εκτός αν επιλέξετε εδώ άλλη· ο έλεγχος προετοιμασίας της πρώτης εκκίνησης δίνει την ίδια επιλογή. Το όνομα ενός παιχνιδιού την ακολουθεί όπου το παιχνίδι έχει όνομα σε αυτή τη γλώσσα, όπως σε μια κονσόλα ρυθμισμένη σε αυτήν· αλλιώς είναι το αγγλικό. Οι περιγραφές προέρχονται από το GameTDB στα αγγλικά και τα πακέτα γραφικών από τους δημιουργούς τους, όπως τα έγραψαν."
 
 #: port/frontend/shell/settings.cpp:570 port/frontend/shell/settings.cpp:691
 msgid "How the picture is scaled to the TV."
@@ -5814,12 +5814,12 @@ msgid "Eden can read your games."
 msgstr "Το Eden μπορεί να διαβάσει τα παιχνίδια σας."
 
 #: port/frontend/shell/settings.cpp:1096 port/frontend/shell/setup.cpp:304
-msgid "Eden reads Switch games with your own console's keys: prod.keys (and title.keys), dumped from your Switch, in {0}/keys. No keys come with PS5-ECAM."
-msgstr "Το Eden διαβάζει τα παιχνίδια Switch με τα κλειδιά της δικής σας κονσόλας: prod.keys (και title.keys), εξαγμένα από το Switch σας, στο {0}/keys. Το PS5-ECAM δεν περιέχει κλειδιά."
+msgid "Eden reads Switch games with your own console's keys: prod.keys (and title.keys), dumped from your Switch, in {0}/keys. No keys come with BotW VR."
+msgstr "Το Eden διαβάζει τα παιχνίδια Switch με τα κλειδιά της δικής σας κονσόλας: prod.keys (και title.keys), εξαγμένα από το Switch σας, στο {0}/keys. Το BotW VR δεν περιέχει κλειδιά."
 
 #: port/frontend/shell/settings.cpp:1100 port/frontend/shell/setup.cpp:315
-msgid "Many Switch games need the console's own system files: its firmware's .nca files, dumped from your Switch, in {0}/firmware. No firmware comes with PS5-ECAM."
-msgstr "Πολλά παιχνίδια Switch χρειάζονται τα δικά της αρχεία συστήματος της κονσόλας: τα αρχεία .nca του firmware της, εξαγμένα από το Switch σας, στο {0}/firmware. Το PS5-ECAM δεν περιέχει firmware."
+msgid "Many Switch games need the console's own system files: its firmware's .nca files, dumped from your Switch, in {0}/firmware. No firmware comes with BotW VR."
+msgstr "Πολλά παιχνίδια Switch χρειάζονται τα δικά της αρχεία συστήματος της κονσόλας: τα αρχεία .nca του firmware της, εξαγμένα από το Switch σας, στο {0}/firmware. Το BotW VR δεν περιέχει firmware."
 
 #: port/frontend/shell/settings.cpp:1108 port/frontend/shell/shares.cpp:536
 msgid "Network shares"
@@ -5929,13 +5929,13 @@ msgid "Your files from before into a folder for each system."
 msgstr "Τα παλαιότερα αρχεία σας σε έναν φάκελο για κάθε σύστημα."
 
 #: port/frontend/shell/settings.cpp:1154
-msgid "Puts each system's files back into {0}, where they were before. Going back to an earlier version needs them there, as it looks for them there. PS5-ECAM starts again to do it."
-msgstr "Επαναφέρει τα αρχεία κάθε συστήματος στο {0}, όπου ήταν πριν. Η επιστροφή σε παλαιότερη έκδοση τα χρειάζεται εκεί, γιατί εκεί τα αναζητά. Το PS5-ECAM ξεκινά ξανά για να το κάνει."
+msgid "Puts each system's files back into {0}, where they were before. Going back to an earlier version needs them there, as it looks for them there. BotW VR starts again to do it."
+msgstr "Επαναφέρει τα αρχεία κάθε συστήματος στο {0}, όπου ήταν πριν. Η επιστροφή σε παλαιότερη έκδοση τα χρειάζεται εκεί, γιατί εκεί τα αναζητά. Το BotW VR ξεκινά ξανά για να το κάνει."
 
 #. {0} is the app's data folder, /data/ps5cemu; {1} lists the four folders: /data/cemu, /data/azahar, ...
 #: port/frontend/shell/settings.cpp:1158
-msgid "Moves each system's files from {0} into a folder of its own: {1}. They are renamed on the same drive, never copied, so it takes a moment whatever their size, and nothing is deleted. PS5-ECAM starts again to do it; a system that cannot move stays as it was. This row puts them back."
-msgstr "Μετακινεί τα αρχεία κάθε συστήματος από το {0} σε δικό του φάκελο: {1}. Μετονομάζονται στην ίδια μονάδα και δεν αντιγράφονται ποτέ, οπότε χρειάζεται μια στιγμή όποιο κι αν είναι το μέγεθός τους, και τίποτα δεν διαγράφεται. Το PS5-ECAM ξεκινά ξανά για να το κάνει· ένα σύστημα που δεν μπορεί να μετακινηθεί μένει όπως ήταν. Αυτή η γραμμή τα επαναφέρει."
+msgid "Moves each system's files from {0} into a folder of its own: {1}. They are renamed on the same drive, never copied, so it takes a moment whatever their size, and nothing is deleted. BotW VR starts again to do it; a system that cannot move stays as it was. This row puts them back."
+msgstr "Μετακινεί τα αρχεία κάθε συστήματος από το {0} σε δικό του φάκελο: {1}. Μετονομάζονται στην ίδια μονάδα και δεν αντιγράφονται ποτέ, οπότε χρειάζεται μια στιγμή όποιο κι αν είναι το μέγεθός τους, και τίποτα δεν διαγράφεται. Το BotW VR ξεκινά ξανά για να το κάνει· ένα σύστημα που δεν μπορεί να μετακινηθεί μένει όπως ήταν. Αυτή η γραμμή τα επαναφέρει."
 
 #: port/frontend/shell/settings.cpp:1185
 msgid "Account games start on"
@@ -5958,8 +5958,8 @@ msgid "One account for each PS5 user"
 msgstr "Ένας λογαριασμός για κάθε χρήστη PS5"
 
 #: port/frontend/shell/settings.cpp:1193
-msgid "Whoever starts PS5-ECAM plays on their own saves."
-msgstr "Όποιος ξεκινά το PS5-ECAM παίζει με τις δικές του αποθηκεύσεις."
+msgid "Whoever starts BotW VR plays on their own saves."
+msgstr "Όποιος ξεκινά το BotW VR παίζει με τις δικές του αποθηκεύσεις."
 
 #: port/frontend/shell/settings.cpp:1194
 msgid "The PS5 user who starts the app plays on a Wii U account of their own, made the first time with their PS5 name, so brothers and sisters each keep their own saves just by starting the app from their own PS5 user."
@@ -6073,8 +6073,8 @@ msgstr "Το Αριστερά και το Δεξιά επιλέγουν το α�
 
 #. {0} is the app's data folder: /data/ps5cemu, or the PS5CEMU-HAR-data folder on the drive the app is installed on
 #: port/frontend/shell/settings.cpp:1276
-msgid "Puts the chosen backup's saves back where they came from. The saves there now are moved first to {0}/saves-before, so nothing is lost; saves the backup does not have stay as they are. Its settings come back too, and PS5-ECAM starts again to use them."
-msgstr "Βάζει τις αποθηκεύσεις του επιλεγμένου αντιγράφου πίσω από εκεί που ήρθαν. Οι τωρινές αποθηκεύσεις εκεί μετακινούνται πρώτα στο {0}/saves-before, οπότε δεν χάνεται τίποτα· όσες αποθηκεύσεις δεν έχει το αντίγραφο μένουν όπως είναι. Επιστρέφουν και οι ρυθμίσεις του, και το PS5-ECAM ξεκινά ξανά για να τις χρησιμοποιήσει."
+msgid "Puts the chosen backup's saves back where they came from. The saves there now are moved first to {0}/saves-before, so nothing is lost; saves the backup does not have stay as they are. Its settings come back too, and BotW VR starts again to use them."
+msgstr "Βάζει τις αποθηκεύσεις του επιλεγμένου αντιγράφου πίσω από εκεί που ήρθαν. Οι τωρινές αποθηκεύσεις εκεί μετακινούνται πρώτα στο {0}/saves-before, οπότε δεν χάνεται τίποτα· όσες αποθηκεύσεις δεν έχει το αντίγραφο μένουν όπως είναι. Επιστρέφουν και οι ρυθμίσεις του, και το BotW VR ξεκινά ξανά για να τις χρησιμοποιήσει."
 
 #: port/frontend/shell/settings.cpp:1292
 msgid "Downloading: {0} left"
@@ -6327,16 +6327,16 @@ msgid "An achievement earned, and the count as a game starts, shown as the PS5's
 msgstr "Ένα επίτευγμα που κερδίσατε, και ο αριθμός τους όταν ξεκινά ένα παιχνίδι, ως ειδοποιήσεις του ίδιου του PS5. Απενεργ.: εμφανίζονται μόνο στα Επιτεύγματα του μενού του παιχνιδιού."
 
 #: port/frontend/shell/settings.cpp:1403
-msgid "PS5-ECAM updates"
-msgstr "Ενημερώσεις PS5-ECAM"
+msgid "BotW VR updates"
+msgstr "Ενημερώσεις BotW VR"
 
 #: port/frontend/shell/settings.cpp:1403
 msgid "Cross checks GitHub for a newer version."
 msgstr "Ο Σταυρός ψάχνει νεότερη έκδοση στο GitHub."
 
 #: port/frontend/shell/settings.cpp:1404
-msgid "PS5-ECAM asks GitHub for its latest release each time it starts. Cross asks again, or installs the newer version it found: the release's files are downloaded, checked and put in place of these, and the app starts again. Your games, saves and settings stay as they are."
-msgstr "Το PS5-ECAM ρωτά το GitHub για την τελευταία του κυκλοφορία σε κάθε εκκίνηση. Ο Σταυρός ρωτά ξανά ή εγκαθιστά τη νεότερη έκδοση που βρέθηκε: τα αρχεία της κυκλοφορίας κατεβαίνουν, ελέγχονται και μπαίνουν στη θέση αυτών, και η εφαρμογή ξεκινά ξανά. Τα παιχνίδια, οι αποθηκεύσεις και οι ρυθμίσεις σας μένουν όπως είναι."
+msgid "BotW VR asks GitHub for its latest release each time it starts. Cross asks again, or installs the newer version it found: the release's files are downloaded, checked and put in place of these, and the app starts again. Your games, saves and settings stay as they are."
+msgstr "Το BotW VR ρωτά το GitHub για την τελευταία του κυκλοφορία σε κάθε εκκίνηση. Ο Σταυρός ρωτά ξανά ή εγκαθιστά τη νεότερη έκδοση που βρέθηκε: τα αρχεία της κυκλοφορίας κατεβαίνουν, ελέγχονται και μπαίνουν στη θέση αυτών, και η εφαρμογή ξεκινά ξανά. Τα παιχνίδια, οι αποθηκεύσεις και οι ρυθμίσεις σας μένουν όπως είναι."
 
 #. {0} is the version the last update replaced, as in 5.0.0
 #: port/frontend/shell/settings.cpp:1411
@@ -6348,8 +6348,8 @@ msgid "The version before the last update, kept as it was."
 msgstr "Η έκδοση πριν από την τελευταία ενημέρωση, όπως ήταν."
 
 #: port/frontend/shell/settings.cpp:1413
-msgid "The last update kept the version it replaced. Holding Cross puts its files back in place of these, and PS5-ECAM starts again as that version. Your games, saves and settings stay as they are. The newer version is not offered at start again; this page still finds it."
-msgstr "Η τελευταία ενημέρωση κράτησε την έκδοση που αντικατέστησε. Κρατώντας πατημένο τον Σταυρό, τα αρχεία της επιστρέφουν στη θέση αυτών και το PS5-ECAM ξεκινά ξανά ως εκείνη η έκδοση. Τα παιχνίδια, οι αποθηκεύσεις και οι ρυθμίσεις σας μένουν ως έχουν. Η νεότερη έκδοση δεν προσφέρεται ξανά κατά την εκκίνηση· αυτή η σελίδα τη βρίσκει ακόμα."
+msgid "The last update kept the version it replaced. Holding Cross puts its files back in place of these, and BotW VR starts again as that version. Your games, saves and settings stay as they are. The newer version is not offered at start again; this page still finds it."
+msgstr "Η τελευταία ενημέρωση κράτησε την έκδοση που αντικατέστησε. Κρατώντας πατημένο τον Σταυρό, τα αρχεία της επιστρέφουν στη θέση αυτών και το BotW VR ξεκινά ξανά ως εκείνη η έκδοση. Τα παιχνίδια, οι αποθηκεύσεις και οι ρυθμίσεις σας μένουν ως έχουν. Η νεότερη έκδοση δεν προσφέρεται ξανά κατά την εκκίνηση· αυτή η σελίδα τη βρίσκει ακόμα."
 
 #: port/frontend/shell/settings.cpp:1420
 msgid "Put each system's files back first: Settings > Game files > A folder for each system."
@@ -6466,8 +6466,8 @@ msgid "ES-DE's menus and themes over the same games, played here."
 msgstr "Τα μενού και τα θέματα του ES-DE πάνω στα ίδια παιχνίδια, που παίζονται εδώ."
 
 #: port/frontend/shell/settings.cpp:1487
-msgid "PS5-ECAM opens on EmulationStation (ES-DE) instead of its own launcher: the sides the bar shows, with the games their libraries list, and every game plays here with its settings, saves and in-game menu, then goes back to EmulationStation. Hold L1 as PS5-ECAM starts, or quit EmulationStation, for this launcher."
-msgstr "Το PS5-ECAM ανοίγει στο EmulationStation (ES-DE) αντί για το δικό του launcher: οι πλευρές που δείχνει η γραμμή, με τα παιχνίδια των βιβλιοθηκών τους, και κάθε παιχνίδι παίζεται εδώ με τις ρυθμίσεις, τις αποθηκεύσεις και το μενού του παιχνιδιού του και μετά επιστρέφει στο EmulationStation. Κρατήστε πατημένο το L1 καθώς ξεκινά το PS5-ECAM ή βγείτε από το EmulationStation για αυτό το launcher."
+msgid "BotW VR opens on EmulationStation (ES-DE) instead of its own launcher: the sides the bar shows, with the games their libraries list, and every game plays here with its settings, saves and in-game menu, then goes back to EmulationStation. Hold L1 as BotW VR starts, or quit EmulationStation, for this launcher."
+msgstr "Το BotW VR ανοίγει στο EmulationStation (ES-DE) αντί για το δικό του launcher: οι πλευρές που δείχνει η γραμμή, με τα παιχνίδια των βιβλιοθηκών τους, και κάθε παιχνίδι παίζεται εδώ με τις ρυθμίσεις, τις αποθηκεύσεις και το μενού του παιχνιδιού του και μετά επιστρέφει στο EmulationStation. Κρατήστε πατημένο το L1 καθώς ξεκινά το BotW VR ή βγείτε από το EmulationStation για αυτό το launcher."
 
 #: port/frontend/shell/settings.cpp:1497 port/frontend/shell/settings.cpp:1508
 msgid "Larger text"
@@ -6884,8 +6884,8 @@ msgstr "Τα dump φιγούρων μπαίνουν στο {0}/figures: skylande
 
 #. premohq and JMUtechnologies are GitHub names: keep them as they are
 #: port/frontend/shell/settings.cpp:1990
-msgid "PS5-ECAM is made by its co-founders, premohq and JMUtechnologies."
-msgstr "Το PS5-ECAM φτιάχνεται από τους συνιδρυτές του, premohq και JMUtechnologies."
+msgid "BotW VR is made by its co-founders, premohq and JMUtechnologies."
+msgstr "Το BotW VR φτιάχνεται από τους συνιδρυτές του, premohq και JMUtechnologies."
 
 #. {0} is the app's version; {1} its data folder: /data/ps5cemu, or the PS5CEMU-HAR-data folder on the drive the app is installed on; {2} Eden's game files folder; {3} Cemu's selected data folder; {4} its default games folder; {5} Azahar's selected folder; {6} melonDS's selected folder
 #: port/frontend/shell/settings.cpp:1992
@@ -7061,8 +7061,8 @@ msgid "Downloading in the background"
 msgstr "Λήψη στο παρασκήνιο"
 
 #: port/frontend/shell/settings.cpp:2872 port/frontend/shell/shell.cpp:452
-msgid "Close PS5-ECAM and start it again from the home screen: the folders move as it starts."
-msgstr "Κλείστε το PS5-ECAM και ξεκινήστε το ξανά από την αρχική οθόνη: οι φάκελοι μετακινούνται καθώς ξεκινά."
+msgid "Close BotW VR and start it again from the home screen: the folders move as it starts."
+msgstr "Κλείστε το BotW VR και ξεκινήστε το ξανά από την αρχική οθόνη: οι φάκελοι μετακινούνται καθώς ξεκινά."
 
 #: port/frontend/shell/settings.cpp:2914
 msgid "{0} is deleted; its saves stay"
@@ -7102,12 +7102,12 @@ msgid "Same network as the PS5. Nothing to install: the browser is enough. Sound
 msgstr "Ίδιο δίκτυο με το PS5. Τίποτα για εγκατάσταση: αρκεί το πρόγραμμα περιήγησης. Ο ήχος μένει στο PS5. Κάθε πρόγραμμα περιήγησης στο δίκτυο μπορεί να τη δει και να την αγγίξει."
 
 #: port/frontend/shell/settings.cpp:3207
-msgid "Support PS5-ECAM"
-msgstr "Υποστηρίξτε το PS5-ECAM"
+msgid "Support BotW VR"
+msgstr "Υποστηρίξτε το BotW VR"
 
 #: port/frontend/shell/settings.cpp:3218
-msgid "PS5-ECAM is free. If it brings your games back, you can support its work here."
-msgstr "Το PS5-ECAM είναι δωρεάν. Αν σας επέστρεψε τα παιχνίδια σας, μπορείτε να υποστηρίξετε τη δουλειά του εδώ."
+msgid "BotW VR is free. If it brings your games back, you can support its work here."
+msgstr "Το BotW VR είναι δωρεάν. Αν σας επέστρεψε τα παιχνίδια σας, μπορείτε να υποστηρίξετε τη δουλειά του εδώ."
 
 #. above Settings' pages: whose settings they are ({0}: Wii U, Nintendo 3DS or Nintendo DS)
 #: port/frontend/shell/settings.cpp:3258
@@ -7137,20 +7137,20 @@ msgid "Where everything is kept"
 msgstr "Πού φυλάγονται όλα"
 
 #: port/frontend/shell/setup.cpp:129
-msgid "Settings, saves, caches and logs live in {0}, which your HEN opens to PS5-ECAM: its app jailbreak, or elfldr with the helper that comes with the app."
-msgstr "Οι ρυθμίσεις, οι αποθηκεύσεις, οι προσωρινές μνήμες και τα αρχεία καταγραφής βρίσκονται στο {0}, που το HEN σας ανοίγει για το PS5-ECAM: το app jailbreak του ή το elfldr με το βοηθητικό που συνοδεύει την εφαρμογή."
+msgid "Settings, saves, caches and logs live in {0}, which your HEN opens to BotW VR: its app jailbreak, or elfldr with the helper that comes with the app."
+msgstr "Οι ρυθμίσεις, οι αποθηκεύσεις, οι προσωρινές μνήμες και τα αρχεία καταγραφής βρίσκονται στο {0}, που το HEN σας ανοίγει για το BotW VR: το app jailbreak του ή το elfldr με το βοηθητικό που συνοδεύει την εφαρμογή."
 
 #: port/frontend/shell/setup.cpp:136
 msgid "/data is out of reach: nothing can be kept"
 msgstr "Το /data δεν είναι προσβάσιμο: δεν μπορεί να φυλαχτεί τίποτα"
 
 #: port/frontend/shell/setup.cpp:137
-msgid "Let PS5-ECAM out of its sandbox"
-msgstr "Βγάλτε το PS5-ECAM από το sandbox του"
+msgid "Let BotW VR out of its sandbox"
+msgstr "Βγάλτε το BotW VR από το sandbox του"
 
 #: port/frontend/shell/setup.cpp:138
-msgid "Add PPSA98720 to your HEN's app jailbreak list (etaHEN: its app jailbreak list; OnionHEN: the end of exact_title_ids in config.ini, with no comma after it), or have elfldr listening on port 9021. Then start PS5-ECAM again."
-msgstr "Προσθέστε το PPSA98720 στη λίστα app jailbreak του HEN σας (etaHEN: η λίστα app jailbreak του· OnionHEN: στο τέλος του exact_title_ids στο config.ini, χωρίς κόμμα μετά) ή αφήστε το elfldr να ακούει στη θύρα 9021. Μετά ξεκινήστε ξανά το PS5-ECAM."
+msgid "Add PPSA98720 to your HEN's app jailbreak list (etaHEN: its app jailbreak list; OnionHEN: the end of exact_title_ids in config.ini, with no comma after it), or have elfldr listening on port 9021. Then start BotW VR again."
+msgstr "Προσθέστε το PPSA98720 στη λίστα app jailbreak του HEN σας (etaHEN: η λίστα app jailbreak του· OnionHEN: στο τέλος του exact_title_ids στο config.ini, χωρίς κόμμα μετά) ή αφήστε το elfldr να ακούει στη θύρα 9021. Μετά ξεκινήστε ξανά το BotW VR."
 
 #: port/frontend/shell/setup.cpp:145
 msgid "Recompilers"
@@ -7169,20 +7169,20 @@ msgid "Executable memory: games run at full speed, no HEN grant needed"
 msgstr "Εκτελέσιμη μνήμη: τα παιχνίδια τρέχουν σε πλήρη ταχύτητα, χωρίς άδεια από το HEN"
 
 #: port/frontend/shell/setup.cpp:154
-msgid "Cemu's and Azahar's recompilers turn the games' code into the PS5's as they run. They need memory they can write code into and run it from: your HEN's JIT memory, or executable memory PS5-ECAM makes itself."
-msgstr "Οι μεταγλωττιστές του Cemu και του Azahar μετατρέπουν τον κώδικα των παιχνιδιών σε κώδικα του PS5 καθώς τρέχουν. Χρειάζονται μνήμη όπου μπορούν να γράψουν κώδικα και να τον εκτελέσουν: τη μνήμη JIT του HEN σας ή εκτελέσιμη μνήμη που φτιάχνει μόνο του το PS5-ECAM."
+msgid "Cemu's and Azahar's recompilers turn the games' code into the PS5's as they run. They need memory they can write code into and run it from: your HEN's JIT memory, or executable memory BotW VR makes itself."
+msgstr "Οι μεταγλωττιστές του Cemu και του Azahar μετατρέπουν τον κώδικα των παιχνιδιών σε κώδικα του PS5 καθώς τρέχουν. Χρειάζονται μνήμη όπου μπορούν να γράψουν κώδικα και να τον εκτελέσουν: τη μνήμη JIT του HEN σας ή εκτελέσιμη μνήμη που φτιάχνει μόνο του το BotW VR."
 
 #: port/frontend/shell/setup.cpp:160
 msgid "No JIT or executable memory: Wii U games run on the much slower interpreter"
 msgstr "Χωρίς μνήμη JIT ή εκτελέσιμη: τα παιχνίδια Wii U τρέχουν στον πολύ πιο αργό διερμηνέα"
 
 #: port/frontend/shell/setup.cpp:161
-msgid "Neither your HEN's JIT memory nor executable memory could be made, so Wii U games fall back to Cemu's interpreter. Add PPSA98720 to your HEN's app jailbreak list, then start PS5-ECAM again; Settings > Diagnostics says what it got."
-msgstr "Ούτε η μνήμη JIT του HEN σας ούτε εκτελέσιμη μνήμη ήταν δυνατό να δημιουργηθούν, οπότε τα παιχνίδια Wii U περνούν στον διερμηνέα του Cemu. Προσθέστε το PPSA98720 στη λίστα app jailbreak του HEN σας και ξεκινήστε ξανά το PS5-ECAM· οι Ρυθμίσεις > Διαγνωστικά λένε τι πήρε."
+msgid "Neither your HEN's JIT memory nor executable memory could be made, so Wii U games fall back to Cemu's interpreter. Add PPSA98720 to your HEN's app jailbreak list, then start BotW VR again; Settings > Diagnostics says what it got."
+msgstr "Ούτε η μνήμη JIT του HEN σας ούτε εκτελέσιμη μνήμη ήταν δυνατό να δημιουργηθούν, οπότε τα παιχνίδια Wii U περνούν στον διερμηνέα του Cemu. Προσθέστε το PPSA98720 στη λίστα app jailbreak του HEN σας και ξεκινήστε ξανά το BotW VR· οι Ρυθμίσεις > Διαγνωστικά λένε τι πήρε."
 
 #: port/frontend/shell/setup.cpp:190 port/frontend/shell/shell.cpp:748 port/libretro/game.cpp:517 port/main_ps5.cpp:703 port/retro/launch.cpp:38 port/retro/launch.cpp:48
-msgid "This side's emulator is not in this copy of PS5-ECAM."
-msgstr "Ο εξομοιωτής αυτής της πλευράς δεν υπάρχει σε αυτό το αντίγραφο του PS5-ECAM."
+msgid "This side's emulator is not in this copy of BotW VR."
+msgstr "Ο εξομοιωτής αυτής της πλευράς δεν υπάρχει σε αυτό το αντίγραφο του BotW VR."
 
 #. {1} is a folder
 #: port/frontend/shell/setup.cpp:191 port/frontend/shell/setup.cpp:216
@@ -7288,8 +7288,8 @@ msgid "Your DS's own BIOS and firmware"
 msgstr "Το BIOS και το firmware του δικού σας DS"
 
 #: port/frontend/shell/setup.cpp:286
-msgid "melonDS runs DS games on its own BIOS (FreeBIOS) and firmware, which most games are happy with. The few that are not run on your own DS's: bios7.bin, bios9.bin and firmware.bin, dumped from it, in {0}/bios. No BIOS comes with PS5-ECAM."
-msgstr "Το melonDS τρέχει τα παιχνίδια DS με το δικό του BIOS (FreeBIOS) και firmware, που αρκούν στα περισσότερα παιχνίδια. Τα λίγα που δεν τα καταφέρνουν τρέχουν με του δικού σας DS: bios7.bin, bios9.bin και firmware.bin, εξαγμένα από αυτό, στο {0}/bios. Το PS5-ECAM δεν περιλαμβάνει BIOS."
+msgid "melonDS runs DS games on its own BIOS (FreeBIOS) and firmware, which most games are happy with. The few that are not run on your own DS's: bios7.bin, bios9.bin and firmware.bin, dumped from it, in {0}/bios. No BIOS comes with BotW VR."
+msgstr "Το melonDS τρέχει τα παιχνίδια DS με το δικό του BIOS (FreeBIOS) και firmware, που αρκούν στα περισσότερα παιχνίδια. Τα λίγα που δεν τα καταφέρνουν τρέχουν με του δικού σας DS: bios7.bin, bios9.bin και firmware.bin, εξαγμένα από αυτό, στο {0}/bios. Το BotW VR δεν περιλαμβάνει BIOS."
 
 #: port/frontend/shell/setup.cpp:291
 msgid "the DS page"
@@ -7324,8 +7324,8 @@ msgid "Your Switch's firmware"
 msgstr "Το firmware του Switch σας"
 
 #: port/frontend/shell/setup.cpp:329
-msgid "what PS5-ECAM fetches online"
-msgstr "τι φέρνει το PS5-ECAM από το διαδίκτυο"
+msgid "what BotW VR fetches online"
+msgstr "τι φέρνει το BotW VR από το διαδίκτυο"
 
 #: port/frontend/shell/setup.cpp:330
 msgid "Covers from GameTDB"
@@ -7368,8 +7368,8 @@ msgid "Checked again"
 msgstr "Ελέγχθηκε ξανά"
 
 #: port/frontend/shell/setup.cpp:451 port/frontend/shell/welcome.cpp:207
-msgid "Welcome to PS5-ECAM"
-msgstr "Καλώς ήρθατε στο PS5-ECAM"
+msgid "Welcome to BotW VR"
+msgstr "Καλώς ήρθατε στο BotW VR"
 
 #: port/frontend/shell/setup.cpp:451
 msgid "Help"
@@ -7417,8 +7417,8 @@ msgid "The menus' language"
 msgstr "Η γλώσσα των μενού"
 
 #: port/frontend/shell/setup.cpp:540
-msgid "PS5-ECAM speaks the language your PS5 is set to. Cross chooses another; Settings > Language changes it at any time."
-msgstr "Το PS5-ECAM μιλά τη γλώσσα που έχει ρυθμιστεί στο PS5 σας. Ο Σταυρός επιλέγει άλλη· οι Ρυθμίσεις > Γλώσσα την αλλάζουν οποιαδήποτε στιγμή."
+msgid "BotW VR speaks the language your PS5 is set to. Cross chooses another; Settings > Language changes it at any time."
+msgstr "Το BotW VR μιλά τη γλώσσα που έχει ρυθμιστεί στο PS5 σας. Ο Σταυρός επιλέγει άλλη· οι Ρυθμίσεις > Γλώσσα την αλλάζουν οποιαδήποτε στιγμή."
 
 #: port/frontend/shell/setup.cpp:608
 msgid "The guide, on your phone"
@@ -7665,13 +7665,13 @@ msgid "The launcher's settings file, ps5cemu.json, has a mistake in it, so every
 msgstr "Το αρχείο ρυθμίσεων του launcher, ps5cemu.json, έχει ένα λάθος, οπότε όλες οι ρυθμίσεις επανήλθαν στην προεπιλογή τους. Το αρχείο, όπως ήταν, φυλάσσεται ως {0}: διορθώστε το σε έναν υπολογιστή και βάλτε το πίσω ως ps5cemu.json, ή αφήστε το."
 
 #: port/frontend/shell/shell.cpp:247
-msgid "PS5-ECAM closed after a crash"
-msgstr "Το PS5-ECAM έκλεισε μετά από σφάλμα"
+msgid "BotW VR closed after a crash"
+msgstr "Το BotW VR έκλεισε μετά από σφάλμα"
 
 #. {0} is the crash report's first line in the log, as it is: "signal 11 at 0x7f3a..."
 #: port/frontend/shell/shell.cpp:249
-msgid "The last time, PS5-ECAM stopped with a crash: {0}. Its log is kept: Settings > Diagnostics > Copy logs to USB puts it on a drive, with the sessions before it, to attach to a report on GitHub."
-msgstr "Την τελευταία φορά, το PS5-ECAM σταμάτησε με σφάλμα: {0}. Το αρχείο καταγραφής του φυλάσσεται: η επιλογή Ρυθμίσεις > Διαγνωστικά > Αντιγραφή αρχείων καταγραφής σε USB το αντιγράφει σε μια μονάδα, μαζί με τις προηγούμενες συνεδρίες, για να το επισυνάψετε σε μια αναφορά στο GitHub."
+msgid "The last time, BotW VR stopped with a crash: {0}. Its log is kept: Settings > Diagnostics > Copy logs to USB puts it on a drive, with the sessions before it, to attach to a report on GitHub."
+msgstr "Την τελευταία φορά, το BotW VR σταμάτησε με σφάλμα: {0}. Το αρχείο καταγραφής του φυλάσσεται: η επιλογή Ρυθμίσεις > Διαγνωστικά > Αντιγραφή αρχείων καταγραφής σε USB το αντιγράφει σε μια μονάδα, μαζί με τις προηγούμενες συνεδρίες, για να το επισυνάψετε σε μια αναφορά στο GitHub."
 
 #: port/frontend/shell/shell.cpp:263
 msgid "Some files could not move"
@@ -7783,8 +7783,8 @@ msgid "The tile is made"
 msgstr "Το εικονίδιο δημιουργήθηκε"
 
 #: port/frontend/shell/shell.cpp:1201
-msgid "It is in {0}. ShadowMount Plus puts it on the PS5's home screen as it does any homebrew: if it does not show, restart ShadowMount Plus or the console. The tile starts the game in PS5-ECAM, and closing the game closes the app."
-msgstr "Βρίσκεται στο {0}. Το ShadowMount Plus το βάζει στην αρχική οθόνη του PS5 όπως κάθε homebrew: αν δεν εμφανιστεί, επανεκκινήστε το ShadowMount Plus ή την κονσόλα. Το εικονίδιο ξεκινά το παιχνίδι στο PS5-ECAM και το κλείσιμο του παιχνιδιού κλείνει την εφαρμογή."
+msgid "It is in {0}. ShadowMount Plus puts it on the PS5's home screen as it does any homebrew: if it does not show, restart ShadowMount Plus or the console. The tile starts the game in BotW VR, and closing the game closes the app."
+msgstr "Βρίσκεται στο {0}. Το ShadowMount Plus το βάζει στην αρχική οθόνη του PS5 όπως κάθε homebrew: αν δεν εμφανιστεί, επανεκκινήστε το ShadowMount Plus ή την κονσόλα. Το εικονίδιο ξεκινά το παιχνίδι στο BotW VR και το κλείσιμο του παιχνιδιού κλείνει την εφαρμογή."
 
 #: port/frontend/shell/shell.cpp:1216
 msgid "The tile's game could not start"
@@ -7991,8 +7991,8 @@ msgid "Hidden. Search finds it."
 msgstr "Κρύφτηκε. Η Αναζήτηση το βρίσκει."
 
 #: port/frontend/shell/shell.cpp:2577
-msgid "PS5-ECAM {0} is out"
-msgstr "Κυκλοφόρησε το PS5-ECAM {0}"
+msgid "BotW VR {0} is out"
+msgstr "Κυκλοφόρησε το BotW VR {0}"
 
 #: port/frontend/shell/shell.cpp:2578
 msgid "This is {0}. Download and install it now? Your games, saves and settings stay as they are."
@@ -8031,32 +8031,32 @@ msgid "{0} is installed"
 msgstr "Η {0} εγκαταστάθηκε"
 
 #: port/frontend/shell/shell.cpp:2599 port/frontend/shell/shell.cpp:2656
-msgid "Starting PS5-ECAM again…"
-msgstr "Το PS5-ECAM ξεκινά ξανά…"
+msgid "Starting BotW VR again…"
+msgstr "Το BotW VR ξεκινά ξανά…"
 
 #: port/frontend/shell/shell.cpp:2603 port/frontend/shell/shell.cpp:2608
 msgid "Restart now"
 msgstr "Επανεκκίνηση τώρα"
 
 #: port/frontend/shell/shell.cpp:2607
-msgid "PS5-ECAM starts again to finish the update."
-msgstr "Το PS5-ECAM ξεκινά ξανά για να ολοκληρώσει την ενημέρωση."
+msgid "BotW VR starts again to finish the update."
+msgstr "Το BotW VR ξεκινά ξανά για να ολοκληρώσει την ενημέρωση."
 
 #: port/frontend/shell/shell.cpp:2612
 msgid "The update did not finish"
 msgstr "Η ενημέρωση δεν ολοκληρώθηκε"
 
 #: port/frontend/shell/shell.cpp:2613
-msgid "PS5-ECAM is still {0}."
-msgstr "Το PS5-ECAM είναι ακόμα {0}."
+msgid "BotW VR is still {0}."
+msgstr "Το BotW VR είναι ακόμα {0}."
 
 #: port/frontend/shell/shell.cpp:2616
 msgid "Checking for updates"
 msgstr "Έλεγχος για ενημερώσεις"
 
 #: port/frontend/shell/shell.cpp:2622
-msgid "PS5-ECAM update"
-msgstr "Ενημέρωση PS5-ECAM"
+msgid "BotW VR update"
+msgstr "Ενημέρωση BotW VR"
 
 #: port/frontend/shell/shell.cpp:2642 port/frontend/shell/shell.cpp:2682
 msgid "Select"
@@ -8068,8 +8068,8 @@ msgstr "Επανεκκίνηση"
 
 #. {0} lists the four folders: /data/cemu, /data/azahar, /data/melonds, /data/eden
 #: port/frontend/shell/shell.cpp:2659
-msgid "Your Wii U, 3DS, DS and Switch files go into folders of their own: {0}. They are moved on the same drive, never copied, so it takes a moment whatever their size. PS5-ECAM starts again to do it."
-msgstr "Τα αρχεία σας για Wii U, 3DS, DS και Switch μπαίνουν σε δικούς τους φακέλους: {0}. Μετακινούνται στην ίδια μονάδα και δεν αντιγράφονται ποτέ, οπότε χρειάζεται μια στιγμή όποιο κι αν είναι το μέγεθός τους. Το PS5-ECAM ξεκινά ξανά για να το κάνει."
+msgid "Your Wii U, 3DS, DS and Switch files go into folders of their own: {0}. They are moved on the same drive, never copied, so it takes a moment whatever their size. BotW VR starts again to do it."
+msgstr "Τα αρχεία σας για Wii U, 3DS, DS και Switch μπαίνουν σε δικούς τους φακέλους: {0}. Μετακινούνται στην ίδια μονάδα και δεν αντιγράφονται ποτέ, οπότε χρειάζεται μια στιγμή όποιο κι αν είναι το μέγεθός τους. Το BotW VR ξεκινά ξανά για να το κάνει."
 
 #: port/frontend/shell/shell.cpp:2665
 msgid "Reorganize"
@@ -8185,168 +8185,168 @@ msgid "Player renamed"
 msgstr "Ο παίκτης μετονομάστηκε"
 
 #. Settings > VR: what the headset shows: Breath of the Wild in 3D through BetterVR, or the TV's picture on a screen
-#: port/frontend/shell/vr_settings.cpp:270
+#: port/frontend/shell/vr_settings.cpp:287
 msgid "In the headset"
 msgstr "Στο σετ"
 
 #. Settings > VR: what the headset shows: Breath of the Wild in 3D through BetterVR, or the TV's picture on a screen
-#: port/frontend/shell/vr_settings.cpp:270
+#: port/frontend/shell/vr_settings.cpp:287
 msgid "The game in 3D around you, or the TV's picture on a screen in front of you."
 msgstr "Το παιχνίδι σε 3D γύρω σας, ή η εικόνα της τηλεόρασης σε μια οθόνη μπροστά σας."
 
-#: port/frontend/shell/vr_settings.cpp:271
+#: port/frontend/shell/vr_settings.cpp:288
 msgid "The game in 3D"
 msgstr "Το παιχνίδι σε 3D"
 
-#: port/frontend/shell/vr_settings.cpp:271
+#: port/frontend/shell/vr_settings.cpp:288
 msgid "A flat screen"
 msgstr "Μια επίπεδη οθόνη"
 
-#: port/frontend/shell/vr_settings.cpp:273
+#: port/frontend/shell/vr_settings.cpp:290
 msgid "Camera"
 msgstr "Κάμερα"
 
-#: port/frontend/shell/vr_settings.cpp:273
+#: port/frontend/shell/vr_settings.cpp:290
 msgid "First person is the one made for VR."
 msgstr "Η πρώτη πρόσωπο είναι φτιαγμένη για VR."
 
-#: port/frontend/shell/vr_settings.cpp:274 port/frontend/shell/vr_settings.cpp:276
+#: port/frontend/shell/vr_settings.cpp:291 port/frontend/shell/vr_settings.cpp:293
 msgid "First person"
 msgstr "Πρώτο πρόσωπο"
 
-#: port/frontend/shell/vr_settings.cpp:274 port/frontend/shell/vr_settings.cpp:276
+#: port/frontend/shell/vr_settings.cpp:291 port/frontend/shell/vr_settings.cpp:293
 msgid "Third person"
 msgstr "Τρίτο πρόσωπο"
 
-#: port/frontend/shell/vr_settings.cpp:275
+#: port/frontend/shell/vr_settings.cpp:292
 msgid "Cutscenes"
 msgstr "Σκηνές"
 
-#: port/frontend/shell/vr_settings.cpp:275
+#: port/frontend/shell/vr_settings.cpp:292
 msgid "Mixed shows each scene as it works best."
 msgstr "Το μικτό δείχνει κάθε σκηνή όπως ταιριάζει καλύτερα."
 
-#: port/frontend/shell/vr_settings.cpp:276
+#: port/frontend/shell/vr_settings.cpp:293
 msgid "Mixed"
 msgstr "Μικτό"
 
-#: port/frontend/shell/vr_settings.cpp:277
+#: port/frontend/shell/vr_settings.cpp:294
 msgid "Play position"
 msgstr "Θέση παιχνιδιού"
 
-#: port/frontend/shell/vr_settings.cpp:278
+#: port/frontend/shell/vr_settings.cpp:295
 msgid "Standing"
 msgstr "Όρθιοι"
 
-#: port/frontend/shell/vr_settings.cpp:278
+#: port/frontend/shell/vr_settings.cpp:295
 msgid "Seated"
 msgstr "Καθιστοί"
 
-#: port/frontend/shell/vr_settings.cpp:279
+#: port/frontend/shell/vr_settings.cpp:296
 msgid "Height"
 msgstr "Ύψος"
 
-#: port/frontend/shell/vr_settings.cpp:279
+#: port/frontend/shell/vr_settings.cpp:296
 msgid "Raises or lowers your eyes in the game."
 msgstr "Ανεβάζει ή κατεβάζει τα μάτια σας στο παιχνίδι."
 
-#: port/frontend/shell/vr_settings.cpp:282
+#: port/frontend/shell/vr_settings.cpp:299
 msgid "Turning"
 msgstr "Στροφή"
 
-#: port/frontend/shell/vr_settings.cpp:282
+#: port/frontend/shell/vr_settings.cpp:299
 msgid "Snap turns in steps are easier on the stomach."
 msgstr "Η στροφή σε βήματα είναι πιο εύκολη για το στομάχι."
 
-#: port/frontend/shell/vr_settings.cpp:283 port/frontend/shell/vr_settings.cpp:283 port/frontend/shell/vr_settings.cpp:283
+#: port/frontend/shell/vr_settings.cpp:300 port/frontend/shell/vr_settings.cpp:300 port/frontend/shell/vr_settings.cpp:300
 msgid "Snap {0}"
 msgstr "Βήμα {0}"
 
-#: port/frontend/shell/vr_settings.cpp:283
+#: port/frontend/shell/vr_settings.cpp:300
 msgid "Smooth, slow"
 msgstr "Ομαλή, αργή"
 
-#: port/frontend/shell/vr_settings.cpp:283
+#: port/frontend/shell/vr_settings.cpp:300
 msgid "Smooth, fast"
 msgstr "Ομαλή, γρήγορη"
 
-#: port/frontend/shell/vr_settings.cpp:284
+#: port/frontend/shell/vr_settings.cpp:301
 msgid "Walk towards"
 msgstr "Περπάτημα προς"
 
-#: port/frontend/shell/vr_settings.cpp:285
+#: port/frontend/shell/vr_settings.cpp:302
 msgid "Where you look"
 msgstr "Όπου κοιτάτε"
 
-#: port/frontend/shell/vr_settings.cpp:285
+#: port/frontend/shell/vr_settings.cpp:302
 msgid "Where the controller points"
 msgstr "Όπου δείχνει το χειριστήριο"
 
-#: port/frontend/shell/vr_settings.cpp:286
+#: port/frontend/shell/vr_settings.cpp:303
 msgid "Swings"
 msgstr "Χτυπήματα"
 
-#: port/frontend/shell/vr_settings.cpp:286
+#: port/frontend/shell/vr_settings.cpp:303
 msgid "Relaxed counts smaller swings as hits."
 msgstr "Το χαλαρό μετράει και μικρότερα χτυπήματα."
 
-#: port/frontend/shell/vr_settings.cpp:287
+#: port/frontend/shell/vr_settings.cpp:304
 msgid "Normal"
 msgstr "Κανονικό"
 
-#: port/frontend/shell/vr_settings.cpp:287
+#: port/frontend/shell/vr_settings.cpp:304
 msgid "Relaxed"
 msgstr "Χαλαρό"
 
-#: port/frontend/shell/vr_settings.cpp:288
+#: port/frontend/shell/vr_settings.cpp:305
 msgid "One hit per swing"
 msgstr "Ένα χτύπημα ανά κίνηση"
 
-#: port/frontend/shell/vr_settings.cpp:289
+#: port/frontend/shell/vr_settings.cpp:306
 msgid "Left-handed"
 msgstr "Αριστερόχειρας"
 
-#: port/frontend/shell/vr_settings.cpp:291
+#: port/frontend/shell/vr_settings.cpp:308
 msgid "Menus follow your view"
 msgstr "Τα μενού ακολουθούν το βλέμμα"
 
-#: port/frontend/shell/vr_settings.cpp:292
+#: port/frontend/shell/vr_settings.cpp:309
 msgid "Menu distance"
 msgstr "Απόσταση μενού"
 
-#: port/frontend/shell/vr_settings.cpp:297
+#: port/frontend/shell/vr_settings.cpp:314
 msgid "Menu size"
 msgstr "Μέγεθος μενού"
 
-#: port/frontend/shell/vr_settings.cpp:302
+#: port/frontend/shell/vr_settings.cpp:319
 msgid "Black bars in cutscenes"
 msgstr "Μαύρες λωρίδες στις σκηνές"
 
-#: port/frontend/shell/vr_settings.cpp:304
+#: port/frontend/shell/vr_settings.cpp:321
 msgid "Hand angle"
 msgstr "Γωνία χεριών"
 
-#: port/frontend/shell/vr_settings.cpp:304
+#: port/frontend/shell/vr_settings.cpp:321
 msgid "Tilts Link's hands against the Sense controllers, if they point wrong."
 msgstr "Γέρνει τα χέρια του Link σε σχέση με τα χειριστήρια Sense, αν δείχνουν λάθος."
 
-#: port/frontend/shell/vr_settings.cpp:306
+#: port/frontend/shell/vr_settings.cpp:323
 msgid "Aim angle"
 msgstr "Γωνία σκόπευσης"
 
-#: port/frontend/shell/vr_settings.cpp:306
+#: port/frontend/shell/vr_settings.cpp:323
 msgid "Tilts where the bow and the hands aim."
 msgstr "Γέρνει πού σκοπεύουν το τόξο και τα χέρια."
 
-#: port/frontend/shell/vr_settings.cpp:309
+#: port/frontend/shell/vr_settings.cpp:326
 msgid "Back to BetterVR's defaults"
 msgstr "Επαναφορά στις ρυθμίσεις του BetterVR"
 
-#: port/frontend/shell/vr_settings.cpp:309
+#: port/frontend/shell/vr_settings.cpp:326
 msgid "Every setting on this page as BetterVR comes."
 msgstr "Κάθε ρύθμιση της σελίδας όπως έρχεται στο BetterVR."
 
-#: port/frontend/shell/vr_settings.cpp:349
+#: port/frontend/shell/vr_settings.cpp:367
 msgid "VR settings as BetterVR comes"
 msgstr "Ρυθμίσεις VR όπως έρχονται στο BetterVR"
 
@@ -8379,8 +8379,8 @@ msgid "Continues. Nothing here has to be chosen now: every row of this page is a
 msgstr "Συνεχίζει. Τίποτα εδώ δεν χρειάζεται να επιλεγεί τώρα: κάθε γραμμή αυτής της σελίδας υπάρχει και στις Ρυθμίσεις, στη δική της πλευρά."
 
 #: port/frontend/shell/welcome.cpp:207 port/frontend/shell/whatsnew.cpp:82
-msgid "PS5-ECAM {0}"
-msgstr "PS5-ECAM {0}"
+msgid "BotW VR {0}"
+msgstr "BotW VR {0}"
 
 #: port/frontend/shell/welcome.cpp:208
 msgid "New in this version"
@@ -8494,8 +8494,8 @@ msgid "Boot log not written (/data is unreachable)"
 msgstr "Δεν γράφτηκε το αρχείο καταγραφής εκκίνησης (το /data δεν είναι προσβάσιμο)"
 
 #: port/main_ps5.cpp:598
-msgid "PS5-ECAM cannot reach /data. Load a HEN with PPSA98720 in its app jailbreak list, or elfldr, then restart PS5-ECAM."
-msgstr "Το PS5-ECAM δεν έχει πρόσβαση στο /data. Φορτώστε ένα HEN με το PPSA98720 στη λίστα app jailbreak του, ή το elfldr, και μετά ξεκινήστε ξανά το PS5-ECAM."
+msgid "BotW VR cannot reach /data. Load a HEN with PPSA98720 in its app jailbreak list, or elfldr, then restart BotW VR."
+msgstr "Το BotW VR δεν έχει πρόσβαση στο /data. Φορτώστε ένα HEN με το PPSA98720 στη λίστα app jailbreak του, ή το elfldr, και μετά ξεκινήστε ξανά το BotW VR."
 
 #: port/main_ps5.cpp:710
 msgid "This session: Azahar (3DS); Cemu's emulated Wii U is not started"
@@ -8592,12 +8592,12 @@ msgstr ""
 "Οι ρυθμίσεις και οι αποθηκευμένες καταστάσεις του είναι μόνο δικές του: κανένας άλλος εξομοιωτής δεν τις διαβάζει."
 
 #: port/retro/launch.cpp:34
-msgid "in this copy of PS5-ECAM"
-msgstr "υπάρχει σε αυτό το αντίγραφο του PS5-ECAM"
+msgid "in this copy of BotW VR"
+msgstr "υπάρχει σε αυτό το αντίγραφο του BotW VR"
 
 #: port/retro/launch.cpp:34
-msgid "not in this copy of PS5-ECAM"
-msgstr "δεν υπάρχει σε αυτό το αντίγραφο του PS5-ECAM"
+msgid "not in this copy of BotW VR"
+msgstr "δεν υπάρχει σε αυτό το αντίγραφο του BotW VR"
 
 #: port/retro/launch.cpp:42
 msgid "The emulator could not be started."

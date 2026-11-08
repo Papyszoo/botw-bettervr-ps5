@@ -1,7 +1,7 @@
 # Breath of the Wild in VR on PS5: what you need and where it goes
 
 Everything needed to play BotW-BetterVR on a jailbroken PS5 with PlayStation VR2, with this fork's
-app, **Breath of the Wild VR** (title ID `PPSA98720`, from the `m5-botw-vr` pre-release on). It is
+app, **BotW VR** (title ID `PPSA98720`, from the `m5-botw-vr` pre-release on). It is
 an app of its own: it sits next to PS5-ECAM, if you have it, and shares nothing with it. **Nobody has run these builds on a console yet** (see `STATUS.md`): this page says how
 they are meant to be set up, not what has been seen to work.
 

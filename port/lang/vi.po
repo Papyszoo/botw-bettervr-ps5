@@ -100,12 +100,12 @@ msgid "the PS5 Vulkan driver did not start"
 msgstr "trình điều khiển Vulkan của PS5 không khởi động được"
 
 #: port/app/emulator.cpp:537 port/frontend/shell/settings.cpp:2865 port/frontend/shell/shell.cpp:2007
-msgid "PS5-ECAM cannot write to {0}. Is the HEN loaded?"
-msgstr "PS5-ECAM không thể ghi vào {0}. HEN đã được nạp chưa?"
+msgid "BotW VR cannot write to {0}. Is the HEN loaded?"
+msgstr "BotW VR không thể ghi vào {0}. HEN đã được nạp chưa?"
 
 #: port/app/emulator.cpp:563
-msgid "PS5-ECAM cannot create the MLC folder {0}"
-msgstr "PS5-ECAM không thể tạo thư mục MLC {0}"
+msgid "BotW VR cannot create the MLC folder {0}"
+msgstr "BotW VR không thể tạo thư mục MLC {0}"
 
 #. why a Wii U game did not start
 #: port/app/emulator.cpp:775
@@ -122,8 +122,8 @@ msgid "The game could not be started."
 msgstr "Không thể khởi động trò chơi."
 
 #: port/app/emulator.cpp:795
-msgid "This is not a Wii U game PS5-ECAM can start."
-msgstr "Đây không phải trò chơi Wii U mà PS5-ECAM khởi động được."
+msgid "This is not a Wii U game BotW VR can start."
+msgstr "Đây không phải trò chơi Wii U mà BotW VR khởi động được."
 
 #. {0} is the app's data folder: /data/ps5cemu, or the PS5CEMU-HAR-data folder on the drive the app is installed on
 #: port/app/emulator.cpp:798
@@ -147,9 +147,9 @@ msgstr "Trình kết xuất Vulkan không khởi động được: {0}"
 msgid "Touchpad click + Options: the in-game menu (screens, picture, volume, controls, the library)"
 msgstr "Nhấn bàn di cảm ứng + OPTIONS: menu trong trò chơi (màn hình, hình ảnh, âm lượng, điều khiển, thư viện)"
 
-#: port/app/emulator.cpp:1111
-msgid "PS5-ECAM could not start itself again to show the library: start it again from the home screen."
-msgstr "PS5-ECAM không thể tự khởi động lại để hiện thư viện: hãy mở lại từ màn hình chính."
+#: port/app/emulator.cpp:1125
+msgid "BotW VR could not start itself again to show the library: start it again from the home screen."
+msgstr "BotW VR không thể tự khởi động lại để hiện thư viện: hãy mở lại từ màn hình chính."
 
 #: port/app/forwarders.cpp:151
 msgid "elfldr does not answer on port 9021. Home screen tiles need it, to be put in /data/homebrew and to start their games: load elfldr, then try again."
@@ -734,7 +734,7 @@ msgstr "AMD FSR 1"
 
 #. the quick action that puts a gap between the two screens, and its state
 #. a row that opens the remote touch screen's page: the game's second screen in a phone's browser, and its code to scan
-#: port/app/ingame.cpp:182 port/app/ingame.cpp:254 port/app/ingame.cpp:254 port/app/ingame3ds.cpp:476 port/app/ingame3ds.cpp:690 port/app/remote_menu.h:29 port/eden/ingame.cpp:562 port/frontend/shell/pages.cpp:597 port/frontend/shell/settings.cpp:488 port/frontend/shell/settings.cpp:1620 port/frontend/shell/switch_extras.cpp:54 port/frontend/shell/vr_settings.cpp:266
+#: port/app/ingame.cpp:182 port/app/ingame.cpp:254 port/app/ingame.cpp:254 port/app/ingame3ds.cpp:476 port/app/ingame3ds.cpp:690 port/app/remote_menu.h:29 port/eden/ingame.cpp:562 port/frontend/shell/pages.cpp:597 port/frontend/shell/settings.cpp:488 port/frontend/shell/settings.cpp:1620 port/frontend/shell/switch_extras.cpp:54 port/frontend/shell/vr_settings.cpp:283
 #, menu
 msgid "On"
 msgstr "Bật"
@@ -744,7 +744,7 @@ msgstr "Bật"
 #. Settings > Online: a row that opens the box art's settings (GameTDB on or off, downloading the covers again)
 #. Settings > System on the Wii U side: a row that opens Cemu's emulated portals (Skylanders, Disney Infinity, LEGO Dimensions)
 #. a row that opens the remote touch screen's page: the game's second screen in a phone's browser, and its code to scan
-#: port/app/ingame.cpp:182 port/app/ingame.cpp:254 port/app/ingame.cpp:254 port/app/ingame.cpp:280 port/app/ingame3ds.cpp:476 port/app/ingame3ds.cpp:690 port/app/remote_menu.h:29 port/eden/ingame.cpp:81 port/eden/ingame.cpp:562 port/frontend/shell/pages.cpp:597 port/frontend/shell/pages.cpp:605 port/frontend/shell/settings.cpp:75 port/frontend/shell/settings.cpp:488 port/frontend/shell/settings.cpp:697 port/frontend/shell/settings.cpp:1297 port/frontend/shell/settings.cpp:1592 port/frontend/shell/settings.cpp:1620 port/frontend/shell/settings.cpp:1650 port/frontend/shell/settings.cpp:1658 port/frontend/shell/switch_extras.cpp:54 port/frontend/shell/switch_extras.cpp:74 port/frontend/shell/vr_settings.cpp:266 port/ps5/display.h:47
+#: port/app/ingame.cpp:182 port/app/ingame.cpp:254 port/app/ingame.cpp:254 port/app/ingame.cpp:280 port/app/ingame3ds.cpp:476 port/app/ingame3ds.cpp:690 port/app/remote_menu.h:29 port/eden/ingame.cpp:81 port/eden/ingame.cpp:562 port/frontend/shell/pages.cpp:597 port/frontend/shell/pages.cpp:605 port/frontend/shell/settings.cpp:75 port/frontend/shell/settings.cpp:488 port/frontend/shell/settings.cpp:697 port/frontend/shell/settings.cpp:1297 port/frontend/shell/settings.cpp:1592 port/frontend/shell/settings.cpp:1620 port/frontend/shell/settings.cpp:1650 port/frontend/shell/settings.cpp:1658 port/frontend/shell/switch_extras.cpp:54 port/frontend/shell/switch_extras.cpp:74 port/frontend/shell/vr_settings.cpp:283 port/ps5/display.h:47
 #, menu
 msgid "Off"
 msgstr "Tắt"
@@ -1221,8 +1221,8 @@ msgstr "Thoát về màn hình chính"
 
 #: port/app/ingame.cpp:330 port/app/ingame3ds.cpp:646 port/eden/ingame.cpp:641
 #, menu
-msgid "Leaves the game and closes PS5-ECAM, as its home screen tile asks. What you have not saved in the game is lost, so Cross is held."
-msgstr "Rời trò chơi và đóng PS5-ECAM, theo biểu tượng của trò chơi trên màn hình chính. Những gì chưa lưu trong trò chơi sẽ mất, nên cần giữ nút Chữ thập."
+msgid "Leaves the game and closes BotW VR, as its home screen tile asks. What you have not saved in the game is lost, so Cross is held."
+msgstr "Rời trò chơi và đóng BotW VR, theo biểu tượng của trò chơi trên màn hình chính. Những gì chưa lưu trong trò chơi sẽ mất, nên cần giữ nút Chữ thập."
 
 #: port/app/ingame.cpp:331 port/app/ingame3ds.cpp:647 port/eden/ingame.cpp:642
 #, menu
@@ -1824,7 +1824,7 @@ msgid "Sharp"
 msgstr "Sắc nét"
 
 #. how the DS's screens are scaled to the TV: the filters' names
-#: port/app/ingame3ds.h:60 port/frontend/shell/settings.cpp:114 port/frontend/shell/vr_settings.cpp:283
+#: port/app/ingame3ds.h:60 port/frontend/shell/settings.cpp:114 port/frontend/shell/vr_settings.cpp:300
 #, menu
 msgid "Smooth"
 msgstr "Mượt"
@@ -2373,8 +2373,8 @@ msgstr "Không thể ghi {0} (/data đã đầy?)"
 
 #. at a start after an update: {0} the release installed, {1} the folder, {2} this release
 #: port/app/updates.cpp:321
-msgid "{0} was installed in {1}, but the PS5 started {2} again. Close PS5-ECAM and start it from the home screen; if it is still {2}, copy the release's PPSA98720 folder over by hand."
-msgstr "Đã cài {0} vào {1}, nhưng PS5 lại mở {2}. Hãy đóng PS5-ECAM rồi mở lại từ màn hình chính; nếu vẫn là {2}, hãy sao chép đè thư mục PPSA98720 của bản phát hành theo cách thủ công."
+msgid "{0} was installed in {1}, but the PS5 started {2} again. Close BotW VR and start it from the home screen; if it is still {2}, copy the release's PPSA98720 folder over by hand."
+msgstr "Đã cài {0} vào {1}, nhưng PS5 lại mở {2}. Hãy đóng BotW VR rồi mở lại từ màn hình chính; nếu vẫn là {2}, hãy sao chép đè thư mục PPSA98720 của bản phát hành theo cách thủ công."
 
 #: port/app/updates.cpp:429
 msgid "The latest release's version ({0}) is not one this can read"
@@ -2401,8 +2401,8 @@ msgid "The download is damaged (SHA-256 {0}, not {1})"
 msgstr "Tệp tải xuống bị hỏng (SHA-256 {0}, không phải {1})"
 
 #: port/app/updates.cpp:543
-msgid "PS5-ECAM runs from an image, whose files can't be replaced: install the new release by hand"
-msgstr "PS5-ECAM chạy từ một ảnh đĩa, không thể thay tệp của nó: cài bản phát hành mới thủ công"
+msgid "BotW VR runs from an image, whose files can't be replaced: install the new release by hand"
+msgstr "BotW VR chạy từ một ảnh đĩa, không thể thay tệp của nó: cài bản phát hành mới thủ công"
 
 #: port/app/updates.cpp:556
 msgid "It could not be unpacked: {0}"
@@ -2422,8 +2422,8 @@ msgstr "Không thể đặt lại {0} ({1}): sao chép đè thư mục PPSA98720
 
 #. an update is installed, but the app could not start itself again to run it
 #: port/app/updates.cpp:798
-msgid "The PS5 did not start PS5-ECAM again. Close it and start it from the home screen to finish the update."
-msgstr "PS5 không khởi động lại PS5-ECAM. Hãy đóng ứng dụng rồi mở lại từ màn hình chính để hoàn tất cập nhật."
+msgid "The PS5 did not start BotW VR again. Close it and start it from the home screen to finish the update."
+msgstr "PS5 không khởi động lại BotW VR. Hãy đóng ứng dụng rồi mở lại từ màn hình chính để hoàn tất cập nhật."
 
 #. the places on the toys' portals that a figure goes on
 #: port/app/usb_devices.cpp:61
@@ -3920,13 +3920,13 @@ msgstr "Đã xong"
 msgid ""
 "What the game sees in this player's hands.\n"
 "\n"
-"Most games want the Wii U GamePad for player 1: its screen is the second one PS5-ECAM shows, and the touchpad touches it. Others take Pro Controllers, or Wii Remotes for games such as New Super Mario Bros. U.\n"
+"Most games want the Wii U GamePad for player 1: its screen is the second one BotW VR shows, and the touchpad touches it. Others take Pro Controllers, or Wii Remotes for games such as New Super Mario Bros. U.\n"
 "A Wii Remote points where a finger rests on the touchpad, or where you aim the DualSense.\n"
 "Cemu has two GamePads at most."
 msgstr ""
 "Thứ trò chơi thấy trong tay người chơi này.\n"
 "\n"
-"Phần lớn trò chơi cần Wii U GamePad cho người chơi 1: màn hình của nó là màn hình thứ hai PS5-ECAM hiển thị, và bàn di cảm ứng chạm vào nó. Một số trò chơi khác dùng Pro Controller, hoặc Wii Remote với các trò như New Super Mario Bros. U.\n"
+"Phần lớn trò chơi cần Wii U GamePad cho người chơi 1: màn hình của nó là màn hình thứ hai BotW VR hiển thị, và bàn di cảm ứng chạm vào nó. Một số trò chơi khác dùng Pro Controller, hoặc Wii Remote với các trò như New Super Mario Bros. U.\n"
 "Wii Remote trỏ đến chỗ ngón tay đặt trên bàn di cảm ứng, hoặc chỗ bạn ngắm DualSense.\n"
 "Cemu có tối đa hai GamePad."
 
@@ -4180,8 +4180,8 @@ msgid "The folder could not be saved. Please try again."
 msgstr "Không thể lưu thư mục. Vui lòng thử lại."
 
 #: port/frontend/shell/pages.cpp:1118
-msgid "Saved. PS5-ECAM is looking for games there."
-msgstr "Đã lưu. PS5-ECAM đang tìm trò chơi ở đó."
+msgid "Saved. BotW VR is looking for games there."
+msgstr "Đã lưu. BotW VR đang tìm trò chơi ở đó."
 
 #: port/frontend/shell/pages.cpp:1119
 msgid "Saved. That side looks for games there when it opens."
@@ -4585,7 +4585,7 @@ msgid "A light background with dark text."
 msgstr "Nền sáng với chữ tối."
 
 #. Settings' page of BotW VR: BetterVR's options (camera, turning, menus, the Sense controllers)
-#: port/frontend/shell/settings.cpp:207 port/frontend/shell/vr_settings.cpp:356
+#: port/frontend/shell/settings.cpp:207 port/frontend/shell/vr_settings.cpp:374
 msgid "VR"
 msgstr "VR"
 
@@ -4749,20 +4749,20 @@ msgid "Backups hold every side's saves."
 msgstr "Bản sao lưu chứa bản lưu của mọi bên."
 
 #: port/frontend/shell/settings.cpp:263
-msgid "Box art, graphic packs and PS5-ECAM's updates."
-msgstr "Ảnh bìa, gói đồ họa và bản cập nhật của PS5-ECAM."
+msgid "Box art, graphic packs and BotW VR's updates."
+msgstr "Ảnh bìa, gói đồ họa và bản cập nhật của BotW VR."
 
 #: port/frontend/shell/settings.cpp:264
-msgid "Box art, RetroAchievements and PS5-ECAM's updates."
-msgstr "Ảnh bìa, RetroAchievements và bản cập nhật của PS5-ECAM."
+msgid "Box art, RetroAchievements and BotW VR's updates."
+msgstr "Ảnh bìa, RetroAchievements và bản cập nhật của BotW VR."
 
 #: port/frontend/shell/settings.cpp:265
-msgid "Box art, Artic Base and PS5-ECAM's updates."
-msgstr "Ảnh bìa, Artic Base và bản cập nhật của PS5-ECAM."
+msgid "Box art, Artic Base and BotW VR's updates."
+msgstr "Ảnh bìa, Artic Base và bản cập nhật của BotW VR."
 
 #: port/frontend/shell/settings.cpp:266
-msgid "Box art, multiplayer rooms and PS5-ECAM's updates."
-msgstr "Ảnh bìa, phòng nhiều người chơi và bản cập nhật của PS5-ECAM."
+msgid "Box art, multiplayer rooms and BotW VR's updates."
+msgstr "Ảnh bìa, phòng nhiều người chơi và bản cập nhật của BotW VR."
 
 #: port/frontend/shell/settings.cpp:268
 msgid "Launcher"
@@ -4972,8 +4972,8 @@ msgid "The menus' language, and the games' names where they have one in it."
 msgstr "Ngôn ngữ của menu, và của tên trò chơi khi trò chơi có tên bằng ngôn ngữ đó."
 
 #: port/frontend/shell/settings.cpp:564
-msgid "PS5-ECAM speaks the PS5's own language unless you choose another here; the first start's Setup check has the same choice. A game's name follows it where the game has one in that language, as on a console set to it; otherwise it is the English one. Descriptions come from GameTDB in English, and graphic packs from their authors, as they wrote them."
-msgstr "PS5-ECAM dùng ngôn ngữ của PS5 trừ khi bạn chọn ngôn ngữ khác ở đây; Kiểm tra thiết lập ở lần khởi động đầu cũng có lựa chọn này. Tên trò chơi theo ngôn ngữ này khi trò chơi có tên bằng ngôn ngữ đó, như trên máy được đặt ngôn ngữ ấy; nếu không thì là tên tiếng Anh. Mô tả lấy từ GameTDB bằng tiếng Anh, còn gói đồ họa lấy từ tác giả, giữ nguyên như họ viết."
+msgid "BotW VR speaks the PS5's own language unless you choose another here; the first start's Setup check has the same choice. A game's name follows it where the game has one in that language, as on a console set to it; otherwise it is the English one. Descriptions come from GameTDB in English, and graphic packs from their authors, as they wrote them."
+msgstr "BotW VR dùng ngôn ngữ của PS5 trừ khi bạn chọn ngôn ngữ khác ở đây; Kiểm tra thiết lập ở lần khởi động đầu cũng có lựa chọn này. Tên trò chơi theo ngôn ngữ này khi trò chơi có tên bằng ngôn ngữ đó, như trên máy được đặt ngôn ngữ ấy; nếu không thì là tên tiếng Anh. Mô tả lấy từ GameTDB bằng tiếng Anh, còn gói đồ họa lấy từ tác giả, giữ nguyên như họ viết."
 
 #: port/frontend/shell/settings.cpp:570 port/frontend/shell/settings.cpp:691
 msgid "How the picture is scaled to the TV."
@@ -5793,12 +5793,12 @@ msgid "Eden can read your games."
 msgstr "Eden đọc được trò chơi của bạn."
 
 #: port/frontend/shell/settings.cpp:1096 port/frontend/shell/setup.cpp:304
-msgid "Eden reads Switch games with your own console's keys: prod.keys (and title.keys), dumped from your Switch, in {0}/keys. No keys come with PS5-ECAM."
-msgstr "Eden đọc trò chơi Switch bằng khóa của chính máy bạn: prod.keys (và title.keys) trích xuất từ máy Switch của bạn, trong {0}/keys. PS5-ECAM không kèm khóa nào."
+msgid "Eden reads Switch games with your own console's keys: prod.keys (and title.keys), dumped from your Switch, in {0}/keys. No keys come with BotW VR."
+msgstr "Eden đọc trò chơi Switch bằng khóa của chính máy bạn: prod.keys (và title.keys) trích xuất từ máy Switch của bạn, trong {0}/keys. BotW VR không kèm khóa nào."
 
 #: port/frontend/shell/settings.cpp:1100 port/frontend/shell/setup.cpp:315
-msgid "Many Switch games need the console's own system files: its firmware's .nca files, dumped from your Switch, in {0}/firmware. No firmware comes with PS5-ECAM."
-msgstr "Nhiều trò chơi Switch cần tệp hệ thống của chính máy: các tệp .nca trong firmware của nó, trích xuất từ máy Switch của bạn, trong {0}/firmware. PS5-ECAM không kèm firmware."
+msgid "Many Switch games need the console's own system files: its firmware's .nca files, dumped from your Switch, in {0}/firmware. No firmware comes with BotW VR."
+msgstr "Nhiều trò chơi Switch cần tệp hệ thống của chính máy: các tệp .nca trong firmware của nó, trích xuất từ máy Switch của bạn, trong {0}/firmware. BotW VR không kèm firmware."
 
 #: port/frontend/shell/settings.cpp:1108 port/frontend/shell/shares.cpp:536
 msgid "Network shares"
@@ -5907,13 +5907,13 @@ msgid "Your files from before into a folder for each system."
 msgstr "Đưa tệp cũ của bạn vào một thư mục cho mỗi hệ máy."
 
 #: port/frontend/shell/settings.cpp:1154
-msgid "Puts each system's files back into {0}, where they were before. Going back to an earlier version needs them there, as it looks for them there. PS5-ECAM starts again to do it."
-msgstr "Đưa tệp của mỗi hệ máy trở lại {0}, nơi chúng ở trước đây. Quay lại phiên bản trước cần chúng ở đó, vì phiên bản đó tìm chúng ở đó. PS5-ECAM sẽ khởi động lại để làm việc này."
+msgid "Puts each system's files back into {0}, where they were before. Going back to an earlier version needs them there, as it looks for them there. BotW VR starts again to do it."
+msgstr "Đưa tệp của mỗi hệ máy trở lại {0}, nơi chúng ở trước đây. Quay lại phiên bản trước cần chúng ở đó, vì phiên bản đó tìm chúng ở đó. BotW VR sẽ khởi động lại để làm việc này."
 
 #. {0} is the app's data folder, /data/ps5cemu; {1} lists the four folders: /data/cemu, /data/azahar, ...
 #: port/frontend/shell/settings.cpp:1158
-msgid "Moves each system's files from {0} into a folder of its own: {1}. They are renamed on the same drive, never copied, so it takes a moment whatever their size, and nothing is deleted. PS5-ECAM starts again to do it; a system that cannot move stays as it was. This row puts them back."
-msgstr "Chuyển tệp của mỗi hệ máy từ {0} vào thư mục riêng: {1}. Chúng được đổi tên trên cùng ổ đĩa, không bao giờ sao chép, nên chỉ mất một lát dù lớn đến đâu, và không có gì bị xóa. PS5-ECAM sẽ khởi động lại để làm việc này; hệ máy nào không chuyển được sẽ giữ nguyên. Hàng này đưa chúng trở lại."
+msgid "Moves each system's files from {0} into a folder of its own: {1}. They are renamed on the same drive, never copied, so it takes a moment whatever their size, and nothing is deleted. BotW VR starts again to do it; a system that cannot move stays as it was. This row puts them back."
+msgstr "Chuyển tệp của mỗi hệ máy từ {0} vào thư mục riêng: {1}. Chúng được đổi tên trên cùng ổ đĩa, không bao giờ sao chép, nên chỉ mất một lát dù lớn đến đâu, và không có gì bị xóa. BotW VR sẽ khởi động lại để làm việc này; hệ máy nào không chuyển được sẽ giữ nguyên. Hàng này đưa chúng trở lại."
 
 #: port/frontend/shell/settings.cpp:1185
 msgid "Account games start on"
@@ -5936,8 +5936,8 @@ msgid "One account for each PS5 user"
 msgstr "Mỗi người dùng PS5 một tài khoản"
 
 #: port/frontend/shell/settings.cpp:1193
-msgid "Whoever starts PS5-ECAM plays on their own saves."
-msgstr "Ai khởi động PS5-ECAM sẽ chơi bằng bản lưu của chính mình."
+msgid "Whoever starts BotW VR plays on their own saves."
+msgstr "Ai khởi động BotW VR sẽ chơi bằng bản lưu của chính mình."
 
 #: port/frontend/shell/settings.cpp:1194
 msgid "The PS5 user who starts the app plays on a Wii U account of their own, made the first time with their PS5 name, so brothers and sisters each keep their own saves just by starting the app from their own PS5 user."
@@ -6050,8 +6050,8 @@ msgstr "Nhấn trái/phải để chọn bản sao lưu, mới nhất trước."
 
 #. {0} is the app's data folder: /data/ps5cemu, or the PS5CEMU-HAR-data folder on the drive the app is installed on
 #: port/frontend/shell/settings.cpp:1276
-msgid "Puts the chosen backup's saves back where they came from. The saves there now are moved first to {0}/saves-before, so nothing is lost; saves the backup does not have stay as they are. Its settings come back too, and PS5-ECAM starts again to use them."
-msgstr "Đưa bản lưu của bản sao lưu đã chọn về chỗ cũ. Bản lưu hiện có được chuyển trước vào {0}/saves-before, nên không mất gì; bản lưu mà bản sao lưu không có vẫn giữ nguyên. Cài đặt của bản sao lưu cũng được khôi phục, và PS5-ECAM khởi động lại để dùng chúng."
+msgid "Puts the chosen backup's saves back where they came from. The saves there now are moved first to {0}/saves-before, so nothing is lost; saves the backup does not have stay as they are. Its settings come back too, and BotW VR starts again to use them."
+msgstr "Đưa bản lưu của bản sao lưu đã chọn về chỗ cũ. Bản lưu hiện có được chuyển trước vào {0}/saves-before, nên không mất gì; bản lưu mà bản sao lưu không có vẫn giữ nguyên. Cài đặt của bản sao lưu cũng được khôi phục, và BotW VR khởi động lại để dùng chúng."
 
 #: port/frontend/shell/settings.cpp:1292
 msgid "Downloading: {0} left"
@@ -6300,16 +6300,16 @@ msgid "An achievement earned, and the count as a game starts, shown as the PS5's
 msgstr "Thành tựu vừa đạt, và số thành tựu khi trò chơi khởi động, hiện thành thông báo của chính PS5. Tắt: chúng chỉ có trong mục Thành tựu của menu trong trò chơi."
 
 #: port/frontend/shell/settings.cpp:1403
-msgid "PS5-ECAM updates"
-msgstr "Bản cập nhật PS5-ECAM"
+msgid "BotW VR updates"
+msgstr "Bản cập nhật BotW VR"
 
 #: port/frontend/shell/settings.cpp:1403
 msgid "Cross checks GitHub for a newer version."
 msgstr "Nhấn Chữ thập để kiểm tra phiên bản mới hơn trên GitHub."
 
 #: port/frontend/shell/settings.cpp:1404
-msgid "PS5-ECAM asks GitHub for its latest release each time it starts. Cross asks again, or installs the newer version it found: the release's files are downloaded, checked and put in place of these, and the app starts again. Your games, saves and settings stay as they are."
-msgstr "Mỗi lần khởi động, PS5-ECAM hỏi GitHub bản phát hành mới nhất. Nhấn Chữ thập để hỏi lại, hoặc cài phiên bản mới hơn đã tìm thấy: tệp của bản phát hành được tải xuống, kiểm tra rồi thay cho tệp hiện tại, và ứng dụng khởi động lại. Trò chơi, bản lưu và cài đặt giữ nguyên."
+msgid "BotW VR asks GitHub for its latest release each time it starts. Cross asks again, or installs the newer version it found: the release's files are downloaded, checked and put in place of these, and the app starts again. Your games, saves and settings stay as they are."
+msgstr "Mỗi lần khởi động, BotW VR hỏi GitHub bản phát hành mới nhất. Nhấn Chữ thập để hỏi lại, hoặc cài phiên bản mới hơn đã tìm thấy: tệp của bản phát hành được tải xuống, kiểm tra rồi thay cho tệp hiện tại, và ứng dụng khởi động lại. Trò chơi, bản lưu và cài đặt giữ nguyên."
 
 #. {0} is the version the last update replaced, as in 5.0.0
 #: port/frontend/shell/settings.cpp:1411
@@ -6321,8 +6321,8 @@ msgid "The version before the last update, kept as it was."
 msgstr "Phiên bản trước lần cập nhật gần nhất, được giữ nguyên."
 
 #: port/frontend/shell/settings.cpp:1413
-msgid "The last update kept the version it replaced. Holding Cross puts its files back in place of these, and PS5-ECAM starts again as that version. Your games, saves and settings stay as they are. The newer version is not offered at start again; this page still finds it."
-msgstr "Lần cập nhật gần nhất đã giữ lại phiên bản mà nó thay thế. Giữ nút Chữ thập để đặt lại các tệp của phiên bản đó thay cho các tệp này, rồi PS5-ECAM khởi động lại dưới phiên bản đó. Trò chơi, bản lưu và cài đặt của bạn vẫn giữ nguyên. Phiên bản mới hơn sẽ không được đề xuất lại khi khởi động; trang này vẫn tìm thấy nó."
+msgid "The last update kept the version it replaced. Holding Cross puts its files back in place of these, and BotW VR starts again as that version. Your games, saves and settings stay as they are. The newer version is not offered at start again; this page still finds it."
+msgstr "Lần cập nhật gần nhất đã giữ lại phiên bản mà nó thay thế. Giữ nút Chữ thập để đặt lại các tệp của phiên bản đó thay cho các tệp này, rồi BotW VR khởi động lại dưới phiên bản đó. Trò chơi, bản lưu và cài đặt của bạn vẫn giữ nguyên. Phiên bản mới hơn sẽ không được đề xuất lại khi khởi động; trang này vẫn tìm thấy nó."
 
 #: port/frontend/shell/settings.cpp:1420
 msgid "Put each system's files back first: Settings > Game files > A folder for each system."
@@ -6439,8 +6439,8 @@ msgid "ES-DE's menus and themes over the same games, played here."
 msgstr "Menu và giao diện của ES-DE trên cùng những trò chơi, chơi tại đây."
 
 #: port/frontend/shell/settings.cpp:1487
-msgid "PS5-ECAM opens on EmulationStation (ES-DE) instead of its own launcher: the sides the bar shows, with the games their libraries list, and every game plays here with its settings, saves and in-game menu, then goes back to EmulationStation. Hold L1 as PS5-ECAM starts, or quit EmulationStation, for this launcher."
-msgstr "PS5-ECAM mở EmulationStation (ES-DE) thay cho trình khởi chạy riêng của nó: các bên mà thanh hiện, cùng trò chơi trong thư viện của chúng, và mỗi trò chơi đều chạy tại đây với cài đặt, bản lưu và menu trong trò chơi của nó, rồi quay lại EmulationStation. Giữ L1 khi PS5-ECAM khởi động, hoặc thoát EmulationStation, để vào trình khởi chạy này."
+msgid "BotW VR opens on EmulationStation (ES-DE) instead of its own launcher: the sides the bar shows, with the games their libraries list, and every game plays here with its settings, saves and in-game menu, then goes back to EmulationStation. Hold L1 as BotW VR starts, or quit EmulationStation, for this launcher."
+msgstr "BotW VR mở EmulationStation (ES-DE) thay cho trình khởi chạy riêng của nó: các bên mà thanh hiện, cùng trò chơi trong thư viện của chúng, và mỗi trò chơi đều chạy tại đây với cài đặt, bản lưu và menu trong trò chơi của nó, rồi quay lại EmulationStation. Giữ L1 khi BotW VR khởi động, hoặc thoát EmulationStation, để vào trình khởi chạy này."
 
 #: port/frontend/shell/settings.cpp:1497 port/frontend/shell/settings.cpp:1508
 msgid "Larger text"
@@ -6855,8 +6855,8 @@ msgstr "Bản dump mô hình đặt trong {0}/figures: skylanders, infinity và 
 
 #. premohq and JMUtechnologies are GitHub names: keep them as they are
 #: port/frontend/shell/settings.cpp:1990
-msgid "PS5-ECAM is made by its co-founders, premohq and JMUtechnologies."
-msgstr "PS5-ECAM do các nhà đồng sáng lập premohq và JMUtechnologies làm ra."
+msgid "BotW VR is made by its co-founders, premohq and JMUtechnologies."
+msgstr "BotW VR do các nhà đồng sáng lập premohq và JMUtechnologies làm ra."
 
 #. {0} is the app's version; {1} its data folder: /data/ps5cemu, or the PS5CEMU-HAR-data folder on the drive the app is installed on; {2} Eden's game files folder; {3} Cemu's selected data folder; {4} its default games folder; {5} Azahar's selected folder; {6} melonDS's selected folder
 #: port/frontend/shell/settings.cpp:1992
@@ -7031,8 +7031,8 @@ msgid "Downloading in the background"
 msgstr "Đang tải xuống ngầm"
 
 #: port/frontend/shell/settings.cpp:2872 port/frontend/shell/shell.cpp:452
-msgid "Close PS5-ECAM and start it again from the home screen: the folders move as it starts."
-msgstr "Đóng PS5-ECAM rồi mở lại từ màn hình chính: các thư mục được chuyển khi ứng dụng khởi động."
+msgid "Close BotW VR and start it again from the home screen: the folders move as it starts."
+msgstr "Đóng BotW VR rồi mở lại từ màn hình chính: các thư mục được chuyển khi ứng dụng khởi động."
 
 #: port/frontend/shell/settings.cpp:2914
 msgid "{0} is deleted; its saves stay"
@@ -7072,12 +7072,12 @@ msgid "Same network as the PS5. Nothing to install: the browser is enough. Sound
 msgstr "Cùng mạng với PS5. Không cần cài gì: chỉ cần trình duyệt. Âm thanh vẫn ở trên PS5. Mọi trình duyệt trong mạng đều xem và chạm được."
 
 #: port/frontend/shell/settings.cpp:3207
-msgid "Support PS5-ECAM"
-msgstr "Ủng hộ PS5-ECAM"
+msgid "Support BotW VR"
+msgstr "Ủng hộ BotW VR"
 
 #: port/frontend/shell/settings.cpp:3218
-msgid "PS5-ECAM is free. If it brings your games back, you can support its work here."
-msgstr "PS5-ECAM miễn phí. Nếu nó giúp bạn chơi lại các trò chơi của mình, bạn có thể ủng hộ công sức làm ra nó tại đây."
+msgid "BotW VR is free. If it brings your games back, you can support its work here."
+msgstr "BotW VR miễn phí. Nếu nó giúp bạn chơi lại các trò chơi của mình, bạn có thể ủng hộ công sức làm ra nó tại đây."
 
 #. above Settings' pages: whose settings they are ({0}: Wii U, Nintendo 3DS or Nintendo DS)
 #: port/frontend/shell/settings.cpp:3258
@@ -7107,20 +7107,20 @@ msgid "Where everything is kept"
 msgstr "Nơi lưu mọi thứ"
 
 #: port/frontend/shell/setup.cpp:129
-msgid "Settings, saves, caches and logs live in {0}, which your HEN opens to PS5-ECAM: its app jailbreak, or elfldr with the helper that comes with the app."
-msgstr "Cài đặt, bản lưu, bộ nhớ đệm và nhật ký nằm trong {0}, mà HEN mở cho PS5-ECAM: bằng app jailbreak của nó, hoặc elfldr với trình trợ giúp đi kèm ứng dụng."
+msgid "Settings, saves, caches and logs live in {0}, which your HEN opens to BotW VR: its app jailbreak, or elfldr with the helper that comes with the app."
+msgstr "Cài đặt, bản lưu, bộ nhớ đệm và nhật ký nằm trong {0}, mà HEN mở cho BotW VR: bằng app jailbreak của nó, hoặc elfldr với trình trợ giúp đi kèm ứng dụng."
 
 #: port/frontend/shell/setup.cpp:136
 msgid "/data is out of reach: nothing can be kept"
 msgstr "Không truy cập được /data: không lưu được gì"
 
 #: port/frontend/shell/setup.cpp:137
-msgid "Let PS5-ECAM out of its sandbox"
-msgstr "Cho PS5-ECAM ra khỏi sandbox"
+msgid "Let BotW VR out of its sandbox"
+msgstr "Cho BotW VR ra khỏi sandbox"
 
 #: port/frontend/shell/setup.cpp:138
-msgid "Add PPSA98720 to your HEN's app jailbreak list (etaHEN: its app jailbreak list; OnionHEN: the end of exact_title_ids in config.ini, with no comma after it), or have elfldr listening on port 9021. Then start PS5-ECAM again."
-msgstr "Thêm PPSA98720 vào danh sách app jailbreak của HEN (etaHEN: danh sách app jailbreak của nó; OnionHEN: cuối exact_title_ids trong config.ini, không có dấu phẩy sau nó), hoặc để elfldr lắng nghe ở cổng 9021. Rồi khởi động lại PS5-ECAM."
+msgid "Add PPSA98720 to your HEN's app jailbreak list (etaHEN: its app jailbreak list; OnionHEN: the end of exact_title_ids in config.ini, with no comma after it), or have elfldr listening on port 9021. Then start BotW VR again."
+msgstr "Thêm PPSA98720 vào danh sách app jailbreak của HEN (etaHEN: danh sách app jailbreak của nó; OnionHEN: cuối exact_title_ids trong config.ini, không có dấu phẩy sau nó), hoặc để elfldr lắng nghe ở cổng 9021. Rồi khởi động lại BotW VR."
 
 #: port/frontend/shell/setup.cpp:145
 msgid "Recompilers"
@@ -7139,20 +7139,20 @@ msgid "Executable memory: games run at full speed, no HEN grant needed"
 msgstr "Bộ nhớ thực thi: trò chơi chạy đủ tốc độ, không cần HEN cấp quyền"
 
 #: port/frontend/shell/setup.cpp:154
-msgid "Cemu's and Azahar's recompilers turn the games' code into the PS5's as they run. They need memory they can write code into and run it from: your HEN's JIT memory, or executable memory PS5-ECAM makes itself."
-msgstr "Trình biên dịch lại của Cemu và Azahar chuyển mã của trò chơi thành mã của PS5 trong khi chạy. Chúng cần bộ nhớ có thể ghi mã vào và chạy mã từ đó: bộ nhớ JIT của HEN, hoặc bộ nhớ thực thi do PS5-ECAM tự tạo."
+msgid "Cemu's and Azahar's recompilers turn the games' code into the PS5's as they run. They need memory they can write code into and run it from: your HEN's JIT memory, or executable memory BotW VR makes itself."
+msgstr "Trình biên dịch lại của Cemu và Azahar chuyển mã của trò chơi thành mã của PS5 trong khi chạy. Chúng cần bộ nhớ có thể ghi mã vào và chạy mã từ đó: bộ nhớ JIT của HEN, hoặc bộ nhớ thực thi do BotW VR tự tạo."
 
 #: port/frontend/shell/setup.cpp:160
 msgid "No JIT or executable memory: Wii U games run on the much slower interpreter"
 msgstr "Không có bộ nhớ JIT hay bộ nhớ thực thi: trò chơi Wii U chạy bằng trình thông dịch chậm hơn nhiều"
 
 #: port/frontend/shell/setup.cpp:161
-msgid "Neither your HEN's JIT memory nor executable memory could be made, so Wii U games fall back to Cemu's interpreter. Add PPSA98720 to your HEN's app jailbreak list, then start PS5-ECAM again; Settings > Diagnostics says what it got."
-msgstr "Không lấy được bộ nhớ JIT của HEN, cũng không tạo được bộ nhớ thực thi, nên trò chơi Wii U chuyển sang trình thông dịch của Cemu. Thêm PPSA98720 vào danh sách app jailbreak của HEN, rồi khởi động lại PS5-ECAM; Cài đặt > Chẩn đoán cho biết đã nhận được gì."
+msgid "Neither your HEN's JIT memory nor executable memory could be made, so Wii U games fall back to Cemu's interpreter. Add PPSA98720 to your HEN's app jailbreak list, then start BotW VR again; Settings > Diagnostics says what it got."
+msgstr "Không lấy được bộ nhớ JIT của HEN, cũng không tạo được bộ nhớ thực thi, nên trò chơi Wii U chuyển sang trình thông dịch của Cemu. Thêm PPSA98720 vào danh sách app jailbreak của HEN, rồi khởi động lại BotW VR; Cài đặt > Chẩn đoán cho biết đã nhận được gì."
 
 #: port/frontend/shell/setup.cpp:190 port/frontend/shell/shell.cpp:748 port/libretro/game.cpp:517 port/main_ps5.cpp:703 port/retro/launch.cpp:38 port/retro/launch.cpp:48
-msgid "This side's emulator is not in this copy of PS5-ECAM."
-msgstr "Trình giả lập của bên này không có trong bản PS5-ECAM này."
+msgid "This side's emulator is not in this copy of BotW VR."
+msgstr "Trình giả lập của bên này không có trong bản BotW VR này."
 
 #. {1} is a folder
 #: port/frontend/shell/setup.cpp:191 port/frontend/shell/setup.cpp:216
@@ -7257,8 +7257,8 @@ msgid "Your DS's own BIOS and firmware"
 msgstr "BIOS và firmware riêng của máy DS"
 
 #: port/frontend/shell/setup.cpp:286
-msgid "melonDS runs DS games on its own BIOS (FreeBIOS) and firmware, which most games are happy with. The few that are not run on your own DS's: bios7.bin, bios9.bin and firmware.bin, dumped from it, in {0}/bios. No BIOS comes with PS5-ECAM."
-msgstr "melonDS chạy trò chơi DS bằng BIOS (FreeBIOS) và firmware riêng của nó, phần lớn trò chơi đều chạy tốt. Số ít trò chơi không chạy được thì cần bios7.bin, bios9.bin và firmware.bin dump từ máy DS của bạn, đặt trong {0}/bios. PS5-ECAM không kèm BIOS nào."
+msgid "melonDS runs DS games on its own BIOS (FreeBIOS) and firmware, which most games are happy with. The few that are not run on your own DS's: bios7.bin, bios9.bin and firmware.bin, dumped from it, in {0}/bios. No BIOS comes with BotW VR."
+msgstr "melonDS chạy trò chơi DS bằng BIOS (FreeBIOS) và firmware riêng của nó, phần lớn trò chơi đều chạy tốt. Số ít trò chơi không chạy được thì cần bios7.bin, bios9.bin và firmware.bin dump từ máy DS của bạn, đặt trong {0}/bios. BotW VR không kèm BIOS nào."
 
 #: port/frontend/shell/setup.cpp:291
 msgid "the DS page"
@@ -7293,8 +7293,8 @@ msgid "Your Switch's firmware"
 msgstr "Firmware của máy Switch"
 
 #: port/frontend/shell/setup.cpp:329
-msgid "what PS5-ECAM fetches online"
-msgstr "những gì PS5-ECAM tải từ mạng"
+msgid "what BotW VR fetches online"
+msgstr "những gì BotW VR tải từ mạng"
 
 #: port/frontend/shell/setup.cpp:330
 msgid "Covers from GameTDB"
@@ -7335,8 +7335,8 @@ msgid "Checked again"
 msgstr "Đã kiểm tra lại"
 
 #: port/frontend/shell/setup.cpp:451 port/frontend/shell/welcome.cpp:207
-msgid "Welcome to PS5-ECAM"
-msgstr "Chào mừng đến với PS5-ECAM"
+msgid "Welcome to BotW VR"
+msgstr "Chào mừng đến với BotW VR"
 
 #: port/frontend/shell/setup.cpp:451
 msgid "Help"
@@ -7380,8 +7380,8 @@ msgid "The menus' language"
 msgstr "Ngôn ngữ của menu"
 
 #: port/frontend/shell/setup.cpp:540
-msgid "PS5-ECAM speaks the language your PS5 is set to. Cross chooses another; Settings > Language changes it at any time."
-msgstr "PS5-ECAM dùng ngôn ngữ mà PS5 đang đặt. Nhấn Chữ thập để chọn ngôn ngữ khác; Cài đặt > Ngôn ngữ đổi được bất cứ lúc nào."
+msgid "BotW VR speaks the language your PS5 is set to. Cross chooses another; Settings > Language changes it at any time."
+msgstr "BotW VR dùng ngôn ngữ mà PS5 đang đặt. Nhấn Chữ thập để chọn ngôn ngữ khác; Cài đặt > Ngôn ngữ đổi được bất cứ lúc nào."
 
 #: port/frontend/shell/setup.cpp:608
 msgid "The guide, on your phone"
@@ -7627,13 +7627,13 @@ msgid "The launcher's settings file, ps5cemu.json, has a mistake in it, so every
 msgstr "Tệp cài đặt của trình khởi chạy, ps5cemu.json, có lỗi nên mọi cài đặt đã trở về mặc định. Tệp như lúc trước được giữ lại tại {0}: hãy sửa nó trên máy tính rồi đặt lại thành ps5cemu.json, hoặc cứ để đó."
 
 #: port/frontend/shell/shell.cpp:247
-msgid "PS5-ECAM closed after a crash"
-msgstr "PS5-ECAM đã đóng sau một sự cố"
+msgid "BotW VR closed after a crash"
+msgstr "BotW VR đã đóng sau một sự cố"
 
 #. {0} is the crash report's first line in the log, as it is: "signal 11 at 0x7f3a..."
 #: port/frontend/shell/shell.cpp:249
-msgid "The last time, PS5-ECAM stopped with a crash: {0}. Its log is kept: Settings > Diagnostics > Copy logs to USB puts it on a drive, with the sessions before it, to attach to a report on GitHub."
-msgstr "Lần trước, PS5-ECAM đã dừng vì một sự cố: {0}. Nhật ký của nó vẫn được giữ: Cài đặt > Chẩn đoán > Sao chép nhật ký vào USB sẽ chép nó vào ổ đĩa, cùng các phiên trước đó, để đính kèm vào báo cáo trên GitHub."
+msgid "The last time, BotW VR stopped with a crash: {0}. Its log is kept: Settings > Diagnostics > Copy logs to USB puts it on a drive, with the sessions before it, to attach to a report on GitHub."
+msgstr "Lần trước, BotW VR đã dừng vì một sự cố: {0}. Nhật ký của nó vẫn được giữ: Cài đặt > Chẩn đoán > Sao chép nhật ký vào USB sẽ chép nó vào ổ đĩa, cùng các phiên trước đó, để đính kèm vào báo cáo trên GitHub."
 
 #: port/frontend/shell/shell.cpp:263
 msgid "Some files could not move"
@@ -7740,8 +7740,8 @@ msgid "The tile is made"
 msgstr "Đã tạo biểu tượng"
 
 #: port/frontend/shell/shell.cpp:1201
-msgid "It is in {0}. ShadowMount Plus puts it on the PS5's home screen as it does any homebrew: if it does not show, restart ShadowMount Plus or the console. The tile starts the game in PS5-ECAM, and closing the game closes the app."
-msgstr "Nó nằm ở {0}. ShadowMount Plus đưa nó lên màn hình chính của PS5 như mọi homebrew khác: nếu không thấy, hãy khởi động lại ShadowMount Plus hoặc máy. Biểu tượng sẽ khởi động trò chơi trong PS5-ECAM, và đóng trò chơi sẽ đóng ứng dụng."
+msgid "It is in {0}. ShadowMount Plus puts it on the PS5's home screen as it does any homebrew: if it does not show, restart ShadowMount Plus or the console. The tile starts the game in BotW VR, and closing the game closes the app."
+msgstr "Nó nằm ở {0}. ShadowMount Plus đưa nó lên màn hình chính của PS5 như mọi homebrew khác: nếu không thấy, hãy khởi động lại ShadowMount Plus hoặc máy. Biểu tượng sẽ khởi động trò chơi trong BotW VR, và đóng trò chơi sẽ đóng ứng dụng."
 
 #: port/frontend/shell/shell.cpp:1216
 msgid "The tile's game could not start"
@@ -7948,8 +7948,8 @@ msgid "Hidden. Search finds it."
 msgstr "Đã ẩn. Tìm kiếm vẫn tìm thấy."
 
 #: port/frontend/shell/shell.cpp:2577
-msgid "PS5-ECAM {0} is out"
-msgstr "Đã có PS5-ECAM {0}"
+msgid "BotW VR {0} is out"
+msgstr "Đã có BotW VR {0}"
 
 #: port/frontend/shell/shell.cpp:2578
 msgid "This is {0}. Download and install it now? Your games, saves and settings stay as they are."
@@ -7988,32 +7988,32 @@ msgid "{0} is installed"
 msgstr "Đã cài {0}"
 
 #: port/frontend/shell/shell.cpp:2599 port/frontend/shell/shell.cpp:2656
-msgid "Starting PS5-ECAM again…"
-msgstr "Đang khởi động lại PS5-ECAM…"
+msgid "Starting BotW VR again…"
+msgstr "Đang khởi động lại BotW VR…"
 
 #: port/frontend/shell/shell.cpp:2603 port/frontend/shell/shell.cpp:2608
 msgid "Restart now"
 msgstr "Khởi động lại ngay"
 
 #: port/frontend/shell/shell.cpp:2607
-msgid "PS5-ECAM starts again to finish the update."
-msgstr "PS5-ECAM khởi động lại để hoàn tất cập nhật."
+msgid "BotW VR starts again to finish the update."
+msgstr "BotW VR khởi động lại để hoàn tất cập nhật."
 
 #: port/frontend/shell/shell.cpp:2612
 msgid "The update did not finish"
 msgstr "Cập nhật chưa hoàn tất"
 
 #: port/frontend/shell/shell.cpp:2613
-msgid "PS5-ECAM is still {0}."
-msgstr "PS5-ECAM vẫn là {0}."
+msgid "BotW VR is still {0}."
+msgstr "BotW VR vẫn là {0}."
 
 #: port/frontend/shell/shell.cpp:2616
 msgid "Checking for updates"
 msgstr "Đang kiểm tra cập nhật"
 
 #: port/frontend/shell/shell.cpp:2622
-msgid "PS5-ECAM update"
-msgstr "Bản cập nhật PS5-ECAM"
+msgid "BotW VR update"
+msgstr "Bản cập nhật BotW VR"
 
 #: port/frontend/shell/shell.cpp:2642 port/frontend/shell/shell.cpp:2682
 msgid "Select"
@@ -8025,8 +8025,8 @@ msgstr "Khởi động lại"
 
 #. {0} lists the four folders: /data/cemu, /data/azahar, /data/melonds, /data/eden
 #: port/frontend/shell/shell.cpp:2659
-msgid "Your Wii U, 3DS, DS and Switch files go into folders of their own: {0}. They are moved on the same drive, never copied, so it takes a moment whatever their size. PS5-ECAM starts again to do it."
-msgstr "Tệp Wii U, 3DS, DS và Switch của bạn được chuyển vào thư mục riêng: {0}. Chúng được chuyển trên cùng ổ đĩa, không bao giờ sao chép, nên chỉ mất một lát dù lớn đến đâu. PS5-ECAM sẽ khởi động lại để làm việc này."
+msgid "Your Wii U, 3DS, DS and Switch files go into folders of their own: {0}. They are moved on the same drive, never copied, so it takes a moment whatever their size. BotW VR starts again to do it."
+msgstr "Tệp Wii U, 3DS, DS và Switch của bạn được chuyển vào thư mục riêng: {0}. Chúng được chuyển trên cùng ổ đĩa, không bao giờ sao chép, nên chỉ mất một lát dù lớn đến đâu. BotW VR sẽ khởi động lại để làm việc này."
 
 #: port/frontend/shell/shell.cpp:2665
 msgid "Reorganize"
@@ -8142,168 +8142,168 @@ msgid "Player renamed"
 msgstr "Đã đổi tên người chơi"
 
 #. Settings > VR: what the headset shows: Breath of the Wild in 3D through BetterVR, or the TV's picture on a screen
-#: port/frontend/shell/vr_settings.cpp:270
+#: port/frontend/shell/vr_settings.cpp:287
 msgid "In the headset"
 msgstr "Trong kính"
 
 #. Settings > VR: what the headset shows: Breath of the Wild in 3D through BetterVR, or the TV's picture on a screen
-#: port/frontend/shell/vr_settings.cpp:270
+#: port/frontend/shell/vr_settings.cpp:287
 msgid "The game in 3D around you, or the TV's picture on a screen in front of you."
 msgstr "Trò chơi 3D quanh bạn, hoặc hình TV trên một màn hình trước mặt."
 
-#: port/frontend/shell/vr_settings.cpp:271
+#: port/frontend/shell/vr_settings.cpp:288
 msgid "The game in 3D"
 msgstr "Trò chơi 3D"
 
-#: port/frontend/shell/vr_settings.cpp:271
+#: port/frontend/shell/vr_settings.cpp:288
 msgid "A flat screen"
 msgstr "Màn hình phẳng"
 
-#: port/frontend/shell/vr_settings.cpp:273
+#: port/frontend/shell/vr_settings.cpp:290
 msgid "Camera"
 msgstr "Máy quay"
 
-#: port/frontend/shell/vr_settings.cpp:273
+#: port/frontend/shell/vr_settings.cpp:290
 msgid "First person is the one made for VR."
 msgstr "Góc nhìn thứ nhất được làm cho VR."
 
-#: port/frontend/shell/vr_settings.cpp:274 port/frontend/shell/vr_settings.cpp:276
+#: port/frontend/shell/vr_settings.cpp:291 port/frontend/shell/vr_settings.cpp:293
 msgid "First person"
 msgstr "Góc nhìn thứ nhất"
 
-#: port/frontend/shell/vr_settings.cpp:274 port/frontend/shell/vr_settings.cpp:276
+#: port/frontend/shell/vr_settings.cpp:291 port/frontend/shell/vr_settings.cpp:293
 msgid "Third person"
 msgstr "Góc nhìn thứ ba"
 
-#: port/frontend/shell/vr_settings.cpp:275
+#: port/frontend/shell/vr_settings.cpp:292
 msgid "Cutscenes"
 msgstr "Đoạn phim"
 
-#: port/frontend/shell/vr_settings.cpp:275
+#: port/frontend/shell/vr_settings.cpp:292
 msgid "Mixed shows each scene as it works best."
 msgstr "Kết hợp cho mỗi cảnh cách hiển thị tốt nhất."
 
-#: port/frontend/shell/vr_settings.cpp:276
+#: port/frontend/shell/vr_settings.cpp:293
 msgid "Mixed"
 msgstr "Kết hợp"
 
-#: port/frontend/shell/vr_settings.cpp:277
+#: port/frontend/shell/vr_settings.cpp:294
 msgid "Play position"
 msgstr "Tư thế chơi"
 
-#: port/frontend/shell/vr_settings.cpp:278
+#: port/frontend/shell/vr_settings.cpp:295
 msgid "Standing"
 msgstr "Đứng"
 
-#: port/frontend/shell/vr_settings.cpp:278
+#: port/frontend/shell/vr_settings.cpp:295
 msgid "Seated"
 msgstr "Ngồi"
 
-#: port/frontend/shell/vr_settings.cpp:279
+#: port/frontend/shell/vr_settings.cpp:296
 msgid "Height"
 msgstr "Độ cao"
 
-#: port/frontend/shell/vr_settings.cpp:279
+#: port/frontend/shell/vr_settings.cpp:296
 msgid "Raises or lowers your eyes in the game."
 msgstr "Nâng hoặc hạ mắt bạn trong trò chơi."
 
-#: port/frontend/shell/vr_settings.cpp:282
+#: port/frontend/shell/vr_settings.cpp:299
 msgid "Turning"
 msgstr "Xoay"
 
-#: port/frontend/shell/vr_settings.cpp:282
+#: port/frontend/shell/vr_settings.cpp:299
 msgid "Snap turns in steps are easier on the stomach."
 msgstr "Xoay theo nấc dễ chịu hơn cho dạ dày."
 
-#: port/frontend/shell/vr_settings.cpp:283 port/frontend/shell/vr_settings.cpp:283 port/frontend/shell/vr_settings.cpp:283
+#: port/frontend/shell/vr_settings.cpp:300 port/frontend/shell/vr_settings.cpp:300 port/frontend/shell/vr_settings.cpp:300
 msgid "Snap {0}"
 msgstr "Nấc {0}"
 
-#: port/frontend/shell/vr_settings.cpp:283
+#: port/frontend/shell/vr_settings.cpp:300
 msgid "Smooth, slow"
 msgstr "Mượt, chậm"
 
-#: port/frontend/shell/vr_settings.cpp:283
+#: port/frontend/shell/vr_settings.cpp:300
 msgid "Smooth, fast"
 msgstr "Mượt, nhanh"
 
-#: port/frontend/shell/vr_settings.cpp:284
+#: port/frontend/shell/vr_settings.cpp:301
 msgid "Walk towards"
 msgstr "Đi về phía"
 
-#: port/frontend/shell/vr_settings.cpp:285
+#: port/frontend/shell/vr_settings.cpp:302
 msgid "Where you look"
 msgstr "Nơi bạn nhìn"
 
-#: port/frontend/shell/vr_settings.cpp:285
+#: port/frontend/shell/vr_settings.cpp:302
 msgid "Where the controller points"
 msgstr "Nơi tay cầm chỉ"
 
-#: port/frontend/shell/vr_settings.cpp:286
+#: port/frontend/shell/vr_settings.cpp:303
 msgid "Swings"
 msgstr "Vung kiếm"
 
-#: port/frontend/shell/vr_settings.cpp:286
+#: port/frontend/shell/vr_settings.cpp:303
 msgid "Relaxed counts smaller swings as hits."
 msgstr "Thoải mái tính cả cú vung nhỏ."
 
-#: port/frontend/shell/vr_settings.cpp:287
+#: port/frontend/shell/vr_settings.cpp:304
 msgid "Normal"
 msgstr "Bình thường"
 
-#: port/frontend/shell/vr_settings.cpp:287
+#: port/frontend/shell/vr_settings.cpp:304
 msgid "Relaxed"
 msgstr "Thoải mái"
 
-#: port/frontend/shell/vr_settings.cpp:288
+#: port/frontend/shell/vr_settings.cpp:305
 msgid "One hit per swing"
 msgstr "Một đòn mỗi lần vung"
 
-#: port/frontend/shell/vr_settings.cpp:289
+#: port/frontend/shell/vr_settings.cpp:306
 msgid "Left-handed"
 msgstr "Thuận tay trái"
 
-#: port/frontend/shell/vr_settings.cpp:291
+#: port/frontend/shell/vr_settings.cpp:308
 msgid "Menus follow your view"
 msgstr "Menu theo hướng nhìn"
 
-#: port/frontend/shell/vr_settings.cpp:292
+#: port/frontend/shell/vr_settings.cpp:309
 msgid "Menu distance"
 msgstr "Khoảng cách menu"
 
-#: port/frontend/shell/vr_settings.cpp:297
+#: port/frontend/shell/vr_settings.cpp:314
 msgid "Menu size"
 msgstr "Kích thước menu"
 
-#: port/frontend/shell/vr_settings.cpp:302
+#: port/frontend/shell/vr_settings.cpp:319
 msgid "Black bars in cutscenes"
 msgstr "Viền đen trong đoạn phim"
 
-#: port/frontend/shell/vr_settings.cpp:304
+#: port/frontend/shell/vr_settings.cpp:321
 msgid "Hand angle"
 msgstr "Góc tay"
 
-#: port/frontend/shell/vr_settings.cpp:304
+#: port/frontend/shell/vr_settings.cpp:321
 msgid "Tilts Link's hands against the Sense controllers, if they point wrong."
 msgstr "Nghiêng tay Link so với tay cầm Sense, nếu chỉ sai hướng."
 
-#: port/frontend/shell/vr_settings.cpp:306
+#: port/frontend/shell/vr_settings.cpp:323
 msgid "Aim angle"
 msgstr "Góc ngắm"
 
-#: port/frontend/shell/vr_settings.cpp:306
+#: port/frontend/shell/vr_settings.cpp:323
 msgid "Tilts where the bow and the hands aim."
 msgstr "Nghiêng hướng ngắm của cung và tay."
 
-#: port/frontend/shell/vr_settings.cpp:309
+#: port/frontend/shell/vr_settings.cpp:326
 msgid "Back to BetterVR's defaults"
 msgstr "Về mặc định của BetterVR"
 
-#: port/frontend/shell/vr_settings.cpp:309
+#: port/frontend/shell/vr_settings.cpp:326
 msgid "Every setting on this page as BetterVR comes."
 msgstr "Mọi cài đặt trên trang này như BetterVR mặc định."
 
-#: port/frontend/shell/vr_settings.cpp:349
+#: port/frontend/shell/vr_settings.cpp:367
 msgid "VR settings as BetterVR comes"
 msgstr "Cài đặt VR như BetterVR mặc định"
 
@@ -8336,8 +8336,8 @@ msgid "Continues. Nothing here has to be chosen now: every row of this page is a
 msgstr "Tiếp tục. Không cần chọn gì ở đây ngay bây giờ: mọi mục của trang này cũng có trong Cài đặt, ở bên của nó."
 
 #: port/frontend/shell/welcome.cpp:207 port/frontend/shell/whatsnew.cpp:82
-msgid "PS5-ECAM {0}"
-msgstr "PS5-ECAM {0}"
+msgid "BotW VR {0}"
+msgstr "BotW VR {0}"
 
 #: port/frontend/shell/welcome.cpp:208
 msgid "New in this version"
@@ -8451,8 +8451,8 @@ msgid "Boot log not written (/data is unreachable)"
 msgstr "Chưa ghi nhật ký khởi động (không truy cập được /data)"
 
 #: port/main_ps5.cpp:598
-msgid "PS5-ECAM cannot reach /data. Load a HEN with PPSA98720 in its app jailbreak list, or elfldr, then restart PS5-ECAM."
-msgstr "PS5-ECAM không truy cập được /data. Nạp HEN có PPSA98720 trong danh sách app jailbreak, hoặc elfldr, rồi khởi động lại PS5-ECAM."
+msgid "BotW VR cannot reach /data. Load a HEN with PPSA98720 in its app jailbreak list, or elfldr, then restart BotW VR."
+msgstr "BotW VR không truy cập được /data. Nạp HEN có PPSA98720 trong danh sách app jailbreak, hoặc elfldr, rồi khởi động lại BotW VR."
 
 #: port/main_ps5.cpp:710
 msgid "This session: Azahar (3DS); Cemu's emulated Wii U is not started"
@@ -8549,12 +8549,12 @@ msgstr ""
 "Cài đặt và trạng thái đã lưu là của riêng nó: không trình giả lập nào khác đọc chúng."
 
 #: port/retro/launch.cpp:34
-msgid "in this copy of PS5-ECAM"
-msgstr "có trong bản PS5-ECAM này"
+msgid "in this copy of BotW VR"
+msgstr "có trong bản BotW VR này"
 
 #: port/retro/launch.cpp:34
-msgid "not in this copy of PS5-ECAM"
-msgstr "không có trong bản PS5-ECAM này"
+msgid "not in this copy of BotW VR"
+msgstr "không có trong bản BotW VR này"
 
 #: port/retro/launch.cpp:42
 msgid "The emulator could not be started."
