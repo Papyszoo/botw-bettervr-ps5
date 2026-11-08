@@ -12,7 +12,8 @@ tested and working on his console with the PS VR2 Sense controllers and with a D
 
 - **`hmd2.h`, `hmd2.cpp`, `hmd2_exports.h`:** the library.
   - Loads libSceHmd2, libSceVrTracker2 and libSceVrHand at runtime. It finds their functions with
-    `sceKernelDlsym`, or with export tables for firmware 13.60 and 7.61.
+    `sceKernelDlsym`, or with export tables for firmware 13.60, 12.40 (12.20), 11.60, 10.x, 9.00, 8.40, 7.61 (7.20) and 5.50.
+    VrHand has tables for 12.20 and later only.
   - Opens the VideoOut bus-32 port and registers the eye buffers.
   - Does the per-frame BeginFrame / predicted display time / SetParam / SubmitFlip sequence, with
     HLA-PSVR2's pacing and re-submit of abandoned frames.
@@ -41,6 +42,12 @@ tested and working on his console with the PS VR2 Sense controllers and with a D
   from, in place of the one `begin_frame()` predicted. The OpenXR runtime over hmd2
   (`port/bettervr/xr`) takes that pose from the views BetterVR submits. `submit()` itself is
   unchanged.
+
+- Export tables for 12.40, 11.60, 10.x, 9.00, 8.40 and 5.50 (2026-11-08): `hmd2_exports.h` is the
+  one regenerated in photo-splat-vr at commit `143d355`, which adds those firmware to Hmd2 and
+  VrTracker2 (and 12.40 to VrHand). Fixes issue #2 (12.40: "no export table for this firmware").
+  Only 13.60 and 12.40 have run on a console, by PS5VR; the rest are checked against that firmware's
+  libraries, not run.
 
 ## RADV versions
 
