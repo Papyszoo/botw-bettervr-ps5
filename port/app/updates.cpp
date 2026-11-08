@@ -38,14 +38,14 @@ namespace ps5update
 {
 	namespace
 	{
-		// the repository by its name, then by its name before 5.0.0 (GitHub sends a renamed repository's
-		// old address on to the new one): the first that answers is asked for the rest
-		constexpr const char* kRepositories[] = {"premohq/PS5-ECAM", "premohq/PS5CEMU-HAR"};
+		// this fork's repository: its latest release (GitHub leaves out pre-releases and drafts there, so
+		// the milestone builds are never offered) and that release's ZIP and SHA256SUMS, attached to it
+		constexpr const char* kRepositories[] = {"Papyszoo/botw-bettervr-ps5"};
 		std::string s_repository = kRepositories[0]; // under s_mutex: the one that answered
-		// the releases branch: each release's ZIP (PS5-ECAM-<tag>.zip, the PPSA98720 folder) and
-		// SHA256SUMS for all of them
-		std::string Files(const std::string& repository) { return "https://raw.githubusercontent.com/" + repository + "/releases/"; }
-		constexpr const char* kHosts[] = {"api.github.com", "raw.githubusercontent.com"};
+		// the release's files (BotW-VR-v<version>.zip, the PPSA98720 folder, and SHA256SUMS): github.com sends
+		// them on to its asset hosts, which are resolved here too
+		std::string Files(const std::string& repository, const std::string& tag) { return "https://github.com/" + repository + "/releases/download/" + tag + "/"; }
+		constexpr const char* kHosts[] = {"api.github.com", "github.com", "objects.githubusercontent.com", "release-assets.githubusercontent.com"};
 		constexpr uint64_t kMaxDownload = 512ull << 20;
 
 		std::mutex s_mutex;
@@ -408,7 +408,9 @@ namespace ps5update
 				body.clear();
 				if (Fetch(resolve, std::string("https://api.github.com/repos/") + repository + "/releases/latest", body, 10,
 						"Accept: application/vnd.github+json") &&
-					!json.Parse(body.c_str()).HasParseError() && json.IsObject() && json.HasMember("tag_name") && json["tag_name"].IsString())
+					!json.Parse(body.c_str()).HasParseError() && json.IsObject() && json.HasMember("tag_name") && json["tag_name"].IsString() &&
+					!(json.HasMember("prerelease") && json["prerelease"].IsBool() && json["prerelease"].GetBool()) &&
+					!(json.HasMember("draft") && json["draft"].IsBool() && json["draft"].GetBool()))
 				{
 					std::lock_guard lock(s_mutex);
 					s_repository = repository;
@@ -451,10 +453,9 @@ namespace ps5update
 				std::lock_guard lock(s_mutex);
 				repository = s_repository;
 			}
-			const std::string releases = Files(repository);
-			// the release's ZIP by the app's name, else by its name before 5.0.0
-			std::string zipName = fmt::format("PS5-ECAM-{}.zip", latest);
-			const std::string oldName = fmt::format("PS5CEMU-HAR-{}.zip", latest);
+			const std::string releases = Files(repository, latest);
+			// the release's ZIP: its tag with a "v", whether the tag has one or not
+			const std::string zipName = fmt::format("BotW-VR-v{}.zip", latest[0] == 'v' || latest[0] == 'V' ? latest.substr(1) : latest);
 			// the release's checksum, from the sums beside it
 			std::string sums, expected;
 			if (!Fetch(resolve, releases + "SHA256SUMS", sums, 20))
@@ -473,22 +474,8 @@ namespace ps5update
 				start = end + 1;
 			}
 			if (expected.size() != 64)
-				for (size_t start = 0; start < sums.size();)
-				{
-					size_t end = sums.find('\n', start);
-					if (end == std::string::npos)
-						end = sums.size();
-					const std::string line = sums.substr(start, end - start);
-					if (line.size() > 66 && line.find(oldName) != std::string::npos)
-					{
-						expected = line.substr(0, 64);
-						zipName = oldName;
-					}
-					start = end + 1;
-				}
-			if (expected.size() != 64)
 			{
-				Fail(ps5lang::TrF("The releases branch has no checksum for {0}", zipName));
+				Fail(ps5lang::TrF("The release has no checksum for {0}", zipName));
 				return;
 			}
 
@@ -645,8 +632,8 @@ namespace ps5update
 		}
 	}
 
-	// BotW VR (docs/bettervr-ps5): no updates from premohq's PS5-ECAM, whose release is another app
-	// (PPSA99360) and would be unpacked over this one. Its builds are the fork's pre-releases.
+	// BotW VR (docs/bettervr-ps5): the updater asks this fork's releases (not premohq's PS5-ECAM, another
+	// app that would be unpacked over this one), but stays off until a release of ours is tried on the console.
 	constexpr bool kOwnUpdates = false;
 
 	void Start()
