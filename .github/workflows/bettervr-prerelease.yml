@@ -6,7 +6,9 @@
 #   notes.md     the release notes
 #   SHA256SUMS   the files to attach, each split into parts under 95 MB (name.part-00, ...)
 # This workflow joins the parts, checks every file against SHA256SUMS, creates the pre-release on
-# TARGET, and deletes the staging branch.
+# TARGET, and deletes the staging branch. Test builds use TAG=testing, one rolling pre-release: an
+# existing one is deleted with its tag first. A pre-release tag with a digit is refused, because
+# ProsperoStore's update bot ships every release whose tag has a digit to store users.
 name: BetterVR pre-release
 
 on:
@@ -44,7 +46,9 @@ jobs:
           TARGET=$(sed -n 's/^TARGET=//p' release.env)
           TITLE=$(sed -n 's/^TITLE=//p' release.env)
           [[ "$GITHUB_REF_NAME" == "staging/$TAG" && "$TARGET" =~ ^[0-9a-f]{40}$ ]] || { echo "release.env does not match the branch"; exit 1; }
+          if [[ "$TAG" =~ [0-9] ]]; then echo "A pre-release tag must not contain a digit (the store bot would ship it): use TAG=testing"; exit 1; fi
           files=$(awk '{print $2}' SHA256SUMS)
+          gh release delete "$TAG" --repo "$GITHUB_REPOSITORY" --cleanup-tag -y || true
           gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --prerelease --target "$TARGET" \
             --title "$TITLE" --notes-file notes.md $files SHA256SUMS
       - name: Delete the staging branch

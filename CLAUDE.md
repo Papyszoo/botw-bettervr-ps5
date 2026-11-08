@@ -51,6 +51,10 @@ Read these before you plan anything:
   continues the last. Record build times in `STATUS.md`.
 - **Disk:** writable space is a fixed allowance. Delete build trees you no longer need, and keep
   `.deps/` once fetched.
-- **Test builds:** publish console test builds as GitHub **pre-releases** on this repo. Name them
-  after the milestone (`m1-baseline`, `m2-xr-quad`, …), attach the app zip, and write release
-  notes that start with "Untested on console".
+- **Test builds:** publish console test builds as the one rolling GitHub **pre-release** tagged
+  `testing`, replaced for each build. The tag must contain no digits: ProsperoStore's update bot
+  (darkxex/ps5-homebrew-catalog) ships every release whose tag has a digit, pre-releases included, to
+  store users, and only full releases (`v0.1.1`, …) should reach them. Put the milestone or build
+  name (`build20-…`) in the release title and the zip name (earlier pre-releases such as
+  `m10-botw-vr-playable` and `build19-hmd2-fw` used it as the tag). Attach the app zip, and write
+  release notes that start with "Untested on console".

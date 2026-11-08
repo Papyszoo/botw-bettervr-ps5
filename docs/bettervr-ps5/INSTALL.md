@@ -123,8 +123,8 @@ Skip this if your WUA already has update v208 in it.
 
 ## 5. Install this build
 
-1. From the pre-release (`m5-botw-vr` or newer), download `BotW-VR-v5.1.1.zip` and `SHA256SUMS`,
-   and check them on a PC:
+1. From the rolling `testing` pre-release (its title names the build), download the zip and
+   `SHA256SUMS`, and check them on a PC:
 
    ```bash
    sha256sum -c SHA256SUMS --ignore-missing
@@ -134,7 +134,7 @@ Skip this if your WUA already has update v208 in it.
    `/data/homebrew/PPSA99360`, stays as it is.
 3. Let ShadowMount Plus put it on the home screen, as for any homebrew. It shows as **Breath of the
    Wild VR**.
-4. It doesn't update itself: newer builds are this repository's pre-releases, copied over the same
+4. It doesn't update itself: newer builds replace the `testing` pre-release, copied over the same
    way.
 
 **Upgrading a build from before `m6`:** copying over `/data/homebrew/PPSA98720` does not refresh the
