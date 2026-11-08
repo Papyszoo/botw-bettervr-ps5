@@ -9,7 +9,7 @@ SHELL := /bin/bash
 MAKEFLAGS += --no-print-directory
 
 # The release's version, set here only: port/CMakeLists.txt and tools/package.sh (param.json) read it
-VERSION := 0.1.0
+VERSION := 0.1.1
 APP := build/app/PPSA98720
 JOBS ?= $(shell nproc)
 export JOBS

@@ -3,6 +3,22 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-08: v0.1.1 (built, untested on console as a whole)
+
+- **Contains:** hmd2 export tables for 5.50 to 13.60 (issue #2, see the entry below), the app renamed
+  to "BotW VR", the updater pointed at this repository (still off: `kOwnUpdates=false`), and the
+  install progress showing a file count (issue #1).
+- Version 0.1.1 (Makefile `VERSION`, `sce_sys/param.json` contentVersion 00.001.100). Its VR code
+  matches build19.
+- **Built, untested on console as a whole.** Only build19 has a console report (Test request 29).
+
+**Test request 30 (v0.1.1).** Install `BotW-VR-v0.1.1.zip` from the release.
+
+1. Does the home-screen title read "BotW VR"?
+2. Do VR start and play as in build19?
+3. Install an update or DLC: does the progress show "files N / M", and does the install finish?
+4. Send the `hmd2: ... firmware table ...` log lines and the logs zip.
+
 ## 2026-11-08: issue #2, hmd2 export tables for more firmware (untested on console)
 
 - **Cause:** on a 12.40 console hmd2 logged "libSceHmd2.sprx: no export table for this firmware" and
@@ -26,6 +42,10 @@ pre-release and start Breath of the Wild in VR.
    `libSceVrTracker2.sprx` and `libSceVrHand.sprx` lines after it.
 2. Test request 28's three checks (flashes, rune window, map) still apply to this build.
 3. Send the logs zip. When this passes, the issue #2 reporter (12.40) gets the build.
+
+**Result (Test request 29, build19, firmware 13.60), Patryk:** "Map is working better now and I
+haven't noticed any wrong frames displayed. I couldn't test rune popup but it doesn't matter now."
+He sent no logs, so which export table was picked is not confirmed.
 
 ## 2026-11-07 (build18): autosave flashes, the rune window's pose, and the UI blend fix (built, untested on console)
 
