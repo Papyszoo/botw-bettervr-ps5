@@ -15,6 +15,17 @@ tested.
 - **Untested on console.** PS5VR ran 13.60 and 12.40; the other tables were only checked against
   that firmware's libraries. PS5VR notes 12.40 playback can become choppy after a few seconds.
 - No VrHand table below 12.20 (it takes other parameters there), so hand tracking is unavailable there.
+- **build19** = pre-release `build19-hmd2-fw` (CI build of `6dde48b`: build18 plus these tables; the
+  app still reports v0.1.0).
+
+**Test request 29 (build19, firmware 13.60).** Install `BotW-VR-build19-hmd2-fw.zip` from the
+pre-release and start Breath of the Wild in VR.
+
+1. Does the headset start and the game play in VR as in build18? Send the line
+   `hmd2: libSceHmd2.sprx: firmware table 13.60, base …` (it should still pick 13.60), and the
+   `libSceVrTracker2.sprx` and `libSceVrHand.sprx` lines after it.
+2. Test request 28's three checks (flashes, rune window, map) still apply to this build.
+3. Send the logs zip. When this passes, the issue #2 reporter (12.40) gets the build.
 
 ## 2026-11-07 (build18): autosave flashes, the rune window's pose, and the UI blend fix (built, untested on console)
 
