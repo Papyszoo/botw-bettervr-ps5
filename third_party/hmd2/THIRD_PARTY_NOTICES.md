@@ -35,7 +35,21 @@ content, merged here.
     swizzle instead of an RGBA8 AGC target.
   - `app/src/vr_exports_1360.h`, `app/src/vr_exports_761.h`: the export offsets
     and anchor strings, now in `tools/export-tables/tables.json` and emitted as
-    `platform/ps5/hmd2/hmd2_exports.h`.
+    `platform/ps5/hmd2/hmd2_exports.h`. The same files for 12.40, 11.60, 10.00,
+    8.40 and 5.50 (`vr_exports_1240.h`, `_1160.h`, `_1000.h`, `_840.h`,
+    `_550.h`).
+
+### Ghost-VR
+
+- Upstream: <https://theghostonline.dev/theghostonline/Ghost-VR>
+- License: GNU General Public License v3.0 or later
+- Notice: Copyright (C) 2026 theghostonline. Ghost-VR is distributed under the
+  GNU General Public License v3.0 or later.
+- Used in `platform/ps5/hmd2/hmd2_exports.h` (via
+  `tools/export-tables/tables.json`): `vr_exports.h`'s libSceHmd2 and
+  libSceVrTracker2 offsets and anchor strings for firmware 9.00, which PS5VR
+  has no table for. Its tables for the other firmware added here (12.40, 11.60,
+  10.x, 8.40, 5.50) were compared with PS5VR's and agree.
 - Modified for this project: the eye buffers are direct memory filled from the
   CPU, not AGC render targets, so the library needs no GPU API.
 

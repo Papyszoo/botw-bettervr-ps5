@@ -3,6 +3,19 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-08: issue #2, hmd2 export tables for more firmware (untested on console)
+
+- **Cause:** on a 12.40 console hmd2 logged "libSceHmd2.sprx: no export table for this firmware" and
+  "sceHmd2Initialize not resolved". The libraries keep their functions out of the symbol tables, and
+  hmd2 had offset tables for 13.60 and 7.61 only. (boot.log's "13.09" is probably a kstuff spoof.)
+- **Fix:** `third_party/hmd2/hmd2_exports.h` regenerated in photo-splat-vr (`143d355`). Hmd2 and
+  VrTracker2 now have 13.60, 12.40 (12.20), 11.60, 10.x (10.00 to 10.60), 9.00, 8.40, 7.61 (7.20) and
+  5.50; VrHand 13.60 and 12.40. Data from PS5VR and Ghost-VR, which agree wherever both have a
+  firmware; 9.00 is Ghost-VR only. `hmd2.cpp` is unchanged.
+- **Untested on console.** PS5VR ran 13.60 and 12.40; the other tables were only checked against
+  that firmware's libraries. PS5VR notes 12.40 playback can become choppy after a few seconds.
+- No VrHand table below 12.20 (it takes other parameters there), so hand tracking is unavailable there.
+
 ## 2026-11-07 (build18): autosave flashes, the rune window's pose, and the UI blend fix (built, untested on console)
 
 **Built, untested on console.** Three fixes, each behind a switch in
