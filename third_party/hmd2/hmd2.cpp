@@ -21,6 +21,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <unistd.h>
 
 // System functions, declared here as PS5VR declares them: the payload SDK has
 // stubs for all of them but no headers.
@@ -30,6 +31,7 @@ const char *sceKernelGetFsSandboxRandomWord(void);
 int sceKernelLoadStartModule(const char *path, size_t argc, const void *argv, uint32_t flags,
                              void *opt, int *res);
 int sceKernelDlsym(int handle, const char *name, void **addr);
+int sceKernelGetModuleList(int32_t *handles, size_t num, size_t *actual);
 int sceKernelGetModuleInfo(int handle, void *info);
 int sceKernelAllocateDirectMemory(int64_t start, int64_t end, size_t len, size_t align, int type,
                                   int64_t *offset);
@@ -367,17 +369,63 @@ void flush_cpu_writes(const void *address, size_t bytes) {
 }
 
 // -- module loading ---------------------------------------------------------
+uintptr_t module_base(int handle, const char *file, ModuleInfo *info);
+
 // id 0: no sysmodule to load, only the library path (libSceVrHand).
 int load_sysmodule(uint32_t id, const char *name) {
     const int rc = id != 0 ? sceSysmoduleLoadModule(id) : 0;
     char path[160];
     std::snprintf(path, sizeof path, "/%s/common/lib/%s.sprx", sceKernelGetFsSandboxRandomWord(), name);
     int res = 0;
-    const int handle = sceKernelLoadStartModule(path, 0, nullptr, 0, nullptr, &res);
+    int handle = sceKernelLoadStartModule(path, 0, nullptr, 0, nullptr, &res);
     if (id != 0)
         logf("hmd2: %s: sysmodule 0x%x -> 0x%08x", name, id, (unsigned)rc);
     logf("hmd2: %s: load \"%s\" -> handle 0x%x (res 0x%08x)", name, path, handle,
          (unsigned)res);
+    const char *found = handle >= 0 ? "sandbox path" : nullptr;
+    if (handle < 0) {
+        // A process outside the app's sandbox has no /<sandbox word>/ view of the system libraries;
+        // they are at their plain paths there. Which ones exist is logged once.
+        char plain[2][160];
+        std::snprintf(plain[0], sizeof plain[0], "/system/common/lib/%s.sprx", name);
+        std::snprintf(plain[1], sizeof plain[1], "/system_ex/common_ex/lib/%s.sprx", name);
+        const bool here[3] = {access(path, F_OK) == 0, access(plain[0], F_OK) == 0,
+                              access(plain[1], F_OK) == 0};
+        static uint32_t said = 0;
+        const uint32_t bit = 1u << (id & 31);
+        if (!(said & bit)) {
+            said |= bit;
+            logf("hmd2: %s: euid %d, sandbox \"%s\" (%s), %s (%s), %s (%s)", name, (int)geteuid(),
+                 sceKernelGetFsSandboxRandomWord(), here[0] ? "exists" : "missing", plain[0],
+                 here[1] ? "exists" : "missing", plain[1], here[2] ? "exists" : "missing");
+        }
+        for (int i = 0; i < 2 && handle < 0; i++) {
+            if (!here[i + 1])
+                continue;
+            handle = sceKernelLoadStartModule(plain[i], 0, nullptr, 0, nullptr, &res);
+            logf("hmd2: %s: load \"%s\" -> handle 0x%x (res 0x%08x)", name, plain[i], handle,
+                 (unsigned)res);
+            if (handle >= 0)
+                found = "plain path";
+        }
+        // Last step, as Ghost-VR's PS5XR: a module the process already holds, found by file name
+        // (a title that loaded it before it changed its credentials).
+        if (handle < 0) {
+            char file[96];
+            std::snprintf(file, sizeof file, "%s.sprx", name);
+            int32_t handles[256];
+            size_t count = 0;
+            if (sceKernelGetModuleList(handles, 256, &count) == 0)
+                for (size_t i = 0; i < count && i < 256 && handle < 0; i++) {
+                    ModuleInfo info;
+                    if (module_base(handles[i], file, &info) != 0) {
+                        handle = handles[i];
+                        found = "already loaded";
+                    }
+                }
+        }
+    }
+    logf("hmd2: %s: found by: %s (handle 0x%x)", name, found ? found : "none", handle);
     return handle;
 }
 
