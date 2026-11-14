@@ -87,6 +87,16 @@ jobs:
             bettervr-ccache-${{ hashFiles('tools/deps.json') }}-
             bettervr-ccache-
 
+      # a cached .deps keeps the ps5 branch of the last run's patches: start it from the pin again, so
+      # a changed patch in patches/bettervr is applied (tools/build-bettervr.sh refuses a branch that differs)
+      - name: Patches from the pin
+        shell: bash
+        run: |
+          if [ -d .deps/BotW-BetterVR/.git ]; then
+            pin=$(python3 -c 'import json,sys; print(next(i["commit"] for i in json.load(open(sys.argv[1]))["items"] if i["name"] == "bettervr"))' tools/deps.json)
+            git -C .deps/BotW-BetterVR checkout -q -f -B ps5 "$pin"
+          fi
+
       - name: Build
         shell: bash
         run: |
