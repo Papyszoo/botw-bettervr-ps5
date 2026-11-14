@@ -1,2 +1,4 @@
 VRLayer_NegotiateLoaderLayerInterfaceVersion
 BetterVR_PS5_Stop
+BetterVR_PS5_TvPresent
+BetterVR_PS5_MenuProbe

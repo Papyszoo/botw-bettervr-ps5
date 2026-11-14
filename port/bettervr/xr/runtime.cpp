@@ -140,6 +140,15 @@ namespace
 		PS5Cemu_LogLine(std::string("[vr-xr] ") + line);
 	}
 
+	// The in-game menu's probe (BetterVR_PS5_MenuProbe): how often the headset's frame loop turns, whole-run
+	// counts that the menu's open and close lines subtract. Atomics: the loop's threads, Cemu's GPU thread
+	// and the app's render thread each touch them.
+	// (hmd2's own frames_submitted counts the submits)
+	std::atomic<uint64_t> s_waitFrames{0}, s_endFrames{0}, s_tvPresents{0};
+	std::atomic<bool> s_live{false}; // Hmd2 is up for a session: s.session->hmdUp, readable without s.lock
+	std::atomic<uint64_t> s_menuOpenedAt{0}, s_menuLoggedAt{0}; // sceKernelGetProcessTime, us; 0 closed
+	std::atomic<uint64_t> s_menuAtOpen[4] = {};					// the counters when it opened
+
 	XrTime Now()
 	{
 		return (XrTime)sceKernelGetProcessTime() * 1000;
@@ -1030,6 +1039,7 @@ namespace
 			return false;
 		}
 		session->hmdUp = true;
+		s_live = true;
 		s.fov = hmd2::field_of_view();
 		Log("headset up: %dx%d per eye, %d buffers, %d Hz output, user %d, export table %d, FOV tangents out %.3f in %.3f top %.3f bottom %.3f",
 			hmd2::eye_size(), hmd2::eye_height(), hmd2::buffer_count(), hmd2::refresh_hz(), hmd2::user_id(), hmd2::firmware_table(), s.fov.out,
@@ -1044,6 +1054,7 @@ namespace
 		{
 			hmd2::shutdown();
 			session->hmdUp = false;
+			s_live = false;
 		}
 		if (session->gpuFailed || s.stopped || session->device == VK_NULL_HANDLE || !vk.vkDestroyBuffer)
 			return;
@@ -1731,6 +1742,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrWaitFrame(XrSession session, const XrFrameWaitI
 	if (s.stopped)
 		return Lost();
 	hmd2::wait_slot();
+	s_waitFrames++;
 	std::lock_guard lock(s.lock);
 	if (s.stopped)
 		return Lost();
@@ -1765,6 +1777,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrBeginFrame(XrSession, const XrFrameBeginInfo*)
 
 XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInfo* info)
 {
+	s_endFrames++;
 	std::lock_guard lock(s.lock);
 	if (s.stopped)
 		return Lost();
@@ -2317,6 +2330,44 @@ XRAPI_ATTR XrResult XRAPI_CALL xrGetInstanceProcAddr(XrInstance, const char* nam
 	return XR_ERROR_FUNCTION_UNSUPPORTED;
 }
 
+// port/bettervr/VrPS5.cpp, at each TV frame Cemu presents (SwapBuffer, patches/cemu 0048)
+void BetterVR_PS5_TvPresent()
+{
+	s_tvPresents++;
+}
+
+// app/ingame.cpp, on the render thread: the in-game menu opens (1), closes (0), and each frame it is up (2).
+// Log only: whether the headset's frame loop keeps turning under the menu (xrWaitFrame, xrEndFrame, hmd2
+// submits) and whether Cemu keeps presenting the TV. A line when it opens and closes, and one a second between.
+void BetterVR_PS5_MenuProbe(int what)
+{
+	if (!s_live)
+		return; // no headset: flat play, VR not started, or already off
+	const uint64_t now = sceKernelGetProcessTime();
+	const uint64_t counts[4] = {s_waitFrames, s_endFrames, (uint64_t)hmd2::frames_submitted(), s_tvPresents};
+	if (what == 1)
+	{
+		for (int i = 0; i < 4; i++)
+			s_menuAtOpen[i] = counts[i];
+		s_menuOpenedAt = now;
+		s_menuLoggedAt = now;
+		Log("in-game menu open (xrWaitFrame %llu, xrEndFrame %llu, hmd2 submits %llu, Cemu TV presents %llu so far)",
+			(unsigned long long)counts[0], (unsigned long long)counts[1], (unsigned long long)counts[2], (unsigned long long)counts[3]);
+		return;
+	}
+	if (s_menuOpenedAt == 0 || (what == 2 && now - s_menuLoggedAt < 1'000'000))
+		return;
+	const unsigned long long ms = (now - s_menuOpenedAt) / 1000;
+	if (what == 2)
+		s_menuLoggedAt = now;
+	else
+		s_menuOpenedAt = 0;
+	Log("in-game menu %s%llu ms: xrWaitFrame %llu, xrEndFrame %llu, hmd2 submits %llu, Cemu TV presents %llu",
+		what == 2 ? "still open at " : "closed after ", ms, (unsigned long long)(counts[0] - s_menuAtOpen[0]),
+		(unsigned long long)(counts[1] - s_menuAtOpen[1]), (unsigned long long)(counts[2] - s_menuAtOpen[2]),
+		(unsigned long long)(counts[3] - s_menuAtOpen[3]));
+}
+
 // app/emulator.cpp, before every LoadExec (PS5Cemu_VrStop): Hmd2 off, from any thread. A title that
 // ends with VrTracker2 live faults the tracker (third_party/hmd2/hmd2.h).
 void BetterVR_PS5_Stop()
@@ -2331,6 +2382,7 @@ void BetterVR_PS5_Stop()
 	{
 		hmd2::shutdown();
 		s.session->hmdUp = false;
+		s_live = false;
 		Log("headset off after %llu frames, before the app is replaced", (unsigned long long)s.session->frames);
 	}
 }
