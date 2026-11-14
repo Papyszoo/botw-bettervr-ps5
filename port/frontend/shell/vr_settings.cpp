@@ -7,7 +7,7 @@
 // (false: the flat screen in the headset) and the Sense controllers' gripPitch and aimPitch
 // (port/bettervr/xr/runtime.cpp). Both files are written at each change; the rest of each file
 // (ImGui's other sections, other keys) is kept, and bettervr.json is read again before a write so
-// the switches added outside the app (graphicsPack, reproject) survive Play in VR/TV and Settings > VR.
+// the switches added outside the app (reproject) survive Play in VR/TV and Settings > VR.
 
 #include "shell_internal.h"
 #include "../../app/paths.h"
@@ -195,7 +195,7 @@ namespace ps5shell
 			}
 			return json;
 		}
-		// Read again before a write: the switches in this file (graphicsPack, reproject) are meant to be
+		// Read again before a write: the switches in this file (reproject) are meant to be
 		// added outside the app, and a write from the home screen or Settings > VR must keep them
 		void JsonReload()
 		{

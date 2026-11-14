@@ -535,28 +535,24 @@ void PS5Cemu_BetterVRPrepareGraphicPack()
 }
 
 // app/emulator.cpp, as a game starts, before Cemu activates its graphic packs: for Breath of the
-// Wild, BetterVR's pack and its Graphics pack on when bettervr.json asks for BetterVR and off
-// otherwise, and FPS++ on with it (BetterVR crashes without it), as the player would set them in the
-// game's Graphic packs
-extern "C" float BetterVR_PS5_Setting(const char* name, float fallback);
+// Wild, BetterVR's pack on when bettervr.json asks for BetterVR and off otherwise, and FPS++ on with
+// it (BetterVR crashes without it), as the player would set them in the game's Graphic packs. The
+// Graphics pack (Modified Version For BetterVR) is the player's own choice there: it is not touched
 void PS5Cemu_BetterVRApplyMode(uint64_t titleId)
 {
 	if (!ps5vr::IsBreathOfTheWild(titleId))
 		return;
 	bool betterVR = true;
 	const bool wanted = ps5vr::ReadSwitch(betterVR) && betterVR;
-	// bettervr.json's "graphicsPack": 1 for the Graphics pack's resolution; off until a console has shown its view right
-	const bool graphicsWanted = wanted && BetterVR_PS5_Setting("graphicsPack", 0.0f) != 0.0f;
 	const std::vector<ps5emu::GraphicPackInfo> packs = ps5emu::ListGraphicPacks(titleId);
 	bool found = false;
 	for (size_t i = 0; i < packs.size(); i++)
 	{
 		const bool vrPack = packs[i].name == "Better VR";
 		const bool fpsPack = packs[i].name == "FPS++";
-		const bool graphicsPack = packs[i].name == "Graphics (Modified Version For BetterVR)";
 		if (vrPack)
 			found = true;
-		if ((vrPack && packs[i].enabled != wanted) || (graphicsPack && packs[i].enabled != graphicsWanted) || (fpsPack && wanted && !packs[i].enabled))
+		if ((vrPack && packs[i].enabled != wanted) || (fpsPack && wanted && !packs[i].enabled))
 		{
 			const bool now = ps5emu::ToggleGraphicPack(titleId, i);
 			ps5vr::Log(fmt::format("graphic pack {} turned {} for {}", packs[i].name, now ? "on" : "off", wanted ? "VR" : "the TV"));
