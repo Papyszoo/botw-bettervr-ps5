@@ -20,6 +20,9 @@ namespace CafeSystem { uint64_t GetForegroundTitleId(); }
 // the port's (ps5/log.cpp): a line of the boot log
 void PS5Cemu_LogLine(std::string_view line);
 
+// port/bettervr/xr/runtime.cpp, in BetterVR's object: the in-game menu's probe's counter
+extern "C" void BetterVR_PS5_TvPresent();
+
 namespace ps5vr
 {
 	namespace
@@ -421,6 +424,7 @@ namespace ps5vr
 
 	bool Record(const Frame& frame)
 	{
+		BetterVR_PS5_TvPresent(); // the in-game menu's probe counts the TV's frames
 		std::lock_guard lock(s_lock);
 		if (!Wanted() || s.open)
 			return false;
