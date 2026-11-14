@@ -3,6 +3,48 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-14: build20 (failed VR start, hmd2 load fallback, Graphics pack, menu probe), built, untested on console
+
+- **A failed VR start ends in the library, not a crash (issue #3).** When BetterVR cannot start VR on
+  the first eye clear, patch 0004 calls `BetterVR_PS5_VrFailed`, which logs "[vr] VR did not start
+  (<step, rc>): back to the library", writes the reason as the game's launch error and restarts to
+  the library. Breath of the Wild's page then shows "The game could not start". The game cannot go on
+  flat: its pack's patches already call BetterVR's hooks. Only the first-clear start path is covered.
+- **hmd2 load fallback (issue #3).** When the sandbox-path load fails, `load_sysmodule` logs euid, the
+  sandbox word and which of the sandbox, `/system/common/lib` and `/system_ex/common_ex/lib` paths
+  hold the library, loads the plain path that exists, and last looks the module up among the loaded
+  ones by file name (as Ghost-VR does). One line `hmd2: <name>: found by: ...` says which step worked.
+- **Graphics pack (issue #2).** `PS5Cemu_BetterVRApplyMode` no longer touches "Graphics (Modified
+  Version For BetterVR)" in either mode, so the player's choice in Graphic packs stays. The
+  `graphicsPack` key in bettervr.json is gone. New installs have it off.
+- **Menu probe (issue #2).** INSTALL.md no longer promises BetterVR's R3 menu (it does not exist
+  here; the in-game menu is touchpad click + Options and shows on the TV only). A log-only probe counts
+  xrWaitFrame, xrEndFrame, hmd2 submits and Cemu TV presents while the in-game menu is open, to show
+  whether the headset loop runs under it before any TV-image bridge is built.
+- **Backlog:** the `hmd2.cpp` changes must be carried back to ps5-splat-vr (`platform/ps5/hmd2/hmd2.cpp`):
+  `#include <unistd.h>`, the `sceKernelGetModuleList` extern, the `const char *found ...` block through
+  the `found by` log in `load_sysmodule`, and `const int handle` -> `int handle`.
+- **Built, untested on console.** Pre-release `testing`, titled build20-vr-fallback.
+
+**Test request 31 (VR start, the issue #3 setup or any console).** Install the build and start
+Breath of the Wild in VR. Send the logs zip and every line starting `hmd2: libSceHmd2:` (sysmodule
+line, the `euid ..., sandbox ...` line, each `load ...` line, the `found by: ...` line),
+`hmd2 did not start`, `[vr] VR did not start` and any `[crash]`. Expected: either VR starts (found by:
+plain path or already loaded), or the app returns to the library with "The game could not start" and
+no crash screen. Say which, and the firmware version.
+
+**Test request 32 (Graphics pack toggle).** In Breath of the Wild's Graphic packs turn on "Graphics
+(Modified Version For BetterVR)", quit to the library, start Play in VR, then Play on TV once. Send the
+`graphic pack ... turned` lines and Cemu's `Activate graphic pack` lines. Say whether the pack is
+still on in Graphic packs after each start, and what the VR picture looks like (earlier builds had
+the view offset with this pack on).
+
+**Test request 33 (menu probe).** Start Breath of the Wild in VR and reach the game world. Click the
+touchpad and press Options to open the in-game menu, wait about 5 s, close it with O. Send the logs
+zip. Expected `[vr-xr]` lines: "in-game menu open (xrWaitFrame A, xrEndFrame B, hmd2 submits C, Cemu TV
+presents D so far)", about one "in-game menu still open at N ms" a second, and "in-game menu closed
+after N ms". Counts near N/16.7 mean the headset loop runs under the menu; zeros mean it stalls.
+
 ## 2026-11-08: v0.1.1 (built, untested on console as a whole)
 
 - **Contains:** hmd2 export tables for 5.50 to 13.60 (issue #2, see the entry below), the app renamed
