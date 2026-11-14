@@ -3,6 +3,8 @@
 #include "../app/paths.h"
 #include "../app/own_status.h"
 #include "../app/emulator.h"
+#include "../app/lang.h"
+#include "../frontend/settings.h"
 #include "hmd2.h"
 
 #include <fmt/format.h>
@@ -605,4 +607,20 @@ void PS5Cemu_VrStop()
 {
 	ps5vr::Stop();
 	BetterVR_PS5_Stop();
+}
+
+// BetterVR's layer (patches/bettervr: the first clear through it), when VR did not start: the game
+// ends and the app starts over on Breath of the Wild's page with why, as a game that did not start
+// shows it (ps5settings::RememberSide), not with a crash report. The game cannot go on flat: its
+// pack's patches already call BetterVR's hooks, and the layer has replaced images Cemu made. Returns
+// only when the app could not start itself again (the layer then throws as it did).
+extern "C" void BetterVR_PS5_VrFailed(const char* what)
+{
+	const hmd2::Error error = hmd2::error();
+	std::string reason = error.step && error.step[0] ? fmt::format("{}, {:#010x}", error.step, (uint32_t)error.rc) : std::string(what);
+	ps5vr::Log("VR did not start (" + reason + "): back to the library");
+	// tr: {0} is why the headset did not start, from the log ("load libSceHmd2, 0x80020002"); {1} is the button "Play on TV"
+	ps5settings::RememberSide("wiiu", ps5lang::TrF("VR did not start ({0}). Back in the library: {1} starts the game without the headset. The log has more.",
+		reason, ps5lang::Tr("Play on TV")));
+	ps5emu::RestartToLibrary();
 }

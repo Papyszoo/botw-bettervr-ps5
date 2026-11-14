@@ -94,15 +94,15 @@ msgstr "{0} en el navegador de un celular o una tableta, con control táctil: es
 msgid "A phone or tablet on the PS5's network. Sound stays on the PS5."
 msgstr "Un celular o una tableta en la red de la PS5. El sonido se queda en la PS5."
 
+#. Breath of the Wild's page in BotW VR: start the game on the TV, without the headset
+#: port/bettervr/VrPS5.cpp:626 port/frontend/shell/home.cpp:194 port/frontend/shell/hub.cpp:257
+msgid "Play on TV"
+msgstr "Jugar en la TV"
+
 #. Breath of the Wild's page in BotW VR: start the game in the PS VR2 headset
 #: port/frontend/shell/home.cpp:189 port/frontend/shell/hub.cpp:254
 msgid "Play in VR"
 msgstr "Jugar en RV"
-
-#. Breath of the Wild's page in BotW VR: start the game on the TV, without the headset
-#: port/frontend/shell/home.cpp:194 port/frontend/shell/hub.cpp:257
-msgid "Play on TV"
-msgstr "Jugar en la TV"
 
 #: port/frontend/shell/library.cpp:143
 msgid "Its settings, graphic packs and controllers are loading, and then it looks for your games."

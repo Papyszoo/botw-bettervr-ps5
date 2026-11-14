@@ -335,6 +335,9 @@ namespace ps5settings
 
 	Launcher Load();
 	bool Save(const Launcher& settings);
+	// The side the launcher opens on when the app starts over (and only then), and why the game did
+	// not start, when there is a reason. Reads the settings again: the game's menu may have saved since.
+	void RememberSide(const char* side, const std::string& launchError = {});
 	// A ps5cemu.json Load could not read is moved to ps5cemu.json.broken, and the defaults used, so the
 	// next Save does not write over it (a hand edit's slip costs nothing): where it went, once, then empty
 	std::string TakeBrokenFile();

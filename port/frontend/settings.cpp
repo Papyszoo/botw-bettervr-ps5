@@ -648,6 +648,14 @@ namespace ps5settings
 		return std::rename(temporary.c_str(), ps5paths::LauncherSettings().c_str()) == 0;
 	}
 
+	void RememberSide(const char* side, const std::string& launchError)
+	{
+		Launcher settings = Load();
+		settings.side = side;
+		settings.launchError = launchError;
+		Save(settings);
+	}
+
 	std::string TakeBrokenFile()
 	{
 		std::lock_guard lock(s_brokenMutex);

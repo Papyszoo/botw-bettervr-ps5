@@ -2818,6 +2818,16 @@ msgstr "Azahar hat mittendrin aufgehört; {0}/azahar/log/azahar_log.txt sagt, wa
 msgid "it is not a CIA Azahar can install"
 msgstr "es ist keine CIA, die Azahar installieren kann"
 
+#. {0} is why the headset did not start, from the log ("load libSceHmd2, 0x80020002"); {1} is the button "Play on TV"
+#: port/bettervr/VrPS5.cpp:625
+msgid "VR did not start ({0}). Back in the library: {1} starts the game without the headset. The log has more."
+msgstr "VR wurde nicht gestartet ({0}). Zurück in der Bibliothek: „{1}“ startet das Spiel ohne Headset. Das Protokoll hat mehr."
+
+#. Breath of the Wild's page in BotW VR: start the game on the TV, without the headset
+#: port/bettervr/VrPS5.cpp:626 port/frontend/shell/home.cpp:194 port/frontend/shell/hub.cpp:257
+msgid "Play on TV"
+msgstr "Auf dem Fernseher spielen"
+
 #: port/cemu/MemMapperPS5.cpp:139
 msgid "The PS5 has no memory left for this Wii U game, so it has to stop. The boot log has the details."
 msgstr "Die PS5 hat keinen Speicher mehr für dieses Wii U-Spiel, daher muss es beendet werden. Das Boot-Protokoll enthält die Details."
@@ -3393,11 +3403,6 @@ msgstr "In VR spielen"
 #: port/frontend/shell/home.cpp:191
 msgid "In the PS VR2 headset, with the Sense controllers"
 msgstr "Im PS VR2-Headset, mit den Sense-Controllern"
-
-#. Breath of the Wild's page in BotW VR: start the game on the TV, without the headset
-#: port/frontend/shell/home.cpp:194 port/frontend/shell/hub.cpp:257
-msgid "Play on TV"
-msgstr "Auf dem Fernseher spielen"
 
 #. BotW VR's home, under Play on TV
 #: port/frontend/shell/home.cpp:196

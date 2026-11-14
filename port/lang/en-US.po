@@ -39,15 +39,15 @@ msgstr "A on Circle and B on Cross, where the 3DS has them, or the other way aro
 msgid "Centre pad"
 msgstr "Center pad"
 
+#. Breath of the Wild's page in BotW VR: start the game on the TV, without the headset
+#: port/bettervr/VrPS5.cpp:626 port/frontend/shell/home.cpp:194 port/frontend/shell/hub.cpp:257
+msgid "Play on TV"
+msgstr "Play on TV"
+
 #. Breath of the Wild's page in BotW VR: start the game in the PS VR2 headset
 #: port/frontend/shell/home.cpp:189 port/frontend/shell/hub.cpp:254
 msgid "Play in VR"
 msgstr "Play in VR"
-
-#. Breath of the Wild's page in BotW VR: start the game on the TV, without the headset
-#: port/frontend/shell/home.cpp:194 port/frontend/shell/hub.cpp:257
-msgid "Play on TV"
-msgstr "Play on TV"
 
 #: port/frontend/shell/hub.cpp:239 port/frontend/shell/shell.cpp:1921
 msgid "Favourite"

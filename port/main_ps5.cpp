@@ -166,17 +166,6 @@ namespace
 			settings.shaderNotices, {settings.touchpadClick[0], settings.touchpadClick[1], settings.touchpadClick[2], settings.touchpadClick[3]}};
 	}
 
-	// The side the launcher opens on when the app starts over (and only then), and why the game did
-	// not start, when there is a reason.
-	void RememberSide(const char* side, const std::string& launchError = {})
-	{
-		// the game's menu may have saved settings since the launcher's were read
-		ps5settings::Launcher settings = ps5settings::Load();
-		settings.side = side;
-		settings.launchError = launchError;
-		ps5settings::Save(settings);
-	}
-
 	// The 119.88 Hz mode for the next game, where the setting asks for it. The driver configures
 	// VideoOut once a process, when a renderer first asks for the display's modes, and offers 119.88
 	// Hz only to a title whose param.json declares high-frame-rate output. It reads /app0's unless
@@ -566,7 +555,7 @@ int main(int argc, char* argv[])
 			ps5esde::BackToFrontend(ps5settings::Load()); // EmulationStation's game: back to it
 		if (ps5emu::ExitAfterGame())
 			ps5emu::ExitApp();
-		RememberSide(side);
+		ps5settings::RememberSide(side);
 		ps5emu::RestartToLibrary();
 	};
 	// A 3DS or DS game's emulator, shut down whole, gives way to the launcher in this process: no
@@ -774,7 +763,7 @@ int main(int argc, char* argv[])
 			// after a game in this process the launcher could not draw again: from a fresh process, as
 			// before it came back in place
 			ps5log::Line("[main] the launcher could not start again after the game: starting PS5-ECAM over");
-			RememberSide(ps5launcher::SideName(*gameRan));
+			ps5settings::RememberSide(ps5launcher::SideName(*gameRan));
 			ps5emu::RestartToLibrary();
 		}
 		if (outcome != ps5shell::Outcome::Chosen || !choice)
@@ -811,7 +800,7 @@ int main(int argc, char* argv[])
 		{
 			ps5log::Line("[main] {} is the {} side's, after a {} game here: starting PS5-ECAM over for it", game.name,
 				ps5launcher::SideTitle(choice->system), ps5launcher::SideTitle(*gameRan));
-			RememberSide(side);
+			ps5settings::RememberSide(side);
 			std::vector<std::string> args = {"--rom", game.path.string()};
 			if (choice->resume)
 				args.push_back("--resume");
@@ -843,7 +832,7 @@ int main(int argc, char* argv[])
 			// the side's libretro core, in this process as melonDS below: its picture on VideoOut at 59.94 Hz
 			const auto side = ps5launcher::SideName(choice->system);
 			const int index = (int)choice->system;
-			RememberSide(side);
+			ps5settings::RememberSide(side);
 			SetHighFrameRate(false);
 			ps5threads::EndIsolation();
 			ps5libretro::SetResume(choice->resume);
@@ -857,7 +846,7 @@ int main(int argc, char* argv[])
 			ps5log::Line("[main] {} did not start: {}", game.name, error);
 			if (ps5libretro::CoreTouched())
 			{
-				RememberSide(side, error);
+				ps5settings::RememberSide(side, error);
 				ps5emu::RestartToLibrary();
 				return 1;
 			}
@@ -869,7 +858,7 @@ int main(int argc, char* argv[])
 		if (ps5retro::IsRetro((int)choice->system))
 		{
 			const auto side = ps5launcher::SideName(choice->system);
-			RememberSide(side);
+			ps5settings::RememberSide(side);
 			if (game.path.empty()) ps5retro::LaunchLibrary((int)choice->system, error, settings.retro[ps5retro::Slot((int)choice->system)].retroBackend);
 			else ps5retro::Launch((int)choice->system, game.path.string(), error, settings.retro[ps5retro::Slot((int)choice->system)].retroBackend);
 			status.launchError = error;
@@ -883,7 +872,7 @@ int main(int argc, char* argv[])
 			// closes it, for a tile's game). The side is saved first, so a crash in it comes back here too.
 			// Eden draws PS5-ECAM's loading screen and in-game menu over the game (port/eden/ingame.h),
 			// from what the launcher left it (ps5eden::WriteSession).
-			RememberSide("switch");
+			ps5settings::RememberSide("switch");
 			ps5eden::LaunchGame(game, forGame, ps5emu::ExitAfterGame(), error);
 			ps5log::Line("[main] {} did not start: {}", game.name, error);
 			status.launchErrorSwitch = error;
@@ -908,7 +897,7 @@ int main(int argc, char* argv[])
 			if (ps5melonds::CoreTouched())
 			{
 				// the screens took VideoOut: show why from a fresh process
-				RememberSide("ds", error);
+				ps5settings::RememberSide("ds", error);
 				ps5emu::RestartToLibrary();
 				return 1;
 			}
@@ -936,7 +925,7 @@ int main(int argc, char* argv[])
 			if (ps5azahar::CoreTouched())
 			{
 				// Azahar's core is half started: show why from a fresh process
-				RememberSide("3ds", error);
+				ps5settings::RememberSide("3ds", error);
 				ps5emu::RestartToLibrary();
 				return 1;
 			}
@@ -971,7 +960,7 @@ int main(int argc, char* argv[])
 			continue;
 		}
 		// Cemu's renderer holds VideoOut: show the reason from a fresh process
-		RememberSide("wiiu", error);
+		ps5settings::RememberSide("wiiu", error);
 		ps5emu::RestartToLibrary();
 		return 1;
 	}
