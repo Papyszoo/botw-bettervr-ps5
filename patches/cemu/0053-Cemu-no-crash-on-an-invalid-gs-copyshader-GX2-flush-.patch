@@ -1,0 +1,48 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Patryk <papyszoo@gmail.com>
+Date: Mon, 16 Nov 2026 11:03:14 +0100
+Subject: [PATCH] Cemu: no crash on an invalid gs copyshader, GX2 flush starts
+ a bigger command buffer (cemu-project/Cemu@5a0430b, @934329f)
+
+patches/cemu 0053: a geometry shader without a valid copy shader crashed the decompiler; a GX2 flush of an empty buffer did not start a bigger one.
+---
+ src/Cafe/HW/Latte/LegacyShaderDecompiler/LatteDecompiler.cpp | 5 ++++-
+ src/Cafe/OS/libs/gx2/GX2_Command.cpp                         | 2 +-
+ 2 files changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/src/Cafe/HW/Latte/LegacyShaderDecompiler/LatteDecompiler.cpp b/src/Cafe/HW/Latte/LegacyShaderDecompiler/LatteDecompiler.cpp
+index 8b1348c..e2c4c4d 100644
+--- a/src/Cafe/HW/Latte/LegacyShaderDecompiler/LatteDecompiler.cpp
++++ b/src/Cafe/HW/Latte/LegacyShaderDecompiler/LatteDecompiler.cpp
+@@ -1151,6 +1151,8 @@ void LatteDecompiler_DecompileGeometryShader(uint64 shaderBaseHash, uint32* cont
+ 	else
+ 	{
+ 		shaderContext.parsedGSCopyShader = LatteGSCopyShaderParser_parse(gsCopyProgramData, gsCopyProgramSize);
++		if (!shaderContext.parsedGSCopyShader)
++			shader->hasError = true;
+ 	}
+ 	for (sint32 i = 0; i < LATTE_NUM_MAX_TEX_UNITS; i++)
+ 	{
+@@ -1158,7 +1160,8 @@ void LatteDecompiler_DecompileGeometryShader(uint64 shaderBaseHash, uint32* cont
+ 		shader->textureUsesDepthCompare[i] = false;
+ 	}
+ 	// parse & compile
+-	_LatteDecompiler_Process(&shaderContext, programData, programSize);
++	if (!shader->hasError)
++		_LatteDecompiler_Process(&shaderContext, programData, programSize);
+ 	performanceMonitor.gpuTime_shaderCreate.endMeasuring();
+ }
+ 
+diff --git a/src/Cafe/OS/libs/gx2/GX2_Command.cpp b/src/Cafe/OS/libs/gx2/GX2_Command.cpp
+index d12bf21..3edefac 100644
+--- a/src/Cafe/OS/libs/gx2/GX2_Command.cpp
++++ b/src/Cafe/OS/libs/gx2/GX2_Command.cpp
+@@ -291,7 +291,7 @@ namespace GX2
+ 			else
+ 			{
+ 				// current buffer is empty so we dont need to queue it
+-				if (numU32sForNextBuffer > s_commandState->commandPoolSizeInU32s)
++				if (numU32sForNextBuffer > coreCBState.bufferSizeInU32s)
+ 					GX2Command_StartNewCommandBuffer(numU32sForNextBuffer);
+ 			}
+ 		}

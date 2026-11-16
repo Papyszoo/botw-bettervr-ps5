@@ -1,0 +1,32 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Patryk <papyszoo@gmail.com>
+Date: Mon, 16 Nov 2026 11:03:14 +0100
+Subject: [PATCH] Cemu: async Vulkan pipeline compile race
+ (cemu-project/Cemu@feb7c7b)
+
+patches/cemu 0051: a pipeline compiled on a thread could be used before its compile finished.
+---
+ src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRendererCore.cpp | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRendererCore.cpp b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRendererCore.cpp
+index 10f538f..47e5ac7 100644
+--- a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRendererCore.cpp
++++ b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRendererCore.cpp
+@@ -1455,6 +1455,7 @@ void VulkanRenderer::draw_execute_first(uint32 baseVertex, uint32 baseInstance,
+ 	{
+ 		// invalid/uninitialized pipeline
+ 		m_state.activeVertexDS = nullptr;
++		m_state.drawSequenceSkip = true;
+ 		return;
+ 	}
+ 
+@@ -1643,7 +1644,7 @@ void VulkanRenderer::draw_execute_continued(uint32 baseVertex, uint32 baseInstan
+ 	if (vkObjPipeline->GetPipeline() == VK_NULL_HANDLE)
+ 	{
+ 		// invalid/uninitialized pipeline
+-		//m_state.activeVertexDS = nullptr;
++		m_state.drawSequenceSkip = true;
+ 		return;
+ 	}
+ 

@@ -3,6 +3,24 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-16: build21 (upstream Cemu fixes), built, untested on console
+
+Backports of small upstream fixes, each its own patch, code verbatim:
+
+- **patches/cemu 0050** (cemu-project/Cemu `babd690`, `b044641`): graphic pack patch groups resolved in
+  linear time, each group with its full code cave. BetterVR's pack has thousands of groups.
+- **patches/cemu 0051** (`feb7c7b`): async Vulkan pipeline compile race.
+- **patches/cemu 0052** (`d1ca2e9`): the PPC recompiler's function scan no longer reads unmapped memory.
+- **patches/cemu 0053** (`5a0430b`, `934329f`): no crash on an invalid gs copyshader; a GX2 flush of an
+  empty command buffer starts a bigger one.
+- **patches/bettervr 0026** (Crementif/BotW-BetterVR `47ea413`): GPU memory properties read through Vulkan
+  1.1 (the KHR alias is null when its extension is not enabled).
+- Applied in order on the pins (Cemu `cc6fea1`, 53 patches; BetterVR `2e06b31`, 26 patches).
+
+**Test request 39 (build21, any console).** Play Breath of the Wild in VR for about 15 minutes,
+including a shrine and a fight. Send the logs zip, any `[crash]` lines, and say whether crashes or
+first-time stutters changed against build20. Test requests 31 to 33 still apply to this build.
+
 ## 2026-11-16: BetterVR 1.0.0 update planned (not built)
 
 - The work list is in [`UPDATE-1.0.md`](UPDATE-1.0.md): BetterVR 1.0.0 (`db5495b`) on Crementif's Cemu
