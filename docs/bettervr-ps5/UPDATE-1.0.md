@@ -1,0 +1,283 @@
+# BetterVR 1.0.0 on PS5: the work list
+
+Planned 2026-11-16, not built, untested on console. Research behind it: BetterVR `2e06b31` to 1.0.0,
+Cemu `cc6fea1` to `d4f7205`, the BetterVR Cemu fork, and premohq's renamed branch.
+
+## Target and why
+
+- **BetterVR 1.0.0** (`db5495b`, also the repository's HEAD). 0.9.23 has no future: the mod now builds
+  into its own Cemu fork and 92 commits (530 files) restructured it.
+- **Cemu: Crementif's fork** (`https://github.com/Crementif/Cemu.git`, branch `bettervr`, commit
+  `86168a8`). It is upstream Cemu `3b10316` (2026-11-04) plus 34 commits: host modules, two-view
+  (multiview) rendering in Latte/Vulkan, foveated shading, a window crop, a boot-title option, a vsync
+  override. The pin `cc6fea1` is an ancestor of it. Plain Cemu cannot run 1.0.0.
+- **Not merged: premohq's Playtendoh branch.** The PS5-ECAM branch is gone; the project was renamed
+  Playtendoh (`d8a3466`, 2026-11-03). A merge conflicts in 75 entries (32 are `.po` files) and brings
+  libretro and Switch 2 code this fork does not use. Its Cemu pin did not move (`cc6fea1`). Only
+  Cemu-related changes are cherry-pick candidates (see Quick wins).
+
+## Step 1: does the PS5's Vulkan driver run the fork?
+
+The driver is Mihawk's RADV port (Mesa 26.2 fork, `tools/deps.json` item `ps5-mesa`, commit
+`7b59ef27c1b0`), reporting the console as GFX1013 with GFX10.3's shader core.
+
+| What the fork needs | Where | Driver | Verdict |
+|---|---|---|---|
+| `multiview` feature, `maxMultiviewViewCount >= 2`, `shaderSampledImageArrayDynamicIndexing` | fork `VulkanRenderer.cpp:301-320, 365-367` | `radv_physical_device.c:803` `KHR_multiview = true`, `:1111` `.multiview = true`, `:1994` `maxMultiviewViewCount = AC_MULTIVIEW_MAX_VIEWS` (unconditional) | **yes** (by source; not read from a console) |
+| `multiviewGeometryShader` (optional) | `VulkanRenderer.cpp:320` | RADV sets it on GFX10+ | optional; without it only geometry-shader draws drop to two passes |
+| `VK_KHR_fragment_shading_rate`: `attachmentFragmentShadingRate`, `pipelineFragmentShadingRate`, layered attachments (foveation) | `VulkanRenderer.cpp:306-311, 368-380, 850-857`; `VulkanRendererFoveation.cpp:12-16` | `radv_physical_device.c:779` `= pdev->info.has_vrs`; the PS5 winsys copies `has_vrs` from the GFX1013 model, and `radv_ps5_winsys.c:296` asserts it **false** (`ac_gpu_info.c:1074`: `has_vrs = gfx_level >= GFX10_3`) | **no** (by source) |
+| `VK_EXT_external_memory_host` (optional) | `VulkanRenderer.h:469` | `has_userptr` | as today |
+
+- **Fallbacks in the fork.** Multiview: `LatteView_UsesMultiview` returns false when the renderer does
+  not support it (`LatteView.cpp:262-268`), so two-view scopes are drawn in two passes. Shading rate:
+  `foveation_appliesTo` returns false without it (`VulkanRendererFoveation.cpp:12`), and
+  `VulkanPipelineStableCache.cpp:279` skips cached pipelines that used it. The fork therefore starts
+  and draws without foveation. Cost: no foveated shading, so the GPU shades the full eye image (the
+  main reason the fork exists on weak GPUs; here it matters because the port already runs at about
+  32 fps in the overworld at 9,000 to 10,000 draws a frame).
+- **Verdict: go for multiview, no-go only on the foveation speed-up.** Multiview must be confirmed
+  on the console because the winsys reports a made-up GPU identity.
+- **Does Cemu's log say it?** No. It prints "Using GPU", "Driver version", "Vulkan: present_wait
+  extension", and lines only for missing optional extensions (`VulkanRenderer.cpp:220-235, 322,
+  384-422`); nothing about multiview or shading rate. The probe is in Stage 1: after line 367 and
+  line 380 of the fork's `VulkanRenderer.cpp`, log `Vulkan: multiview {supported, maxViewCount,
+  geometryShader}` and `Vulkan: fragment shading rate {supported, layered, 2x2, 4x4}` (about 6
+  lines, in a numbered port patch). Until then the test request is "send log.txt" only for the
+  device name and driver line.
+
+## How the build changes
+
+- **`tools/deps.json`:** `cemu` url becomes the fork, commit `86168a8`, same submodules
+  (`ZArchive`, `Vulkan-Headers`, `imgui`; confirm the fork's submodule list). `bettervr` commit
+  becomes `db5495b`. The pins `openxr-sdk`, `imgui-bettervr` and `implot-bettervr` are replaced by
+  whatever 1.0.0 vendors (`dependencies/` in the repository; OpenXR loader, ImGui and ImPlot are
+  vendored since `5c80aa6`), so check before keeping them.
+- **BetterVR is no longer a separate object.** 1.0.0's `CMakeLists.txt:32` sets
+  `CEMU_EXTERNAL_MODULES` to its own `src/`, and the Cemu build compiles it in
+  (`src/Cafe/HostModule/HostModuleRegistry.cpp.in`). `tools/build-bettervr.sh` and
+  `port/bettervr/layer/CMakeLists.txt` (which make `build/bettervr/bettervr.o`) go: the PS5 Cemu
+  build passes `CEMU_EXTERNAL_MODULES=<.deps/BotW-BetterVR>/src` (with `patches/bettervr` applied
+  there) and the PS5-only sources of `port/bettervr/` as a second module directory, or a
+  platform file BetterVR's `src/utils/platform.h` selects. `tools/build-cemu.sh` and
+  `patches/cemu/0048`/`0049` change accordingly.
+- **Pack asm.** `resources/BreathOfTheWild_BetterVR/patch_compiled.asm` is checked in; the build
+  compiles it only when `CemuPatchCompiler` is found (`CMakeLists.txt:208-262`). Use the checked-in file;
+  no PowerPC compiler needed, unless a pack source is patched.
+- **CI** (`.github/workflows/bettervr-build.yml`): the cached-checkout step (lines 91-97) resets the
+  `ps5` branch of `.deps/BotW-BetterVR`; keep it, add the same for the fork, and key the caches on the
+  new `tools/deps.json`. Expect a longer first build (Cemu rebuilt, 2-core runner).
+- **C++ standard.** 1.0.0 needs C++23 and CMake 3.27; the PS5 toolchain is clang 18 / libc++ 18
+  (`tools/ps5.cmake`). Upstream builds Linux with clang 19 in an Ubuntu 22.04 container
+  (`06c6329`). Missing library parts surface at Stage 2.
+
+## patches/cemu on the fork (49 patches)
+
+Trial: `git am --3way` in order on `86168a8` (29 clean, 20 conflict). The same trial on Cemu HEAD
+`d4f7205` (36 clean, 13 conflict) is given so the two causes can be told apart: a conflict in both is
+upstream drift, a conflict only on the fork is the fork's renderer work. Patches 0001 to 0047 are
+premohq's; 0048 and 0049 are this repository's.
+
+| Patch | Fork 86168a8 | Cemu HEAD d4f7205 | Conflict files and why |
+|---|---|---|---|
+| 0001 | **conflict** | conflict | src/CMakeLists.txt, HW/Espresso/Recompiler/BackendX64/BackendX64.cpp: both bases moved the CMake include/PCH layout; BackendX64.cpp too (PPCRec refactor 3f8dd91) |
+| 0002 | **conflict** | conflict | CMakeLists.txt, src/input/CMakeLists.txt: input/DualSense CMake lists moved |
+| 0003 | **conflict** | conflict | src/CMakeLists.txt: CemuBin target lines moved |
+| 0004 | clean | clean |  |
+| 0005 | **conflict** | conflict | Vulkan/VulkanAPI.cpp: the fork adds multiview and shading-rate entries next to the extension list this patch edits |
+| 0006 | clean | clean |  |
+| 0007 | clean | clean |  |
+| 0008 | clean | clean |  |
+| 0009 | **conflict** | conflict | src/util/helpers/helpers.cpp: upstream timer rework, one hunk |
+| 0010 | clean | clean |  |
+| 0011 | clean | clean |  |
+| 0012 | clean | clean |  |
+| 0013 | clean | clean |  |
+| 0014 | **conflict** | clean | Vulkan/VulkanRenderer.cpp: the fork rewrote the copy path around the readback checks; compare with Cemu fced55a and 42876aa first |
+| 0015 | **conflict** | clean | Vulkan/TextureReadbackVk.cpp: same area as 0014 |
+| 0016 | clean | clean |  |
+| 0017 | clean | clean |  |
+| 0018 | **conflict** | clean | Vulkan/VulkanRenderer.cpp: in-game menu picture, context moved by the fork |
+| 0019 | **conflict** | conflict | src/audio/IAudioAPI.cpp: upstream change, one hunk |
+| 0020 | **conflict** | clean | Vulkan/VulkanRenderer.cpp: the fork submits every 1000 draws instead of 300 (b2b35e2); may be redundant in part |
+| 0021 | clean | clean |  |
+| 0022 | clean | clean |  |
+| 0023 | **conflict** | conflict | OS/libs/nsyshid/nsyshid.cpp: upstream change, one hunk |
+| 0024 | clean | clean |  |
+| 0025 | clean | clean |  |
+| 0026 | clean | clean |  |
+| 0027 | clean | clean |  |
+| 0028 | **conflict** | clean | Vulkan/VulkanAPI.h, Vulkan/VulkanRenderer.cpp: the fork batches submits, so the timing points move |
+| 0029 | clean | clean |  |
+| 0030 | clean | clean |  |
+| 0031 | **conflict** | clean | Vulkan/VulkanRenderer.cpp: the fork edits the same feature block |
+| 0032 | clean | clean |  |
+| 0033 | **conflict** | clean | Vulkan/VulkanRenderer.cpp: GamePad touch-screen picture, context moved |
+| 0034 | clean | clean |  |
+| 0035 | clean | clean |  |
+| 0036 | clean | clean |  |
+| 0037 | clean | clean |  |
+| 0038 | clean | clean |  |
+| 0039 | **conflict** | conflict | OS/libs/swkbd/swkbd.cpp: upstream change, one hunk |
+| 0040 | clean | clean |  |
+| 0041 | clean | clean |  |
+| 0042 | **conflict** | conflict | CMakeLists.txt: the fork adds HostModule files to the same list |
+| 0043 | **conflict** | conflict | CMakeLists.txt, Latte/Core/LatteRenderTarget.cpp, Vulkan/VulkanRenderer.cpp: ReShade on the TV picture meets the fork's render-target and two-view changes (3 files) |
+| 0044 | clean | clean |  |
+| 0045 | clean | clean |  |
+| 0046 | clean | clean |  |
+| 0047 | **conflict** | conflict | Vulkan/VulkanRenderer.cpp: frame-generation picture, context moved |
+| 0048 | **conflict** | conflict | CMakeLists.txt, Vulkan/VulkanRenderer.cpp: redo on the host module (HostEvent surfaces); 4 hunks |
+| 0049 | **conflict** | conflict | CMakeLists.txt: replaced by CEMU_EXTERNAL_MODULES; CMake only |
+
+## patches/bettervr on 1.0.0 (25 patches)
+
+Trial: 1 clean (0007), 24 conflict, because the files moved or were deleted. "Obsolete" means 1.0.0
+solves the problem or removes the code (grep of 1.0.0, not a headset result). Each "obsolete" is to be
+confirmed on a headset in Stage 3 or 4 before the patch is deleted for good.
+
+| Patch | What it did | Decision | Reason |
+|---|---|---|---|
+| 0001 | Linux Vulkan/OpenXR backend | obsolete | 1.0.0 has its own Linux x64/ARM64 build (src/utils/platform_linux.cpp, vk_backend.cpp, 8c64e3b, 844db81) |
+| 0002 | PS5 ELF glue, libc++ 18 | redo | the PS5 platform layer for the host module: no sys/sysinfo.h, no browser, libc++ 18 formatter and strtod workarounds, one queue lock (ps5xr::QueueMutex) |
+| 0003 | log to boot log, settings in the data folder | redo | 1.0.0 asks HostModule::GetUserDataPath() for BetterVR_log.txt and BetterVR_settings.ini (host_module.cpp:235-259); the PS5 port answers that path and mirrors lines to the boot log |
+| 0004 | which hooks run, VR-failed to library | redo | VR-failed fallback (issue #3) must hook the module start and the first eye clear again; the hook list is gone with src/hooking |
+| 0005 | large input/game state through a mutex | redo (re-check) | libc++ 18 lowers large std::atomic to __atomic_load/store with sizes the console libc lacks (SIGILL 0x800102040); check whether 1.0.0 still has std::atomic<InputState>/<GameState> and do the same |
+| 0006 | stick/Link position diag line | obsolete | diagnostic for the two-pass physics problem; 1.0.0 replays one simulation |
+| 0007 | Graphics pack with PS5 eye sizes, 0.5x | redo | 1.0.0 bundles the packs and fills presets from the headset resolution at start (host_module.cpp:197, 251); give it hmd2's eye size instead of editing placeholders |
+| 0008 | XR input without the ImGui overlay | re-check | 1.0.0 has one overlay path (vulkan_imgui.cpp); drop unless input is skipped without the overlay on the PS5 |
+| 0009 | aspect ratio of the rendered image | obsolete | 1.0.0 renders eye-shaped images through the fork's two-view path; no 16:9 default left |
+| 0010 | roomscale switch, physics counters | obsolete | diagnosis for the late-physics problem of the two-pass model |
+| 0011 | seated height moves the stage space | re-check | keep as a setting if 1.0.0 still pins the head to 1.65 m by shifting views; `seated` code exists in controls.cpp and roomscale.cpp |
+| 0012 | bettervr_settings.ini is read | obsolete | Settings_ReadFile in host_module.cpp:259 |
+| 0013 | player physics gate once a game frame | obsolete | OnlyRunPlayerUpdateJobOnce is gone from 1.0.0 |
+| 0014 | hot hooks stop copying actors/strings | obsolete | the hooking layer is gone; re-profile instead |
+| 0015 | flat view, cutscene bars, comfort fades | obsolete | upstream's renderer.cpp does these on every platform now |
+| 0016 | swing analyser velocity bits | obsolete | 1.0.0 checks velocityFlags (controls.cpp:267, 803) |
+| 0017 | one view pair frozen for both eyes | obsolete | replay model; no stereo pair published from two passes |
+| 0018 | stereoRays right-eye shadow | obsolete | calcViewMaskedLightShadow no longer in the pack |
+| 0019 | weapon analyser resets once a frame | obsolete | weapon code rewritten (weapon_motion.cpp) |
+| 0020 | flat view shows the scene, menu mono frame once | obsolete | Linux renderer_vulkan.cpp gone; re-test the menu on a headset |
+| 0021 | left eye's 3D slot clear of the published pair | obsolete | same |
+| 0022 | a menu's mono frame lasts the menu | obsolete | same; 1.0.0 has mono sections in two-view scopes (d16aa10) |
+| 0023 | menus fixed in the room while open | obsolete | 1.0.0 redesigned the VR menu (f7fb77b) and opens it in front of the player (99f43ee) |
+| 0024 | autosave snapshot holds last stereo pair | obsolete | replay model; re-test autosave |
+| 0025 | UI blend fix and screen log | obsolete | vk_backend.cpp has its own blend state; the screen log needs a check |
+
+Count: 15 obsolete, 5 redo, 3 re-check, 0 keep as is (0007 applies textually but its placeholders go).
+
+## PS5 pieces to redo
+
+- **hmd2/OpenXR path.** Keep `port/bettervr/xr/runtime.cpp` (2,390 lines) and `SensePS5.cpp`: the
+  OpenXR runtime over hmd2. 1.0.0's `openxr.cpp:98-108` accepts `XR_KHR_vulkan_enable2` or
+  `XR_KHR_vulkan_enable` (ours lists only the latter at `runtime.cpp:1177`), `XR_KHR_composition_layer_depth`
+  (listed) and treats the time-convert extension as optional (`openxr.cpp:150`). The session binding is
+  `XrGraphicsBindingVulkan2KHR` (`instance.h:29`): the runtime must take it, or list `vulkan_enable2`.
+  Backport commit `7fbceeb` ("OpenXR runtimes without compositor depth support") as it applies to a
+  runtime that ignores depth. The OpenXR instance must exist before Cemu loads its packs
+  (`host_module.cpp:251`), so the runtime starts earlier than today (`PS5Cemu_BetterVRPrepareGraphicPack`
+  runs before packs load already).
+- **Queue lock.** The console has one graphics queue; `ps5xr::QueueMutex` around every submit and
+  present must wrap the module's submits and the fork's 1000-draw batching.
+- **Settings ini.** `BetterVR_settings.ini` and `BetterVR_log.txt` go where `HostModule::GetUserDataPath()`
+  points; set that to the app's data folder (the working directory is not writable). The old
+  `bettervr.json` switches (`roomscale`, `stereoRays`, `graphicsPack`) are gone with the patches that
+  read them; keep `bettervr.json` only for the VR on/off switch the launcher reads. 1.0.0 has
+  `TakeOverOlderReleaseSettings` (`host_module.cpp:240`) for old files.
+- **Launcher Play in VR / Play on TV.** `PS5Cemu_BetterVRApplyMode` (`port/bettervr/VrPS5.cpp:547`)
+  toggles the pack "Better VR" and "FPS++" by name. 1.0.0 loads its own packs from the module
+  (`GraphicPack: Load packs from host modules`, `8496174`), so Play on TV means not registering the
+  module at all, or a module switch; BetterVR's patches call hooks that exist only while it runs
+  (comment at `VrPS5.cpp:516`). Needs a design decision at Stage 3: start the module only for VR, which
+  the registry in `HostModuleRegistry.cpp.in` suggests but has not been read in detail.
+- **Graphic packs.** 1.0.0 bundles the community packs (FPS++ and the others it depends on,
+  `996f9c8`) and the "Graphics" pack, whose presets are filled from the headset. Our
+  `assets/bettervr/BreathOfTheWild_BetterVR` and `_Graphics` copy (`VrPS5.cpp:521-541`), and the
+  by-name toggling, are replaced by: the module's own packs, plus a PS5 resolution passed in (patch
+  0007's job). The player's Graphic packs choice for "Graphics (Modified Version For BetterVR)" (build20)
+  must stay the player's: confirm the bundled pack keeps a switch in Cemu's list. 1.0.0 also removes the
+  pack the 0.9.23 launcher left (`5424405`) and turns Extended Memory on by default (`ec3b787`).
+- **TV picture while in VR** (backlog since 2026-11-05, and issue #2): the fork's host events give
+  surfaces (`HostEvent`, `EventSurface`), the natural way to redo patch `0048`.
+- **In-game menu.** 1.0.0's VR menu replaces the "menu does not exist" caveat in `INSTALL.md`.
+  Check it works with the Sense controllers on the DualSense/hmd2 path before telling players.
+- **Update check** (`update_check.cpp`) and the `BetterVR_Launcher` links: off on the PS5.
+- **Linux AppImage notes** in 1.0.0 (xdg paths, `7452360` "layers loaded twice") do not apply; skip.
+
+## Stages
+
+Each stage ends in a pre-release build (tag `testing`), notes starting "Untested on console", and one
+numbered Test request in `STATUS.md`. Numbers continue from 33.
+
+1. **Fork base, flat only (about 3 to 4 days).** `tools/deps.json` cemu pin to `86168a8`; rebase
+   the 47 premohq patches (conflict files above; most are CMake lists and `VulkanRenderer.cpp`
+   context) and port 0048/0049 as stubs; BetterVR not compiled in; add the multiview and
+   shading-rate probe lines. Host tests (`make test`) pass. Done: `make release` builds; BotW and one more
+   game boot flat with the same fps as the current build; the new log lines are there.
+   **Test request 34.** Install, play BotW flat (Kakariko or Hateno, 2 minutes). Send `log.txt` and the
+   boot log: `Using GPU`, `Driver version`, the `multiview` and `fragment shading rate` lines, the fps
+   and GPU-busy lines, any `[crash]`. Expected: multiview supported, max views at least 2; shading rate
+   `unsupported`. Say whether the picture and fps match the last build.
+2. **BetterVR 1.0.0 compiled in, no headset (about 1 week).** `CEMU_EXTERNAL_MODULES`, the PS5
+   platform layer (log, data path, atomics mutex, libc++ 18 gaps), the runtime from `port/bettervr/xr`
+   linked as the OpenXR loader replacement. Done: the app builds and links; with VR off BotW runs flat
+   as in stage 1; with VR on, the log shows the module starting, the OpenXR instance, the system, and the
+   packs loaded, ending at the first frame without a crash. **Test request 35.** Start BotW with Play
+   in VR, then Play on TV. Send the logs zip, every `[bettervr]` and `[vr]` line, `hmd2` lines, and
+   `BetterVR_log.txt`. Say whether the headset shows anything and whether TV mode still works.
+3. **Stereo in the headset (about 1 to 2 weeks).** Two-view submitted to hmd2 eye buffers through the
+   queue lock; checked-in `patch_compiled.asm`; foveation off; the VR-failed fallback (issue #3) back
+   in; settings ini; Graphics pack/preset resolution from the headset. Done: BotW in stereo, head
+   tracking, no `[crash]`, fps and GPU-busy lines logged against the current build's 31.6 to 34 fps
+   overworld and 60 fps flat. **Test request 36.** Play two minutes at the start and two in a village.
+   Send the logs zip. Say: is the picture correct in both eyes (depth, no ghosting), what the fps line says,
+   and whether the head follows. Also fail on purpose once with the headset off and report the
+   screen.
+4. **Controllers and menu (about 1 week).** Sense sticks, grip gestures, the 1.0.0 menu, haptics via
+   `SensePS5.cpp`; decide the keep/redo patches from the table by headset check (0008, 0011, 0005).
+   Done: walk, fight, bow, magnesis and the menu work; the "late physics" symptom of
+   2026-11-05 is gone or recorded. **Test request 37.** The numbered checks of the old Test requests 5
+   and 6 (stick delay, swing, magnesis, menu), plus: open the VR menu with the Sense button and
+   adjust one setting.
+5. **TV picture, launcher, release (about 3 to 4 days).** Patch 0048 redone on host events, Play in VR
+   and Play on TV choices, INSTALL.md rewritten, update check off, quick wins from the next section
+   that are not in the fork yet. Done: tests pass on host; rolling pre-release published.
+   **Test request 38.** Full path from the library: Play in VR, quit to the library, Play on TV, Play
+   in VR again; say what the TV shows during VR.
+
+Total: about 4 to 5 weeks of work for one agent, most of it stage 2 and 3. Stop and report if stage
+1's Test request shows multiview unsupported: then the two-pass fallback doubles draw cost and the
+target moves back to 0.9.23 plus the quick wins.
+
+## Quick wins on the current base (BetterVR 2e06b31, Cemu cc6fea1)
+
+Not part of the port; each is independent of the fork and was cherry-picked in a scratch clone
+(applies to cc6fea1 with all 49 patches on it unless noted). Effect on frame rate is not measured.
+
+| Id | What | Size | Lands in | Risk |
+|---|---|---|---|---|
+| `babd690` + `b044641` | GraphicPack: patch groups resolved in linear time; full code cave per group | 6+/12-, 11+/3- lines | `src/Cafe/GraphicPack` (new `patches/cemu/00NN`) | low; helps BetterVR's thousands of patch groups at start |
+| `feb7c7b` | Vulkan: async pipeline compile race | 2+/1- | `VulkanPipelineCompiler`/renderer | low; next to our 0027 and 0035 (compile threads) |
+| `d1ca2e9` | PPCRec: function scan read of unmapped memory | 14+/4- | `src/Cafe/HW/Espresso/Recompiler` | low; crash fix |
+| `5a0430b` + `934329f` | gs copyshader crash; GX2 flush starts a bigger command buffer | 4+/1-, 1+/1- | Latte core, GX2 | low |
+| `fced55a`, `34b5908`, `182b0bc` | Latte readback heuristic, colour-buffer mask, memcpy-style texture copies | 8, 48, 19 lines | Latte | medium; may overlap our 0014/0015 and cost on the GPU thread (9,000 to 10,000 draws a frame) |
+| `47ea413` (BetterVR) | `GetPhysicalDeviceMemoryProperties2` instead of the KHR alias (null when the extension is not enabled) | 1 line | `src/rendering/vulkan.cpp` | lowest; possible cause for a failed start on a driver that leaves the alias null (check against issue #3 logs) |
+| `c86bb01` (BetterVR) | shrink grass and flower particles from cutting plants | 34 lines of pack asm | `resources/BreathOfTheWild_BetterVR/patch_compiled.asm` source | low; comfort, not a fix |
+
+Not quick wins: `540487b` and `8303fed` (recompiler entry; the XMM6-15 save is a Windows-ABI fix, and
+540487b conflicts with our 0001); `42876aa`, `3f8dd91`, `5b430d6`, `bb28394`, `9bfdf81` (conflict with
+our patches or touch 15 to 65 files); Playtendoh's Cemu patches `0049` (alpha texture, 50 lines) and
+`0050` (loading screen, 55 lines) apply but need Playtendoh's port code (`PS5Cemu_DrawLoading`), and
+`0048` (DolphinBar, 138 lines) has no use here. BetterVR's other post-0.9.23 fixes (`67a2e03` session
+restart, `1cf3fc9` desktop view on skipped frame, `03daaaa` water colour, `7b0557b` HUD once) sit on
+the restructured code and conflict on 0.9.23; they arrive with the port.
+
+## Risks
+
+- Multiview works by source but is untested on the console; foveation is absent: the GPU shades every
+  pixel of both eyes, as it does today.
+- The fork's renderer work collides with frame generation, ReShade, FSR and the TV picture
+  (0042, 0043, 0047). Keep the fork's `VulkanRenderer.cpp` changes minimal and rebase in order.
+- Toolchain: C++23 and CMake 3.27 against clang 18 / libc++ 18, and the large-atomic SIGILL class of
+  bug (patch 0005).
+- Nothing here has run on the console; every stage is "built, untested on console" until a result is
+  reported.

@@ -3,6 +3,14 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-16: BetterVR 1.0.0 update planned (not built)
+
+- The work list is in [`UPDATE-1.0.md`](UPDATE-1.0.md): BetterVR 1.0.0 (`db5495b`) on Crementif's Cemu
+  fork (`86168a8`), in five stages with Test requests 34 to 38. Multiview is exposed by the driver's
+  source, fragment shading rate is not (foveation off). Nothing built, nothing run on the console.
+- **Backlog:** premohq's Playtendoh branch (the renamed PS5-ECAM) is not merged: 75 conflicts, and its
+  Cemu pin did not move. Only Cemu fixes are picked from it (see the quick wins in UPDATE-1.0.md).
+
 ## 2026-11-14: build20 (failed VR start, hmd2 load fallback, Graphics pack, menu probe), built, untested on console
 
 - **A failed VR start ends in the library, not a crash (issue #3).** When BetterVR cannot start VR on
