@@ -1,0 +1,493 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Tue, 17 Nov 2026 12:00:00 +0100
+Subject: [PATCH] PS5: BetterVR's ImGui overlay starts on the first Options
+ press and draws a stage A panel, behind bettervr.json's menu switch
+
+The Linux backend had no overlay (vulkan_imgui.cpp was Win32 only). With bettervr.json's "menu" at 1,
+Options on the right Sense (bound to the mod menu action in the Touch profile, in place of the left X) opens and
+closes the menu on a short press. The overlay is made on the first open, on Cemu's recording thread, with one
+text font, its own render target and no help images. Its font atlas goes up with the backend's own submit and
+queue wait under ps5xr::QueueMutex, on Cemu's queue, as the one PS5 graphics queue is shared. The panel is drawn
+into the overlay's target and blitted to the HUD quad in place of Cemu's HUD image, which is only read. Every
+phase logs one [menu] init line, and a failed init closes the menu for good. With the switch at 0 nothing of it
+runs; the mod menu stays shut as patch 0008 left it.
+---
+ src/hooking/controls.cpp                  |  30 +++-
+ src/hooking/entity_controller.cpp         |   7 +
+ src/rendering/renderer.h                  |  21 ++-
+ src/rendering/renderer_members_vulkan.inc |   2 +-
+ src/rendering/renderer_vulkan.cpp         |  45 +++--
+ src/rendering/vulkan_imgui.cpp            | 205 ++++++++++++++++++++++
+ src/utils/controller_bindings.h           |  10 ++
+ 7 files changed, 303 insertions(+), 17 deletions(-)
+
+diff --git a/src/hooking/controls.cpp b/src/hooking/controls.cpp
+index 7581f65..886de1d 100644
+--- a/src/hooking/controls.cpp
++++ b/src/hooking/controls.cpp
+@@ -902,15 +902,43 @@ void processInputPrevention(OpenXR::GameState& gameState, std::chrono::steady_cl
+         gameState.prevent_grab_inputs = false;
+ }
+ 
++#ifndef _WIN32
++extern "C" bool BetterVR_PS5_Menu();
++#endif
++
+ void processModMenuInput(std::atomic_bool& isMenuOpen, OpenXR::InputState& inputs, VPADStatus& vpadInputs, RND_Renderer::ImGuiOverlay* imguiOverlay, XrActionStateVector2f& leftStickSource, XrActionStateVector2f& rightStickSource)
+ {
++#ifdef _WIN32
+     if (inputs.shared.modMenuState.lastEvent == ButtonState::Event::LongPress && inputs.shared.modMenuState.longFired_actedUpon) {
+         isMenuOpen = !isMenuOpen;
+         inputs.shared.modMenuState.longFired_actedUpon = false;
+     }
++#endif
++
++#ifndef _WIN32
++    // PS5: Options on the right Sense is bound to the mod menu action (controller_bindings.h); a short press opens
++    // and closes the menu when bettervr.json's "menu" is on. The input state is a copy of the last XR sync, so a
++    // press is taken once, by the sync's time.
++    static XrTime s_lastToggleInputTime = 0;
++    if (BetterVR_PS5_Menu() && inputs.shared.modMenuState.lastEvent == ButtonState::Event::ShortPress && inputs.shared.inputTime != s_lastToggleInputTime) {
++        s_lastToggleInputTime = inputs.shared.inputTime;
++        auto* renderer = VRManager::instance().XR->GetRenderer();
++        if (renderer && !renderer->m_menuInitFailed)
++            isMenuOpen = !isMenuOpen;
++    }
++#endif
+ 
+-    // without an overlay (the PS5 port) there is no menu to open: it would only take the game's input
++    // without an overlay (the PS5 port) there is no menu to open: it would only take the game's input. With the
++    // menu switch on the overlay is made by the first open (renderer_vulkan.cpp), so an open menu waits for it.
+     if (!imguiOverlay) {
++#ifndef _WIN32
++        if (BetterVR_PS5_Menu() && isMenuOpen) {
++            vpadInputs = {};
++            leftStickSource.currentState = { 0.0f, 0.0f };
++            rightStickSource.currentState = { 0.0f, 0.0f };
++            return;
++        }
++#endif
+         isMenuOpen = false;
+         return;
+     }
+diff --git a/src/hooking/entity_controller.cpp b/src/hooking/entity_controller.cpp
+index ce744ac..df8a7dd 100644
+--- a/src/hooking/entity_controller.cpp
++++ b/src/hooking/entity_controller.cpp
+@@ -757,6 +757,13 @@ extern "C" bool BetterVR_PS5_PoseFreeze() {
+     return s_poseFreeze;
+ }
+ 
++// PS5: bettervr.json's menu (default 0 = off), cached once. On, Options on the right Sense opens the BetterVR menu
++// (stage A: a small panel); off, nothing of it runs: no overlay, no toggle, the mod menu stays shut.
++extern "C" bool BetterVR_PS5_Menu() {
++    static const bool s_menu = BetterVR_PS5_Setting("menu", 0.0f) >= 0.5f;
++    return s_menu;
++}
++
+ // PS5 stereo rays: bettervr.json's stereoRays (default on), cached once so the session-start line and
+ // the guest flag name the value the asm runs.
+ extern "C" bool BetterVR_PS5_StereoRays() {
+diff --git a/src/rendering/renderer.h b/src/rendering/renderer.h
+index e6a53f5..067e2f4 100644
+--- a/src/rendering/renderer.h
++++ b/src/rendering/renderer.h
+@@ -284,6 +284,11 @@ public:
+         void DrawHelpMenu();
+         void ProcessInputs(OpenXR::InputState& inputs, const VPADStatus& vpadStatus);
+         int GetHelpImagePagesCount() const { return m_helpImages.size(); };
++#ifndef _WIN32
++        // PS5: one ImGui frame of the stage A menu into the overlay's own target (vulkan_imgui.cpp); nullptr if not ready
++        VulkanFramebuffer* DrawMenu(VkCommandBuffer cb);
++        bool IsReady() const { return m_ready; }
++#endif
+ 
+     private:
+         void DrawPlaystylePage(bool* changed);
+@@ -296,8 +301,8 @@ public:
+         void DrawCreditsPage();
+         void DrawDebugPage(bool* changed);
+ 
+-        VkDescriptorPool m_descriptorPool;
+-        VkRenderPass m_renderPass;
++        VkDescriptorPool m_descriptorPool = VK_NULL_HANDLE;
++        VkRenderPass m_renderPass = VK_NULL_HANDLE;
+         struct HelpImage {
+             VulkanTexture* m_image;
+             VkDescriptorSet m_imageDS = VK_NULL_HANDLE;
+@@ -306,9 +311,21 @@ public:
+ 
+         VkSampler m_sampler = VK_NULL_HANDLE;
+         VkExtent2D m_outputRes = {};
++#ifndef _WIN32
++        std::unique_ptr<VulkanFramebuffer> m_target;
++        bool m_backendReady = false;
++        bool m_ready = false;
++        uint64_t m_frameCount = 0;
++        uint32_t m_fpsFrames = 0;
++        float m_fps = 0.0f;
++        std::chrono::steady_clock::time_point m_lastFrame = {};
++        std::chrono::steady_clock::time_point m_fpsStart = std::chrono::steady_clock::now();
++#endif
+     };
+ 
+     std::unique_ptr<ImGuiOverlay> m_imguiOverlay;
++    // PS5: set when the first open could not make the overlay; the menu then stays closed (render thread only)
++    std::atomic_bool m_menuInitFailed = false;
+     float m_gameRenderAspectRatio = 16.0f / 9.0f;
+ 
+     bool IsRendering3D(long frameIdx) {
+diff --git a/src/rendering/renderer_members_vulkan.inc b/src/rendering/renderer_members_vulkan.inc
+index 0700f21..9756d43 100644
+--- a/src/rendering/renderer_members_vulkan.inc
++++ b/src/rendering/renderer_members_vulkan.inc
+@@ -11,7 +11,7 @@ void LinuxBeginStereoCaptureGeneration(long frameIdx);
+ // Cemu framebuffer capture entry points, driven by the clear hooks in framebuffer.cpp.
+ void LinuxCopyColorToSwapchain(OpenXR::EyeSide side, VkCommandBuffer cmdBuffer, VkImage srcImage, uint32_t srcWidth, uint32_t srcHeight, long frameIdx);
+ void LinuxCopyDepthToSwapchain(OpenXR::EyeSide side, VkCommandBuffer cmdBuffer, VkImage srcImage, uint32_t srcWidth, uint32_t srcHeight, long frameIdx);
+-void LinuxCopyHudToSwapchain(OpenXR::EyeSide side, VkCommandBuffer cmdBuffer, VkImage srcImage, uint32_t srcWidth, uint32_t srcHeight);
++void LinuxCopyHudToSwapchain(OpenXR::EyeSide side, VkCommandBuffer cmdBuffer, VkImage srcImage, uint32_t srcWidth, uint32_t srcHeight, VkFormat srcFormat);
+ void LinuxMarkInventoryPauseTransition(bool opened);
+ 
+ // Linux capture dispatch for the CmdClearColorImage hook (defined in renderer_vulkan.cpp);
+diff --git a/src/rendering/renderer_vulkan.cpp b/src/rendering/renderer_vulkan.cpp
+index 864ca91..645d5a4 100644
+--- a/src/rendering/renderer_vulkan.cpp
++++ b/src/rendering/renderer_vulkan.cpp
+@@ -56,6 +56,7 @@ extern "C" bool BetterVR_PS5_LeftSlot();
+ extern "C" int BetterVR_PS5_EyeSource();
+ // PS5: bettervr.json's poseFreeze switch (default on), read once in entity_controller.cpp.
+ extern "C" bool BetterVR_PS5_PoseFreeze();
++extern "C" bool BetterVR_PS5_Menu();
+ // PS5: bettervr.json's menuLock, monoQuad and quadPlane switches (default on), read once in entity_controller.cpp.
+ extern "C" bool BetterVR_PS5_MenuLock();
+ extern "C" bool BetterVR_PS5_MonoQuad();
+@@ -1157,7 +1158,7 @@ RND_Renderer::RND_Renderer(XrSession xrSession): m_session(xrSession) {
+     }
+ 
+     // The settings file: vulkan_imgui.cpp's ImGuiOverlay constructor reads it on Windows, and the Linux
+-    // backend has no overlay. A context with the settings handler and no frame: it loads the file and
++    // backend makes its overlay only when the menu is first opened (bettervr.json's "menu"). A context with the settings handler and no frame: it loads the file and
+     // nothing is drawn, nothing takes input from it, and it is never written (no IniFilename).
+     ImGui::CreateContext();
+     ImGui::GetIO().IniFilename = nullptr;
+@@ -2743,7 +2744,7 @@ void RND_Renderer::LinuxHandleColorClear(OpenXR::EyeSide side, long captureIdx,
+             // accepting the right eye too, or reopening the window at a 3D clear, let the HUD
+             // quad switch between them.
+             if (side == OpenXR::EyeSide::LEFT && !hudCapturedThisFrame) {
+-                LinuxCopyHudToSwapchain(side, commandBuffer, image, srcWidth, srcHeight);
++                LinuxCopyHudToSwapchain(side, commandBuffer, image, srcWidth, srcHeight, srcFormat);
+                 hudCapturedThisFrame = true;
+             }
+             VulkanUtils::TransitionLayout(commandBuffer, image, VK_IMAGE_LAYOUT_GENERAL, imageLayout);
+@@ -3137,7 +3138,7 @@ void RND_Renderer::LinuxCopyDepthToSwapchain(OpenXR::EyeSide side, VkCommandBuff
+     s_linux->captured3DFrames[wIdx].depthCopied[sideIdx] = true;
+ }
+ 
+-void RND_Renderer::LinuxCopyHudToSwapchain(OpenXR::EyeSide side, VkCommandBuffer cmdBuffer, VkImage srcImage, uint32_t srcWidth, uint32_t srcHeight) {
++void RND_Renderer::LinuxCopyHudToSwapchain(OpenXR::EyeSide side, VkCommandBuffer cmdBuffer, VkImage srcImage, uint32_t srcWidth, uint32_t srcHeight, VkFormat srcFormat) {
+     static uint32_t hudCopyCount = 0;
+     hudCopyCount++;
+     if (!s_linux) return;
+@@ -3172,6 +3173,33 @@ void RND_Renderer::LinuxCopyHudToSwapchain(OpenXR::EyeSide side, VkCommandBuffer
+     int wIdx = s_linux->currentWriteIdx_hud;
+     auto* hudBuf = s_linux->intermediateHud[wIdx];
+     auto* dispatch = VRManager::instance().VK->GetDeviceDispatch();
++
++    // The stage A menu (bettervr.json's "menu"): while it is open the overlay's own target, not Cemu's HUD image,
++    // goes to the HUD quad. The overlay is made here on the first open, once, on this recording thread; Cemu's image
++    // is only read. A failed init closes the menu for good.
++    VkImage blitSrc = srcImage;
++    static bool s_menuWasOpen = false;
++    const bool menuOpen = BetterVR_PS5_Menu() && VRManager::instance().XR->m_isMenuOpen.load(std::memory_order_relaxed);
++    if (menuOpen != s_menuWasOpen) {
++        s_menuWasOpen = menuOpen;
++        Log::print<INFO>(menuOpen ? "[menu] open" : "[menu] closed");
++    }
++    if (menuOpen) {
++        if (!m_imguiOverlay && !m_menuInitFailed) {
++            m_imguiOverlay = std::make_unique<ImGuiOverlay>(cmdBuffer, VkExtent2D{ srcWidth, srcHeight }, srcFormat);
++            if (!m_imguiOverlay->IsReady()) {
++                m_imguiOverlay.reset();
++                m_menuInitFailed = true;
++                VRManager::instance().XR->m_isMenuOpen = false;
++                Log::print<ERROR>("[menu] init: overlay -> fail (the menu stays closed)");
++            }
++        }
++        if (m_imguiOverlay) {
++            if (VulkanFramebuffer* menuTarget = m_imguiOverlay->DrawMenu(cmdBuffer))
++                blitSrc = menuTarget->GetImage();
++        }
++    }
++
+     hudBuf->vkTransitionLayout(cmdBuffer, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+ 
+     VkImageBlit blitRegion = {};
+@@ -3183,7 +3211,7 @@ void RND_Renderer::LinuxCopyHudToSwapchain(OpenXR::EyeSide side, VkCommandBuffer
+     blitRegion.dstOffsets[1] = { (int32_t)hudBuf->GetWidth(), (int32_t)hudBuf->GetHeight(), 1 };
+ 
+     dispatch->CmdBlitImage(cmdBuffer,
+-        srcImage, VK_IMAGE_LAYOUT_GENERAL,
++        blitSrc, VK_IMAGE_LAYOUT_GENERAL,
+         hudBuf->GetImage(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+         1, &blitRegion, VK_FILTER_LINEAR);
+ 
+@@ -3413,13 +3441,4 @@ std::optional<std::array<XrView, 2>> RND_Renderer::UpdateViews(XrTime predictedD
+     return views;
+ }
+ 
+-// Stubs for ImGuiOverlay methods (full implementation in vulkan_imgui.cpp, Win32-only for now)
+-RND_Renderer::ImGuiOverlay::~ImGuiOverlay() {
+-}
+-
+-void RND_Renderer::ImGuiOverlay::ProcessInputs(OpenXR::InputState& inputs, const VPADStatus& vpadStatus) {
+-    (void)inputs;
+-    (void)vpadStatus;
+-}
+-
+ #endif // !_WIN32
+diff --git a/src/rendering/vulkan_imgui.cpp b/src/rendering/vulkan_imgui.cpp
+index 51ce7af..345f663 100644
+--- a/src/rendering/vulkan_imgui.cpp
++++ b/src/rendering/vulkan_imgui.cpp
+@@ -742,4 +742,209 @@ void RND_Renderer::ImGuiOverlay::DrawAndCopyToImage(VkCommandBuffer cb, VkImage
+     ImGui::NewFrame();
+ }
+ 
++#else // !_WIN32
++
++// BotW-BetterVR on PS5: the stage A menu. The Windows overlay above draws inside Cemu's HUD hook onto Cemu's own HUD image;
++// this one draws into a target of its own, and renderer_vulkan.cpp blits that over the HUD while the menu is open, so Cemu's
++// image stays read-only. Everything here runs on Cemu's command recording thread, the one that calls the HUD hook; the
++// ImGui context (made by the renderer, with no ini file) is touched from nowhere else.
++#include "vulkan.h"
++#include "instance.h"
++#include "utils/vulkan_utils.h"
++#include "font_roboto.h"
++
++extern "C" bool BetterVR_PS5_Menu();
++
++static void MenuPhase(const char* phase, bool ok, const char* detail = "") {
++    Log::print<INFO>("[menu] init: {} -> {} ({})", phase, ok ? "ok" : "fail", detail);
++    if (!ok) Log::Flush();
++}
++
++RND_Renderer::ImGuiOverlay::ImGuiOverlay(VkCommandBuffer cb, VkExtent2D fbRes, VkFormat fbFormat): m_outputRes(fbRes) {
++    auto& vk = *VRManager::instance().VK;
++    auto* dispatch = vk.GetDeviceDispatch();
++    const auto start = std::chrono::steady_clock::now();
++
++    MenuPhase("context", ImGui::GetCurrentContext() != nullptr, "made by the renderer, no ini file");
++    if (ImGui::GetCurrentContext() == nullptr) return;
++    ImGuiIO& io = ImGui::GetIO();
++    io.DisplaySize = ImVec2((float)fbRes.width, (float)fbRes.height);
++    io.BackendFlags |= ImGuiBackendFlags_HasGamepad;
++
++    // one text font, sized to the picture: the HUD image is the game's 2D layer, shown as a quad in the room
++    ImFontConfig fontCfg{};
++    fontCfg.FontDataOwnedByAtlas = false;
++    const float fontPx = std::max(16.0f, 28.0f * (float)fbRes.height / 1080.0f);
++    ImFont* font = io.Fonts->AddFontFromMemoryCompressedTTF(roboto_compressed_data, roboto_compressed_size, fontPx, &fontCfg);
++    MenuPhase("font", font != nullptr, std::format("roboto {:.0f} px", fontPx).c_str());
++    if (font == nullptr) return;
++    ImGui::StyleColorsDark();
++
++    VkDescriptorPoolSize poolSize = { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 16 };
++    VkDescriptorPoolCreateInfo poolInfo = {
++        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
++        .flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT,
++        .maxSets = 16,
++        .poolSizeCount = 1,
++        .pPoolSizes = &poolSize
++    };
++    VkResult res = dispatch->CreateDescriptorPool(vk.GetDevice(), &poolInfo, nullptr, &m_descriptorPool);
++    MenuPhase("descriptor pool", res == VK_SUCCESS, std::format("result {}", (int)res).c_str());
++    if (res != VK_SUCCESS) { m_descriptorPool = VK_NULL_HANDLE; return; }
++
++    // the render pass keeps the target in GENERAL, as the HUD blit expects of its source; the target is cleared by it
++    VkAttachmentDescription colorAttachment = {
++        .format = fbFormat,
++        .samples = VK_SAMPLE_COUNT_1_BIT,
++        .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
++        .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
++        .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
++        .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
++        .initialLayout = VK_IMAGE_LAYOUT_GENERAL,
++        .finalLayout = VK_IMAGE_LAYOUT_GENERAL
++    };
++    VkAttachmentReference colorAttachmentRef = { .attachment = 0, .layout = VK_IMAGE_LAYOUT_GENERAL };
++    VkSubpassDescription subpass = {
++        .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
++        .colorAttachmentCount = 1,
++        .pColorAttachments = &colorAttachmentRef
++    };
++    VkSubpassDependency dependency = {
++        .srcSubpass = VK_SUBPASS_EXTERNAL,
++        .dstSubpass = 0,
++        .srcStageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
++        .dstStageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
++        .srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_READ_BIT,
++        .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_READ_BIT,
++    };
++    VkRenderPassCreateInfo renderPassInfo = {
++        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
++        .attachmentCount = 1,
++        .pAttachments = &colorAttachment,
++        .subpassCount = 1,
++        .pSubpasses = &subpass,
++        .dependencyCount = 1,
++        .pDependencies = &dependency
++    };
++    res = dispatch->CreateRenderPass(vk.GetDevice(), &renderPassInfo, nullptr, &m_renderPass);
++    MenuPhase("render pass", res == VK_SUCCESS, std::format("format {}, result {}", (int)fbFormat, (int)res).c_str());
++    if (res != VK_SUCCESS) { m_renderPass = VK_NULL_HANDLE; return; }
++
++    const bool loaded = ImGui_ImplVulkan_LoadFunctions(VRManager::instance().vkVersion, [](const char* funcName, void*) {
++        auto& vk = *VRManager::instance().VK;
++        PFN_vkVoidFunction addr = vk.GetDeviceDispatch()->GetDeviceProcAddr(vk.GetDevice(), funcName);
++        if (addr == nullptr)
++            addr = vk.GetInstanceDispatch()->GetInstanceProcAddr(vk.GetInstance(), funcName);
++        return addr;
++    });
++    MenuPhase("backend functions", loaded);
++    if (!loaded) return;
++
++    // Cemu's queue, the one every submit holds ps5xr::QueueMutex for
++    ImGui_ImplVulkan_InitInfo init_info = {
++        .Instance = vk.GetInstance(),
++        .PhysicalDevice = vk.GetPhysicalDevice(),
++        .Device = vk.GetDevice(),
++        .QueueFamily = vk.GetQueueFamilyIndex(),
++        .Queue = nullptr,
++        .DescriptorPool = m_descriptorPool,
++        .RenderPass = m_renderPass,
++        .MinImageCount = 6,
++        .ImageCount = 6,
++        .MSAASamples = VK_SAMPLE_COUNT_1_BIT,
++        .UseDynamicRendering = false,
++        .Allocator = nullptr,
++        .CheckVkResultFn = nullptr,
++        .MinAllocationSize = 1024 * 1024
++    };
++    dispatch->GetDeviceQueue(vk.GetDevice(), vk.GetQueueFamilyIndex(), vk.GetQueueIndex(), &init_info.Queue);
++    const bool inited = init_info.Queue != nullptr && ImGui_ImplVulkan_Init(&init_info);
++    MenuPhase("backend", inited, std::format("queue family {} index {}", vk.GetQueueFamilyIndex(), vk.GetQueueIndex()).c_str());
++    if (!inited) return;
++    m_backendReady = true;
++
++    // The backend uploads the font atlas with its own submit and a wait for the queue to go idle, and it calls
++    // the driver directly, so Cemu's lock around a submit does not cover it. The one graphics queue is shared with
++    // Cemu and the runtime: the upload holds the same lock, here, once, so NewFrame never makes it later.
++    {
++        BETTERVR_PS5_QUEUE_LOCK();
++        const bool fontsOk = ImGui_ImplVulkan_CreateFontsTexture();
++        const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
++        MenuPhase("font upload", fontsOk, std::format("under the queue lock, {} ms since the start of init", ms).c_str());
++        if (!fontsOk) return;
++    }
++
++    m_target = std::make_unique<VulkanFramebuffer>(fbRes.width, fbRes.height, fbFormat, m_renderPass);
++    m_target->vkTransitionLayout(cb, VK_IMAGE_LAYOUT_GENERAL);
++    m_target->vkClear(cb, { 0.0f, 0.0f, 0.0f, 0.0f });
++    MenuPhase("target", true, std::format("{}x{} format {}", fbRes.width, fbRes.height, (int)fbFormat).c_str());
++    m_lastFrame = std::chrono::steady_clock::now();
++    m_ready = true;
++}
++
++RND_Renderer::ImGuiOverlay::~ImGuiOverlay() {
++    auto& vk = *VRManager::instance().VK;
++    auto* dispatch = vk.GetDeviceDispatch();
++    m_target.reset();
++    if (m_backendReady)
++        ImGui_ImplVulkan_Shutdown();
++    if (m_renderPass != VK_NULL_HANDLE)
++        dispatch->DestroyRenderPass(vk.GetDevice(), m_renderPass, nullptr);
++    if (m_descriptorPool != VK_NULL_HANDLE)
++        dispatch->DestroyDescriptorPool(vk.GetDevice(), m_descriptorPool, nullptr);
++}
++
++// The overlay lives from the first open to the end of the process; the gamepad side is stage B.
++void RND_Renderer::ImGuiOverlay::ProcessInputs(OpenXR::InputState&, const VPADStatus&) {
++}
++
++// One ImGui frame into the overlay's own target, which is returned in GENERAL for the HUD blit (nullptr if the overlay
++// could not be made). Starts and ends its frame here: while the menu is closed no ImGui frame runs at all.
++VulkanFramebuffer* RND_Renderer::ImGuiOverlay::DrawMenu(VkCommandBuffer cb) {
++    if (!m_ready) return nullptr;
++    auto* dispatch = VRManager::instance().VK->GetDeviceDispatch();
++
++    const auto now = std::chrono::steady_clock::now();
++    ImGuiIO& io = ImGui::GetIO();
++    io.DeltaTime = std::max(1.0f / 1000.0f, std::chrono::duration<float>(now - m_lastFrame).count());
++    m_lastFrame = now;
++    m_frameCount++;
++    m_fpsFrames++;
++    if (now - m_fpsStart >= std::chrono::seconds(1)) {
++        m_fps = (float)m_fpsFrames / std::chrono::duration<float>(now - m_fpsStart).count();
++        m_fpsFrames = 0;
++        m_fpsStart = now;
++    }
++
++    ImGui_ImplVulkan_NewFrame();
++    ImGui::NewFrame();
++    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
++    ImGui::SetNextWindowSize(ImVec2(io.DisplaySize.x * 0.5f, 0.0f), ImGuiCond_Always);
++    ImGui::Begin("BetterVR menu (stage A)", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings);
++    ImGui::Text("BetterVR 0.9.23");
++    ImGui::Text("%.1f menu frames per second (frame #%llu)", m_fps, (unsigned long long)m_frameCount);
++    ImGui::TextUnformatted("Press Options again to close.");
++    ImGui::End();
++    ImGui::Render();
++
++    VkClearValue clearValue = { .color = { 0.0f, 0.0f, 0.0f, 0.0f } };
++    VkRenderPassBeginInfo renderPassInfo = {
++        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
++        .renderPass = m_renderPass,
++        .framebuffer = m_target->GetFramebuffer(),
++        .renderArea = { .offset = { 0, 0 }, .extent = m_outputRes },
++        .clearValueCount = 1,
++        .pClearValues = &clearValue
++    };
++    dispatch->CmdBeginRenderPass(cb, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
++    if (ImDrawData* drawData = ImGui::GetDrawData())
++        ImGui_ImplVulkan_RenderDrawData(drawData, cb);
++    dispatch->CmdEndRenderPass(cb);
++    m_target->vkPipelineBarrier(cb);
++
++    if (m_frameCount == 1)
++        Log::print<INFO>("[menu] init: first draw -> ok (frame #1 recorded into the overlay target)");
++    return m_target.get();
++}
++
+ #endif // _WIN32
+diff --git a/src/utils/controller_bindings.h b/src/utils/controller_bindings.h
+index 5313b9c..a9fc8dd 100644
+--- a/src/utils/controller_bindings.h
++++ b/src/utils/controller_bindings.h
+@@ -97,7 +97,12 @@ inline void SuggestControllerBindings(XrInstance instance, const ControllerActio
+             XrActionSuggestedBinding{ .action = a.jumpAction, .binding = GetPath(instance, "/user/hand/right/input/b/click") },
+             XrActionSuggestedBinding{ .action = a.run_interactAction, .binding = GetPath(instance, "/user/hand/right/input/a/click") },
+             XrActionSuggestedBinding{ .action = a.useRune_dpadMenu_Action, .binding = GetPath(instance, "/user/hand/left/input/y/click") },
++#ifdef _WIN32
+             XrActionSuggestedBinding{ .action = a.inGame_modMenuAction, .binding = GetPath(instance, "/user/hand/left/input/x/click") },
++#else
++            // PS5: Options on the right Sense (the runtime reports it as menu/click); the left X stays free
++            XrActionSuggestedBinding{ .action = a.inGame_modMenuAction, .binding = GetPath(instance, "/user/hand/right/input/menu/click") },
++#endif
+ 
+             XrActionSuggestedBinding{ .action = a.useLeftItemAction, .binding = GetPath(instance, "/user/hand/left/input/trigger/value") },
+             XrActionSuggestedBinding{ .action = a.useRightItemAction, .binding = GetPath(instance, "/user/hand/right/input/trigger/value") },
+@@ -124,7 +129,12 @@ inline void SuggestControllerBindings(XrInstance instance, const ControllerActio
+             XrActionSuggestedBinding{ .action = a.leftTriggerAction, .binding = GetPath(instance, "/user/hand/left/input/trigger/value") },
+             XrActionSuggestedBinding{ .action = a.rightTriggerAction, .binding = GetPath(instance, "/user/hand/right/input/trigger/value") },
+             XrActionSuggestedBinding{ .action = a.inMenu_inventory_mapAction, .binding = GetPath(instance, "/user/hand/right/input/thumbstick/click") },
++#ifdef _WIN32
+             XrActionSuggestedBinding{ .action = a.inMenu_modMenuAction, .binding = GetPath(instance, "/user/hand/left/input/x/click") },
++#else
++            // PS5: Options on the right Sense (the runtime reports it as menu/click); the left X stays free
++            XrActionSuggestedBinding{ .action = a.inMenu_modMenuAction, .binding = GetPath(instance, "/user/hand/right/input/menu/click") },
++#endif
+         };
+         SuggestProfileBindings(instance, "/interaction_profiles/oculus/touch_controller", suggestedBindings.data(), (uint32_t)suggestedBindings.size(), true);
+     }

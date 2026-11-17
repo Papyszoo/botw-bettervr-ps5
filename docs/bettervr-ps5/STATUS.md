@@ -3,6 +3,32 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-17: build25 (BetterVR menu stage A behind bettervr.json's menu switch), built, untested on console
+
+First step of BetterVR's own menu in the headset: the ImGui overlay starts and a small panel is drawn. Not the
+real menu pages yet, and gameplay input is not blocked on purpose beyond what BetterVR does itself while its
+menu flag is open.
+
+- **Switch:** `"menu"` in `bettervr.json`, default 0. At 0 nothing new runs: no overlay, no Options toggle, the
+  mod menu stays shut as before.
+- **Patch 0027** (new; 0001 to 0026 untouched): `vulkan_imgui.cpp` gets a Linux/PS5 overlay. It is made on the
+  first open, on Cemu's recording thread (the HUD hook), with one text font and no help images. It draws into
+  its own render target and `LinuxCopyHudToSwapchain` blits that to the HUD quad in place of Cemu's HUD image,
+  which is only read. All ImGui calls are on that one thread.
+- **Queue safety:** the backend's font upload makes its own submit and waits for the queue to go idle, and goes
+  to the driver directly. It is called once, in the overlay's constructor, under `ps5xr::QueueMutex()`
+  (`BETTERVR_PS5_QUEUE_LOCK`), on Cemu's queue family and index. No ImGui frame creates it later.
+- **Options:** in the Touch profile the mod menu action is bound to `/user/hand/right/input/menu/click` instead
+  of the left X on this port, and a short press toggles `m_isMenuOpen` (the long-press toggle is Windows only).
+- **Log lines** (one each): `[menu] init: <phase> -> ok/fail (...)` for context, font, descriptor pool,
+  render pass, backend functions, backend, font upload, target and first draw; `[menu] open`, `[menu] closed`.
+  A failed init logs `fail`, closes the menu and keeps it closed.
+
+**Test request 43 (build25, any console).** Set `"menu": 1` in `/data/botwvr/launcher/bettervr.json`, start
+Breath of the Wild in VR, press Options on the right controller, wait 3 s, press Options again. Send the
+`[menu]` lines and any `[crash]` lines from boot.log, and say whether a panel with the BetterVR version and a
+frame rate line appeared in the headset and where.
+
 ## 2026-11-17: build24 (calibrated hand defaults; calibration mode removed), built, untested on console
 
 - **Defaults** (`port/bettervr/xr/runtime.cpp`): `gripYaw` 17, `gripPitch` 32, `gripRoll` 30 when
