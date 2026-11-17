@@ -316,9 +316,12 @@ Done:
   pin, or resets its `ps5` branch to the pin.
 - Host tests: the ones in `docs/BUILDING.md` and `make test-*` need Linux packages and do not touch Cemu patches; left to CI.
 
-Open: nothing known; CI result is recorded below when it is in. The Cemu build has not been run on the fork
-anywhere yet, so expect compile errors in the refreshed patches (0014, 0023, 0028, 0039, 0043).
-Backlog: the stage-1 Test request 34 is not yet written into `STATUS.md`; the `bettervr` pin in `tools/deps.json`
-still serves the 0.9.23 graphic packs for `tools/package.sh` until stage 2.
-Next step: read the CI run (`gh run list --branch bettervr-1.0/stage1 -L 3`), fix compile errors by editing
-`.deps/Cemu` on branch `ps5` (apply with `tools/cemu-patches.sh apply`), commit there, then `tools/cemu-patches.sh export`.
+CI: run 44198974605 green on 576d15a (`make release`); the ELF contains `Vulkan: multiview` and
+`fragment shading rate`, and no BetterVR strings. A read-only review of the diff found no high or
+medium defects (hand-merged patches keep their change; dropped patches are ancestors of `86168a8`).
+Test request 46 in `STATUS.md` (numbers continue from 45, not 34).
+Backlog: the workflow's "Cemu from the pin" step does not reset submodules of a restored
+`.deps/Cemu` (harmless while the submodule pins are unchanged); the `bettervr` pin in
+`tools/deps.json` still serves the 0.9.23 graphic packs for `tools/package.sh` until stage 2.
+Next step: Test request 46 on the console; stage 2 (`CEMU_EXTERNAL_MODULES`, BetterVR 1.0.0 `db5495b`
+compiled in) can start on this branch meanwhile.

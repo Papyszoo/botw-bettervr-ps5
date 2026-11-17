@@ -3,6 +3,23 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-18: 1.0.0 port, stage 1 (Cemu fork base, flat only), built, untested on console
+
+Branch `bettervr-1.0/stage1`, commit 576d15a, CI run 44198974605 green (`make release`). Cemu moves
+from premohq's `cc6fea1` to Crementif's fork `86168a8`; `patches/cemu` rebased (old 0050 to 0052 dropped,
+already in the fork; 0053 cut to its gs copyshader half); BetterVR is not compiled in, so Play in VR
+shows the TV picture in the headset. New patch 0051 logs `Vulkan: multiview: ...` and
+`Vulkan: fragment shading rate: ...` at device creation (both strings checked in the built ELF).
+Details: `UPDATE-1.0.md`, "Stage 1 progress". Not published yet: `testing` still carries build27
+until Test request 45 is answered.
+
+**Test request 46 (stage 1 build, 13.60 console).** Install the stage 1 build, start the app, Play on
+TV, and play two minutes in Kakariko or Hateno. Send `/data/botwvr/cemu/log.txt` and the boot log:
+the `Using GPU`, `Driver version`, `Vulkan: multiview` and `Vulkan: fragment shading rate` lines, the
+fps and GPU-busy lines, and any `[crash]`. Expected: multiview supported with max views at least 2,
+fragment shading rate unsupported. Say whether the picture and fps match build27 on TV. If multiview
+is unsupported, the port stops here (`UPDATE-1.0.md`, "Stages").
+
 ## 2026-11-17: build27 (menu toggle chain and Sense vibration lookup diagnosed/fixed), built, untested on console
 
 Build26's console run: Options reached no menu (no `[menu]` line) and no vibration was felt.
