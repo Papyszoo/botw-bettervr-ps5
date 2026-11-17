@@ -3,6 +3,19 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-17: build24 (Options toggles hand calibration; calibrated defaults), built, untested on console
+
+- **Toggle** (`port/bettervr/xr/runtime.cpp`, `Calibrate()`): a tap of Options on the right controller
+  (rising edge) starts calibrating, the next tap saves and ends it. Everything else is build23's: input
+  blocked, sticks turn the angles, Cross resets, pulse at start and end, `hands calibrated:` log line.
+  Options is hidden from the game on every press, so neither tap reaches it.
+- **Defaults:** `gripYaw` 17, `gripPitch` 32, `gripRoll` 30 when `bettervr.json` has no key (the values
+  saved after build23's calibration). Cross resets to these.
+
+**Test request 42 (build24, any console).** On a fresh `bettervr.json` (delete it), without calibrating:
+are the hands right? Then tap Options, adjust, tap Options again: does the tap-to-start, tap-to-save
+flow work, and does the game see no Options press? Send the `[vr-xr] hands calibrated:` line.
+
 ## 2026-11-17: build23 (hold Options to calibrate the hands), built, untested on console
 
 Build22's 80 degree `gripYaw` default is gone: it turned the hands about the wrong axis. All three
@@ -21,6 +34,11 @@ angles, `gripYaw`, `gripPitch` and `gripRoll`, now default to 0, which is build2
 **Test request 41 (build23, any console).** Hold Options on the right controller and turn the hands
 until they match the real controllers held pointing ahead, then release. Check pointing down and palms
 up. Send the `[vr-xr] hands calibrated:` line, or let the log be read.
+
+**Result 41 (build23, 2026-11-17, from the console's log and `bettervr.json`).** Calibration works, no
+crash; the hands are "ok now, maybe not perfect, but better". Saved: `gripYaw` 17.3, `gripPitch` 31.9,
+`gripRoll` 29.7; the log reads `hands calibrated: yaw 17 pitch 32 roll 30`. Holding Options while using
+the right stick is awkward, since both need the right thumb; build24 changes it to a tap toggle.
 
 ## 2026-11-17: build22 (Sense hands turned inward), built, untested on console
 

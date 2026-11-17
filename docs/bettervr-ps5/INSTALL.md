@@ -198,13 +198,13 @@ Optional settings in `/data/botwvr/launcher/bettervr.json`, with any build:
 | Setting | What it does |
 | --- | --- |
 | `"bettervr": false` | No BetterVR: the game as a flat screen in the headset (M2), to compare. |
-| `"gripPitch": 30`, `"aimPitch": 30` | Tilt the controllers' poses, in degrees, if Link's hands point the wrong way. |
-| `"gripYaw": 30`, `"gripRoll": 30` | Turn the controllers' poses about their vertical axis and their long axis, in degrees (left hand +, right hand -; default 0). Set by holding Options, see below. |
+| `"gripPitch": 30`, `"aimPitch": 30` | Tilt the controllers' poses, in degrees, if Link's hands point the wrong way (`gripPitch` default 32, `aimPitch` default 0). |
+| `"gripYaw": 30`, `"gripRoll": 30` | Turn the controllers' poses about their vertical axis and their long axis, in degrees (left hand +, right hand -; defaults 17 and 30; `gripPitch` defaults to 32). Set by tapping Options, see below. |
 
 BetterVR's own menu does not exist on this port. The app's in-game menu opens with a touchpad click plus Options (O closes it); it takes the input and is drawn on the TV only, not yet in the headset.
 
-**Calibrating the hands.** In VR, hold Options on the right controller: the game gets no input and Link's hands follow the sticks. Left stick X turns yaw, left stick Y pitch, right stick X roll; Cross resets all three to 0.
-Turn them until Link's hands match the controllers held pointing ahead, then release Options: both controllers pulse, and the angles are saved to `bettervr.json` (`gripYaw`, `gripPitch`, `gripRoll`).
+**Calibrating the hands.** In VR, tap Options on the right controller: the game gets no input and Link's hands follow the sticks. Left stick X turns yaw, left stick Y pitch, right stick X roll; Cross resets all three to the defaults (yaw 17, pitch 32, roll 30).
+Turn them until Link's hands match the controllers held pointing ahead, then tap Options again: both controllers pulse, and the angles are saved to `bettervr.json` (`gripYaw`, `gripPitch`, `gripRoll`).
 Check pointing down and palms up too; repeat if one of them is off.
 
 ## 8. If something goes wrong

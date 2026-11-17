@@ -402,8 +402,9 @@ namespace
 			XrTime hapticUntil = 0;
 			bool vibrating = false, vibrationLogged = false, poseLogged = false;
 		} hands[2];
-		float gripYaw = 0, gripPitch = 0, gripRoll = 0, aimPitch = 0; // degrees: the grip and aim poses' turn, bettervr.json's keys
-		bool calibrating = false; // Options on the right Sense is held: the sticks turn the hands, the game gets no input
+		float gripYaw = 17, gripPitch = 32, gripRoll = 30, aimPitch = 0; // degrees: the grip and aim poses' turn, bettervr.json's keys
+		bool calibrating = false; // Options on the right Sense was tapped: the sticks turn the hands, the game gets no input
+		bool optionsDown = false; // Options was down last frame (its rising edge toggles calibrating, and the game never sees the press)
 		XrTime calibratedAt = 0;
 		bool monoQuad = true, quadPlane = true; // bettervr.json's "monoQuad", "quadPlane": 0 is build15's picture across the eye, upright box quad
 		bool poseKeep = true; // bettervr.json's "poseKeep": 0 forgets a re-shown pair's render pose once the located ring drops it
@@ -572,16 +573,22 @@ namespace
 
 	void SetVibration(int i, float amplitude);
 
-	// Options on the right Sense held: the sticks turn the hands' poses live (left stick X yaw, Y pitch,
-	// right stick X roll), Cross resets, and the game sees no input. Released: the angles are saved.
+	// A tap of Options on the right Sense starts calibrating, the next tap saves the angles and ends it. While calibrating the sticks
+	// turn the hands' poses live (left stick X yaw, Y pitch, right stick X roll), Cross resets them, and the game sees no input.
+	// The Options press itself is hidden from the game until it is released.
 	void Calibrate()
 	{
 		const XrTime now = Now();
 		auto& left = s.hands[0];
 		auto& right = s.hands[1];
-		const bool held = right.connected && (right.buttons & kOptions) != 0;
-		if (held != s.calibrating)
+		const bool down = right.connected && (right.buttons & kOptions) != 0;
+		const bool tapped = down && !s.optionsDown;
+		s.optionsDown = down;
+		if (down)
+			right.buttons &= ~kOptions;
+		if (tapped)
 		{
+			const bool held = !s.calibrating;
 			s.calibrating = held;
 			s.calibratedAt = now;
 			for (int i = 0; i < 2; i++)
@@ -596,14 +603,18 @@ namespace
 				return;
 			}
 		}
-		if (!held)
+		if (!s.calibrating)
 			return;
 		const float dt = std::min(0.1f, (float)(now - s.calibratedAt) * 1e-9f);
 		s.calibratedAt = now;
 		auto dead = [](float v) { return std::fabs(v) < 0.2f ? 0.0f : v; };
 		constexpr float kRate = 45.0f; // degrees a second
 		if (right.buttons & kCross)
-			s.gripYaw = s.gripPitch = s.gripRoll = 0;
+		{
+			s.gripYaw = 17;
+			s.gripPitch = 32;
+			s.gripRoll = 30;
+		}
 		else
 		{
 			s.gripYaw += dead(left.stickX) * kRate * dt;
@@ -1441,10 +1452,10 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateSession(XrInstance, const XrSessionCreate
 		delete session;
 		return XR_ERROR_RUNTIME_FAILURE;
 	}
-	s.gripPitch = BetterVR_PS5_Setting("gripPitch", 0.0f);
+	s.gripPitch = BetterVR_PS5_Setting("gripPitch", 32.0f);
 	s.aimPitch = BetterVR_PS5_Setting("aimPitch", 0.0f);
-	s.gripYaw = BetterVR_PS5_Setting("gripYaw", 0.0f);
-	s.gripRoll = BetterVR_PS5_Setting("gripRoll", 0.0f);
+	s.gripYaw = BetterVR_PS5_Setting("gripYaw", 17.0f);
+	s.gripRoll = BetterVR_PS5_Setting("gripRoll", 30.0f);
 	s.reproject = BetterVR_PS5_Setting("reproject", 1.0f) != 0.0f;
 	Log("reprojection of the game's frames: %s (bettervr.json's reproject)", s.reproject ? "on" : "off");
 	const bool playerOnce = BetterVR_PS5_PlayerOnce();
@@ -1484,7 +1495,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateSession(XrInstance, const XrSessionCreate
 		Log("TV mirror on: Hmd2's social screen shows the headset's view on the TV (bettervr.json's tv), no present of ours");
 	else
 		Log("TV mirror asked for but Hmd2 did not take it (bettervr.json's tv); the hmd2 lines say why, VR continues");
-	Log("controllers: grip pitch %.1f deg, aim pitch %.1f deg, grip yaw %.1f roll %.1f deg, yaw and roll left +, right - (bettervr.json's gripPitch, aimPitch, gripYaw, gripRoll; hold Options to calibrate)", s.gripPitch, s.aimPitch, s.gripYaw, s.gripRoll);
+	Log("controllers: grip pitch %.1f deg, aim pitch %.1f deg, grip yaw %.1f roll %.1f deg, yaw and roll left +, right - (bettervr.json's gripPitch, aimPitch, gripYaw, gripRoll; tap Options to calibrate)", s.gripPitch, s.aimPitch, s.gripYaw, s.gripRoll);
 	OpenHands();
 	*out = session;
 	QueueState(XR_SESSION_STATE_IDLE);
