@@ -23,7 +23,12 @@ first-time stutters changed against build20. Test requests 31 to 33 still apply 
 
 **Result 39 (2026-11-17, firmware 13.60, kstuff from ps5_autoloader with no app-jailbreak list, fresh
 install after a factory reset):** the game runs, fighting worked, and nothing went wrong. Not reported
-yet: the shrine, the stutter comparison with build20, and the logs zip.
+yet: the shrine and the stutter comparison with build20. The app's `boot.log`, about 5 minutes in VR
+up to the time it was read, has no `[crash]` line. It says "HEN: no ... JIT available (executable
+direct memory)" and "the recompiler's code is in executable direct memory (no HEN JIT grant
+needed)". It also answers Test request 31 for this setup: `hmd2: libSceHmd2: found by: sandbox path`,
+firmware table 13.60, `sceHmd2Initialize`, `sceVrTracker2Initialize` and `sceHmd2ReprojectionInitialize` all
+0, and no `[vr] VR did not start`.
 
 ## 2026-11-16: BetterVR 1.0.0 update planned (not built)
 
