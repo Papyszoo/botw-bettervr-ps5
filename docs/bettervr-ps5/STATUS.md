@@ -3,7 +3,7 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
-## 2026-11-16: build21 (upstream Cemu fixes), built, untested on console
+## 2026-11-16: build21 (upstream Cemu fixes), built, first console run 2026-11-17
 
 Backports of small upstream fixes, each its own patch, code verbatim:
 
@@ -20,6 +20,10 @@ Backports of small upstream fixes, each its own patch, code verbatim:
 **Test request 39 (build21, any console).** Play Breath of the Wild in VR for about 15 minutes,
 including a shrine and a fight. Send the logs zip, any `[crash]` lines, and say whether crashes or
 first-time stutters changed against build20. Test requests 31 to 33 still apply to this build.
+
+**Result 39 (2026-11-17, firmware 13.60, kstuff from ps5_autoloader with no app-jailbreak list, fresh
+install after a factory reset):** the game runs, fighting worked, and nothing went wrong. Not reported
+yet: the shrine, the stutter comparison with build20, and the logs zip.
 
 ## 2026-11-16: BetterVR 1.0.0 update planned (not built)
 
