@@ -3,6 +3,24 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-17: build22 (Sense hands turned inward), built, untested on console
+
+Build21's first console run showed both of Link's hands turned inward about 80 degrees (range 70 to 95)
+with the controllers neutral and pointing ahead, mirrored left and right, pitch and roll about level.
+
+- **Yaw correction** (`port/bettervr/xr/runtime.cpp`, in `xrLocateSpace`): grip and aim poses are turned
+  about the controller's vertical axis by `gripYaw` degrees, +left and -right, before the pitch. The
+  default is 80, the measured value; the code shows no exact convention, so it is empirical.
+- **`gripYaw` key** in `bettervr.json`, read like `gripPitch`, and logged in the
+  "controllers: grip pitch ..." line. Documented in INSTALL.md.
+- **Diagnostic:** every 2 s for the first 20 s of hand poses, `[vr-xr] hands: L yaw/pitch/roll ...`
+  with the final grip rotation against the head, in degrees. Neutral and correct reads about 0/0/0.
+
+**Test request 40 (build22, any console).** Hold the controllers neutral pointing straight ahead, then
+straight down, then turn the palms up. Say whether Link's hands match each time, and send the
+`[vr-xr] hands:` lines from the log. If the hands are still off, send a `gripYaw` value to try in
+`/data/botwvr/launcher/bettervr.json`.
+
 ## 2026-11-16: build21 (upstream Cemu fixes), built, first console run 2026-11-17
 
 Backports of small upstream fixes, each its own patch, code verbatim:

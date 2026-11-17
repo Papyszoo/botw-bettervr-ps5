@@ -400,7 +400,7 @@ namespace
 			XrTime hapticUntil = 0;
 			bool vibrating = false, vibrationLogged = false, poseLogged = false;
 		} hands[2];
-		float gripPitch = 0, aimPitch = 0;
+		float gripPitch = 0, aimPitch = 0, gripYaw = 80;
 		bool monoQuad = true, quadPlane = true; // bettervr.json's "monoQuad", "quadPlane": 0 is build15's picture across the eye, upright box quad
 		bool poseKeep = true; // bettervr.json's "poseKeep": 0 forgets a re-shown pair's render pose once the located ring drops it
 		// The render pose of the picture the submit thread is showing again: the left view it was
@@ -1389,6 +1389,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateSession(XrInstance, const XrSessionCreate
 	}
 	s.gripPitch = BetterVR_PS5_Setting("gripPitch", 0.0f);
 	s.aimPitch = BetterVR_PS5_Setting("aimPitch", 0.0f);
+	s.gripYaw = BetterVR_PS5_Setting("gripYaw", 80.0f);
 	s.reproject = BetterVR_PS5_Setting("reproject", 1.0f) != 0.0f;
 	Log("reprojection of the game's frames: %s (bettervr.json's reproject)", s.reproject ? "on" : "off");
 	const bool playerOnce = BetterVR_PS5_PlayerOnce();
@@ -1428,7 +1429,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateSession(XrInstance, const XrSessionCreate
 		Log("TV mirror on: Hmd2's social screen shows the headset's view on the TV (bettervr.json's tv), no present of ours");
 	else
 		Log("TV mirror asked for but Hmd2 did not take it (bettervr.json's tv); the hmd2 lines say why, VR continues");
-	Log("controllers: grip pitch %.1f deg, aim pitch %.1f deg (bettervr.json's gripPitch, aimPitch)", s.gripPitch, s.aimPitch);
+	Log("controllers: grip pitch %.1f deg, aim pitch %.1f deg, grip yaw %.1f deg, left +, right - (bettervr.json's gripPitch, aimPitch, gripYaw)", s.gripPitch, s.aimPitch, s.gripYaw);
 	OpenHands();
 	*out = session;
 	QueueState(XR_SESSION_STATE_IDLE);
@@ -1569,8 +1570,26 @@ XRAPI_ATTR XrResult XRAPI_CALL xrLocateSpace(XrSpace space, XrSpace base, XrTime
 			location->pose = {{0, 0, 0, 1}, {0, 0, 0}};
 			return XR_SUCCESS;
 		}
+		// the Sense's raw pose has Link's hands turned inward about the vertical axis, mirrored for the two hands
+		const int side = int(hand - s.hands);
+		const Pose turn{AxisAngle(0, 1, 0, side == 0 ? s.gripYaw : -s.gripYaw), {}};
 		const Pose tilt{AxisAngle(1, 0, 0, aim ? s.aimPitch : s.gripPitch), {}};
-		spacePose = Compose(Compose(hand->pose, tilt), space->offset);
+		spacePose = Compose(Compose(Compose(hand->pose, turn), tilt), space->offset);
+		// for the first 20 s, every 2 s: the grip's rotation against the head, which reads about 0/0/0 when the
+		// controller points straight ahead
+		static XrTime handsStart = 0, handsLogged[2] = {0, 0};
+		const XrTime nowTime = Now();
+		if (!aim && side >= 0 && side < 2 && (handsStart == 0 || nowTime - handsStart < 20'000'000'000) && nowTime - handsLogged[side] >= 2'000'000'000)
+		{
+			if (handsStart == 0)
+				handsStart = nowTime;
+			handsLogged[side] = nowTime;
+			const Quat rel = Mul(Conj(HeadAt(time).q), spacePose.q);
+			const Vec3 fwd = Rotate(rel, {0, 0, -1}), right = Rotate(rel, {1, 0, 0}), up = Rotate(rel, {0, 1, 0});
+			const float deg = 180.0f / 3.14159265f;
+			Log("hands: %c yaw/pitch/roll %.0f/%.0f/%.0f (head-relative, degrees)", side == 0 ? 'L' : 'R', std::atan2(-fwd.x, -fwd.z) * deg,
+				std::asin(std::max(-1.0f, std::min(1.0f, fwd.y))) * deg, std::atan2(right.y, up.y) * deg);
+		}
 		const Pose toBase = Inverse(SpacePose(base, time));
 		for (auto* next = static_cast<XrBaseOutStructure*>(location->next); next; next = next->next)
 			if (next->type == XR_TYPE_SPACE_VELOCITY)
