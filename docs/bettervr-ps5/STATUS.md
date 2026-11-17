@@ -3,18 +3,18 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
-## 2026-11-17: build24 (Options toggles hand calibration; calibrated defaults), built, untested on console
+## 2026-11-17: build24 (calibrated hand defaults; calibration mode removed), built, untested on console
 
-- **Toggle** (`port/bettervr/xr/runtime.cpp`, `Calibrate()`): a tap of Options on the right controller
-  (rising edge) starts calibrating, the next tap saves and ends it. Everything else is build23's: input
-  blocked, sticks turn the angles, Cross resets, pulse at start and end, `hands calibrated:` log line.
-  Options is hidden from the game on every press, so neither tap reaches it.
-- **Defaults:** `gripYaw` 17, `gripPitch` 32, `gripRoll` 30 when `bettervr.json` has no key (the values
-  saved after build23's calibration). Cross resets to these.
+- **Defaults** (`port/bettervr/xr/runtime.cpp`): `gripYaw` 17, `gripPitch` 32, `gripRoll` 30 when
+  `bettervr.json` has no key (the values build23's calibration found). Yaw and roll are mirrored for the
+  right hand as before. The three keys, the `controllers: grip ...` log line and the first 20 s of
+  `[vr-xr] hands:` lines stay.
+- **Calibration mode removed:** build23's Options handling, input blocking, stick turning, Cross reset,
+  pulses, `hands calibrated` log and `BetterVR_PS5_SaveHands` are gone; `vr_settings.cpp` is back to its
+  pre-build23 content. INSTALL.md's calibration note is dropped.
 
-**Test request 42 (build24, any console).** On a fresh `bettervr.json` (delete it), without calibrating:
-are the hands right? Then tap Options, adjust, tap Options again: does the tap-to-start, tap-to-save
-flow work, and does the game see no Options press? Send the `[vr-xr] hands calibrated:` line.
+**Test request 42 (build24, any console).** On a fresh `bettervr.json`, without the grip keys: do the
+hands look right (pointing ahead, down, palms up)? Send the `[vr-xr] hands:` lines if not.
 
 ## 2026-11-17: build23 (hold Options to calibrate the hands), built, untested on console
 
