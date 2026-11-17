@@ -3,6 +3,25 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-17: build23 (hold Options to calibrate the hands), built, untested on console
+
+Build22's 80 degree `gripYaw` default is gone: it turned the hands about the wrong axis. All three
+angles, `gripYaw`, `gripPitch` and `gripRoll`, now default to 0, which is build21's hands.
+
+- **Rotation** (`port/bettervr/xr/runtime.cpp`, in `xrLocateSpace`): the angles are one local rotation
+  after the tracker pose, in the order yaw (local Y), pitch (local X), roll (local Z), on grip and aim.
+  Yaw and roll are mirrored for the right hand. `aimPitch` stays an extra on aim only. `gripPitch` now
+  applies to aim as well as grip.
+- **Calibration:** while Options on the right controller is held, neither controller's buttons or sticks
+  reach the game. Left stick X turns yaw, left stick Y pitch, right stick X roll (45 degrees a second),
+  Cross resets. Both controllers pulse when it starts and ends. On release the angles are written to
+  `bettervr.json` through the VR settings page's writer, and `[vr-xr] hands calibrated: yaw Y pitch P
+  roll R (saved to bettervr.json)` is logged. `[vr-xr] hands:` is logged every 1 s while held.
+
+**Test request 41 (build23, any console).** Hold Options on the right controller and turn the hands
+until they match the real controllers held pointing ahead, then release. Check pointing down and palms
+up. Send the `[vr-xr] hands calibrated:` line, or let the log be read.
+
 ## 2026-11-17: build22 (Sense hands turned inward), built, untested on console
 
 Build21's first console run showed both of Link's hands turned inward about 80 degrees (range 70 to 95)

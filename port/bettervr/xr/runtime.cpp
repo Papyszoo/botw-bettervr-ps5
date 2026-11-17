@@ -57,6 +57,8 @@ int scePadSetVibration(int handle, const void* vibration);
 int scePadSetVibrationMode(int handle, int mode);
 // port/bettervr/VrPS5.cpp: a number from bettervr.json, or fallback
 float BetterVR_PS5_Setting(const char* name, float fallback);
+// port/frontend/shell/vr_settings.cpp: the app's bettervr.json writer, for the calibrated hand angles
+void BetterVR_PS5_SaveHands(float yaw, float pitch, float roll);
 // BetterVR's gate (entity_controller.cpp): the playerOnce value it cached and the asm runs, default on
 bool BetterVR_PS5_PlayerOnce();
 // BetterVR's comfort fades (entity_controller.cpp): bettervr.json's fades, default on
@@ -400,7 +402,9 @@ namespace
 			XrTime hapticUntil = 0;
 			bool vibrating = false, vibrationLogged = false, poseLogged = false;
 		} hands[2];
-		float gripPitch = 0, aimPitch = 0, gripYaw = 80;
+		float gripYaw = 0, gripPitch = 0, gripRoll = 0, aimPitch = 0; // degrees: the grip and aim poses' turn, bettervr.json's keys
+		bool calibrating = false; // Options on the right Sense is held: the sticks turn the hands, the game gets no input
+		XrTime calibratedAt = 0;
 		bool monoQuad = true, quadPlane = true; // bettervr.json's "monoQuad", "quadPlane": 0 is build15's picture across the eye, upright box quad
 		bool poseKeep = true; // bettervr.json's "poseKeep": 0 forgets a re-shown pair's render pose once the located ring drops it
 		// The render pose of the picture the submit thread is showing again: the left view it was
@@ -566,6 +570,55 @@ namespace
 		}
 	}
 
+	void SetVibration(int i, float amplitude);
+
+	// Options on the right Sense held: the sticks turn the hands' poses live (left stick X yaw, Y pitch,
+	// right stick X roll), Cross resets, and the game sees no input. Released: the angles are saved.
+	void Calibrate()
+	{
+		const XrTime now = Now();
+		auto& left = s.hands[0];
+		auto& right = s.hands[1];
+		const bool held = right.connected && (right.buttons & kOptions) != 0;
+		if (held != s.calibrating)
+		{
+			s.calibrating = held;
+			s.calibratedAt = now;
+			for (int i = 0; i < 2; i++)
+			{
+				s.hands[i].hapticUntil = now + 150'000'000;
+				SetVibration(i, 0.6f);
+			}
+			if (!held)
+			{
+				BetterVR_PS5_SaveHands(s.gripYaw, s.gripPitch, s.gripRoll);
+				Log("hands calibrated: yaw %.0f pitch %.0f roll %.0f (saved to bettervr.json)", s.gripYaw, s.gripPitch, s.gripRoll);
+				return;
+			}
+		}
+		if (!held)
+			return;
+		const float dt = std::min(0.1f, (float)(now - s.calibratedAt) * 1e-9f);
+		s.calibratedAt = now;
+		auto dead = [](float v) { return std::fabs(v) < 0.2f ? 0.0f : v; };
+		constexpr float kRate = 45.0f; // degrees a second
+		if (right.buttons & kCross)
+			s.gripYaw = s.gripPitch = s.gripRoll = 0;
+		else
+		{
+			s.gripYaw += dead(left.stickX) * kRate * dt;
+			s.gripPitch += dead(left.stickY) * kRate * dt;
+			s.gripRoll += dead(right.stickX) * kRate * dt;
+		}
+		for (float* angle : {&s.gripYaw, &s.gripPitch, &s.gripRoll})
+			*angle = std::max(-180.0f, std::min(180.0f, *angle));
+		for (auto* hand : {&left, &right})
+		{
+			hand->buttons = 0;
+			hand->stickX = hand->stickY = hand->trigger = 0;
+		}
+	}
+
 	// once a frame (xrSyncActions): buttons, stick, trigger and pose of each hand
 	void ReadHands()
 	{
@@ -633,6 +686,7 @@ namespace
 			const uint64_t display = hmd2::display_time_us();
 			SampleHand(hand, pose, display != 0 ? (XrTime)display * 1000 : now);
 		}
+		Calibrate();
 	}
 
 	// One bound input's value now: a button as 0 or 1, an axis as itself
@@ -1389,7 +1443,8 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateSession(XrInstance, const XrSessionCreate
 	}
 	s.gripPitch = BetterVR_PS5_Setting("gripPitch", 0.0f);
 	s.aimPitch = BetterVR_PS5_Setting("aimPitch", 0.0f);
-	s.gripYaw = BetterVR_PS5_Setting("gripYaw", 80.0f);
+	s.gripYaw = BetterVR_PS5_Setting("gripYaw", 0.0f);
+	s.gripRoll = BetterVR_PS5_Setting("gripRoll", 0.0f);
 	s.reproject = BetterVR_PS5_Setting("reproject", 1.0f) != 0.0f;
 	Log("reprojection of the game's frames: %s (bettervr.json's reproject)", s.reproject ? "on" : "off");
 	const bool playerOnce = BetterVR_PS5_PlayerOnce();
@@ -1429,7 +1484,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateSession(XrInstance, const XrSessionCreate
 		Log("TV mirror on: Hmd2's social screen shows the headset's view on the TV (bettervr.json's tv), no present of ours");
 	else
 		Log("TV mirror asked for but Hmd2 did not take it (bettervr.json's tv); the hmd2 lines say why, VR continues");
-	Log("controllers: grip pitch %.1f deg, aim pitch %.1f deg, grip yaw %.1f deg, left +, right - (bettervr.json's gripPitch, aimPitch, gripYaw)", s.gripPitch, s.aimPitch, s.gripYaw);
+	Log("controllers: grip pitch %.1f deg, aim pitch %.1f deg, grip yaw %.1f roll %.1f deg, yaw and roll left +, right - (bettervr.json's gripPitch, aimPitch, gripYaw, gripRoll; hold Options to calibrate)", s.gripPitch, s.aimPitch, s.gripYaw, s.gripRoll);
 	OpenHands();
 	*out = session;
 	QueueState(XR_SESSION_STATE_IDLE);
@@ -1572,14 +1627,17 @@ XRAPI_ATTR XrResult XRAPI_CALL xrLocateSpace(XrSpace space, XrSpace base, XrTime
 		}
 		// the Sense's raw pose has Link's hands turned inward about the vertical axis, mirrored for the two hands
 		const int side = int(hand - s.hands);
-		const Pose turn{AxisAngle(0, 1, 0, side == 0 ? s.gripYaw : -s.gripYaw), {}};
-		const Pose tilt{AxisAngle(1, 0, 0, aim ? s.aimPitch : s.gripPitch), {}};
-		spacePose = Compose(Compose(Compose(hand->pose, turn), tilt), space->offset);
-		// for the first 20 s, every 2 s: the grip's rotation against the head, which reads about 0/0/0 when the
+		const float mirror = side == 0 ? 1.0f : -1.0f;
+		const Pose turn{AxisAngle(0, 1, 0, mirror * s.gripYaw), {}};
+		const Pose tilt{AxisAngle(1, 0, 0, s.gripPitch + (aim ? s.aimPitch : 0.0f)), {}};
+		const Pose roll{AxisAngle(0, 0, 1, mirror * s.gripRoll), {}};
+		spacePose = Compose(Compose(Compose(Compose(hand->pose, turn), tilt), roll), space->offset);
+		// for the first 20 s, every 2 s, and every 1 s while calibrating: the grip's rotation against the head, which reads about 0/0/0 when the
 		// controller points straight ahead
 		static XrTime handsStart = 0, handsLogged[2] = {0, 0};
 		const XrTime nowTime = Now();
-		if (!aim && side >= 0 && side < 2 && (handsStart == 0 || nowTime - handsStart < 20'000'000'000) && nowTime - handsLogged[side] >= 2'000'000'000)
+		if (!aim && side >= 0 && side < 2 && (handsStart == 0 || s.calibrating || nowTime - handsStart < 20'000'000'000) &&
+			nowTime - handsLogged[side] >= (s.calibrating ? 1'000'000'000 : 2'000'000'000))
 		{
 			if (handsStart == 0)
 				handsStart = nowTime;

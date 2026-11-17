@@ -231,6 +231,20 @@ namespace ps5shell
 			json.AddMember(rapidjson::Value(key, json.GetAllocator()), rapidjson::Value(value), json.GetAllocator());
 			SaveJson();
 		}
+		// The hands calibrated in game (hold Options, port/bettervr/xr/runtime.cpp): three keys, one write
+		void SaveHands(float yaw, float pitch, float roll)
+		{
+			JsonReload();
+			auto& json = Json();
+			const std::pair<const char*, double> keys[] = {{"gripYaw", yaw}, {"gripPitch", pitch}, {"gripRoll", roll}};
+			for (const auto& [key, value] : keys)
+			{
+				if (json.HasMember(key))
+					json.RemoveMember(key);
+				json.AddMember(rapidjson::Value(key, json.GetAllocator()), rapidjson::Value(value), json.GetAllocator());
+			}
+			SaveJson();
+		}
 
 		std::vector<std::string> Degrees()
 		{
@@ -415,4 +429,10 @@ namespace ps5shell
 		else if (id == "bvr-aim")
 			SetJson("aimPitch", (index - 9) * 5);
 	}
+}
+
+// The calibrated Sense hand angles (port/bettervr/xr/runtime.cpp: hold Options), through the writer above
+extern "C" void BetterVR_PS5_SaveHands(float yaw, float pitch, float roll)
+{
+	ps5shell::SaveHands(yaw, pitch, roll);
 }
