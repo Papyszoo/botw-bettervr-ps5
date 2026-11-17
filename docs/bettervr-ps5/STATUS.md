@@ -3,6 +3,34 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-17: build26 (Sense controller vibration), built, untested on console
+
+Build23's log showed `scePadSetVibrationMode` and `scePadSetVibration` returning 0x80920003 for both
+Sense controllers: libScePad's DualSense setters refuse pad types 3 and 4, so nothing was ever felt.
+
+- **Calls** (`third_party/hmd2/hmd2.cpp`, `hmd2::sense_set_vibration_mode` and `sense_set_vibration`;
+  `port/bettervr/xr/runtime.cpp`): libScePad's own Sense exports, `scePadVrControllerSetVibrationMode`
+  (NID Wf6-PNCyY20) and `scePadVrControllerSetVibration` (NID DGCwN1Lmmys, one intensity byte), on the
+  `scePadVrControllerReadState` handle. Resolved with hmd2's `load_sysmodule` and `resolve_module`:
+  `sceKernelDlsym` by name first, else on 13.60 at +0x100b0 / +0x5610 after the anchor string at +0x1f650
+  matches. Other firmware: vibration stays off, one log line. Names, offsets and anchor are firmware
+  facts from Ghost-VR (GPL); no code taken.
+- **Use:** at controller open, mode 2 once per hand, logged as `[vr-xr] left Sense controller vibration
+  mode -> 0x...`. `SetVibration(i, amplitude)` sends `amplitude * 255` as one byte, 0 stops it; the first
+  one is logged as `vibration -> 0x...`. The DualSense calls for the Sense controllers are gone; Cemu's
+  own DualSense rumble is untouched.
+- **Backlog:** headset vibration on damage taken and on explosions, not on hits landed. The PS VR2
+  headset has a single motor (`sceHmd2SetVibration(hmdHandle, 0..25)`, 13.60 offset 0x2ae00 per
+  Ghost-VR's and HLA-PSVR2's export tables, unverified on hardware), so it has no direction; direction
+  could only come from the two Sense controllers (left/right). BetterVR 0.9.23 only sees the game's
+  generic rumble (VPADControlMotor), so damage-only or explosion-only needs a new hook into BotW's code.
+  Planned, not built.
+
+**Test request 44 (build26, 13.60 console).** Hit something with a weapon and use anything that rumbles
+in the game, with the Sense controllers on. Send or let the log show the `vibration mode ->` and
+`vibration ->` lines for both hands. Expected: `0x00000000` and a felt pulse. If `Sense vibration
+exports not found` appears instead, send the `hmd2: libScePad` lines.
+
 ## 2026-11-17: build25 (BetterVR menu stage A behind bettervr.json's menu switch), built, untested on console
 
 First step of BetterVR's own menu in the headset: the ImGui overlay starts and a small panel is drawn. Not the

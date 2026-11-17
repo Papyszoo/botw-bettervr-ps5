@@ -27,7 +27,7 @@
 //                      Create = menu. Read with scePadVrControllerReadState (types 3 and 4, opened
 //                      for Hmd2's user), posed by VrTracker2 (hmd2::register_controller /
 //                      controller_pose) with velocities from successive poses; haptics through
-//                      scePadSetVibration. The DualSense stays the game's GamePad (Cemu's), which
+//                      hmd2::sense_set_vibration (libScePad's Sense exports). The DualSense stays the game's GamePad (Cemu's), which
 //                      BetterVR merges with these. Layout from photo-splat-vr's pad_input.h and
 //                      HLA-PSVR2's psvr2.c (third_party/hmd2/reference); none of it seen on a console.
 //
@@ -53,8 +53,6 @@ int scePadOpen(int user, int type, int index, const void* parameters);
 int scePadGetHandle(int user, int type, int index);
 int scePadClose(int handle);
 int scePadVrControllerReadState(int handle, void* state);
-int scePadSetVibration(int handle, const void* vibration);
-int scePadSetVibrationMode(int handle, int mode);
 // port/bettervr/VrPS5.cpp: a number from bettervr.json, or fallback
 float BetterVR_PS5_Setting(const char* name, float fallback);
 // BetterVR's gate (entity_controller.cpp): the playerOnce value it cached and the asm runs, default on
@@ -508,7 +506,7 @@ namespace
 	constexpr uint32_t kCreate = 0x1, kL3 = 0x2, kR3 = 0x4, kOptions = 0x8, kL1 = 0x400, kR1 = 0x800, kTriangle = 0x1000,
 					   kCircle = 0x2000, kCross = 0x4000, kSquare = 0x8000;
 	constexpr XrDuration kPadRetry = 2'000'000'000; // as photo-splat-vr and HLA-PSVR2: every 2 s
-	constexpr int kVibrationModeCompatible = 2;			 // the app's pad.cpp sets it for the DualSense's motors
+	constexpr int kVibrationModeCompatible = 2;			 // the mode Ghost-VR sets on the Sense before its first vibration
 
 	const char* HandName(int hand)
 	{
@@ -549,10 +547,11 @@ namespace
 			hand.handle = handle;
 			hand.owned = owned;
 			hand.reportedMissing = false;
-			const int mode = scePadSetVibrationMode(handle, kVibrationModeCompatible);
+			const int mode = hmd2::sense_set_vibration_mode(handle, kVibrationModeCompatible);
 			hand.registered = hmd2::register_controller(handle, i == 1);
-			Log("%s Sense controller open (handle %d), VrTracker2 registration %s, vibration mode 0x%08x", HandName(i), handle,
-				hand.registered ? "done" : "FAILED (no pose for this hand)", (unsigned)mode);
+			Log("%s Sense controller open (handle %d), VrTracker2 registration %s", HandName(i), handle,
+				hand.registered ? "done" : "FAILED (no pose for this hand)");
+			Log("%s Sense controller vibration mode -> 0x%08x", HandName(i), (unsigned)mode);
 		}
 	}
 
@@ -749,12 +748,11 @@ namespace
 		if (hand.handle < 0)
 			return;
 		const uint8_t level = (uint8_t)std::lround(std::max(0.0f, std::min(1.0f, amplitude)) * 255.0f);
-		const uint8_t motors[2] = {level, level};
-		const int result = scePadSetVibration(hand.handle, motors);
+		const int result = hmd2::sense_set_vibration(hand.handle, level);
 		if (!hand.vibrationLogged && level)
 		{
 			hand.vibrationLogged = true;
-			Log("%s Sense controller vibration -> 0x%08x (first one; untested on this controller)", HandName(i), (unsigned)result);
+			Log("%s Sense controller vibration -> 0x%08x (first one)", HandName(i), (unsigned)result);
 		}
 		hand.vibrating = level != 0;
 	}

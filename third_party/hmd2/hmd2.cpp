@@ -526,6 +526,48 @@ void bind_vrhand() {
         logf("hmd2: libSceVrHand not usable here, hand tracking stays off");
 }
 
+// -- the Sense controllers' own vibration exports ----------------------------
+// libScePad's scePadSetVibrationMode / scePadSetVibration refuse a Sense controller's handle
+// (0x80920003); the Sense has exports of its own that take the scePadVrControllerReadState handle.
+// Their names (NIDs Wf6-PNCyY20 and DGCwN1Lmmys), the 13.60 offsets and the anchor string are
+// Ghost-VR's firmware facts (GPL-3.0, psvr2.c); no code is taken from it.
+int (*scePadVrControllerSetVibrationMode)(int handle, int mode) = nullptr;
+int (*scePadVrControllerSetVibration)(int handle, uint8_t intensity) = nullptr;
+const Slot kSenseVibrationSlots[] = {
+    {"scePadVrControllerSetVibrationMode", reinterpret_cast<void **>(&scePadVrControllerSetVibrationMode)},
+    {"scePadVrControllerSetVibration", reinterpret_cast<void **>(&scePadVrControllerSetVibration)},
+};
+const export_sig_t kExports_libScePad_1360[] = {
+    {"scePadVrControllerSetVibrationMode", 0x100b0u},
+    {"scePadVrControllerSetVibration", 0x5610u},
+};
+const export_anchor_t kAnchor_libScePad_1360 = {0x1f650u, "scePadCtrlpSyncInit Error : cannot open [%08x]"};
+const export_table_t kTables_libScePad[] = {
+    {1360, kExports_libScePad_1360, 2, &kAnchor_libScePad_1360},
+};
+int g_sense_vibration = 0; // 0 not tried, 1 bound, -1 unavailable
+
+bool bind_sense_vibration() {
+    if (g_sense_vibration != 0)
+        return g_sense_vibration > 0;
+    g_sense_vibration = -1;
+    const int handle = load_sysmodule(0, "libScePad");
+    if (handle >= 0 &&
+        resolve_module(handle, "libScePad.sprx", kSenseVibrationSlots, kSlots(kSenseVibrationSlots),
+                       kTables_libScePad, sizeof kTables_libScePad / sizeof *kTables_libScePad,
+                       nullptr, false)) {
+        g_sense_vibration = 1;
+        logf("hmd2: Sense vibration exports bound (mode %p, intensity %p)",
+             reinterpret_cast<void *>(scePadVrControllerSetVibrationMode),
+             reinterpret_cast<void *>(scePadVrControllerSetVibration));
+    } else {
+        scePadVrControllerSetVibrationMode = nullptr;
+        scePadVrControllerSetVibration = nullptr;
+        logf("hmd2: Sense vibration exports not found on this firmware, Sense vibration stays off");
+    }
+    return g_sense_vibration > 0;
+}
+
 // -- textures ---------------------------------------------------------------
 // GFX10 texture-descriptor codes, as PS5VR's eng_agc_writer.c names them.
 constexpr uint32_t kFormat8_8_8_8Unorm = 56;
@@ -1450,6 +1492,18 @@ bool register_controller(int tracker_handle, bool right_hand) {
     if (rc != 0) return false;
     s.controllers[slot] = tracker_handle;
     return true;
+}
+
+int sense_set_vibration_mode(int handle, int mode) {
+    if (!bind_sense_vibration())
+        return kSenseVibrationUnavailable;
+    return scePadVrControllerSetVibrationMode(handle, mode);
+}
+
+int sense_set_vibration(int handle, uint8_t intensity) {
+    if (!bind_sense_vibration())
+        return kSenseVibrationUnavailable;
+    return scePadVrControllerSetVibration(handle, intensity);
 }
 
 bool controller_pose(int tracker_handle, float pos[3], float quat[4]) {
