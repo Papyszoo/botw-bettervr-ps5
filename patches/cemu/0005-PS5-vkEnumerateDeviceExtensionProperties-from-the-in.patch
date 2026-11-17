@@ -14,7 +14,7 @@ pointer, right after the display surface was made.
  1 file changed, 4 insertions(+), 2 deletions(-)
 
 diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanAPI.cpp b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanAPI.cpp
-index e10dd96..0854788 100644
+index e10dd96f..08547888 100644
 --- a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanAPI.cpp
 +++ b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanAPI.cpp
 @@ -171,9 +171,11 @@ bool InitializeInstanceVulkan(VkInstance instance)

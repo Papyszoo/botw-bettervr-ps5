@@ -26,10 +26,10 @@ Otherwise nothing changes.
  2 files changed, 82 insertions(+), 3 deletions(-)
 
 diff --git a/src/Cafe/HW/Latte/Core/LatteRenderTarget.cpp b/src/Cafe/HW/Latte/Core/LatteRenderTarget.cpp
-index 5554e2e..f3b07a3 100644
+index 32821486..bc6853fa 100644
 --- a/src/Cafe/HW/Latte/Core/LatteRenderTarget.cpp
 +++ b/src/Cafe/HW/Latte/Core/LatteRenderTarget.cpp
-@@ -677,8 +677,39 @@ void LatteRenderTarget_trackUpdates()
+@@ -793,8 +793,39 @@ void LatteRenderTarget_trackUpdates()
  	}
  }
  
@@ -70,10 +70,10 @@ index 5554e2e..f3b07a3 100644
  	if(LatteGPUState.frameCounter > 5)
  		performanceMonitor.gpuTime_frameTime.endMeasuring();
 diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
-index 464fd12..b9a5160 100644
+index a94fa4af..d48fde6e 100644
 --- a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
 +++ b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
-@@ -2327,12 +2327,32 @@ void VulkanRenderer::ProcessFinishedCommandBuffers()
+@@ -2442,12 +2442,32 @@ void VulkanRenderer::ProcessFinishedCommandBuffers()
  	}
  }
  
@@ -106,7 +106,7 @@ index 464fd12..b9a5160 100644
  	performanceMonitor.gpuTime_waitForHostGPU.endMeasuring();
  	if (result == VK_TIMEOUT)
  	{
-@@ -3183,7 +3203,13 @@ bool VulkanRenderer::UpdateSwapchainProperties(bool mainWindow)
+@@ -3298,7 +3318,13 @@ bool VulkanRenderer::UpdateSwapchainProperties(bool mainWindow)
  void VulkanRenderer::SwapBuffer(bool mainWindow)
  {
  	performanceMonitor.gpuTime_waitForHostGPU.beginMeasuring();
@@ -120,7 +120,7 @@ index 464fd12..b9a5160 100644
  	performanceMonitor.gpuTime_waitForHostGPU.endMeasuring();
  	if(!acquired)
  		return;
-@@ -3205,12 +3231,30 @@ void VulkanRenderer::SwapBuffer(bool mainWindow)
+@@ -3320,12 +3346,30 @@ void VulkanRenderer::SwapBuffer(bool mainWindow)
  	cemu_assert_debug(m_numSubmittedCmdBuffers > 0);
  
  	// wait for the previous frame to finish rendering
@@ -154,7 +154,7 @@ index 464fd12..b9a5160 100644
  
  	VkPresentIdKHR presentId = {};
  
-@@ -3237,14 +3281,18 @@ void VulkanRenderer::SwapBuffer(bool mainWindow)
+@@ -3352,14 +3396,18 @@ void VulkanRenderer::SwapBuffer(bool mainWindow)
  		{
  			uint64 waitFrameId = chainInfo.m_presentId - chainInfo.m_queueDepth;
  			performanceMonitor.gpuTime_waitForHostGPU.beginMeasuring();

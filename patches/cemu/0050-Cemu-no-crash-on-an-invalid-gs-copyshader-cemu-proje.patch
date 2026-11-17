@@ -1,17 +1,17 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Patryk <papyszoo@gmail.com>
 Date: Mon, 16 Nov 2026 11:03:14 +0100
-Subject: [PATCH] Cemu: no crash on an invalid gs copyshader, GX2 flush starts
- a bigger command buffer (cemu-project/Cemu@5a0430b, @934329f)
+Subject: [PATCH] Cemu: no crash on an invalid gs copyshader
+ (cemu-project/Cemu@5a0430b)
 
-patches/cemu 0053: a geometry shader without a valid copy shader crashed the decompiler; a GX2 flush of an empty buffer did not start a bigger one.
+patches/cemu 0053: a geometry shader without a valid copy shader crashed the decompiler. The GX2 flush
+half (@934329f) is in the BetterVR fork.
 ---
  src/Cafe/HW/Latte/LegacyShaderDecompiler/LatteDecompiler.cpp | 5 ++++-
- src/Cafe/OS/libs/gx2/GX2_Command.cpp                         | 2 +-
- 2 files changed, 5 insertions(+), 2 deletions(-)
+ 1 file changed, 4 insertions(+), 1 deletion(-)
 
 diff --git a/src/Cafe/HW/Latte/LegacyShaderDecompiler/LatteDecompiler.cpp b/src/Cafe/HW/Latte/LegacyShaderDecompiler/LatteDecompiler.cpp
-index 8b1348c..e2c4c4d 100644
+index 8b1348c9..e2c4c4d5 100644
 --- a/src/Cafe/HW/Latte/LegacyShaderDecompiler/LatteDecompiler.cpp
 +++ b/src/Cafe/HW/Latte/LegacyShaderDecompiler/LatteDecompiler.cpp
 @@ -1151,6 +1151,8 @@ void LatteDecompiler_DecompileGeometryShader(uint64 shaderBaseHash, uint32* cont
@@ -33,16 +33,3 @@ index 8b1348c..e2c4c4d 100644
  	performanceMonitor.gpuTime_shaderCreate.endMeasuring();
  }
  
-diff --git a/src/Cafe/OS/libs/gx2/GX2_Command.cpp b/src/Cafe/OS/libs/gx2/GX2_Command.cpp
-index d12bf21..3edefac 100644
---- a/src/Cafe/OS/libs/gx2/GX2_Command.cpp
-+++ b/src/Cafe/OS/libs/gx2/GX2_Command.cpp
-@@ -291,7 +291,7 @@ namespace GX2
- 			else
- 			{
- 				// current buffer is empty so we dont need to queue it
--				if (numU32sForNextBuffer > s_commandState->commandPoolSizeInU32s)
-+				if (numU32sForNextBuffer > coreCBState.bufferSizeInU32s)
- 					GX2Command_StartNewCommandBuffer(numU32sForNextBuffer);
- 			}
- 		}

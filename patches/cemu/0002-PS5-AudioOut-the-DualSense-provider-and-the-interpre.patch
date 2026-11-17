@@ -26,7 +26,7 @@ The pieces of the port that Cemu's own classes have to know about:
  9 files changed, 54 insertions(+), 3 deletions(-)
 
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index 542032e..2dd815b 100644
+index 6556cce2..276e04ec 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
 @@ -81,6 +81,8 @@ if (CEMU_PS5)
@@ -39,7 +39,7 @@ index 542032e..2dd815b 100644
  
  # enable link time optimization for release builds
 diff --git a/src/audio/IAudioAPI.cpp b/src/audio/IAudioAPI.cpp
-index dc266ee..9a77e78 100644
+index dc266eed..9a77e783 100644
 --- a/src/audio/IAudioAPI.cpp
 +++ b/src/audio/IAudioAPI.cpp
 @@ -9,6 +9,9 @@
@@ -85,7 +85,7 @@ index dc266ee..9a77e78 100644
  	default:
  		throw std::runtime_error(fmt::format("invalid audio api: {}", api));
 diff --git a/src/audio/IAudioAPI.h b/src/audio/IAudioAPI.h
-index 34df421..ddf9133 100644
+index 34df421a..ddf91336 100644
 --- a/src/audio/IAudioAPI.h
 +++ b/src/audio/IAudioAPI.h
 @@ -45,6 +45,7 @@ public:
@@ -97,7 +97,7 @@ index 34df421..ddf9133 100644
  		AudioAPIEnd,
  	};
 diff --git a/src/config/ActiveSettings.cpp b/src/config/ActiveSettings.cpp
-index 08def5a..97dccce 100644
+index 08def5a3..97dccce2 100644
 --- a/src/config/ActiveSettings.cpp
 +++ b/src/config/ActiveSettings.cpp
 @@ -64,9 +64,18 @@ bool ActiveSettings::DisplayDRCEnabled()
@@ -120,7 +120,7 @@ index 08def5a..97dccce 100644
  	if (mode == CPUMode::Auto)
  	{
 diff --git a/src/input/CMakeLists.txt b/src/input/CMakeLists.txt
-index 69c7041..cc68f7c 100644
+index 69c70412..cc68f7cf 100644
 --- a/src/input/CMakeLists.txt
 +++ b/src/input/CMakeLists.txt
 @@ -95,7 +95,7 @@ if(CEMU_PS5)
@@ -133,7 +133,7 @@ index 69c7041..cc68f7c 100644
  
  if(ENABLE_SDL)
 diff --git a/src/input/ControllerFactory.cpp b/src/input/ControllerFactory.cpp
-index 3827e1d..8e72141 100644
+index 3827e1d4..8e721414 100644
 --- a/src/input/ControllerFactory.cpp
 +++ b/src/input/ControllerFactory.cpp
 @@ -22,6 +22,10 @@
@@ -170,7 +170,7 @@ index 3827e1d..8e72141 100644
  	default:
  		cemu_assert_debug(false);
 diff --git a/src/input/InputManager.cpp b/src/input/InputManager.cpp
-index 42b1db2..a492742 100644
+index 42b1db26..a4927429 100644
 --- a/src/input/InputManager.cpp
 +++ b/src/input/InputManager.cpp
 @@ -25,7 +25,10 @@ InputManager::InputManager()
@@ -195,7 +195,7 @@ index 42b1db2..a492742 100644
  #endif
  #if defined(HAS_GAMECUBE) && HAS_GAMECUBE && defined(HAS_LIBUSB)
 diff --git a/src/input/InputManager.h b/src/input/InputManager.h
-index b510474..27e65ac 100644
+index b510474b..27e65ac2 100644
 --- a/src/input/InputManager.h
 +++ b/src/input/InputManager.h
 @@ -13,8 +13,12 @@
@@ -212,7 +212,7 @@ index b510474..27e65ac 100644
  
  #include "input/emulated/VPADController.h"
 diff --git a/src/input/api/InputAPI.h b/src/input/api/InputAPI.h
-index a5f1f92..3ed48ea 100644
+index a5f1f926..3ed48ea2 100644
 --- a/src/input/api/InputAPI.h
 +++ b/src/input/api/InputAPI.h
 @@ -17,6 +17,8 @@ namespace InputAPI

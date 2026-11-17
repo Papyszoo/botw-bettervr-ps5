@@ -14,10 +14,10 @@ the draw pass has ended and before ImGui's begins.
  1 file changed, 7 insertions(+)
 
 diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
-index eba56e4..4e7be57 100644
+index 90367798..5f40c1df 100644
 --- a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
 +++ b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
-@@ -3,6 +3,9 @@
+@@ -4,6 +4,9 @@
  #if defined(CEMU_PS5)
  #include <string_view>
  void PS5_NoteCopy(const std::string& key, const std::string& line, bool overrun); // TextureReadbackVk.cpp
@@ -27,7 +27,7 @@ index eba56e4..4e7be57 100644
  #endif
  #include "Cafe/HW/Latte/Renderer/Vulkan/VulkanAPI.h"
  #include "Cafe/HW/Latte/Renderer/Vulkan/LatteTextureVk.h"
-@@ -2076,6 +2079,10 @@ bool VulkanRenderer::ImguiBegin(bool mainWindow)
+@@ -2191,6 +2194,10 @@ bool VulkanRenderer::ImguiBegin(bool mainWindow)
  	m_state.currentPipeline = VK_NULL_HANDLE;
  
  	ImGui_ImplVulkan_CreateFontsTexture(m_state.currentCommandBuffer);

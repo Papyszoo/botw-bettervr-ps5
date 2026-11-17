@@ -13,29 +13,28 @@ difference, summed in g_ps5GpuBusyNs, is the time the GPU spent on it.
 The command buffers run one after another (each waits on the last), so
 the sum is the GPU's busy time. Off, nothing changes.
 ---
- src/Cafe/HW/Latte/Renderer/Vulkan/VulkanAPI.h |  2 +
+ src/Cafe/HW/Latte/Renderer/Vulkan/VulkanAPI.h |  1 +
  .../Latte/Renderer/Vulkan/VulkanRenderer.cpp  | 89 +++++++++++++++++++
  .../HW/Latte/Renderer/Vulkan/VulkanRenderer.h | 11 +++
- 3 files changed, 102 insertions(+)
+ 3 files changed, 101 insertions(+)
 
 diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanAPI.h b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanAPI.h
-index a164738..eacce34 100644
+index 71780b1c..418e6798 100644
 --- a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanAPI.h
 +++ b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanAPI.h
-@@ -211,6 +211,8 @@ VKFUNC_DEVICE(vkCmdResetQueryPool);
+@@ -215,6 +215,7 @@ VKFUNC_DEVICE(vkCmdResetQueryPool);
  VKFUNC_DEVICE(vkCmdBeginQuery);
  VKFUNC_DEVICE(vkCmdEndQuery);
  VKFUNC_DEVICE(vkCmdCopyQueryPoolResults);
 +VKFUNC_DEVICE(vkCmdWriteTimestamp); // PS5: the GPU thread's command buffers timed (VulkanRenderer.cpp)
-+VKFUNC_DEVICE(vkGetQueryPoolResults);
+ VKFUNC_DEVICE(vkGetQueryPoolResults);
  
  // event
- VKFUNC_DEVICE(vkCreateEvent);
 diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
-index ac0a3bd..f8fef3f 100644
+index 6b5f149f..86f661a1 100644
 --- a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
 +++ b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
-@@ -952,6 +952,10 @@ VulkanRenderer::~VulkanRenderer()
+@@ -1058,6 +1058,10 @@ VulkanRenderer::~VulkanRenderer()
  
  	if (m_commandPool != VK_NULL_HANDLE)
  		vkDestroyCommandPool(m_logicalDevice, m_commandPool, nullptr);
@@ -46,7 +45,7 @@ index ac0a3bd..f8fef3f 100644
  
  	VKRObjectSampler::DestroyCache();
  
-@@ -1692,8 +1696,81 @@ void VulkanRenderer::CreateCommandPool()
+@@ -1807,8 +1811,81 @@ void VulkanRenderer::CreateCommandPool()
  		throw std::runtime_error(fmt::format("Failed to create command pool: {}", result));
  }
  
@@ -128,7 +127,7 @@ index ac0a3bd..f8fef3f 100644
  	auto it = m_cmdBufferFences.begin();
  	VkFenceCreateInfo fenceInfo{};
  	fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-@@ -2174,6 +2251,9 @@ void VulkanRenderer::InitFirstCommandBuffer()
+@@ -2289,6 +2366,9 @@ void VulkanRenderer::InitFirstCommandBuffer()
  	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
  	beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
  	vkBeginCommandBuffer(m_state.currentCommandBuffer, &beginInfo);
@@ -138,7 +137,7 @@ index ac0a3bd..f8fef3f 100644
  
  	vkCmdSetViewport(m_state.currentCommandBuffer, 0, 1, &m_state.currentViewport);
  	vkCmdSetScissor(m_state.currentCommandBuffer, 0, 1, &m_state.currentScissorRect);
-@@ -2189,6 +2269,9 @@ void VulkanRenderer::ProcessFinishedCommandBuffers()
+@@ -2304,6 +2384,9 @@ void VulkanRenderer::ProcessFinishedCommandBuffers()
  		VkResult fenceStatus = vkGetFenceStatus(m_logicalDevice, m_cmdBufferFences[m_commandBufferSyncIndex]);
  		if (fenceStatus == VK_SUCCESS)
  		{
@@ -148,17 +147,17 @@ index ac0a3bd..f8fef3f 100644
  			ProcessDestructionQueue();
  			m_uniformVarBufferReadIndex = m_cmdBufferUniformRingbufIndices[m_commandBufferSyncIndex];
  			m_commandBufferSyncIndex = (m_commandBufferSyncIndex + 1) % m_commandBuffers.size();
-@@ -2234,6 +2317,9 @@ void VulkanRenderer::SubmitCommandBuffer(VkSemaphore signalSemaphore, VkSemaphor
+@@ -2348,6 +2431,9 @@ void VulkanRenderer::SubmitCommandBuffer(VkSemaphore signalSemaphore, VkSemaphor
+ {
+ 	bufferCache_flushCopies();
  	draw_endRenderPass();
- 
- 	occlusionQuery_notifyEndCommandBuffer();
 +#if defined(CEMU_PS5)
 +	PS5_TimestampEnd();
 +#endif
  
  	vkEndCommandBuffer(m_state.currentCommandBuffer);
  
-@@ -2297,6 +2383,9 @@ void VulkanRenderer::SubmitCommandBuffer(VkSemaphore signalSemaphore, VkSemaphor
+@@ -2414,6 +2500,9 @@ void VulkanRenderer::SubmitCommandBuffer(VkSemaphore signalSemaphore, VkSemaphor
  	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
  	beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
  	vkBeginCommandBuffer(m_state.currentCommandBuffer, &beginInfo);
@@ -169,10 +168,10 @@ index ac0a3bd..f8fef3f 100644
  	// make sure some states are set for this command buffer
  	vkCmdSetViewport(m_state.currentCommandBuffer, 0, 1, &m_state.currentViewport);
 diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.h b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.h
-index 93fe22a..126a845 100644
+index d583dd7a..0ee0a556 100644
 --- a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.h
 +++ b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.h
-@@ -677,6 +677,17 @@ private:
+@@ -726,6 +726,17 @@ private:
  	std::array<VkFence, kCommandBufferPoolSize> m_cmdBufferFences;
  	std::array<VkCommandBuffer, kCommandBufferPoolSize> m_commandBuffers;
  	std::array<VkSemaphore, kCommandBufferPoolSize> m_commandBufferSemaphores;

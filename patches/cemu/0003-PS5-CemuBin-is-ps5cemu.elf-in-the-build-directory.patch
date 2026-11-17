@@ -11,10 +11,10 @@ directory rather than Cemu's bin/.
  1 file changed, 6 insertions(+)
 
 diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
-index 8a8538b..d7ee8ca 100644
+index 6c2ae545..1dfec8c5 100644
 --- a/src/CMakeLists.txt
 +++ b/src/CMakeLists.txt
-@@ -214,6 +214,12 @@ endif()
+@@ -249,6 +249,12 @@ endif()
  
  if(CEMU_PS5)
  	target_link_libraries(CemuBin PRIVATE CemuPS5)

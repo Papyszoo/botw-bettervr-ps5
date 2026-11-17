@@ -281,3 +281,44 @@ the restructured code and conflict on 0.9.23; they arrive with the port.
   bug (patch 0005).
 - Nothing here has run on the console; every stage is "built, untested on console" until a result is
   reported.
+
+## Stage 1 progress
+
+Branch `bettervr-1.0/stage1`. Built only on CI; every result is "built, untested on console".
+
+Done:
+- `tools/deps.json`: cemu is `https://github.com/Crementif/Cemu.git` at `86168a81a65d8962c3a19d0e57e9ab26acc37206`.
+  The fork's `.gitmodules` has the same three submodules the build uses (`ZArchive`, `Vulkan-Headers`, `imgui`;
+  it also lists cubeb, vcpkg, metal-cpp and xbyak_aarch64, which this build does not take).
+- `patches/cemu` rebased on the fork with `git am --3way` in order, re-exported with
+  `tools/cemu-patches.sh export` (it numbers the files again: 0001 to 0049 keep their numbers, the
+  rest moved up). Refreshed by hand: 0001 (CMake: fork's module registry stays, the PS5 `CemuBin` also
+  links `HostModuleRegistry.cpp`; `BackendX64.cpp`: fork's `s_enterRecompilerCodeExit` kept), 0014 (header
+  include), 0020 (the fork's submit threshold is 1000: the port's `PS5Cemu_SubmitDraws()` still sets it, default
+  stays 300; the comment says so), 0023 (includes), 0028 (`vkCmdWriteTimestamp` entry, `PS5_TimestampEnd()`
+  before `vkEndCommandBuffer`, since the fork has no occlusion-query hook there), 0031 (comment context), 0034
+  (`kFsrFilter` branch), 0039 (`swkbd.cpp` keeps the fork's `CafeStaticVar` state, the PS5 counter stays),
+  0048 (destructor hunk goes before `HostModule_NotifyDeviceDestroying()`), 0049 (see below).
+  The other patches applied cleanly (0002, 0003, 0005, 0009, 0042, 0043 conflicted on trial and merged by 3-way).
+- Dropped, already in the fork: old 0050 (`babd690`, `b044641` = fork `babd6906`, `b0446411`), old 0051 (`feb7c7b` =
+  fork `feb7c7b0`), old 0052 (`d1ca2e9` = fork `d1ca2e98`). Old 0053 keeps only the gs copyshader
+  half (now 0050); its GX2 flush half (`934329f`) is fork `934329f9`.
+- 0048/0049 as stubs: 0048 (TV picture in the headset through hmd2) applies as is. 0049 got the CMake option
+  `PS5CEMU_BETTERVR_LAYER` (default ON, the 0.9.23 object); `tools/build-cemu.sh` passes OFF, which compiles
+  `port/bettervr/BetterVRStubPS5.cpp` (the object's four exports as no-ops, Negotiate fails) and defines
+  `CEMU_PS5_NO_BETTERVR`. `port/bettervr/VrPS5.cpp` then never picks BetterVR mode (Play in VR on BotW shows the TV's
+  picture in the headset, with a log line) and never turns BetterVR's pack on. `make build` and `make check` no
+  longer depend on `make bettervr`; `tools/build-bettervr.sh` and `port/bettervr/layer` stay for stage 2 to replace.
+- New 0051: the probe lines `Vulkan: multiview: ..., max views: ..., geometry shader: ...` and
+  `Vulkan: fragment shading rate: ..., layered: ..., 2x2: ..., 4x4: ...`, after the fork's feature checks.
+- CI: `.github/workflows/bettervr-build.yml` also builds `bettervr-1.0/**`; the deps cache falls back to older
+  `bettervr-deps-` keys (RADV and SDK builds) and a new step removes a cached `.deps/Cemu` that is not the fork at the
+  pin, or resets its `ps5` branch to the pin.
+- Host tests: the ones in `docs/BUILDING.md` and `make test-*` need Linux packages and do not touch Cemu patches; left to CI.
+
+Open: nothing known; CI result is recorded below when it is in. The Cemu build has not been run on the fork
+anywhere yet, so expect compile errors in the refreshed patches (0014, 0023, 0028, 0039, 0043).
+Backlog: the stage-1 Test request 34 is not yet written into `STATUS.md`; the `bettervr` pin in `tools/deps.json`
+still serves the 0.9.23 graphic packs for `tools/package.sh` until stage 2.
+Next step: read the CI run (`gh run list --branch bettervr-1.0/stage1 -L 3`), fix compile errors by editing
+`.deps/Cemu` on branch `ps5` (apply with `tools/cemu-patches.sh apply`), commit there, then `tools/cemu-patches.sh export`.

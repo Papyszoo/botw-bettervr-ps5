@@ -10,10 +10,10 @@ draw_execute_first leaves m_state.activeVertexDS null when the sequence's pipeli
  1 file changed, 4 insertions(+), 1 deletion(-)
 
 diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRendererCore.cpp b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRendererCore.cpp
-index c765a42..10f538f 100644
+index a00c7c4a..60a23f36 100644
 --- a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRendererCore.cpp
 +++ b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRendererCore.cpp
-@@ -1656,7 +1656,10 @@ void VulkanRenderer::draw_execute_continued(uint32 baseVertex, uint32 baseInstan
+@@ -1744,7 +1744,10 @@ void VulkanRenderer::draw_execute_continued(uint32 baseVertex, uint32 baseInstan
  	}
  	else
  	{

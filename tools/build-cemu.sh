@@ -8,7 +8,7 @@
 #   tools/build-cemu.sh --reconfigure  start the CMake build directory over
 #   tools/build-cemu.sh TARGET...    build only those targets
 #
-# Cemu itself stays at its pinned commit in .deps/Cemu; patches/cemu/*.patch are applied on a
+# Cemu itself (Crementif's BetterVR fork) stays at its pinned commit in .deps/Cemu; patches/cemu/*.patch are applied on a
 # branch named ps5 (tools/cemu-patches.sh).
 
 set -euo pipefail
@@ -34,6 +34,8 @@ bash "$PS5CEMU_ROOT/tools/reshade-patches.sh" apply # its effect compiler (port/
 options=(
     -DCMAKE_TOOLCHAIN_FILE="$PS5CEMU_TOOLCHAIN" -DCMAKE_BUILD_TYPE=Release
     -DCEMU_PS5=ON -DCEMU_PS5_PORT_DIR="$PS5CEMU_ROOT/port"
+    # stage 1 of the BetterVR 1.0.0 port (docs/bettervr-ps5/UPDATE-1.0.md): no BetterVR object, stand-ins
+    -DPS5CEMU_BETTERVR_LAYER=OFF
     -DENABLE_VCPKG=OFF -DENABLE_WXWIDGETS=OFF -DENABLE_OPENGL=OFF -DENABLE_METAL=OFF -DENABLE_VULKAN=ON
     -DENABLE_DISCORD_RPC=OFF -DENABLE_HIDAPI=OFF -DENABLE_SDL=OFF -DENABLE_LIBUSB=OFF -DENABLE_CUBEB=OFF
     -DALLOW_PORTABLE=OFF -DBoost_USE_STATIC_LIBS=ON -DBoost_ROOT="$PS5CEMU_SYSROOT"

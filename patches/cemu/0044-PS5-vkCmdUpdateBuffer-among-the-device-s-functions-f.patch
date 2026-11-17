@@ -9,7 +9,7 @@ Subject: [PATCH] PS5: vkCmdUpdateBuffer among the device's functions, for
  1 file changed, 2 insertions(+)
 
 diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanAPI.h b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanAPI.h
-index c76d755..99a7e79 100644
+index 4e39d206..ad7c7ea4 100644
 --- a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanAPI.h
 +++ b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanAPI.h
 @@ -190,6 +190,8 @@ VKFUNC_DEVICE(vkCmdBlitImage);

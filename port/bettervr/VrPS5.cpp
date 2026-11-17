@@ -107,6 +107,12 @@ namespace ps5vr
 			if (!on)
 				return Mode::Off;
 			const uint64_t titleId = CafeSystem::GetForegroundTitleId();
+#if defined(CEMU_PS5_NO_BETTERVR)
+			// stage 1 of the BetterVR 1.0.0 port: BetterVR is not compiled in (BetterVRStubPS5.cpp)
+			if (betterVR && IsBreathOfTheWild(titleId))
+				Log("BetterVR is not in this build: Breath of the Wild's picture goes to the headset as the TV's");
+			betterVR = false;
+#endif
 			if (IsBreathOfTheWild(titleId) && betterVR)
 			{
 				Log(fmt::format("{:016x} is Breath of the Wild: BetterVR in stereo", titleId));
@@ -549,7 +555,11 @@ void PS5Cemu_BetterVRApplyMode(uint64_t titleId)
 	if (!ps5vr::IsBreathOfTheWild(titleId))
 		return;
 	bool betterVR = true;
+#if defined(CEMU_PS5_NO_BETTERVR)
+	const bool wanted = false; // BetterVR is not in this build, so its pack stays off (BetterVRStubPS5.cpp)
+#else
 	const bool wanted = ps5vr::ReadSwitch(betterVR) && betterVR;
+#endif
 	const std::vector<ps5emu::GraphicPackInfo> packs = ps5emu::ListGraphicPacks(titleId);
 	bool found = false;
 	for (size_t i = 0; i < packs.size(); i++)

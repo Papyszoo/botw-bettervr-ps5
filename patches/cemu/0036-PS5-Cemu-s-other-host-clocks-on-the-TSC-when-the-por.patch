@@ -21,7 +21,7 @@ either way still compare. Off, nothing changes.
  3 files changed, 58 insertions(+)
 
 diff --git a/src/Common/precompiled.h b/src/Common/precompiled.h
-index 6f43fd8..d362e60 100644
+index 6f43fd83..d362e600 100644
 --- a/src/Common/precompiled.h
 +++ b/src/Common/precompiled.h
 @@ -477,6 +477,12 @@ bool match_any_of(T1&& value, Types&&... others)
@@ -60,7 +60,7 @@ index 6f43fd8..d362e60 100644
  	clock_gettime(CLOCK_MONOTONIC, &tp);
  	return std::chrono::steady_clock::time_point(
 diff --git a/src/Common/unix/platform.cpp b/src/Common/unix/platform.cpp
-index 9462c65..8be6bf3 100644
+index 9462c654..8be6bf39 100644
 --- a/src/Common/unix/platform.cpp
 +++ b/src/Common/unix/platform.cpp
 @@ -20,6 +20,40 @@ void PS5Cemu_UseTscTickCount(bool enabled)
@@ -105,7 +105,7 @@ index 9462c65..8be6bf3 100644
  
  uint32_t GetTickCount()
 diff --git a/src/util/highresolutiontimer/HighResolutionTimer.cpp b/src/util/highresolutiontimer/HighResolutionTimer.cpp
-index 54fa4fb..239101e 100644
+index 54fa4fb2..239101e8 100644
 --- a/src/util/highresolutiontimer/HighResolutionTimer.cpp
 +++ b/src/util/highresolutiontimer/HighResolutionTimer.cpp
 @@ -1,5 +1,11 @@

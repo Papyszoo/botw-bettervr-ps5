@@ -18,7 +18,7 @@ cores of their own (port/ps5/threads.h).
  2 files changed, 20 insertions(+)
 
 diff --git a/src/util/helpers/helpers.cpp b/src/util/helpers/helpers.cpp
-index 2e0195a..b65f001 100644
+index 2e0195a4..b65f0013 100644
 --- a/src/util/helpers/helpers.cpp
 +++ b/src/util/helpers/helpers.cpp
 @@ -102,6 +102,11 @@ std::string GetSystemErrorMessage(const std::error_code& ec)
@@ -43,7 +43,7 @@ index 2e0195a..b65f001 100644
  	if(std::strlen(name) > 15)
  		cemuLog_log(LogType::Force, "Truncating thread name {} because it was longer than 15 characters", name);
 diff --git a/src/util/highresolutiontimer/HighResolutionTimer.cpp b/src/util/highresolutiontimer/HighResolutionTimer.cpp
-index 54fa4fb..507434d 100644
+index 54fa4fb2..507434df 100644
 --- a/src/util/highresolutiontimer/HighResolutionTimer.cpp
 +++ b/src/util/highresolutiontimer/HighResolutionTimer.cpp
 @@ -1,5 +1,10 @@

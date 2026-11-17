@@ -10,7 +10,7 @@ Subject: [PATCH] PS5: a second font merged into the in-game menu's typeface,
  2 files changed, 28 insertions(+)
 
 diff --git a/src/imgui/imgui_extension.cpp b/src/imgui/imgui_extension.cpp
-index f37c464..ff4ba09 100644
+index f37c464b..ff4ba09c 100644
 --- a/src/imgui/imgui_extension.cpp
 +++ b/src/imgui/imgui_extension.cpp
 @@ -60,6 +60,11 @@ struct PS5FontFace
@@ -60,7 +60,7 @@ index f37c464..ff4ba09 100644
  {
  	if (face <= 0 || face >= 8 || !g_ps5_faces[face].data)
 diff --git a/src/imgui/imgui_extension.h b/src/imgui/imgui_extension.h
-index 0100650..0282d71 100644
+index 01006506..0282d710 100644
 --- a/src/imgui/imgui_extension.h
 +++ b/src/imgui/imgui_extension.h
 @@ -18,6 +18,9 @@ ImFont* ImGui_GetFont(float size);

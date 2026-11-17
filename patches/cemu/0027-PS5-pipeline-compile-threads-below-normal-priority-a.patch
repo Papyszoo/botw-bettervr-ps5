@@ -16,10 +16,10 @@ normal as on Windows, through the port (PS5Cemu_ThreadBelowNormal).
  1 file changed, 10 insertions(+)
 
 diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanPipelineCompiler.cpp b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanPipelineCompiler.cpp
-index 7179087..f45dd79 100644
+index dda9a71c..0c932501 100644
 --- a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanPipelineCompiler.cpp
 +++ b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanPipelineCompiler.cpp
-@@ -1077,6 +1077,11 @@ static std::vector<std::thread> s_compileThreads;
+@@ -1109,6 +1109,11 @@ static std::vector<std::thread> s_compileThreads;
  static std::atomic_bool s_compileThreadsShutdownSignal{};
  static ConcurrentQueue<PipelineCompiler*> s_pipelineCompileRequests;
  
@@ -31,7 +31,7 @@ index 7179087..f45dd79 100644
  static void compilePipeline_thread(sint32 threadIndex)
  {
  	SetThreadName("compilePl");
-@@ -1085,6 +1090,11 @@ static void compilePipeline_thread(sint32 threadIndex)
+@@ -1117,6 +1122,11 @@ static void compilePipeline_thread(sint32 threadIndex)
  	// except for one thread which we always run at normal priority to prevent the opposite scenario where all compile threads are starved
  	if(threadIndex != 0)
  		SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);

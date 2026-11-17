@@ -20,10 +20,10 @@ the process.
  1 file changed, 26 insertions(+), 12 deletions(-)
 
 diff --git a/src/Cafe/GraphicPack/GraphicPack2.cpp b/src/Cafe/GraphicPack/GraphicPack2.cpp
-index 850fb6b..6aecabd 100644
+index 810ce939..2b35f61c 100644
 --- a/src/Cafe/GraphicPack/GraphicPack2.cpp
 +++ b/src/Cafe/GraphicPack/GraphicPack2.cpp
-@@ -900,22 +900,36 @@ void GraphicPack2::_iterateReplacedFiles(const fs::path& currentPath, bool isAOC
+@@ -949,22 +949,36 @@ void GraphicPack2::_iterateReplacedFiles(const fs::path& currentPath, bool isAOC
  {
  	uint64 currentTitleId = CafeSystem::GetForegroundTitleId();
  	uint64 aocTitleId = (currentTitleId & 0xFFFFFFFFull) | 0x0005000c00000000ull;

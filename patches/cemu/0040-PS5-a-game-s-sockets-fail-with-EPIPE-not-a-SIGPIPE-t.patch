@@ -19,10 +19,10 @@ address could be written past its 16 bytes).
  1 file changed, 25 insertions(+), 7 deletions(-)
 
 diff --git a/src/Cafe/OS/libs/nsysnet/nsysnet.cpp b/src/Cafe/OS/libs/nsysnet/nsysnet.cpp
-index 8393d36..110488a 100644
+index ffb84bd4..52f95070 100644
 --- a/src/Cafe/OS/libs/nsysnet/nsysnet.cpp
 +++ b/src/Cafe/OS/libs/nsysnet/nsysnet.cpp
-@@ -272,6 +272,15 @@ WUSOCKET nsysnet_createVirtualSocket(sint32 family, sint32 type, sint32 protocol
+@@ -278,6 +278,15 @@ WUSOCKET nsysnet_createVirtualSocket(sint32 family, sint32 type, sint32 protocol
  		WSAIoctl(vs->s, SIO_UDP_CONNRESET, &bNewBehavior, sizeof bNewBehavior, NULL, 0, &dwBytesReturned, NULL, NULL);
  	}
  	#endif // BOOST_OS_WINDOWS
@@ -38,7 +38,7 @@ index 8393d36..110488a 100644
  	return vs->handle;
  }
  
-@@ -301,18 +310,27 @@ WUSOCKET nsysnet_createVirtualSocketFromExistingSocket(SOCKET existingSocket)
+@@ -306,18 +315,27 @@ WUSOCKET nsysnet_createVirtualSocketFromExistingSocket(SOCKET existingSocket, bo
  	vs->type = protocolInfo.iSocketType;
  	vs->protocol = protocolInfo.iSocketType;
  #else

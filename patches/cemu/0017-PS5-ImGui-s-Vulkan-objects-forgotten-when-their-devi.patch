@@ -11,7 +11,7 @@ Azahar makes its renderer again, device and all, when a save state is loaded; th
  2 files changed, 24 insertions(+)
 
 diff --git a/src/imgui/imgui_impl_vulkan.cpp b/src/imgui/imgui_impl_vulkan.cpp
-index cf530b9..bdc242d 100644
+index cf530b9a..bdc242df 100644
 --- a/src/imgui/imgui_impl_vulkan.cpp
 +++ b/src/imgui/imgui_impl_vulkan.cpp
 @@ -925,6 +925,24 @@ void ImGui_ImplVulkan_Shutdown()
@@ -40,7 +40,7 @@ index cf530b9..bdc242d 100644
  {
  	auto& io = ImGui::GetIO();
 diff --git a/src/imgui/imgui_impl_vulkan.h b/src/imgui/imgui_impl_vulkan.h
-index 44bcdd5..c1ebaf8 100644
+index 44bcdd50..c1ebaf81 100644
 --- a/src/imgui/imgui_impl_vulkan.h
 +++ b/src/imgui/imgui_impl_vulkan.h
 @@ -46,6 +46,12 @@ struct ImGui_ImplVulkan_InitInfo

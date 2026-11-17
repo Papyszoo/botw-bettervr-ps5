@@ -68,13 +68,13 @@ eden: deps ## Build ProsperoEdenX, the Switch side's program (Eden), with patche
 esde: ## Build EmulationStation (ES-DE), the optional other frontend, with PS5-ECAM's glue: build/esde/es-de
 	bash tools/build-esde.sh
 
-bettervr: deps ## BotW-BetterVR on PS5: BetterVR, its ImGui and the OpenXR runtime over hmd2 in one object: build/bettervr/bettervr.o
+bettervr: deps ## (not part of build or check until stage 2 of the 1.0.0 port) BotW-BetterVR on PS5: BetterVR, its ImGui and the OpenXR runtime over hmd2 in one object: build/bettervr/bettervr.o
 	bash tools/build-bettervr.sh
 
-build: deps bettervr $(if $(RADV_ARCHIVE),,radv) ## Build BotW VR (Cemu with BetterVR) and link it with RADV: build/cemu/ps5cemu.elf
+build: deps $(if $(RADV_ARCHIVE),,radv) ## Build BotW VR (Cemu with BetterVR) and link it with RADV: build/cemu/ps5cemu.elf
 	bash tools/build-cemu.sh
 
-check: deps bettervr ## Build and package everything with a stand-in for RADV, to check the build (not an app)
+check: deps ## Build and package everything with a stand-in for RADV, to check the build (not an app)
 	PS5CEMU_LINK_CHECK=1 bash tools/build-cemu.sh
 	bash tools/package.sh --check
 

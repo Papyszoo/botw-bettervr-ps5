@@ -13,7 +13,7 @@ Wii U). Without it the first start had no buttons mapped.
  2 files changed, 80 insertions(+)
 
 diff --git a/src/input/emulated/ProController.cpp b/src/input/emulated/ProController.cpp
-index bb584c1..fad54c7 100644
+index bb584c1e..fad54c71 100644
 --- a/src/input/emulated/ProController.cpp
 +++ b/src/input/emulated/ProController.cpp
 @@ -222,6 +222,46 @@ bool ProController::set_default_mapping(const std::shared_ptr<ControllerBase>& c
@@ -64,7 +64,7 @@ index bb584c1..fad54c7 100644
  	case InputAPI::XInput:
  	{
 diff --git a/src/input/emulated/VPADController.cpp b/src/input/emulated/VPADController.cpp
-index a791c5f..1d7de20 100644
+index a791c5fe..1d7de209 100644
 --- a/src/input/emulated/VPADController.cpp
 +++ b/src/input/emulated/VPADController.cpp
 @@ -637,6 +637,46 @@ bool VPADController::set_default_mapping(const std::shared_ptr<ControllerBase>&

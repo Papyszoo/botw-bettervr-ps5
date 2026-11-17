@@ -13,10 +13,10 @@ generation has something to do, as before.
  1 file changed, 9 insertions(+), 4 deletions(-)
 
 diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
-index 34e95d8..1a31179 100644
+index d042c0c6..b993f401 100644
 --- a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
 +++ b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
-@@ -3349,17 +3349,22 @@ void VulkanRenderer::SwapBuffer(bool mainWindow)
+@@ -3464,17 +3464,22 @@ void VulkanRenderer::SwapBuffer(bool mainWindow)
  #if defined(CEMU_PS5)
  // PS5: ReShade's preset (port/cemu/ReShadePS5.h) on the TV's picture, once DrawBackbufferQuad has drawn it
  // into the swapchain image (in its present layout after the pass) and before the GamePad's screen and

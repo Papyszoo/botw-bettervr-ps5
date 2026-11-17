@@ -19,10 +19,10 @@ Vulkan entry points.
  4 files changed, 59 insertions(+), 8 deletions(-)
 
 diff --git a/src/Cafe/CMakeLists.txt b/src/Cafe/CMakeLists.txt
-index 32d3025..c00c207 100644
+index d2132c19..529f8f93 100644
 --- a/src/Cafe/CMakeLists.txt
 +++ b/src/Cafe/CMakeLists.txt
-@@ -554,8 +554,19 @@ if(CEMU_PS5)
+@@ -565,8 +565,19 @@ if(CEMU_PS5)
  		"${CEMU_PS5_PORT_DIR}/cemu/MsAbiBridge.cpp"
  		"${CEMU_PS5_PORT_DIR}/cemu/MsAbiBridge.h"
  		"${CEMU_PS5_PORT_DIR}/cemu/VulkanPS5.cpp"
@@ -43,7 +43,7 @@ index 32d3025..c00c207 100644
  
  if(APPLE)
 diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/SwapchainInfoVk.cpp b/src/Cafe/HW/Latte/Renderer/Vulkan/SwapchainInfoVk.cpp
-index b27aae0..513d8a7 100644
+index b27aae0e..513d8a79 100644
 --- a/src/Cafe/HW/Latte/Renderer/Vulkan/SwapchainInfoVk.cpp
 +++ b/src/Cafe/HW/Latte/Renderer/Vulkan/SwapchainInfoVk.cpp
 @@ -42,6 +42,10 @@ void SwapchainInfoVk::Create()
@@ -58,7 +58,7 @@ index b27aae0..513d8a7 100644
  	VkResult result = vkCreateSwapchainKHR(m_logicalDevice, &create_info, nullptr, &m_swapchain);
  	if (result != VK_SUCCESS)
 diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanAPI.h b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanAPI.h
-index eacce34..c76d755 100644
+index 418e6798..4e39d206 100644
 --- a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanAPI.h
 +++ b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanAPI.h
 @@ -186,6 +186,9 @@ VKFUNC_DEVICE(vkCmdClearDepthStencilImage);
@@ -72,10 +72,10 @@ index eacce34..c76d755 100644
  VKFUNC_DEVICE(vkCmdSetBlendConstants);
  VKFUNC_DEVICE(vkCmdSetDepthBias);
 diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
-index b9a5160..d28269a 100644
+index d48fde6e..5a934088 100644
 --- a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
 +++ b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
-@@ -2336,6 +2336,7 @@ std::atomic<uint64> g_ps5GpuWaitTicks[6]{};
+@@ -2451,6 +2451,7 @@ std::atomic<uint64> g_ps5GpuWaitTicks[6]{};
  static bool s_ps5WaitingForPreviousFrame = false;
  // the port's: frames the GPU may still be drawing when the next is presented (1: Cemu's own)
  uint32 PS5Cemu_FramesInFlight();
@@ -83,7 +83,7 @@ index b9a5160..d28269a 100644
  #define PS5_WAIT_BEGIN() const uint64 ps5WaitStart = __rdtsc()
  #define PS5_WAIT_END(kind) g_ps5GpuWaitTicks[kind].fetch_add(__rdtsc() - ps5WaitStart, std::memory_order_relaxed)
  #else
-@@ -3223,6 +3224,9 @@ void VulkanRenderer::SwapBuffer(bool mainWindow)
+@@ -3338,6 +3339,9 @@ void VulkanRenderer::SwapBuffer(bool mainWindow)
  		ClearColorImageRaw(chainInfo.m_swapchainImages[chainInfo.swapchainImageIndex], 0, 0, clearColor, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
  	}
  
@@ -93,7 +93,7 @@ index b9a5160..d28269a 100644
  	const size_t currentFrameCmdBufferID = GetCurrentCommandBufferId();
  
  	VkSemaphore presentSemaphore = chainInfo.m_presentSemaphores[chainInfo.swapchainImageIndex];
-@@ -3234,15 +3238,20 @@ void VulkanRenderer::SwapBuffer(bool mainWindow)
+@@ -3349,15 +3353,20 @@ void VulkanRenderer::SwapBuffer(bool mainWindow)
  #if defined(CEMU_PS5)
  	// PS5: or, when the port asks for two frames in flight (framesInFlight), for the one before it:
  	// at 4K the GPU thread waited here while the GPU, still on the previous frame's last passes, had
@@ -122,7 +122,7 @@ index b9a5160..d28269a 100644
  #else
  	WaitCommandBufferFinished(m_commandBufferIDOfPrevFrame);
  #endif
-@@ -3310,6 +3319,30 @@ void VulkanRenderer::SwapBuffer(bool mainWindow)
+@@ -3425,6 +3434,30 @@ void VulkanRenderer::SwapBuffer(bool mainWindow)
  	chainInfo.hasDefinedSwapchainImage = false;
  
  	chainInfo.swapchainImageIndex = -1;

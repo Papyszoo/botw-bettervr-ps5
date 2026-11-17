@@ -15,10 +15,10 @@ it pays nothing; where the renderer has no GLSL, bicubic.
  4 files changed, 156 insertions(+)
 
 diff --git a/src/Cafe/HW/Latte/Core/LatteRenderTarget.cpp b/src/Cafe/HW/Latte/Core/LatteRenderTarget.cpp
-index dff0c79..5554e2e 100644
+index 3399741e..32821486 100644
 --- a/src/Cafe/HW/Latte/Core/LatteRenderTarget.cpp
 +++ b/src/Cafe/HW/Latte/Core/LatteRenderTarget.cpp
-@@ -1011,6 +1011,14 @@ void LatteRenderTarget_copyToBackbuffer(LatteTextureView* textureView, bool isPa
+@@ -1142,6 +1142,14 @@ void LatteRenderTarget_copyToBackbuffer(LatteTextureView* textureView, bool isPa
  
  			filter = LatteTextureView::MagFilter::kNearestNeighbor;
  		}
@@ -32,9 +32,9 @@ index dff0c79..5554e2e 100644
 +		}
  	}
  	cemu_assert(shader);
- 	g_renderer->DrawBackbufferQuad(textureView, shader, filter==LatteTextureView::MagFilter::kLinear, imageX, imageY, imageWidth, imageHeight, isPadView, clearBackground);
+ #ifdef ENABLE_VULKAN
 diff --git a/src/Cafe/HW/Latte/Renderer/RendererOuputShader.cpp b/src/Cafe/HW/Latte/Renderer/RendererOuputShader.cpp
-index a43b7ee..3bfd476 100644
+index a43b7eed..3bfd476f 100644
 --- a/src/Cafe/HW/Latte/Renderer/RendererOuputShader.cpp
 +++ b/src/Cafe/HW/Latte/Renderer/RendererOuputShader.cpp
 @@ -244,6 +244,142 @@ fragment float4 main0(VertexOut in [[stage_in]], texture2d<float> textureSrc [[t
@@ -190,7 +190,7 @@ index a43b7ee..3bfd476 100644
 +	s_fsr_shader = s_fsr_shader_ud = nullptr;
  }
 diff --git a/src/Cafe/HW/Latte/Renderer/RendererOuputShader.h b/src/Cafe/HW/Latte/Renderer/RendererOuputShader.h
-index 433a330..94389e5 100644
+index 433a3308..94389e5f 100644
 --- a/src/Cafe/HW/Latte/Renderer/RendererOuputShader.h
 +++ b/src/Cafe/HW/Latte/Renderer/RendererOuputShader.h
 @@ -50,6 +50,10 @@ public:
@@ -215,7 +215,7 @@ index 433a330..94389e5 100644
  	static const std::string s_bicubic_shader_source_vk;
  	static const std::string s_hermite_shader_source_vk;
 diff --git a/src/config/CemuConfig.h b/src/config/CemuConfig.h
-index 48c396f..1b369f7 100644
+index 1fbefcaf..fef2d190 100644
 --- a/src/config/CemuConfig.h
 +++ b/src/config/CemuConfig.h
 @@ -94,6 +94,7 @@ enum UpscalingFilter

@@ -12,7 +12,7 @@ so the 96 bytes still check to zero and the Mii's ID stays as it was.
  1 file changed, 14 insertions(+)
 
 diff --git a/src/Cafe/Account/Account.cpp b/src/Cafe/Account/Account.cpp
-index 6f576ae..b3e1915 100644
+index 6f576ae1..b3e19153 100644
 --- a/src/Cafe/Account/Account.cpp
 +++ b/src/Cafe/Account/Account.cpp
 @@ -296,6 +296,20 @@ void Account::SetMiiName(std::wstring_view name)

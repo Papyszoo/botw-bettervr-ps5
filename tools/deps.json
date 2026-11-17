@@ -3,10 +3,10 @@
   "items": [
     {
       "name": "cemu",
-      "about": "Cemu (Wii U emulator) at the pinned upstream commit, with the submodules the PS5 build uses",
+      "about": "Cemu (Wii U emulator), Crementif's BetterVR fork (branch bettervr) at the pinned commit, with the submodules the PS5 build uses",
       "kind": "git",
-      "url": "https://github.com/cemu-project/Cemu.git",
-      "commit": "cc6fea125a5d4f559c662d13c5f4af0b6dd0876f",
+      "url": "https://github.com/Crementif/Cemu.git",
+      "commit": "86168a81a65d8962c3a19d0e57e9ab26acc37206",
       "path": ".deps/Cemu",
       "submodules": ["dependencies/ZArchive", "dependencies/Vulkan-Headers", "dependencies/imgui"],
       "creates": ".deps/Cemu/src/Cafe/CafeSystem.cpp"

@@ -17,7 +17,7 @@ loading is (PS5Cemu_PipelineCacheProgress) for its boot log.
  3 files changed, 26 insertions(+)
 
 diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanPipelineStableCache.cpp b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanPipelineStableCache.cpp
-index 9f8f449..6c7ff13 100644
+index 95d5e2bd..5ecaf4d5 100644
 --- a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanPipelineStableCache.cpp
 +++ b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanPipelineStableCache.cpp
 @@ -22,6 +22,17 @@ struct
@@ -39,7 +39,7 @@ index 9f8f449..6c7ff13 100644
  
  VulkanPipelineStableCache& VulkanPipelineStableCache::GetInstance()
 diff --git a/src/Common/ExceptionHandler/ExceptionHandler.cpp b/src/Common/ExceptionHandler/ExceptionHandler.cpp
-index 1c7e95b..e7bd253 100644
+index 1c7e95b5..e7bd253b 100644
 --- a/src/Common/ExceptionHandler/ExceptionHandler.cpp
 +++ b/src/Common/ExceptionHandler/ExceptionHandler.cpp
 @@ -27,6 +27,12 @@ void CrashLog_SetOutputChannels(bool writeToStdErr, bool writeToLogTxt)
@@ -66,7 +66,7 @@ index 1c7e95b..e7bd253 100644
          if(newLine)
              fwrite("\n", sizeof(char), 1, stderr);
 diff --git a/src/Common/ExceptionHandler/ExceptionHandler_posix.cpp b/src/Common/ExceptionHandler/ExceptionHandler_posix.cpp
-index dc11bf4..11257dc 100644
+index dc11bf4b..11257dcf 100644
 --- a/src/Common/ExceptionHandler/ExceptionHandler_posix.cpp
 +++ b/src/Common/ExceptionHandler/ExceptionHandler_posix.cpp
 @@ -3,6 +3,8 @@
