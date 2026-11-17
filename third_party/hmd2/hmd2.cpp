@@ -453,6 +453,73 @@ bool anchor_matches(const ModuleInfo *info, uintptr_t base, const export_anchor_
     return false;
 }
 
+// The anchor did not sit at its offset. Log the module's segments, then look for the anchor string
+// in the readable ones (execute-only code is never read). A string found exactly once gives the
+// offset delta; the base moves by it so the table's export offsets land where this build has them.
+const export_table_t *module_table_scan(const ModuleInfo *info, const char *file,
+                                        const export_table_t *tables, size_t tables_n,
+                                        uintptr_t *base) {
+    for (uint32_t i = 0; i < info->nseg && i < 4; i++)
+        logf("hmd2: %s: segment %u at +0x%llx size 0x%x prot %d", file, (unsigned)i,
+             (unsigned long long)(info->seg[i].addr - *base), (unsigned)info->seg[i].size,
+             (int)info->seg[i].prot);
+    for (size_t k = 0; k < tables_n; k++) {
+        const export_anchor_t *anchor = tables[k].anchor;
+        const size_t len = std::strlen(anchor->text) + 1;
+        const uintptr_t want = *base + anchor->va;
+        bool shown = false;
+        for (uint32_t i = 0; i < info->nseg && i < 4 && !shown; i++) {
+            const uintptr_t lo = info->seg[i].addr;
+            if (want >= lo && want + 16 <= lo + info->seg[i].size && (info->seg[i].prot & 1)) {
+                const uint8_t *p = reinterpret_cast<const uint8_t *>(want);
+                logf("hmd2: %s: at anchor +0x%x: %02x %02x %02x %02x %02x %02x %02x %02x", file,
+                     (unsigned)anchor->va, p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7]);
+                shown = true;
+            }
+        }
+        if (!shown)
+            logf("hmd2: %s: anchor +0x%x is not in a readable segment", file, (unsigned)anchor->va);
+        for (size_t j = 0; j < tables[k].count; j++) {
+            const uintptr_t at = *base + tables[k].exports[j].offset;
+            bool readable = false;
+            for (uint32_t i = 0; i < info->nseg && i < 4; i++)
+                if (at >= info->seg[i].addr && at + 8 <= info->seg[i].addr + info->seg[i].size &&
+                    (info->seg[i].prot & 1))
+                    readable = true;
+            if (readable) {
+                const uint8_t *p = reinterpret_cast<const uint8_t *>(at);
+                logf("hmd2: %s: %s +0x%x: %02x %02x %02x %02x %02x %02x %02x %02x", file,
+                     tables[k].exports[j].name, (unsigned)tables[k].exports[j].offset, p[0], p[1],
+                     p[2], p[3], p[4], p[5], p[6], p[7]);
+            } else
+                logf("hmd2: %s: %s +0x%x is execute-only, bytes not read", file,
+                     tables[k].exports[j].name, (unsigned)tables[k].exports[j].offset);
+        }
+        int hits = 0;
+        uintptr_t found = 0;
+        for (uint32_t i = 0; i < info->nseg && i < 4; i++) {
+            if (!(info->seg[i].prot & 1) || info->seg[i].size < len)
+                continue;
+            const uint8_t *seg = reinterpret_cast<const uint8_t *>(info->seg[i].addr);
+            for (size_t off = 0; off + len <= info->seg[i].size; off++)
+                if (seg[off] == static_cast<uint8_t>(anchor->text[0]) &&
+                    std::memcmp(seg + off, anchor->text, len) == 0) {
+                    if (hits++ == 0)
+                        found = info->seg[i].addr + off;
+                }
+        }
+        logf("hmd2: %s: anchor string found %d time(s)%s", file, hits, hits == 1 ? "" : ", offsets kept");
+        if (hits == 1) {
+            const intptr_t delta = static_cast<intptr_t>(found - want);
+            logf("hmd2: %s: anchor string at base+0x%llx (expected +0x%x), offsets move by %lld", file,
+                 (unsigned long long)(found - *base), (unsigned)anchor->va, (long long)delta);
+            *base += delta;
+            return &tables[k];
+        }
+    }
+    return nullptr;
+}
+
 // The table of the firmware whose anchor sits in this library, or nullptr.
 const export_table_t *module_table(int handle, const char *file, const export_table_t *tables,
                                 size_t tables_n, uintptr_t *base) {
@@ -471,7 +538,9 @@ const export_table_t *module_table(int handle, const char *file, const export_ta
     }
     logf("hmd2: %s: no export table for this firmware (base %p)", file,
          reinterpret_cast<void *>(*base));
-    return nullptr;
+    // Only a library with a single known build is scanned: with several tables a shifted match
+    // could pick the wrong firmware's offsets.
+    return tables_n == 1 ? module_table_scan(&info, file, tables, tables_n, base) : nullptr;
 }
 
 // sceKernelDlsym first; at the export offsets of the firmware's table when the

@@ -602,6 +602,15 @@ namespace
 			}
 			if (buttons & kIntercepted)
 				continue; // the system menu has it: nothing pressed here
+			if (i == 1)
+			{
+				static bool s_optionsWas = false;
+				static int s_optionsLogged = 0;
+				const bool down = (buttons & kOptions) != 0;
+				if (down != s_optionsWas && s_optionsLogged++ < 60)
+					Log("Options %s", down ? "down" : "up");
+				s_optionsWas = down;
+			}
 			hand.buttons = buttons;
 			hand.stickX = Axis(state[kSenseStickX]);
 			hand.stickY = -Axis(state[kSenseStickY]); // its byte is down positive

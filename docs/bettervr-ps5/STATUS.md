@@ -3,6 +3,30 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-17: build27 (menu toggle chain and Sense vibration lookup diagnosed/fixed), built, untested on console
+
+Build26's console run: Options reached no menu (no `[menu]` line) and no vibration was felt.
+
+- **Menu** (patch 0028, new; 0001 to 0027 untouched): the runtime's right `menu/click` is Options and was
+  already read correctly (build23's calibration used it). In BetterVR, a short press came from
+  `ButtonState`, which needs a release within 250 ms; a longer press counts as a long press, which the PS5
+  build ignores. The toggle now takes the mod menu action's own down and up edges: a press released within
+  1 s toggles, a hold does nothing. Logs: `[menu] switch: on/off (bettervr.json's menu)` once,
+  `[menu] mod menu action is active/not active` on change, `[menu] Options down` / `up after N ms`,
+  `[menu] toggle -> open/closed`, and in the runtime `[vr-xr] Options down/up` (first 60).
+  This is the likeliest cause, not proven; the new lines show where the chain stops if it is another.
+- **Vibration** (`third_party/hmd2/hmd2.cpp`): libScePad's 13.60 anchor did not match at +0x1f650. When
+  the single-table libraries (libScePad) find no match, the module's segments are logged, the bytes at the
+  anchor and at the export offsets are logged where the segment is readable (execute-only code is not
+  read, and logged as such), and the readable segments are searched for the anchor string. Found exactly
+  once: the base moves by the difference and the table's offsets are used. Found zero or several times:
+  nothing changes.
+
+**Test request 45 (build27, 13.60 console, `"menu": 1` in bettervr.json).** Press Options on the right
+controller once (short); a panel should open in the headset. Press it again; it should close. Then hit
+something with a weapon and feel for vibration. Send the log: the `[menu]` and `Options` lines and the
+`hmd2: libScePad` lines (segments, anchor, `anchor string found`).
+
 ## 2026-11-17: build26 (Sense controller vibration), built, untested on console
 
 Build23's log showed `scePadSetVibrationMode` and `scePadSetVibration` returning 0x80920003 for both
@@ -31,6 +55,11 @@ in the game, with the Sense controllers on. Send or let the log show the `vibrat
 `vibration ->` lines for both hands. Expected: `0x00000000` and a felt pulse. If `Sense vibration
 exports not found` appears instead, send the `hmd2: libScePad` lines.
 
+**Result 44 (build26, 13.60, 2026-11-17, from the console's log).** No vibration felt. The log has
+`hmd2: libScePad: load ".../common/lib/libScePad.sprx" -> handle 0x72 (res 0)`, `found by: sandbox path`,
+`libScePad.sprx: no export table for this firmware (base 8009f8000)`, `Sense vibration exports not found on
+this firmware, Sense vibration stays off`, and the mode and vibration calls returning 0x80000001.
+
 ## 2026-11-17: build25 (BetterVR menu stage A behind bettervr.json's menu switch), built, untested on console
 
 First step of BetterVR's own menu in the headset: the ImGui overlay starts and a small panel is drawn. Not the
@@ -57,6 +86,9 @@ Breath of the Wild in VR, press Options on the right controller, wait 3 s, press
 `[menu]` lines and any `[crash]` lines from boot.log, and say whether a panel with the BetterVR version and a
 frame rate line appeared in the headset and where.
 
+**Result 43 (build25, 2026-11-17, from the console's log).** `bettervr.json` has `"menu": 1`. Options was
+pressed in game (short presses and one hold of about 3 s). The log has no `[menu]` line and no crash.
+
 ## 2026-11-17: build24 (calibrated hand defaults; calibration mode removed), built, untested on console
 
 - **Defaults** (`port/bettervr/xr/runtime.cpp`): `gripYaw` 17, `gripPitch` 32, `gripRoll` 30 when
@@ -69,6 +101,9 @@ frame rate line appeared in the headset and where.
 
 **Test request 42 (build24, any console).** On a fresh `bettervr.json`, without the grip keys: do the
 hands look right (pointing ahead, down, palms up)? Send the `[vr-xr] hands:` lines if not.
+
+**Result 42 (build24 defaults, 2026-11-17, from the console).** With the default grip 17/32/30 the hands are
+"better now".
 
 ## 2026-11-17: build23 (hold Options to calibrate the hands), built, untested on console
 
