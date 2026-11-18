@@ -16,7 +16,10 @@ master switch, a headset cap and a test button for each device) over one 60 Hz m
 headset's motor and the DualSense. The bow's draw firms R2 and the shield's guard clicks L2 on the DualSense (the
 Sense controllers behind `"senseTriggers": true`). The PS VR2 gaze exports are probed, exposed as
 `XR_EXT_eye_gaze_interaction`, and an optional `Gaze Throw Assist` bends a throw up to 15 degrees toward where the
-player looks. New patches: bettervr 0007-0010, cemu 0055. Details: `UPDATE-1.0.md`, "v0.6".
+player looks. Bettervr 0011 latches the first-person body root from the camera hook's own head and player pose and
+gives the HUD background its own premultiplied ImGui pipeline, holds the first 2D frame after a screen change, and
+keeps a short press from opening the world guide in third person; the bow aim arc needs a real draw there. New
+patches: bettervr 0007-0011, cemu 0055. Details: `UPDATE-1.0.md`, "v0.6" and "v0.6 body, HUD and needle".
 
 **Test request 53 (v0.6 combined).** One console run of this build (13.60), in VR, with `bettervr.json`
 `"profile": true` and the Sense controllers charged; send the logs zip and the lines named under each letter.
