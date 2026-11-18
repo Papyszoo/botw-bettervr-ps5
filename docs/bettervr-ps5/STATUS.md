@@ -20,8 +20,11 @@ player looks. Bettervr 0011 latches the first-person body root from the camera h
 gives the HUD background its own premultiplied ImGui pipeline, holds the first 2D frame after a screen change, and
 keeps a short press from opening the world guide in third person; the bow aim arc needs a real draw there. Bettervr
 0012 adds an optional **Snap Turn (third person)** that reuses the first-person snap angle and threshold, and with it
-off third person is unchanged. New patches: bettervr 0007-0012, cemu 0055. Details: `UPDATE-1.0.md`, "v0.6", "v0.6
-body, HUD and needle" and "Snap turn in third person".
+off third person is unchanged. Bettervr 0013 logs the magnesis wrist twist (fixed flag, twist, requested angular
+velocity, the body's own turn, the reach ratio) and, when the held body's angular velocity stays at zero, turns the
+body's transform about its centre instead, capped at 6 rad/s; fixed objects are untouched. New patches: bettervr
+0007-0013, cemu 0055. Details: `UPDATE-1.0.md`, "v0.6", "v0.6 body, HUD and needle", "Snap turn in third person" and
+"Magnesis wrist twist".
 
 **Test request 53 (v0.6 combined).** One console run of this build (13.60), in VR, with `bettervr.json`
 `"profile": true` and the Sense controllers charged; send the logs zip and the lines named under each letter.
@@ -107,6 +110,13 @@ body, HUD and needle" and "Snap turn in third person".
   direction) and say whether each step went
   the way the stick was pushed; if a step turns twice, is missed or goes the wrong way, say which stick and which
   direction.
+- (m) Magnesis wrist twist. Take the Magnesis rune, hold a free metal crate with the right grip held, and turn the
+  right hand's wrist left and right as if unscrewing it, first slowly, then quickly; the crate must spin with the wrist
+  instead of sliding away. Repeat with a sliding block or a door (a fixed object): it must not spin. Send every
+  `[magnesis] spin` line, at most two a second (`fixed=`, `twist=`, `want=`, `body=`, `reach=`), and the one
+  `[magnesis] spin path: ...` line of each hold: `angular velocity (...)` means the game kept the spin, `transform
+  (...)` means it had dropped it and this build turned the body itself. Say whether the crate spun both ways, whether
+  its centre stayed put or slid away, and send the `reach=` values from standing still and from the middle of a twist.
 
 ## 2026-11-18: console run 4 (37c6028, 13.60)
 

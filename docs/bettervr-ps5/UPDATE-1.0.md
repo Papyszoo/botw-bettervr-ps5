@@ -735,7 +735,7 @@ Branch `bettervr-1.0/v06-all`, from v0.5.0, combining the v0.6 tracks (`bettervr
 on v0.5.0: the short press of Options was too easy to hit when the player meant to pause, the popup at game start was
 unwanted, Link flashed while strafing near grass, and the weapon wheel lacked its left and right arrows. New patch
 files: bettervr 0007 (performance), 0008 (vibration), 0009 (adaptive triggers), 0010 (eye tracking), 0011
-(body, HUD and the blue needle) and 0012 (third-person snap turn), and cemu 0055
+(body, HUD and the blue needle), 0012 (third-person snap turn) and 0013 (magnesis wrist twist); cemu 0055
 (the GPU thread's swap and VR frame end for the profile). Bettervr 0001-0006 are v06's, unchanged; 0055 is the only
 Cemu patch added. `VERSION` stays 0.5.0.
 
@@ -967,6 +967,32 @@ Cemu patch added. `VERSION` stays 0.5.0.
 - **Not done:** no comfort fade or blink is added for the third-person step. Patch bettervr 0012. Built, untested on
   console.
 
+### Magnesis wrist twist
+
+- **The twist is asked for, then checked.** While a metal object is held (`hook_GetMagnesisHeldBodySpin`, `magnesis.cpp`),
+  the right grip still asks for an angular velocity from the hand's rotation since the grip:
+  `axis * min(15 * error, 20 rad/s)` through `setAngularVelocity`. The first request above 0.5 rad/s arms a probe: the
+  next frame measures how fast the body's own transform turned since. A body that turned at least a quarter of the
+  request keeps the angular velocity path for the rest of the hold; one that stayed near zero takes the transform path
+  instead, and one line says which. Fixed objects (`MagneManagerFixedObject`, manager +0x2C3) never arm the probe and are
+  untouched.
+- **The transform path.** The hook turns the body's matrix about its own centre (the basis turned, the position kept) by
+  `min(15 * error, 6 rad/s) * frame time` and returns 2, so a new label in the same cave calls `setTransform`
+  (`0x03486CD8`) instead of `setAngularVelocity`. Both cave sites (`0x02B0117C` and `0x02B011C8`,
+  `patch_CTRL_EntityController.asm`) now hand the hook the body in r5; only the first call of a game frame acts, and a
+  frame longer than 50 ms counts as 50 ms, so a hitch cannot snap the object round. Patch bettervr 0013.
+- **The slide.** If a wrist twist also moves the object along the stick, the reach ratio the aim scales the stick length
+  by is the suspect: `stickLength = |grip hand->object| * (reach / reach0)^2` (`DriveMagnesisAimFromController`), and the
+  tracked controller position moves when the wrist turns, squared. The `reach=` field is that ratio. It is left alone in
+  this build: changing it means changing how far a push or pull moves an object, which needs the console's values first.
+- **Logs** (INFO, so always on, at most twice a second while a body is held):
+  `[magnesis] spin: fixed=false twist=12.3 deg want=5.2 rad/s body=0.0 rad/s reach=1.03x`, where `twist` is the hand's
+  rotation since the grip, `want` the angular velocity the game is handed (also the rate the transform path aims for),
+  `body` the body's own angular speed measured from its transform between frames (no angular-velocity getter is pinned),
+  and `reach` the stick length's ratio. Once per hold: `[magnesis] spin path: angular velocity (probe: wanted 5.2 rad/s,
+  body 4.9 rad/s)` or `... transform (probe: wanted 5.2 rad/s, body 0.0 rad/s)`. The older aim line reads
+  `[magnesis] hand aim on/off`.
+
 ### Settings and About
 
 - **Settings are BotW VR's alone.** The PayPal card is gone from About, which now has one licence line (Cemu and PS5-ECAM under the GPL, Crementif's BetterVR under MIT) and only the Wii U's paths; the backup, box art, recompiler and remote-screen texts no longer name other systems, and what is left is marked "ask" in the track's settings audit.
@@ -979,7 +1005,10 @@ BetterVR's already-upscaled eye image. The depth write in the present shader is 
 and its return-code meaning are unverified, and the DualSense's pad handle is opened in vibration mode 2. The headset's
 `+0x2ae00` is from public tables, not our own dump; its test button is the proof. Explosions have settings but no
 event source. The five gaze names, the meaning of status 0 and the direction's sign wait for the console. The
-third-person snap step's direction, its pad/Sense merge and the release threshold wait for the console too.
+third-person snap step's direction, its pad/Sense merge and the release threshold wait for the console too. For the
+magnesis twist, the console decides whether `body=` follows `want=` (the angular velocity path) or stays at zero (the
+transform path), and whether `reach=` moves during a pure wrist twist; if `body=` stays at zero on both paths, the game
+writes the body's transform after the cave and the next probe is a later hook site.
 
 Test request 53 in `STATUS.md`.
 

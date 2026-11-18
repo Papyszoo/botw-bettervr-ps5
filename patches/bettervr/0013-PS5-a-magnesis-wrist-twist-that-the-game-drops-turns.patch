@@ -1,0 +1,240 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ps5cemu <ps5cemu@localhost>
+Date: Thu, 19 Nov 2026 00:47:16 +0100
+Subject: [PATCH] PS5: a magnesis wrist twist that the game drops turns the
+ body itself; built, untested on console
+
+The spin hook logs, at most twice a second while a body is held, the fixed-object flag, the hand's twist since the grip, the requested angular velocity and the body's own turn between frames. The first real request arms a probe; when the body barely turns, the hold turns the body's transform about its own centre instead, capped at 6 rad/s, and says once which path it took. The cave hands the hook the body and applies the turned matrix through setTransform; fixed objects are untouched. The reach ratio the aim scales the stick length by is in the same line.
+---
+ .../patch_CTRL_EntityController.asm           |  21 +++-
+ src/game/botw/player/magnesis.cpp             | 114 ++++++++++++++++--
+ 2 files changed, 126 insertions(+), 9 deletions(-)
+
+diff --git a/resources/BreathOfTheWild_BetterVR/patch_CTRL_EntityController.asm b/resources/BreathOfTheWild_BetterVR/patch_CTRL_EntityController.asm
+index 588d8c5..d0babd4 100644
+--- a/resources/BreathOfTheWild_BetterVR/patch_CTRL_EntityController.asm
++++ b/resources/BreathOfTheWild_BetterVR/patch_CTRL_EntityController.asm
+@@ -317,10 +317,15 @@ bctrl
+ 
+ addi r3, r1, 0x10
+ addi r4, r1, 0x40 ; angular velocity to apply
++mr r5, r31 ; the body itself
+ bl import.coreinit.hook_GetMagnesisHeldBodySpin
+-cmpwi r3, 0
+-beq skipSpinMagnesisHeldBody
++cmpwi r3, 1
++beq ApplyMagnesisHeldBodyAngular
++cmpwi r3, 2
++beq ApplyMagnesisHeldBodyTransform
++b skipSpinMagnesisHeldBody
+ 
++ApplyMagnesisHeldBodyAngular:
+ mr r3, r31
+ addi r4, r1, 0x40
+ lis r12, MagnesisSpinEpsilon@ha
+@@ -329,6 +334,18 @@ lis r12, ksys__phys__RigidBody__setAngularVelocity@ha
+ addi r12, r12, ksys__phys__RigidBody__setAngularVelocity@l
+ mtctr r12
+ bctrl
++b skipSpinMagnesisHeldBody
++
++; the game keeps the angular velocity at zero, so the hook has turned the matrix about the body's
++; own centre instead, and the body takes it as its transform
++ApplyMagnesisHeldBodyTransform:
++mr r3, r31
++addi r4, r1, 0x10
++li r5, 1
++lis r12, OriginalSetRigidBodyTransform@ha
++addi r12, r12, OriginalSetRigidBodyTransform@l
++mtctr r12
++bctrl
+ 
+ skipSpinMagnesisHeldBody:
+ lwz r31, 0x5C(r1)
+diff --git a/src/game/botw/player/magnesis.cpp b/src/game/botw/player/magnesis.cpp
+index 12615f5..25ed231 100644
+--- a/src/game/botw/player/magnesis.cpp
++++ b/src/game/botw/player/magnesis.cpp
+@@ -41,11 +41,41 @@ static glm::vec3 s_gripHandToObject = glm::vec3(0.0f);
+ // angular velocity per radian the object is behind the hand, and its cap in radians per second
+ static constexpr float MagneSpinGain = 15.0f;
+ static constexpr float MagneMaxSpin = 20.0f;
++// the same gain as a turn of the body's own transform, capped in radians per second, for a body whose
++// angular velocity the game drops
++static constexpr float MagneMaxTransformSpin = 6.0f;
++// a request below this says nothing about whether the game kept it, and one that turned less than
++// MagneSpinKeptShare of it has had the spin dropped
++static constexpr float MagneSpinProbe = 0.5f;
++static constexpr float MagneSpinKeptShare = 0.25f;
++// both cave sites can run in one game frame, and a long hitch must not turn the body in one jump
++static constexpr float MagneSpinMinFrame = 0.004f;
++static constexpr float MagneSpinMaxFrame = 0.050f;
+ 
+ static glm::quat s_grabHandRotation = glm::identity<glm::quat>();
+ static glm::quat s_grabBodyRotation = glm::identity<glm::quat>();
+ static bool s_spinGripHeld = false;
+ 
++// the angular velocity reaches the body's simulation or the game drives over it; which one is decided
++// once per hold, from how far the body turned after the first real spin
++enum class SpinPath {
++    Unknown,
++    AngularVelocity,
++    Transform
++};
++
++static SpinPath s_spinPath = SpinPath::Unknown;
++static uint32_t s_spinBody = 0;
++static float s_probeSpin = 0.0f;
++static float s_spinGripReach = 0.0f;
++static glm::quat s_lastBodyRotation = glm::identity<glm::quat>();
++static std::chrono::steady_clock::time_point s_lastBodySample{};
++static std::chrono::steady_clock::time_point s_lastSpinLog{};
++
++static float QuatAngle(const glm::quat& rotation) {
++    return 2.0f * std::acos(glm::clamp(std::abs(rotation.w), 0.0f, 1.0f));
++}
++
+ static bool IsPlausiblePPCPointer(uint32_t pointer) {
+     return pointer >= 0x10000000 && pointer < 0xF0000000 && (pointer & 3) == 0;
+ }
+@@ -80,6 +110,17 @@ static glm::vec3 ClampDirectionToCone(const glm::vec3& desired, const glm::vec3&
+     return glm::normalize(reference * std::cos(maxAngle) + perpendicular * std::sin(maxAngle));
+ }
+ 
++// the reach the aim drives the stick length by (DriveMagnesisAimFromController), for the log only
++static float HandReach(const XrSpaceLocation& handLocation) {
++    const auto headPose = Tracking::HeadPose();
++    if (!headPose.has_value()) {
++        return 0.0f;
++    }
++
++    const glm::vec3 headToHand = FlattenHorizontally(ToGLM(handLocation.pose.position) - glm::vec3(headPose.value()[3]));
++    return std::max(glm::length(headToHand), MagneMinReach);
++}
++
+ static bool DriveMagnesisAimFromController(uint32_t action) {
+     const uint32_t manager = Guest::Get<BEType<uint32_t>>(MagneManagerInstanceAddress).getLE();
+     if (!IsPlausiblePPCPointer(manager)) {
+@@ -194,17 +235,19 @@ static void hook_DriveMagnesisAim(PPCInterpreter_t* hCPU) {
+     static bool s_wasDriving = false;
+     const bool driving = DriveMagnesisAimFromController(hCPU->gpr[3]);
+     if (driving != s_wasDriving) {
+-        Log::print<CONTROLS>("[Magnesis] hand aim {}", driving ? "on" : "off");
++        Log::print<CONTROLS>("[magnesis] hand aim {}", driving ? "on" : "off");
+         s_wasDriving = driving;
+     }
+ }
+ 
+-// r3 = sead::Matrix34 of the held body, r4 = Vec3 that receives the angular velocity, returns whether to apply it
++// r3 = sead::Matrix34 of the held body, r4 = Vec3 that receives the angular velocity, r5 = the body,
++// returns 0 to leave the body alone, 1 to set the angular velocity, 2 to set the turned transform
+ static void hook_GetMagnesisHeldBodySpin(PPCInterpreter_t* hCPU) {
+     hCPU->instructionPointer = hCPU->sprNew.LR;
+ 
+     const uint32_t bodyMtxAddress = hCPU->gpr[3];
+     const uint32_t spinAddress = hCPU->gpr[4];
++    const uint32_t body = hCPU->gpr[5];
+     hCPU->gpr[3] = 0;
+ 
+     const uint32_t manager = Guest::Get<BEType<uint32_t>>(MagneManagerInstanceAddress).getLE();
+@@ -215,9 +258,7 @@ static void hook_GetMagnesisHeldBodySpin(PPCInterpreter_t* hCPU) {
+     // doors and sliding blocks hang on constraints that a forced spin would fight
+     uint8_t fixedObjectFlag = 0;
+     Guest::Read(manager + MagneManagerFixedObject, &fixedObjectFlag);
+-    if (fixedObjectFlag != 0) {
+-        return;
+-    }
++    const bool isFixedObject = fixedObjectFlag != 0;
+ 
+     const OpenXR::InputState inputs = Tracking::Hands();
+     const XrSpaceLocation& handLocation = inputs.shared.poseLocation[OpenXR::EyeSide::RIGHT];
+@@ -246,13 +287,45 @@ static void hook_GetMagnesisHeldBodySpin(PPCInterpreter_t* hCPU) {
+     const bool gripStarted = gripHeld && !s_spinGripHeld;
+     s_spinGripHeld = gripHeld;
+     if (!gripHeld) {
++        s_spinPath = SpinPath::Unknown;
++        s_spinBody = 0;
++        s_probeSpin = 0.0f;
+         return;
+     }
+-    if (gripStarted) {
++
++    // a new grip, or another body under the same grip, starts the hold over
++    if (gripStarted || body != s_spinBody) {
++        s_spinBody = body;
++        s_spinPath = SpinPath::Unknown;
++        s_probeSpin = 0.0f;
++        s_lastBodySample = std::chrono::steady_clock::time_point{};
+         s_grabHandRotation = handRotation;
+         s_grabBodyRotation = bodyRotation;
++        s_spinGripReach = HandReach(handLocation);
++    }
++
++    const auto now = std::chrono::steady_clock::now();
++    float dt = 0.0f;
++    if (s_lastBodySample != std::chrono::steady_clock::time_point{}) {
++        dt = std::chrono::duration<float>(now - s_lastBodySample).count();
++    }
++    // the frame's first call is the one that acts
++    if (dt > 0.0f && dt < MagneSpinMinFrame) {
++        return;
+     }
+ 
++    const float frameTime = dt > 0.0f ? std::min(dt, MagneSpinMaxFrame) : (1.0f / 60.0f);
++    const float bodySpin = dt > 0.0f ? QuatAngle(glm::normalize(bodyRotation * glm::inverse(s_lastBodyRotation))) / frameTime : 0.0f;
++    if (s_probeSpin > 0.0f) {
++        // the last frame's request is answered by how far the body has turned since it
++        const bool kept = bodySpin >= s_probeSpin * MagneSpinKeptShare;
++        s_spinPath = kept ? SpinPath::AngularVelocity : SpinPath::Transform;
++        Log::print<INFO>("[magnesis] spin path: {} (probe: wanted {:.1f} rad/s, body {:.1f} rad/s)", kept ? "angular velocity" : "transform", s_probeSpin, bodySpin);
++        s_probeSpin = 0.0f;
++    }
++    s_lastBodyRotation = bodyRotation;
++    s_lastBodySample = now;
++
+     // the object turns by however much the hand has turned since its grip was squeezed
+     const glm::quat targetRotation = handRotation * glm::inverse(s_grabHandRotation) * s_grabBodyRotation;
+     glm::quat error = glm::normalize(targetRotation * glm::inverse(bodyRotation));
+@@ -262,14 +335,41 @@ static void hook_GetMagnesisHeldBodySpin(PPCInterpreter_t* hCPU) {
+ 
+     const glm::vec3 errorAxis = glm::vec3(error.x, error.y, error.z);
+     const float errorAxisLength = glm::length(errorAxis);
++    float errorAngle = 0.0f;
+     glm::vec3 spin = glm::vec3(0.0f);
+     if (errorAxisLength > 0.0001f) {
+-        const float errorAngle = 2.0f * std::atan2(errorAxisLength, error.w);
++        errorAngle = 2.0f * std::atan2(errorAxisLength, error.w);
+         spin = errorAxis / errorAxisLength * std::min(errorAngle * MagneSpinGain, MagneMaxSpin);
+     }
+ 
++    if (s_lastSpinLog == std::chrono::steady_clock::time_point{} || now - s_lastSpinLog >= std::chrono::milliseconds(500)) {
++        s_lastSpinLog = now;
++        const float handTwist = QuatAngle(glm::normalize(handRotation * glm::inverse(s_grabHandRotation)));
++        const float reach = HandReach(handLocation);
++        Log::print<INFO>("[magnesis] spin: fixed={} twist={:.1f} deg want={:.1f} rad/s body={:.1f} rad/s reach={:.2f}x",
++            isFixedObject, glm::degrees(handTwist), glm::length(spin), bodySpin, s_spinGripReach > 0.0f && reach > 0.0f ? reach / s_spinGripReach : 1.0f);
++    }
++
++    if (isFixedObject) {
++        return;
++    }
++
++    if (s_spinPath == SpinPath::Transform) {
++        // the angular velocity stays at zero, so the body itself turns, about its own centre
++        const float stepAngle = std::min(errorAngle * MagneSpinGain, MagneMaxTransformSpin) * frameTime;
++        if (errorAxisLength > 0.0001f && stepAngle > 0.0f) {
++            bodyMtx.setRotLE(glm::normalize(glm::angleAxis(stepAngle, errorAxis / errorAxisLength) * bodyRotation));
++            Guest::Write(bodyMtxAddress, &bodyMtx);
++            hCPU->gpr[3] = 2;
++        }
++        return;
++    }
++
+     BEVec3 spinBE = { spin.x, spin.y, spin.z };
+     Guest::Write(spinAddress, &spinBE);
++    if (s_spinPath == SpinPath::Unknown && glm::length(spin) >= MagneSpinProbe) {
++        s_probeSpin = glm::length(spin);
++    }
+     hCPU->gpr[3] = 1;
+ }
+ 
