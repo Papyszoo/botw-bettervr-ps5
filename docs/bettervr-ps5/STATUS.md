@@ -103,7 +103,8 @@ body, HUD and needle" and "Snap turn in third person".
   released past the deadzone and pushed again; push left once: 45 degrees left. Repeat with a Sense stick and say
   whether pad and Sense behave the same. Turn the setting off: the same push must turn smoothly as before. Say whether
   the row is absent in first person and whether it is still on after quitting and restarting. Send every
-  `SnapTurn: turning N degrees in third person` line (one per step; N is 30, 45 or 60) and say whether each step went
+  `SnapTurn: turning N degrees in third person` line (one per step; N is ±30, ±45 or ±60, and its sign is the step's
+  direction) and say whether each step went
   the way the stick was pushed; if a step turns twice, is missed or goes the wrong way, say which stick and which
   direction.
 

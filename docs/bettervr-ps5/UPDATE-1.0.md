@@ -962,7 +962,8 @@ Cemu patch added. `VERSION` stays 0.5.0.
   `hook_OverrideThirdPersonTailStickYaw` (`camera.cpp`) replace the game's per-frame smooth yaw delta with one
   `-direction * angle` step. The tail site takes the smooth delta back out of the base yaw so the following `fmadds`
   cannot add it again. Off, both hooks return before writing anything and VPAD is untouched: today's behavior.
-- **Log.** One `SnapTurn: turning N degrees in third person` line per step (N is 30, 45 or 60).
+- **Log.** One `SnapTurn: turning N degrees in third person` line per step (N is ±30, ±45 or ±60; the sign is the
+  step's direction).
 - **Not done:** no comfort fade or blink is added for the third-person step. Patch bettervr 0012. Built, untested on
   console.
 
