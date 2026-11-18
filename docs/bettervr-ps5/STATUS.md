@@ -3,6 +3,20 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-18: 1.0.0 port, console run 3 (50143ed, 1x): scene corruption after the inventory, patch cemu 0054, built, untested on console
+
+Reported from the console: after closing the inventory the 3D scene shows coloured and black patches; it gets worse with
+each open and close. Cause found in code (not seen on console): patch cemu 0015's copy clamp skipped every right-view
+image copy of a texture with a view layer, so the right view's copy of the scene stayed stale. Patch 0054 counts the
+view layer's slices. Details: `UPDATE-1.0.md`, "Console run 3: scene corruption".
+
+**Test request 51 (the build of this commit, 13.60 console).** Play in VR (1x). (a) Open the inventory, close it, three
+times, looking at both eyes and the TV: say whether the patches are gone, and which eye (cover one eye) if not.
+(b) Send the logs zip. Cemu's boot log must have no `[copy] image clamped ... x1 layers asked, ... x0 copied (nothing:
+skipped)` lines for same-size images any more (run 3 had about 100 of them). (c) If patches remain: repeat (a) with the
+Graphics pack on 0.5x (Cemu's Graphic packs, BetterVR's Graphics pack, VR Resolution Multiplier) and say whether the
+inventory glitches there too; send the lines `[copy] image clamped` and `[copy] image WOULD OVERRUN` of both runs.
+
 ## 2026-11-18: 1.0.0 port, console run 2 (db1f541, 13.60): BotW in VR works
 Next build: VR resolution preset 1x (BetterVR's default) instead of 0.5x; built, untested on console.
 

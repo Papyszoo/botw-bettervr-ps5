@@ -699,3 +699,31 @@ lists as in 0.9.23; in VR, after `StartBetterVR` reloads, BotW's community packs
 is listed or activated twice. Other games' downloaded packs always load. Log lines (confirm on the console):
 `[packs] N graphic packs loaded at start` (library) and `[packs] N graphic packs loaded with BetterVR's` (VR start); the
 existing `[packs] N graphic packs loaded` follows a download. Built, untested on console.
+
+## Console run 3: scene corruption
+
+Reported from the console (build 50143ed, 1x = 2000x2040 per eye, 50 fps): after the inventory closes, a corrupted 3D
+scene (screen-aligned patches of clipped colour and black blocks, the HUD clean), worse after each open and close, not
+growing over time on its own. Run 2 (0.5x) reported none; whether the inventory was opened there is unknown.
+
+**Cause, ranked.**
+1. Proven in code and matching the log (not seen on console): patch cemu 0015's image-copy clamp counted a texture's
+   layers as `depth - slice`. In the Crementif fork a 2D render target created for stereo has a view layer
+   (`hasViewLayer`, `LatteTextureVk.cpp`: `arrayLayers = depth * 2`) and the right view's slices follow the guest's
+   (`LatteView_GetSiblingSlice` = slice + depth). `VulkanRenderer::texture_copyImageSubData` calls itself for the right
+   view (`LatteView_OnTextureCopy`) with that slice, so the clamp computed 0 layers and skipped the copy. The boot log
+   shows exactly this, 107 `[copy] image clamped` lines in run 3, e.g. `VkFormat 122 mip 0 -> mip 0, 800x725 x1 layers
+   asked, 800x725 x0 copied (nothing: skipped)`, with width and height unchanged, each followed by the left view's
+   `[copy] image:` line of the same size. The inventory copies the scene behind it (and the blur and bloom textures it
+   uses) with GX2 copies; every one left the right view's slice of the destination stale (the image's earlier content,
+   or never written), so each open and close adds more stale texture data, as reported. Run 2 has the same lines. Not
+   proven: that this is the whole symptom (the TV mirror shows one view; which eye it is was not checked), and that the
+   0.5x run did not show it only because the inventory was not opened.
+2. Likely not: the capture and release path (`capture.cpp`: mono capture during the pause menu, no clear in mono), texture
+   redefine rules at 2000x2040 (the 640x368 rule gives 1000x1043 against 1000x1020 at 640x360; the same rounding exists
+   at 0.5x), the A2B10G10R10 format (UNORM cannot hold NaN), upstream: Crementif/BotW-BetterVR #26 and #144 describe a
+   black screen after menus or the map on PC (a different symptom, open, no cause given), none match coloured patches.
+
+**Fix (patch cemu 0054):** the clamp counts `depth * (hasViewLayer ? 2 : 1) - slice` layers. Built, untested on console.
+The log's `[copy] image clamped ... x0 copied` lines for same-size images should be gone; Test request 51 asks for that
+and for the eye.
