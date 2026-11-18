@@ -9,14 +9,14 @@ The first-person body root is latched from the player and head pose hook_UpdateC
  dependencies/imgui_impl_vulkan.cpp |  14 +++-
  dependencies/imgui_impl_vulkan.h   |   3 +
  src/cemu/capture.cpp               |  26 ++++++-
- src/game/botw/camera/camera.cpp    |  62 +++++++++++++++-
+ src/game/botw/camera/camera.cpp    |  62 ++++++++++++++-
  src/game/botw/camera/camera.h      |  10 +++
  src/game/botw/input/controls.cpp   |  14 +++-
  src/game/botw/player/bow.cpp       |  16 ++++
- src/game/botw/player/skeleton.cpp  | 115 +++++++++++++++++++++++++++--
+ src/game/botw/player/skeleton.cpp  | 119 +++++++++++++++++++++++++++--
  src/rendering/vulkan_imgui.cpp     |   3 +
  src/rendering/world_guide.cpp      |   9 +++
- 10 files changed, 256 insertions(+), 16 deletions(-)
+ 10 files changed, 260 insertions(+), 16 deletions(-)
 
 diff --git a/dependencies/imgui_impl_vulkan.cpp b/dependencies/imgui_impl_vulkan.cpp
 index e88820f..f2c5498 100644
@@ -100,7 +100,7 @@ index 2a4c5dd..9988bfa 100644
  IMGUI_IMPL_API void             ImGui_ImplVulkan_DestroyFontsTexture();
  IMGUI_IMPL_API void             ImGui_ImplVulkan_SetMinImageCount(uint32_t min_image_count); // To override MinImageCount after initialization (e.g. if swap chain is recreated)
 diff --git a/src/cemu/capture.cpp b/src/cemu/capture.cpp
-index 84e7ad3..f52a95f 100644
+index 84e7ad3..dcb783e 100644
 --- a/src/cemu/capture.cpp
 +++ b/src/cemu/capture.cpp
 @@ -4,6 +4,7 @@
@@ -116,18 +116,18 @@ index 84e7ad3..f52a95f 100644
      auto& imguiOverlay = renderer->m_imguiOverlay;
      const bool hudCopied = frame.Is2DComplete();
 +    const Game::Presentation game = Game::GetPresentation();
-+
-+    // a screen's first 2D capture can still hold the 3D frame it opened over (the wheel's bright pre-menu copy):
-+    // present the last good frame once and take the screen from the next capture
-+    static bool s_wasScreenShown = false;
-+    static bool s_holdFirstScreenCapture = false;
-+    static bool s_hasPresentedHud = false;
-+    const bool screenShown = !game.inGame || game.pauseMenuOpen || game.quickMenuOpen || game.flatCamera || game.blackBars || ImGuiMenus::g_isOpen;
-+    if (screenShown && !s_wasScreenShown && s_hasPresentedHud)
-+        s_holdFirstScreenCapture = true;
-+    s_wasScreenShown = screenShown;
  
      if (state.side == EyeSide::LEFT) {
++        // a screen's first 2D capture can still hold the 3D frame it opened over (the wheel's bright pre-menu copy):
++        // present the last good frame once and take the screen from the next capture
++        static bool s_wasScreenShown = false;
++        static bool s_holdFirstScreenCapture = false;
++        static bool s_hasPresentedHud = false;
++        const bool screenShown = !game.inGame || game.pauseMenuOpen || game.quickMenuOpen || game.flatCamera || game.blackBars || ImGuiMenus::g_isOpen;
++        if (screenShown && !s_wasScreenShown && s_hasPresentedHud)
++            s_holdFirstScreenCapture = true;
++        s_wasScreenShown = screenShown;
++
 +        if (s_holdFirstScreenCapture) {
 +            s_holdFirstScreenCapture = false;
 +            Log::print<RENDERING>("[capture] held the first 2D capture after a screen change (inGame={}, quickMenu={}, pause={})",
@@ -160,7 +160,7 @@ index 84e7ad3..f52a95f 100644
  
  #if !defined(__PROSPERO__)
 diff --git a/src/game/botw/camera/camera.cpp b/src/game/botw/camera/camera.cpp
-index dde1e68..aa035f0 100644
+index dde1e68..324a8a0 100644
 --- a/src/game/botw/camera/camera.cpp
 +++ b/src/game/botw/camera/camera.cpp
 @@ -2,6 +2,7 @@
@@ -208,7 +208,7 @@ index dde1e68..aa035f0 100644
 +    const bool screenShown = !presentation.inGame || presentation.pauseMenuOpen || presentation.quickMenuOpen
 +        || presentation.flatCamera || presentation.blackBars;
 +    if (s_wasScreenShown && !screenShown)
-+        s_logFramesAfterScreen = 6;
++        s_logFramesAfterScreen = 4;
 +    s_wasScreenShown = screenShown;
 +
 +    const bool cached = s_hasGameplayCameraTarget && GetFramesSinceLastUpdate() <= 4;
@@ -380,10 +380,10 @@ index ec690b5..0279ff2 100644
      }
  }
 diff --git a/src/game/botw/player/skeleton.cpp b/src/game/botw/player/skeleton.cpp
-index 248a0c0..e4d0581 100644
+index 248a0c0..8c3aaf2 100644
 --- a/src/game/botw/player/skeleton.cpp
 +++ b/src/game/botw/player/skeleton.cpp
-@@ -470,6 +470,78 @@ static bool IsThirdPersonForPose(bool rootBone) {
+@@ -470,6 +470,81 @@ static bool IsThirdPersonForPose(bool rootBone) {
      return thirdPerson;
  }
  
@@ -393,6 +393,7 @@ index 248a0c0..e4d0581 100644
 +    bool valid = false;
 +    glm::vec3 position = glm::vec3(0.0f);
 +    glm::fquat yaw = glm::identity<glm::fquat>();
++    glm::fquat viewYaw = glm::identity<glm::fquat>();
 +    float bodyViewYawDelta = 0.0f;
 +};
 +static LatchedBodyRoot s_latchedBodyRoot;
@@ -411,7 +412,7 @@ index 248a0c0..e4d0581 100644
 +    return degrees;
 +}
 +
-+static void LogBodyRootSkip(const char* reason, bool wroteLast) {
++static void LogBodyRootSkip(const char* reason, bool wroteLast, float gameYawDelta, float latchedYawDelta) {
 +    ++s_bodyRootSkips;
 +    if (s_bodyRootFirstSkip == nullptr)
 +        s_bodyRootFirstSkip = reason;
@@ -423,12 +424,12 @@ index 248a0c0..e4d0581 100644
 +    s_bodyRootLastLog = now;
 +
 +    if (s_bodyRootFirstSkip == s_bodyRootLastSkip)
-+        Log::print<INFO>("[pose] first-person body root {} ({} x {}); body-view yaw delta {:.1f} deg",
-+            wroteLast ? "kept the last good frame" : "not latched yet", s_bodyRootSkips, reason, s_latchedBodyRoot.bodyViewYawDelta);
++        Log::print<INFO>("[pose] first-person body root {} ({} x {}); game body-view yaw delta {:.1f} deg (latched {:.1f} deg)",
++            wroteLast ? "kept the last good frame" : "not latched yet", s_bodyRootSkips, reason, gameYawDelta, latchedYawDelta);
 +    else
-+        Log::print<INFO>("[pose] first-person body root {} ({} x {}, {} to {}); body-view yaw delta {:.1f} deg",
++        Log::print<INFO>("[pose] first-person body root {} ({} x {}, {} to {}); game body-view yaw delta {:.1f} deg (latched {:.1f} deg)",
 +            wroteLast ? "kept the last good frame" : "not latched yet", s_bodyRootSkips, s_bodyRootFirstSkip, s_bodyRootFirstSkip, s_bodyRootLastSkip,
-+            s_latchedBodyRoot.bodyViewYawDelta);
++            gameYawDelta, latchedYawDelta);
 +    s_bodyRootSkips = 0;
 +    s_bodyRootFirstSkip = nullptr;
 +}
@@ -448,21 +449,23 @@ index 248a0c0..e4d0581 100644
 +    if (boneName != "Skl_Root" || IsThirdPersonForPose(true))
 +        return;
 +    if (!s_latchedBodyRoot.valid) {
-+        LogBodyRootSkip(reason, false);
++        LogBodyRootSkip(reason, false, 0.0f, 0.0f);
 +        return;
 +    }
 +
++    const BEMatrix34 gameRoot = Guest::Get<BEMatrix34>(matrixPtr);
++    const float gameYawDelta = YawDeltaDegrees(ExtractPlayerBodyYaw(glm::mat4(gameRoot.getLEMatrix())), s_latchedBodyRoot.viewYaw);
 +    const glm::fvec3 scale = Guest::Get<BEVec3>(scalePtr).getLE();
 +    BEMatrix34 m{ s_latchedBodyRoot.position, s_latchedBodyRoot.yaw };
 +    Guest::Set(matrixPtr, m);
 +    Guest::Set(scalePtr, scale);
-+    LogBodyRootSkip(reason, true);
++    LogBodyRootSkip(reason, true, gameYawDelta, s_latchedBodyRoot.bodyViewYawDelta);
 +}
 +
  static void hook_ModifyBoneMatrix(PPCInterpreter_t* hCPU) {
      hCPU->instructionPointer = hCPU->sprNew.LR;
      const uint32_t modelUnitPtr = hCPU->gpr[7];
-@@ -496,10 +568,13 @@ static void hook_ModifyBoneMatrix(PPCInterpreter_t* hCPU) {
+@@ -496,10 +571,13 @@ static void hook_ModifyBoneMatrix(PPCInterpreter_t* hCPU) {
          if (boneName == "Skl_Root")
              HeadVisibility::OnSkeletonRoot();
          HeadVisibility::SubmitNextMaterial(hCPU, !IsThirdPersonForPose(boneName == "Skl_Root"), gsysModelPtr);
@@ -477,7 +480,7 @@ index 248a0c0..e4d0581 100644
  
      const bool isLeft = boneName.ends_with("_L");
      const OpenXR::EyeSide side = isLeft ? OpenXR::EyeSide::LEFT : OpenXR::EyeSide::RIGHT;
-@@ -553,29 +628,48 @@ static void hook_ModifyBoneMatrix(PPCInterpreter_t* hCPU) {
+@@ -553,29 +631,48 @@ static void hook_ModifyBoneMatrix(PPCInterpreter_t* hCPU) {
      }
  
      glm::fvec3 boneScale = Guest::Get<BEVec3>(scalePtr).getLE();
@@ -532,14 +535,15 @@ index 248a0c0..e4d0581 100644
  
          // headset in model space
          glm::mat4 headsetModel = glm::inverse(playerMtx4) * cameraMtx * headsetMtx;
-@@ -752,6 +846,13 @@ static void hook_ModifyBoneMatrix(PPCInterpreter_t* hCPU) {
+@@ -752,6 +849,14 @@ static void hook_ModifyBoneMatrix(PPCInterpreter_t* hCPU) {
          s_lastAppliedRightWristRot = s_twoHandGrip.engaged ? s_twoHandGrip.rightGripRotWorld : rightHandRotWorld;
          s_lastAppliedRightWristRotValid = !s_passAnimatedHands;
  
 +        s_latchedBodyRoot.valid = true;
 +        s_latchedBodyRoot.position = targetPos;
 +        s_latchedBodyRoot.yaw = yawRot;
-+        s_latchedBodyRoot.bodyViewYawDelta = YawDeltaDegrees(yawRot, ExtractPlayerBodyYaw(cameraMtx));
++        s_latchedBodyRoot.viewYaw = ExtractPlayerBodyYaw(cameraMtx);
++        s_latchedBodyRoot.bodyViewYawDelta = YawDeltaDegrees(yawRot, s_latchedBodyRoot.viewYaw);
 +        if (std::abs(s_latchedBodyRoot.bodyViewYawDelta) >= 0.5f)
 +            LogBodyRootDelta(s_latchedBodyRoot.bodyViewYawDelta);
 +
