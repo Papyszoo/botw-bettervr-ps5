@@ -983,8 +983,9 @@ Cemu patch added. `VERSION` stays 0.5.0.
   frame longer than 50 ms counts as 50 ms, so a hitch cannot snap the object round. Patch bettervr 0013.
 - **The slide.** If a wrist twist also moves the object along the stick, the reach ratio the aim scales the stick length
   by is the suspect: `stickLength = |grip hand->object| * (reach / reach0)^2` (`DriveMagnesisAimFromController`), and the
-  tracked controller position moves when the wrist turns, squared. The `reach=` field is that ratio. It is left alone in
-  this build: changing it means changing how far a push or pull moves an object, which needs the console's values first.
+  tracked controller position moves when the wrist turns, squared. The `reach=` field is that ratio, recomputed in the
+  spin hook from the same head and hand pose. It is left alone in this build: changing it means changing how far a push
+  or pull moves an object, which needs the console's values first.
 - **Logs** (INFO, so always on, at most twice a second while a body is held):
   `[magnesis] spin: fixed=false twist=12.3 deg want=5.2 rad/s body=0.0 rad/s reach=1.03x`, where `twist` is the hand's
   rotation since the grip, `want` the angular velocity the game is handed (also the rate the transform path aims for),
