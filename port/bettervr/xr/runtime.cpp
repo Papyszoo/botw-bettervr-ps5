@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // BotW-BetterVR on PS5, M3: a small OpenXR runtime over hmd2 (third_party/hmd2, from photo-splat-vr),
-// built into BetterVR's object (port/bettervr/layer). It implements what BetterVR's Linux backend
+// built into BetterVR's module (port/bettervr/module.cmake). It implements what BetterVR's Linux backend
 // calls, and nothing else (PLAN.md, M3, option A, the way PS5XR does for HL:A):
 //
 //   instance, system   one of each: "PlayStation VR2", Vulkan (XR_KHR_vulkan_enable). It also lists

@@ -389,6 +389,10 @@ namespace ps5emu
 		// ends the process with it.
 		void StartBetterVR()
 		{
+			static bool started = false; // the module cannot be unregistered: once per process
+			if (started)
+				return;
+			started = true;
 			ps5log::Line("[emu] BetterVR's host module starts");
 			HostModule::Startup();
 			HostModule::BeforeConfigLoad();
@@ -776,8 +780,6 @@ namespace ps5emu
 	bool LaunchGame(const Game& game, std::string& error)
 	{
 		ps5log::Line("[emu] launching {} ({:016x}) from {}", game.name, game.titleId, _pathToUtf8(game.path));
-		if (PS5Cemu_BetterVRWanted(game.titleId))
-			StartBetterVR(); // BotW VR: BetterVR's host module (Play on TV starts none)
 		ps5ingame::SetGame(game); // the in-game menu's top: its name, box art and GameTDB's facts
 		if (!StartSystem(error))
 			return false;
@@ -824,6 +826,10 @@ namespace ps5emu
 			}
 		}
 
+		// BotW VR: BetterVR's host module (Play on TV starts none), once the game is chosen and before
+		// Cemu's renderer makes its Vulkan instance
+		if (PS5Cemu_BetterVRWanted(game.titleId))
+			StartBetterVR();
 		// as VulkanCanvas: the renderer, then the surface for the main window
 		try
 		{

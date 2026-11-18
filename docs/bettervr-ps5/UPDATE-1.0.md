@@ -346,7 +346,7 @@ How it fits together:
   `f65bcf4`), ImPlot and its own Vulkan ImGui backend. Its `cemu-src` submodule is not fetched.
 - **Starting the module.** The PS5 app has no `main.cpp`, so `ps5emu::StartBetterVR` (`port/app/emulator.cpp`)
   calls `HostModule::Startup`, `BeforeConfigLoad`, `Initialize` and loads the graphic packs again, in
-  `LaunchGame`, only when `PS5Cemu_BetterVRWanted` (`port/bettervr/VrPS5.cpp`: Breath of the Wild,
+  `LaunchGame` after `PrepareForegroundTitle` succeeds, only when `PS5Cemu_BetterVRWanted` (`port/bettervr/VrPS5.cpp`: Breath of the Wild,
   `bettervr.json` "vr" on, "bettervr" not false). Play on TV registers no module. The packs are the app's
   `assets/bettervr/BetterVR/packs` (`tools/package.sh`, as BetterVR's Linux download lays them out);
   `Platform::GetExecutableDirectory` is `<app>/assets/bettervr`. `PS5Cemu_BetterVRPrepareGraphicPack` now only
@@ -385,6 +385,17 @@ as the 0.9.23 layer's hooks did for Cemu's calls. Old 0050 and 0051 are now 0049
 Stand-ins: `runtime.cpp` still asks for 0.9.23's `BetterVR_PS5_PlayerOnce/Fades/FlatScene/MonoQuad/MenuLock/QuadPlane/PoseKeep/SaveHold/PoseFreeze/LeftSlot/StereoRays`
 and the three `*Proof` counters; `PlatformPS5.cpp` answers all off and zero. Stage 3 takes that use out of the
 runtime.
+
+CI and review (built, untested on console): CI is green on 77e06ae (run 44208990960); the ELF contains
+"BetterVR's host module starts", "Acquired system to be used", "Vulkan: multiview" and "BetterVR Settings".
+A code review of 77e06ae found three defects, fixed after it:
+- The module started at the top of `LaunchGame` and cannot be unregistered, so a failed Play in VR followed by
+  Play on TV in the same process ran BetterVR, and a second Play in VR registered it twice. Now
+  `StartBetterVR` runs after `PrepareForegroundTitle` succeeds, once per process (a static flag), and the
+  module's `CreateVkInstance` (patch 0001) stays inactive unless `PS5Cemu_BetterVRWanted` holds for that launch.
+- ImGui's font upload (`imgui_impl_vulkan.cpp`) and `vk_backend.cpp`'s `vkQueueWaitIdle` calls ran without
+  `ps5xr::QueueMutex`; they now hold it (patch 0001).
+- A stale comment in `runtime.cpp` named the removed `port/bettervr/layer`.
 
 Open problems and risks (none seen on a console):
 - The module is started in `LaunchGame`, on the thread that launches the game, and `GraphicPack2::ClearGraphicPacks`

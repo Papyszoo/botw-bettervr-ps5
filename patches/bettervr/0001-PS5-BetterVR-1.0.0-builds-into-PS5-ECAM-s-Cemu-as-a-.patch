@@ -13,16 +13,17 @@ headers stay; no libatomic link (the port defines the generic atomic functions).
 - the log also goes to the app's boot log; Cemu's settings are not shared with a second file
 - no update check
 ---
- dependencies/CMakeLists.txt  |  9 ++++++++-
- src/CMakeLists.txt           |  8 ++++++--
- src/cemu/host_module.cpp     |  2 ++
- src/game/botw/game.cpp       |  2 +-
- src/rendering/vk_backend.cpp |  6 +++++-
- src/utils/logger.cpp         | 13 +++++++++++++
- src/utils/mod_settings.h     | 25 +++++++++++++++++++++++++
- src/utils/platform.h         | 10 ++++++++++
- src/utils/update_check.cpp   |  2 +-
- 9 files changed, 71 insertions(+), 6 deletions(-)
+ dependencies/CMakeLists.txt        |  9 ++++++++-
+ dependencies/imgui_impl_vulkan.cpp | 24 +++++++++++++++++++-----
+ src/CMakeLists.txt                 |  8 ++++++--
+ src/cemu/host_module.cpp           | 13 +++++++++++++
+ src/game/botw/game.cpp             |  2 +-
+ src/rendering/vk_backend.cpp       |  8 +++++++-
+ src/utils/logger.cpp               | 13 +++++++++++++
+ src/utils/mod_settings.h           | 25 +++++++++++++++++++++++++
+ src/utils/platform.h               | 10 ++++++++++
+ src/utils/update_check.cpp         |  2 +-
+ 10 files changed, 103 insertions(+), 11 deletions(-)
 
 diff --git a/dependencies/CMakeLists.txt b/dependencies/CMakeLists.txt
 index 48c1e60..7ff8007 100644
@@ -43,6 +44,56 @@ index 48c1e60..7ff8007 100644
 +endif ()
  
  set_target_properties(BetterVR_ImPlot BetterVR_ImGuiVulkan PROPERTIES FOLDER "dependencies")
+diff --git a/dependencies/imgui_impl_vulkan.cpp b/dependencies/imgui_impl_vulkan.cpp
+index 6a0edd3..e88820f 100644
+--- a/dependencies/imgui_impl_vulkan.cpp
++++ b/dependencies/imgui_impl_vulkan.cpp
+@@ -88,6 +88,14 @@
+ #ifndef IMGUI_DISABLE
+ #include "imgui_impl_vulkan.h"
+ #include <stdio.h>
++#if defined(__PROSPERO__)
++// the console has one graphics queue, shared with Cemu's GPU thread and the OpenXR runtime: as src/utils/platform.h
++#include <mutex>
++namespace ps5xr { std::mutex& QueueMutex(); }
++#define BETTERVR_PS5_QUEUE_LOCK() std::lock_guard<std::mutex> bettervrPs5QueueLock(ps5xr::QueueMutex())
++#else
++#define BETTERVR_PS5_QUEUE_LOCK() ((void)0)
++#endif
+ #ifndef IM_MAX
+ #define IM_MAX(A, B)    (((A) >= (B)) ? (A) : (B))
+ #endif
+@@ -784,7 +792,10 @@ bool ImGui_ImplVulkan_CreateFontsTexture()
+     // Destroy existing texture (if any)
+     if (bd->FontTexture.DescriptorSet)
+     {
+-        vkQueueWaitIdle(v->Queue);
++        {
++            BETTERVR_PS5_QUEUE_LOCK();
++            vkQueueWaitIdle(v->Queue);
++        }
+         ImGui_ImplVulkan_DestroyFontsTexture();
+     }
+ 
+@@ -958,11 +969,14 @@ bool ImGui_ImplVulkan_CreateFontsTexture()
+     end_info.pCommandBuffers = &bd->TexCommandBuffer;
+     err = vkEndCommandBuffer(bd->TexCommandBuffer);
+     check_vk_result(err);
+-    err = vkQueueSubmit(v->Queue, 1, &end_info, VK_NULL_HANDLE);
+-    check_vk_result(err);
++    {
++        BETTERVR_PS5_QUEUE_LOCK();
++        err = vkQueueSubmit(v->Queue, 1, &end_info, VK_NULL_HANDLE);
++        check_vk_result(err);
+ 
+-    err = vkQueueWaitIdle(v->Queue);
+-    check_vk_result(err);
++        err = vkQueueWaitIdle(v->Queue);
++        check_vk_result(err);
++    }
+ 
+     vkDestroyBuffer(v->Device, upload_buffer, v->Allocator);
+     vkFreeMemory(v->Device, upload_buffer_memory, v->Allocator);
 diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
 index 26f58ee..ee8d53e 100644
 --- a/src/CMakeLists.txt
@@ -70,10 +121,21 @@ index 26f58ee..ee8d53e 100644
  endif ()
  
 diff --git a/src/cemu/host_module.cpp b/src/cemu/host_module.cpp
-index 85f7e35..28f2ec3 100644
+index 85f7e35..46a30ef 100644
 --- a/src/cemu/host_module.cpp
 +++ b/src/cemu/host_module.cpp
-@@ -242,10 +242,12 @@ public:
+@@ -17,6 +17,10 @@
+ 
+ #include "Cafe/HostModule/HostModule.h"
+ 
++#if defined(__PROSPERO__)
++bool PS5Cemu_BetterVRWanted(uint64_t titleId); // port/bettervr/VrPS5.cpp
++#endif
++
+ PFN_vkGetInstanceProcAddr VulkanLoader::GetInstanceProcAddr() {
+     return HostModule::GetVkInstanceProcAddr();
+ }
+@@ -242,10 +246,12 @@ public:
          SetEnvironmentVariableW(L"DISABLE_VULKAN_OBS_CAPTURE", L"1");
          SetEnvironmentVariableW(L"DISABLE_LAYER_NV_PRESENT_1", L"1");
  #endif
@@ -86,6 +148,20 @@ index 85f7e35..28f2ec3 100644
      }
  
      // the OpenXR instance has to exist before Cemu loads the graphic packs, since the presets need the headset's resolution
+@@ -294,6 +300,13 @@ public:
+     }
+ 
+     bool CreateVkInstance(const VkInstanceCreateInfo& createInfo, VkInstance& instance, VkResult& result) override {
++#if defined(__PROSPERO__)
++        // the module stays registered for the process: only the launch that chose Play in VR uses the headset
++        if (!PS5Cemu_BetterVRWanted(HostModule::GetTitleId())) {
++            m_active = false;
++            return false;
++        }
++#endif
+         const Game::Title* title = m_available ? Game::FindTitle(HostModule::GetTitleId()) : nullptr;
+         m_active = title != nullptr;
+         if (!m_active) {
 diff --git a/src/game/botw/game.cpp b/src/game/botw/game.cpp
 index 631b67c..7a82e1a 100644
 --- a/src/game/botw/game.cpp
@@ -100,7 +176,7 @@ index 631b67c..7a82e1a 100644
          }
      }
 diff --git a/src/rendering/vk_backend.cpp b/src/rendering/vk_backend.cpp
-index d947707..70d8e24 100644
+index d947707..649c9f6 100644
 --- a/src/rendering/vk_backend.cpp
 +++ b/src/rendering/vk_backend.cpp
 @@ -1,6 +1,7 @@
@@ -111,7 +187,15 @@ index d947707..70d8e24 100644
  #include "instance.h"
  #include "renderer.h"
  
-@@ -212,7 +213,10 @@ uint64_t RND_VkBackend::SubmitCommandBuffer(VkCommandBuffer commandBuffer, const
+@@ -84,6 +85,7 @@ RND_VkBackend::~RND_VkBackend() {
+     }
+ 
+     if (m_queue != VK_NULL_HANDLE) {
++        BETTERVR_PS5_QUEUE_LOCK();
+         m_dispatch->QueueWaitIdle(m_queue);
+     }
+ 
+@@ -212,7 +214,10 @@ uint64_t RND_VkBackend::SubmitCommandBuffer(VkCommandBuffer commandBuffer, const
      submitInfo.signalSemaphoreCount = (uint32_t)signalSemaphores.size();
      submitInfo.pSignalSemaphores = signalSemaphores.data();
  
@@ -123,6 +207,14 @@ index d947707..70d8e24 100644
  
      m_lastSubmittedTimelineValue = completionTimelineValue;
      return completionTimelineValue;
+@@ -358,6 +363,7 @@ void RND_VkBackend::FlushFramebufferCache() {
+     }
+ 
+     if (m_queue != VK_NULL_HANDLE) {
++        BETTERVR_PS5_QUEUE_LOCK();
+         m_dispatch->QueueWaitIdle(m_queue);
+     }
+     for (const CachedFramebuffer& cachedFramebuffer : m_framebuffers) {
 diff --git a/src/utils/logger.cpp b/src/utils/logger.cpp
 index b7809db..6f05918 100644
 --- a/src/utils/logger.cpp
