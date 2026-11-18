@@ -25,12 +25,14 @@ patches: bettervr 0007-0011, cemu 0055. Details: `UPDATE-1.0.md`, "v0.6" and "v0
 `"profile": true` and the Sense controllers charged; send the logs zip and the lines named under each letter.
 
 - (a) Options, Sense and DualSense. On the right Sense, tap Options once (the game's pause/inventory opens) and tap
-  again (it closes); hold it about a second (BetterVR's menu opens while the button is still held, no pause behind it)
-  and hold again (it closes). Repeat with the DualSense's Options, with the Sense controllers off and third person set
-  in Settings > VR, and move through the pages and rows with the DualSense's left and right stick. Say whether any
-  help card or popup still appears over the game at start. Send every `[menu]` line (`Options down`, `Options up after
-  N ms`, `long press -> open`/`closed`, `release after the threshold -> hold`, `short press -> pause`, `short press
-  ignored, game input is blocked`).
+  again straight away, well inside the next 400 ms (it closes); hold it about a second (BetterVR's menu opens while the
+  button is still held, no pause behind it) and hold again (it closes). Repeat with the DualSense's Options, with the
+  Sense controllers off and third person set in Settings > VR, and move through the pages and rows with the
+  DualSense's left and right stick. When the Sense is connected but has no pose, the pad's sticks must not also move
+  the cursor. With both inputs ready, hold one Options and tap the other: the hold must open BetterVR's menu and the
+  tap must still reach the game. Say whether any help card or popup still appears over the game at start. Send every
+  `[menu]` line (`Options down`, `Options up after N ms`, `long press -> open`/`closed`, `release after the
+  threshold -> hold`, `short press -> pause`, `short press ignored, game input is blocked`).
 - (b) Strafe flash. Strafe left and right with the left stick near grass and say whether Link's body still flashes for
   a frame. Send the `[pose] a short camera stall kept first person (N frames)` lines (at most one a second), the new
   `[pose] first-person body-view yaw delta N deg` lines, every `[pose] first-person body root ...` line (they name

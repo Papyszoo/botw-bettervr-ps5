@@ -750,27 +750,29 @@ Cemu patch added. `VERSION` stays 0.5.0.
   `VPAD_BUTTON_MINUS` while `state.mapOpen` said the map was open, as the right stick click is read in the menus, but
   that flag is only written by the stick click: closing the map with B left it set, so the next Options tap opened the
   map instead of the inventory. The tap now clears `state.mapOpen` as well, so the flag cannot stay stale from this
-  path. The tap reaches the game only while its input is open: with BetterVR's menu over the game, with the overlay's
-  keyboard block (`ImGuiMenus::BlocksGameInput`), or during `state.preventInputs` (the 400 ms after a menu change), the
-  release is logged and nothing is sent, so no pause screen opens behind the overlay. A hold sends nothing (no pause),
+  path. The tap reaches the game unless BetterVR's menu is over it or the overlay blocks the keyboard
+  (`ImGuiMenus::BlocksGameInput`); then the release is logged and nothing is sent, so no pause screen opens behind
+  the overlay. The game's own 400 ms input block after a menu change no longer drops it: a tap within that window
+  reaches the game as the physical "+" did. A hold sends nothing (no pause),
   a tap opens no menu, and the "+" stays on the right stick click; the stick click still picks `VPAD_BUTTON_MINUS` in
   the map through `state.mapOpen`.
 - **The pad's Options is the same button.** The DualSense's Options is VPAD channel 0's +, and it now feeds the same
   `ProcessOptionsButton`: held for 700 ms it opens or closes BetterVR's menu at that moment and the release then does
   nothing, a shorter release sends the game one + tap, and + is removed from the game's hold while the button is down,
   so no pause opens behind the menu; upstream's 500 ms `ToggleModMenuOnLongStartPress` no longer runs on the PS5, and
-  the port's own touchpad+Options overlay is unchanged.
-- **The pad moves the menu cursor.** When no Sense controller is connected, the VPAD's left and right stick are added
-  to the mod menu's navigation, so a DualSense-only player can move through the pages and rows with either stick; the
-  Sense path is unchanged (upstream issue #117).
+  the port's own touchpad+Options overlay is unchanged. The Sense's Options and the pad's + keep their own state (two
+  instances of the same machine), so holding one while tapping the other still opens the menu and sends the tap.
+- **The pad moves the menu cursor.** When no Sense controller is connected (the runtime's connection state, not
+  whether a hand has a pose), the VPAD's left and right stick are added to the mod menu's navigation, so a
+  DualSense-only player can move through the pages and rows with either stick; the Sense path is unchanged (upstream
+  issue #117).
 - **No popup at start.** `DrawTutorialPromptAndControllerVerification` returns at once on the PS5, so the first-time
   setup card over the game is gone; the PS5 prompt text that patch 0004 added to `GetControllerModMenuPrompt` goes with
   it, as nothing draws it now.
 - **Logs** (BetterVR's, mirrored to the boot log as `[bettervr] ...`): `[menu] Options down`, `[menu] Options up after
   N ms`, `[menu] long press -> open` or `closed` (or `[menu] long press ignored, the menu's overlay is not ready`),
   `[menu] release after the threshold -> hold` when the release itself ends a hold, `[menu] short press -> pause`, and
-  `[menu] short press ignored, game input is blocked` for a tap the overlay or `state.preventInputs` keeps from the
-  game.
+  `[menu] short press ignored, game input is blocked` for a tap BetterVR's menu or the overlay keeps from the game.
 
 ### First person through a camera stall
 

@@ -11,7 +11,7 @@ Subject: [PATCH] PS5: a gaze throw assist bends a throw toward where the
  3 files changed, 58 insertions(+), 1 deletion(-)
 
 diff --git a/src/game/botw/input/controls.cpp b/src/game/botw/input/controls.cpp
-index d8580b6..8a47788 100644
+index 052180c..5d830b1 100644
 --- a/src/game/botw/input/controls.cpp
 +++ b/src/game/botw/input/controls.cpp
 @@ -797,6 +797,54 @@ static void ProcessLeftTriggerBindings(

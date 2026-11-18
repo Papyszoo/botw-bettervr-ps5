@@ -3247,3 +3247,14 @@ extern "C" bool BetterVR_PS5_OptionsDown()
 {
 	return s_optionsDown.load(std::memory_order_acquire);
 }
+
+// BetterVR's menu (patches/bettervr): whether either Sense controller is connected. Its actions read any connected
+// hand, pose or not, so the pad's sticks may only join the menu when no hand is connected.
+extern "C" bool BetterVR_PS5_SenseConnected()
+{
+	std::lock_guard lock(s.lock);
+	for (const auto& hand : s.hands)
+		if (hand.connected)
+			return true;
+	return false;
+}

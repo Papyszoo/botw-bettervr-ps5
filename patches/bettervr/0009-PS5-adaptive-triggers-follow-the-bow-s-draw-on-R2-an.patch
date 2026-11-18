@@ -13,7 +13,7 @@ Subject: [PATCH] PS5: adaptive triggers follow the bow's draw on R2 and the
  5 files changed, 51 insertions(+), 1 deletion(-)
 
 diff --git a/src/game/botw/input/controls.cpp b/src/game/botw/input/controls.cpp
-index 888895d..d8580b6 100644
+index fa2c596..052180c 100644
 --- a/src/game/botw/input/controls.cpp
 +++ b/src/game/botw/input/controls.cpp
 @@ -8,6 +8,7 @@
@@ -36,7 +36,7 @@ index 888895d..d8580b6 100644
  static ButtonState s_inventoryMapButton;
  static ButtonState s_modMenuButton;
  static ButtonState s_crouchScopeButton;
-@@ -1452,8 +1458,12 @@ static void hook_InjectXRInput(PPCInterpreter_t* hCPU) {
+@@ -1457,8 +1463,12 @@ static void hook_InjectXRInput(PPCInterpreter_t* hCPU) {
  
      // take the hands and head once so the gestures below all use the same sample
      OpenXR::InputState inputs = Tracking::SampleHands(GameState::IsShowingMenu());
@@ -50,7 +50,7 @@ index 888895d..d8580b6 100644
      const std::optional<glm::fmat4> headsetPose = Tracking::HeadPose();
      UpdateControlButtons(inputs, ImGuiMenus::g_isOpen.load());
  
-@@ -1514,6 +1524,14 @@ static void hook_InjectXRInput(PPCInterpreter_t* hCPU) {
+@@ -1522,6 +1532,14 @@ static void hook_InjectXRInput(PPCInterpreter_t* hCPU) {
  
      Haptics::Update();
  

@@ -72,7 +72,7 @@ index 319d750..0d50ed7 100644
  
  struct Weapon : WeaponBase {
 diff --git a/src/game/botw/input/controls.cpp b/src/game/botw/input/controls.cpp
-index 50b5291..888895d 100644
+index 01766bb..fa2c596 100644
 --- a/src/game/botw/input/controls.cpp
 +++ b/src/game/botw/input/controls.cpp
 @@ -552,7 +552,7 @@ static void ProcessLeftHandInGameInput(
@@ -280,7 +280,7 @@ index 50b5291..888895d 100644
          }
      }
  }
-@@ -1407,7 +1407,7 @@ static void ProcessGameplayInput(uint32_t& buttonHold, OpenXR::InputState& input
+@@ -1412,7 +1412,7 @@ static void ProcessGameplayInput(uint32_t& buttonHold, OpenXR::InputState& input
  
      if (IsHandOverMouthSlot(leftGesture) && IsHandOverMouthSlot(rightGesture)) {
          if (s_grabButtons[0].IsDown() && s_grabButtons[1].IsDown()) {
@@ -289,7 +289,7 @@ index 50b5291..888895d 100644
              buttonHold |= VPAD_BUTTON_DOWN;
          }
      }
-@@ -1541,17 +1541,91 @@ static void hook_InjectXRInput(PPCInterpreter_t* hCPU) {
+@@ -1549,17 +1549,91 @@ static void hook_InjectXRInput(PPCInterpreter_t* hCPU) {
  }
  
  
