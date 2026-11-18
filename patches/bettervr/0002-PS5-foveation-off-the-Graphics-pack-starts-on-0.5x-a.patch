@@ -1,49 +1,30 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Patryk Kowalczyk <papyszoo@gmail.com>
 Date: Wed, 18 Nov 2026 09:20:17 +0100
-Subject: [PATCH] PS5: foveation off, the Graphics pack starts on 0.5x, and a
- headset that does not start ends the launch with a reason
+Subject: [PATCH] PS5: foveation off, and a headset that does not start ends
+ the launch with a reason
 
 - no UseFoveatedShading and FoveatedRendering defaults to Off: the console's GPU has no fragment shading rate
-- the Graphics pack's default preset is 0.5x instead of the headset's native size
 - VRManager::Init/InitSession failing (the session, the headset) logs, calls BetterVR_PS5_VrFailed (the app
   returns to the library with the reason) and rethrows
 ---
- src/cemu/host_module.cpp | 33 +++++++++++++++++++++++++++++++++
+ src/cemu/host_module.cpp | 22 ++++++++++++++++++++++
  src/utils/mod_settings.h |  4 ++++
- 2 files changed, 37 insertions(+)
+ 2 files changed, 26 insertions(+)
 
 diff --git a/src/cemu/host_module.cpp b/src/cemu/host_module.cpp
-index 46a30ef..1230c6d 100644
+index 46a30ef..5da357e 100644
 --- a/src/cemu/host_module.cpp
 +++ b/src/cemu/host_module.cpp
-@@ -19,6 +19,15 @@
+@@ -19,6 +19,7 @@
  
  #if defined(__PROSPERO__)
  bool PS5Cemu_BetterVRWanted(uint64_t titleId); // port/bettervr/VrPS5.cpp
 +extern "C" void BetterVR_PS5_VrFailed(const char* what); // port/bettervr/VrPS5.cpp: the game ends, the library says why
-+
-+// The console's GPU renders the headset's native resolution at a frame rate far under the headset's, and the 0.5x
-+// preset is the one the port ran at (about 32 frames a second in the overworld): it is the preset the Graphics pack
-+// starts on. A saved choice of the player's (Cemu's graphic packs) still wins; the others stay in the list.
-+static void DefaultToHalfResolution(std::string& rules) {
-+    EyeResolution::ReplaceToken(rules, "default = 1\n$width = __BETTERVR_10_WIDTH__", "$width = __BETTERVR_10_WIDTH__");
-+    EyeResolution::ReplaceToken(rules, "$width = __BETTERVR_05_WIDTH__", "default = 1\n$width = __BETTERVR_05_WIDTH__");
-+}
  #endif
  
  PFN_vkGetInstanceProcAddr VulkanLoader::GetInstanceProcAddr() {
-@@ -124,6 +133,9 @@ static std::filesystem::path WriteGraphicsPack(const std::filesystem::path& sour
- 
-     std::ifstream sourceRules(source / "rules.txt", std::ios::binary);
-     std::string rules((std::istreambuf_iterator<char>(sourceRules)), std::istreambuf_iterator<char>());
-+#if defined(__PROSPERO__)
-+    DefaultToHalfResolution(rules);
-+#endif
-     EyeResolution::FillGraphicsRules(rules, eyeWidth, eyeHeight, EyeResolution::kMinimumWidth, [](const EyeResolution::Preset& preset, const std::string& label, bool wide) {
-         Log::print<VERBOSE>("Graphics pack preset {}{} is {}", preset.multiplierLabel, wide ? " (Recording Mode)" : "", label);
-     });
-@@ -312,7 +324,12 @@ public:
+@@ -312,7 +313,12 @@ public:
          if (!m_active) {
              return false;
          }
@@ -56,7 +37,7 @@ index 46a30ef..1230c6d 100644
          const auto createInstance = (PFN_vkCreateInstance)VulkanLoader::GetInstanceProcAddr()(VK_NULL_HANDLE, "vkCreateInstance");
          result = VulkanDevice::CreateInstance(createInstance, &createInfo, nullptr, &instance);
          return true;
-@@ -348,8 +365,24 @@ public:
+@@ -348,8 +354,24 @@ public:
          if (!m_active) {
              return;
          }

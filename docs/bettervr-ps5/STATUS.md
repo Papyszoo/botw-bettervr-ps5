@@ -4,6 +4,7 @@ Newest entries first. Every console result here was reported by Patryk. Nothing 
 tested.
 
 ## 2026-11-18: 1.0.0 port, console run 2 (db1f541, 13.60): BotW in VR works
+Next build: VR resolution preset 1x (BetterVR's default) instead of 0.5x; built, untested on console.
 
 Reported from the console: it works. From the boot log: Extended Memory off; VR start 1/5 to 5/5 reached (first
 frame to the headset 11.1 s after the session, during the shader cache load); no `[crash]`, no ProcUI line.

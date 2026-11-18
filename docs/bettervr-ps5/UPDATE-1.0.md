@@ -474,9 +474,9 @@ Done:
   BetterVR's own error through the system notification and a `[bettervr] BetterVR is off for this run` line. Decision for
   the owner: a flat continuation in the same process would need the pack unregistered at that point.
 - **Settings and resolution**: `BetterVR_settings.ini` and `BetterVR_log.txt` are in Cemu's data folder
-  (`/data/botwvr/cemu`); the Graphics pack's presets are filled from the 1984x2048 eye size and now start on the
-  0.5x preset (the size the port ran at, about 32 fps in the overworld) instead of the 1x native default; the other
-  presets stay in Cemu's graphic pack list, and a choice saved there wins.
+  (`/data/botwvr/cemu`); the Graphics pack's presets are filled from the 1984x2048 eye size and start on BetterVR's
+  own default, 1x (console run 2: 57 to 60 fps, the GPU never making the game wait; the earlier 0.5x override, about
+  32 fps in the overworld, is gone); the other presets stay in Cemu's graphic pack list, and a choice saved there wins.
 - **Logs** (`[vr-xr]` in the boot log; the module's `[bettervr]` lines before and after): `VR start 1/5` OpenXR
   instance, `2/5` session on Cemu's device, `3/5` headset up (ms after the session), `4/5` swapchain n (size,
   format, images, layers), `5/5` first frame submitted (ms after the session, with or without a stereo picture), and a
@@ -510,8 +510,8 @@ Open problems and risks (none seen on a console):
   buffers, Cemu's two-view targets at the preset size and the module's layer textures. If the device runs out, the
   `vkAllocateMemory` failure is in the log and ends in the library with the reason (patches/bettervr 0003 catches it
   in the first capture event, where the swapchains are made on Cemu's GPU thread); `kSwapchainImages` can drop to 2.
-- The 0.5x preset's rules size and the eye size differ (about 1280x1320 against 1984x2048): BetterVR's present
-  pipeline scales to the swapchain, which is the same as on the PC with a preset below 1x.
+- A preset below 1x (a player's choice) has a rules size under the eye size (the 0.5x preset is about 1280x1320 against
+  1984x2048): BetterVR's present pipeline scales to the swapchain, which is the same as on the PC.
 - `quadPlane` and `poseKeep` are on and `monoQuad` off in the runtime, as `State` had them as defaults; 0.9.23's mono
   flat-scene path (menus drawn mono) was a mod feature that 1.0.0 does not have in that form.
 

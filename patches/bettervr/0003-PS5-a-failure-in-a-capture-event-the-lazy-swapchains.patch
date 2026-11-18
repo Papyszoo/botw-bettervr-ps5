@@ -10,10 +10,10 @@ Subject: [PATCH] PS5: a failure in a capture event (the lazy swapchains) ends
  1 file changed, 27 insertions(+)
 
 diff --git a/src/cemu/host_module.cpp b/src/cemu/host_module.cpp
-index 1230c6d..b4d7efe 100644
+index 5da357e..5d6b807 100644
 --- a/src/cemu/host_module.cpp
 +++ b/src/cemu/host_module.cpp
-@@ -386,6 +386,25 @@ public:
+@@ -375,6 +375,25 @@ public:
      }
  
      void OnHostEvent(const HostModule::HostEvent& event, VkCommandBuffer commandBuffer) override {
@@ -39,7 +39,7 @@ index 1230c6d..b4d7efe 100644
          if (!m_active || event.surface == nullptr) {
              return;
          }
-@@ -427,6 +446,11 @@ public:
+@@ -416,6 +435,11 @@ public:
      }
  
      void OnFrameSubmitted(HostModule::FrameKind kind) override {
@@ -51,7 +51,7 @@ index 1230c6d..b4d7efe 100644
          if (m_active) {
              Capture::OnFrameSubmitted();
          }
-@@ -435,6 +459,9 @@ public:
+@@ -424,6 +448,9 @@ public:
  private:
      bool m_available = false;
      bool m_active = false;
