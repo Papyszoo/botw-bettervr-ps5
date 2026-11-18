@@ -6,7 +6,6 @@
 //   Platform::      the functions src/utils/platform.h asks of the platform
 //   the log         BetterVR's lines in the app's boot log
 //   __atomic_*      the generic atomic functions libc++ lowers a std::atomic of a large struct to
-//   stand-ins       what the OpenXR runtime (xr/runtime.cpp) still asks of the 0.9.23 patches
 
 #include "utils/platform.h"
 
@@ -124,39 +123,5 @@ extern "C"
 		}
 		std::memcpy(expected, object, size);
 		return false;
-	}
-}
-
-// What xr/runtime.cpp still asks of 0.9.23's patches (the replay model of 1.0.0 has no use for them): the
-// 0.9.23 mod's presentation options, all off, and its proof counters, zero. Stage 3 takes the runtime's use
-// of them out.
-extern "C"
-{
-	bool BetterVR_PS5_PlayerOnce() { return false; }
-	bool BetterVR_PS5_Fades() { return false; }
-	bool BetterVR_PS5_FlatScene() { return false; }
-	bool BetterVR_PS5_MonoQuad() { return false; }
-	bool BetterVR_PS5_MenuLock() { return false; }
-	bool BetterVR_PS5_QuadPlane() { return false; }
-	bool BetterVR_PS5_PoseKeep() { return false; }
-	bool BetterVR_PS5_SaveHold() { return false; }
-	bool BetterVR_PS5_PoseFreeze() { return false; }
-	bool BetterVR_PS5_LeftSlot() { return false; }
-	bool BetterVR_PS5_StereoRays() { return false; }
-
-	void BetterVR_PS5_PoseProof(uint64_t* leftStale, uint64_t* rightStale, double* maxAgeMs, uint64_t* guardClears)
-	{
-		*leftStale = *rightStale = *guardClears = 0;
-		*maxAgeMs = 0.0;
-	}
-
-	void BetterVR_PS5_CopyProof(uint64_t* leftOverwritten, uint64_t* rightOverwritten, uint64_t* copies)
-	{
-		*leftOverwritten = *rightOverwritten = *copies = 0;
-	}
-
-	void BetterVR_PS5_SnapshotProof(uint64_t* holds)
-	{
-		*holds = 0;
 	}
 }

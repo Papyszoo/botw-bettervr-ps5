@@ -3,6 +3,27 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-18: 1.0.0 port, stage 3 (stereo in the headset, written blind), built, untested on console
+
+Branch `bettervr-1.0/stage3`. The OpenXR runtime over hmd2 now answers what BetterVR 1.0.0 asks (no depth swapchains,
+one 2D layer per swapchain, the frame pump's one-ahead wait), foveation is off, the packaged pack is the checked-in
+`patch_compiled.asm`, the Graphics pack starts on the 0.5x preset, and a headset that does not start ends in the
+library with the reason (issue #3). Each step of the VR start logs one line (`VR start 1/5` to `5/5`). Details:
+`UPDATE-1.0.md`, "Stage 3 progress". Nothing here has run on a console; stage 1 and 2's Test requests (46, 47) are
+still unanswered, so a stage 3 run may stop at an earlier problem.
+
+**Test request 48 (stage 3 build, 13.60 console).** Install the stage 3 build. (a) Play in VR with the headset on:
+play two minutes at the start, then two in a village (Kakariko or Hateno). Look at both eyes: is the depth right,
+is there ghosting or a doubled picture, does the head follow and does the picture stay where it is when you turn.
+(b) Quit to the library, switch the headset off (not just taken off: powered down or unplugged) and start Play in
+VR once more: it should return to the library with a message that says why, not a crash or a black headset that
+stays. Send the logs zip (`/data/botwvr/cemu/log.txt`, the boot log) and `/data/botwvr/cemu/BetterVR_log.txt`:
+every `VR start n/5` line (says how far the start got), the `view configuration`, `Creating Vulkan device ... mod
+queue`, `Foveated shading is off`, `Graphics pack preset` and `Vulkan: multiview` lines, the `[vr-xr] ... frames, N
+fps submitted` lines (the headset's rate), the `[perf]` fps and GPU-busy lines from the game, any `[crash]`, and for
+(b) the `VR did not start` line and the text on Breath of the Wild's page. Say what the fps lines show against
+build27's 31.6 to 34 fps in the overworld and 60 fps flat, and whether the TV shows the headset's view.
+
 ## 2026-11-18: 1.0.0 port, stage 2 (BetterVR 1.0.0 compiled in, no headset work), built, untested on console
 
 Branch `bettervr-1.0/stage2`. BetterVR 1.0.0 (`db5495b`) is a host module of the Cemu fork

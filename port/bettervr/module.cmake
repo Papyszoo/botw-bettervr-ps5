@@ -3,8 +3,7 @@
 # PS5-ECAM's Cemu (CEMU_PS5; patches/bettervr, tools/build-cemu.sh's CEMU_EXTERNAL_MODULES). Included
 # there, after add_library(BetterVR ...), in place of platform_linux.cpp.
 #
-#   PlatformPS5.cpp  the platform functions, the log in the boot log, the generic atomic functions and
-#                    the stand-ins the runtime still asks of the 0.9.23 mod
+#   PlatformPS5.cpp  the platform functions, the log in the boot log and the generic atomic functions
 #   xr/runtime.cpp   the OpenXR runtime over hmd2, the one that answers the module's xr functions (the
 #                    vendored loader is not built: dependencies/CMakeLists.txt)
 

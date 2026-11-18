@@ -176,6 +176,10 @@ cp -a "$deps/BotW-BetterVR/resources/BreathOfTheWild_BetterVR" "$deps/BotW-Bette
     "$deps/BotW-BetterVR/resources/graphicPacks" "$packs/"
 find "$packs" \( -name 'CemuPatchCompiler*' -o -name 'patch_debug_*.asm' -o -name '*.md' \) -delete
 rm -rf "$packs/BreathOfTheWild_BetterVR/src"
+# the pack's patches are the checked-in patch_compiled.asm (BetterVR's CemuPatchCompiler is a Windows program, and
+# there is no PowerPC compiler here): without it Cemu loads the pack with no code of BetterVR's in the game
+[[ -s $packs/BreathOfTheWild_BetterVR/patch_compiled.asm ]] ||
+    { echo "BetterVR's pack has no patch_compiled.asm" >&2; exit 1; }
 
 # BotW VR (docs/bettervr-ps5): Cemu alone. No Switch side (Eden), EmulationStation or retro runtimes.
 

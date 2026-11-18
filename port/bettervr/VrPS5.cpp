@@ -571,8 +571,9 @@ void PS5Cemu_VrStop()
 // When VR did not start: the game ends and the app starts over on Breath of the Wild's page with why, as a
 // game that did not start shows it (ps5settings::RememberSide), not with a crash report. The game cannot go
 // on flat: its pack's patches already call the module's hooks. Returns only when the app could not start
-// itself again. Called by 0.9.23's layer; stage 3 of the BetterVR 1.0.0 port (docs/bettervr-ps5/UPDATE-1.0.md)
-// calls it from the module again.
+// itself again, and the module then lets its exception end the launch. Called by the module when the OpenXR
+// session or the headset fails while Cemu creates its renderer (patches/bettervr 0002, OnVkDeviceCreated); the
+// reason is hmd2's failed step when there is one, else the session's error.
 extern "C" void BetterVR_PS5_VrFailed(const char* what)
 {
 	const hmd2::Error error = hmd2::error();

@@ -432,3 +432,78 @@ Next step: read `gh run list --branch bettervr-1.0/stage2`; on failure `gh run v
 and fix the first error (likeliest: a libc++ 18 gap in the module, a duplicate `__atomic_*` symbol, a missing
 include dir for `PlatformPS5.cpp`/`runtime.cpp` in `module.cmake`); on green, check the ELF for the strings
 `BetterVR's host module starts` and `Acquired system to be used`, then publish nothing and report to the user.
+
+## Stage 3 progress
+
+Branch `bettervr-1.0/stage3` (from stage 2's head c462dda). Built only on CI; every result is "built, untested
+on console". Written blind: each step of the VR start logs a line, so one console run shows how far it gets.
+
+Done:
+- **What 1.0.0 asks of the runtime**, read from its calls (`swapchain.cpp`, `openxr.cpp`, `renderer.cpp`), and
+  what `port/bettervr/xr/runtime.cpp` now answers:
+  - swapchains: 2D images, `arraySize 1`, `sampleCount 1`, colour `R8G8B8A8_SRGB` first of the offered formats,
+    three images each; BetterVR's stereo is two swapchains (one per eye) plus one for the HUD. A request for more
+    array layers, faces or samples returns `XR_ERROR_FEATURE_UNSUPPORTED` with a log line. The multiview rendering
+    of the Cemu fork happens before the pictures reach the runtime, so nothing here depends on it: when the driver
+    has no multiview the fork draws two passes and `Capture::On3DColor` gets no right surface.
+  - `XR_KHR_composition_layer_depth` is **no longer listed** (`7fbceeb` is in 1.0.0): BetterVR then keeps its depth
+    in a local attachment and makes no depth swapchain, which saves six 16 MB x 3 images; `xrCreateInstance` still
+    accepts the name.
+  - view configuration: two views of 1984x2048, one sample (logged once); the Graphics pack's presets are scaled
+    from it.
+  - frame timing: BetterVR's frame pump calls `xrWaitFrame` for the next frame while the game still draws the
+    current one. The Hmd2 frame is then still open (one at a time), so the wait returns the open frame's display
+    time plus one period, and the next frame is begun by the wait that follows `xrEndFrame`. A frame whose
+    `xrEndFrame` finds no open Hmd2 frame is dropped and counted (`ends without a frame` in the frame log).
+  - the 0.9.23 stand-ins are gone (`BetterVR_PS5_PlayerOnce` and the other ten switches, the three proof counters,
+    in `PlatformPS5.cpp`); the runtime composes with fixed behaviour: HUD quad as its plane, a mono picture across
+    each eye, a re-shown pair keeps its render pose.
+- **`patch_compiled.asm`**: the checked-in file is the pack's (CemuPatchCompiler is not found, so CMake says
+  "using the checked-in patch_compiled.asm"). `tools/package.sh` fails when the packaged pack lacks it.
+- **Foveation off**: patches/bettervr 0002 skips `UseFoveatedShading` on the PS5 (log line "Foveated shading is
+  off") and defaults the `FoveatedRendering` setting to Off, so the menu does not offer it as on. The fork already
+  draws without a shading-rate attachment when the feature is missing (`foveation_appliesTo`).
+- **VR-failed fallback (issue #3)**: when the session or the headset fails while Cemu creates its renderer
+  (`OnVkDeviceCreated`: `Init`, `InitSession`, so `xrCreateSession` with hmd2's init in it), 0002 logs, calls
+  `BetterVR_PS5_VrFailed` and rethrows. The app returns to the library with the reason on Breath of the Wild's page
+  ("VR did not start (hmd2 step, rc) ... Play on TV starts the game without the headset"), as in build20. The game
+  does not go on flat in the same process: the packs are registered and the game's patches call the module's hooks.
+  A failure before that (`OnInitialize`: OpenXR instance, system) leaves the module off and the game flat, with
+  BetterVR's own error through the system notification and a `[bettervr] BetterVR is off for this run` line. Decision for
+  the owner: a flat continuation in the same process would need the pack unregistered at that point.
+- **Settings and resolution**: `BetterVR_settings.ini` and `BetterVR_log.txt` are in Cemu's data folder
+  (`/data/botwvr/cemu`); the Graphics pack's presets are filled from the 1984x2048 eye size and now start on the
+  0.5x preset (the size the port ran at, about 32 fps in the overworld) instead of the 1x native default; the other
+  presets stay in Cemu's graphic pack list, and a choice saved there wins.
+- **Logs** (`[vr-xr]` in the boot log; the module's `[bettervr]` lines before and after): `VR start 1/5` OpenXR
+  instance, `2/5` session on Cemu's device, `3/5` headset up (ms after the session), `4/5` swapchain n (size,
+  format, images, layers), `5/5` first frame submitted (ms after the session, with or without a stereo picture), and a
+  line for the first frame with a stereo picture. Every 600 submitted frames: the headset's fps over them, hmd2's pacing,
+  waits one frame ahead, ends without a frame, render pose found / not found / kept, head and hand poses. The
+  app's `[perf]` fps and GPU-busy lines are unchanged.
+- Test request 48 in `STATUS.md`.
+
+Open problems and risks (none seen on a console):
+- **One queue.** If the graphics family has one queue, the module's queue is shared with Cemu's (log: `Creating
+  Vulkan device with ... mod queue on family F index I (shared with Cemu)`). The module submits with timeline waits
+  on Cemu's work; on one queue a wait that only a later submission satisfies would stall. `ps5xr::QueueMutex` orders
+  the submits, not the waits. The first console log shows whether the run gets past the first frames.
+- **Frame pump order.** The wait-ahead rule above is reasoned from the code, not seen: if frames repeat or the
+  `ends without a frame` count is high, the Hmd2 frame is begun at the wrong call (the alternative: begin in
+  `xrBeginFrame` and make the wait only nap).
+- **Memory.** Colour swapchains: 3 x (2 eyes + HUD) at 16 MB for the 1984x2048 size, on top of the three 16 MB eye
+  buffers, Cemu's two-view targets at the preset size and the module's layer textures. If the device runs out, the
+  `vkAllocateMemory` failure is in the log and ends in the library with the reason; `kSwapchainImages` can drop to 2.
+- The 0.5x preset's rules size and the eye size differ (about 1280x1320 against 1984x2048): BetterVR's present
+  pipeline scales to the swapchain, which is the same as on the PC with a preset below 1x.
+- `quadPlane` and `poseKeep` are on and `monoQuad` off in the runtime, as `State` had them as defaults; 0.9.23's mono
+  flat-scene path (menus drawn mono) was a mod feature that 1.0.0 does not have in that form.
+
+Backlog (outside stage 3): the runtime's pose ring (`located[]`) and kept-pose logic come from 0.9.23's mono/stereo
+pair handling; 1.0.0 locates once a frame (`UpdateViews`) and re-submits `m_lastLayer3DViews`, so the ring may reduce to
+"the head the last located views came from". Not simplified without a log of how often `render pose not found` counts.
+
+CI: see `STATUS.md` (run id and state are written after the push).
+Next step: read `gh run list --branch bettervr-1.0/stage3`; on failure `gh run view <id> --log-failed | tail -80` and
+fix the first error; on green check the ELF for `VR start 5/5` and `Foveated shading is off`, then publish nothing
+and report. Stage 4 (Sense input, the 1.0.0 menu, haptics) follows Test request 47 and 48.
