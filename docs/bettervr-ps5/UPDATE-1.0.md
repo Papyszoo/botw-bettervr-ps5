@@ -503,7 +503,8 @@ Backlog (outside stage 3): the runtime's pose ring (`located[]`) and kept-pose l
 pair handling; 1.0.0 locates once a frame (`UpdateViews`) and re-submits `m_lastLayer3DViews`, so the ring may reduce to
 "the head the last located views came from". Not simplified without a log of how often `render pose not found` counts.
 
-CI: see `STATUS.md` (run id and state are written after the push).
+CI: `BetterVR build` run 44266283541 on a412839 started (state not read before the report; the Tests run's Eden layout
+copy check fails on every branch of this fork). Read it with `gh run view 44266283541`.
 Next step: read `gh run list --branch bettervr-1.0/stage3`; on failure `gh run view <id> --log-failed | tail -80` and
 fix the first error; on green check the ELF for `VR start 5/5` and `Foveated shading is off`, then publish nothing
 and report. Stage 4 (Sense input, the 1.0.0 menu, haptics) follows Test request 47 and 48.
