@@ -139,4 +139,13 @@ namespace WindowSystem
 	}
 
 	void CaptureInput(const ControllerState& currentState, const ControllerState& lastState) {}
+
+	void ShowLinkDialog(std::string_view message, std::string_view title, std::string_view /*linkLabel*/, std::string_view url)
+	{
+		// no browser on the PS5: the message and its link go to the boot log
+		ps5log::Line("[info] {}{}{} ({})", title, title.empty() ? "" : ": ", message, url);
+	}
+
+	// the launcher has its own graphic packs page
+	void OpenGraphicPacksWindow() {}
 }
