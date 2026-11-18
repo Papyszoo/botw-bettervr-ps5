@@ -589,7 +589,26 @@ Open problems and risks (none seen on a console):
   follow it.
 - Seated calibration needs a valid head pose; until it runs the stage origin is the tracker's.
 
-Backlog (outside stage 4): headset vibration on damage; calibration UI.
+Review pass and fixes (2026-11-18, built only on CI, untested on console):
+- Review (high): the launcher wrote `bettervr_settings.ini` in the launcher's folder, 1.0.0 reads `BetterVR_settings.ini`
+  from `HostModule::GetUserDataPath()` (= `ActiveSettings::GetUserDataPath()` = `ps5paths::CemuRoot()`, set in
+  `emulator.cpp` `SetPaths`), so on the case-sensitive filesystem the launcher's choices were ignored. Fixed:
+  `ps5paths::BetterVrSettings()` (`port/app/paths.h`) is the one path, used by the launcher page and by the app before
+  the game's packs load, where it logs `BetterVR reads its settings from <path> (found / not there yet)`. A
+  `bettervr_settings.ini` from 0.9.23 builds is moved there once (rename, or copy then remove across drives) when the new
+  file does not exist; nothing is overwritten. 1.0.0's own overlay saves to the same file.
+- Keys checked against 1.0.0's `ModSettings` (`mod_settings.h`): CameraMode, CutsceneCameraMode, PlayPosition,
+  PlayerHeightOffset, TurnMode, WalkingDirection, SwingSensitivity, OneHitPerSwing, LeftHanded, UiFollowsGaze,
+  HudDistance (0.5-2.5), HudSize (0.4-1.75), UseBlackBarsForCutscenes all exist with the same name, type and value names
+  (the parser also takes the names case-insensitively and numbers). Nothing dropped or renamed, so no row removed.
+  The Seated default is `PlayPosition`'s default in 1.0.0 (patch) and the page's own default when the key is absent, so it
+  applies only while the player has not chosen.
+- Vibration (low): `SetVibration` no longer calls libScePad when the level has not changed on that handle (1.0.0 repeats
+  30 ms pulses); the remembered level is cleared when the handle is opened and after a failed call.
+- 2 s vibration duration clamp: see the backlog.
+
+Backlog (outside stage 4): headset vibration on damage; calibration UI; the 2 s clamp on a haptic duration (low): a
+rumble that 1.0.0 starts with `XR_INFINITE_DURATION` or more than 2 s stops at 2 s while BetterVR thinks it still runs.
 
 Next step: `gh run list --branch bettervr-1.0/stage4`; on failure `gh run view <id> --log-failed | tail -80` and fix the
 first error (likeliest in `controls.cpp`: an include for `VRManager` / `RND_Renderer`); on green check the ELF for

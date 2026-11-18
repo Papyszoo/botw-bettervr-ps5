@@ -517,6 +517,10 @@ bool PS5Cemu_BetterVRWanted(uint64_t titleId)
 void PS5Cemu_BetterVRPrepareGraphicPack()
 {
 	namespace fs = std::filesystem;
+	// the settings file BetterVR reads, where an older build's was moved to if there was one
+	const std::string settings = ps5paths::BetterVrSettings();
+	std::error_code present;
+	ps5vr::Log(fmt::format("BetterVR reads its settings from {} ({})", settings, fs::exists(settings, present) ? "found" : "not there yet: the defaults"));
 	const fs::path older = fs::path(ps5paths::CemuRoot()) / "graphicPacks" / "bettervr";
 	std::error_code ec;
 	if (ps5files::OwnStatus(older, ec).type() != fs::file_type::directory)

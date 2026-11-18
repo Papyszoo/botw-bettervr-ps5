@@ -390,6 +390,7 @@ namespace
 			XrTime hapticUntil = 0;
 			bool vibrating = false, poseLogged = false;
 			int vibrationsLogged = 0;
+			int lastLevel = -1; // the level libScePad last took on this handle; -1: none, or the call failed
 		} hands[2];
 		float gripYaw = 17, gripPitch = 32, gripRoll = 30, aimPitch = 0; // degrees: the grip and aim poses' turn, bettervr.json's keys
 		// How a frame is composed, fixed (1.0.0 has no use for the 0.9.23 mod's presentation switches): a mono
@@ -545,6 +546,7 @@ namespace
 				continue;
 			}
 			hand.handle = handle;
+			hand.lastLevel = -1;
 			hand.owned = owned;
 			hand.reportedMissing = false;
 			const int mode = hmd2::sense_set_vibration_mode(handle, kVibrationModeCompatible);
@@ -762,7 +764,10 @@ namespace
 		if (hand.handle < 0)
 			return;
 		const uint8_t level = (uint8_t)std::lround(std::max(0.0f, std::min(1.0f, amplitude)) * 255.0f);
+		if (hand.lastLevel == level)
+			return; // the same level again (1.0.0 repeats its 30 ms pulses): libScePad is not called
 		const int result = hmd2::sense_set_vibration(hand.handle, level);
+		hand.lastLevel = result == 0 ? level : -1;
 		if (level && (hand.vibrationsLogged < 3 || result != 0))
 		{
 			static int s_failures = 0;
