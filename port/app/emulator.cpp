@@ -324,6 +324,7 @@ namespace ps5emu
 				n_config.Load();
 			PS5Cemu_BetterVRPrepareGraphicPack(); // BotW-BetterVR: the packs of an older build away
 			GraphicPack2::LoadAll();
+			ps5log::Line("[packs] {} graphic packs loaded at start", GraphicPack2::GetGraphicPacks().size());
 			InputManager::instance().load();
 			DefaultControllers();
 			// the players with Wii Remotes point with their DualSenses (PS5PadController.h)
@@ -399,6 +400,7 @@ namespace ps5emu
 			HostModule::Initialize();
 			GraphicPack2::ClearGraphicPacks();
 			GraphicPack2::LoadAll();
+			ps5log::Line("[packs] {} graphic packs loaded with BetterVR's", GraphicPack2::GetGraphicPacks().size());
 		}
 
 		// the game playing and the settings it started with (SetGameSettings)

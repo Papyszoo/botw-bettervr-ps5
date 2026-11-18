@@ -681,3 +681,21 @@ shows the real string; the Sense's mode calls still answered 0x80000001.
 
 Next console run must show: no `modified RAM mapping` and no `BotW_ExtendedMemory_V208` in Cemu's log (the line above says the pack is off), the game starting past ProcUI, `[perf]` lines and the time to `OSSched`, the `ProcUI: no memory for a callback` line if it
 fires (its numbers decide the heap question), `VR start 4/5` and `5/5`, and the `at anchor +0x1f650` line.
+
+## Console run 3
+
+**Launcher's community graphic packs page empty (proven in code, the console listing agrees).** The packs are on the
+console: `graphicPacks/downloadedGraphicPacks/` holds `version.txt` and the full tree (`BreathOfTheWild/Enhancements`,
+`Graphics`, `Mods`, ... and the other games'). The Cemu base moved to Crementif's fork, whose commit 6f5f3fe9 ("Run beside
+a regular Cemu install") makes `GraphicPack2::LoadAll` skip `graphicPacks/downloadedGraphicPacks` entirely ("the community
+packs ship with this build instead", `GraphicPack2.cpp`). The "build" there is BetterVR's bundle (`assets/bettervr/BetterVR/
+packs/graphicPacks`), which a host module registers only when `StartBetterVR` runs (`app/emulator.cpp`, Play in VR). At
+the launcher (`LibraryInit` -> `LoadAll`) and after the Settings > Online download (`ReloadGraphicPacks` -> `LoadAll`) no
+module is registered, so no pack is loaded and `PacksOf` finds none. Settings.xml entries stay unused for the same reason.
+
+Fix (patch cemu 0053): `LoadAll` skips only `downloadedGraphicPacks/BreathOfTheWild`, and only once a host module has
+registered bundled pack directories (`GetBundledGraphicPackDirectories()` not empty). At the launcher every downloaded pack
+lists as in 0.9.23; in VR, after `StartBetterVR` reloads, BotW's community packs come from BetterVR's bundle only, so none
+is listed or activated twice. Other games' downloaded packs always load. Log lines (confirm on the console):
+`[packs] N graphic packs loaded at start` (library) and `[packs] N graphic packs loaded with BetterVR's` (VR start); the
+existing `[packs] N graphic packs loaded` follows a download. Built, untested on console.
