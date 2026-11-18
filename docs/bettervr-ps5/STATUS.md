@@ -14,7 +14,8 @@ them back. `bettervr.json` `"profile": true` logs GPU busy and a `[frame]` line 
 fence, hmd2 submit), plus a line with the active pack presets. BetterVR's menu System page has a VR Resolution
 selector (0.5x to 1.5x) instead of "Graphic Packs: Open On Desktop". CI fetches zlib 1.3.2's source from its GitHub
 release instead of zlib.net. Details: `UPDATE-1.0.md`, "v0.6 performance and menu/HUD shimmer". New patches: bettervr
-0007, cemu 0055.
+0007, cemu 0055. CI `BetterVR build` run 44351547726 on 0ca3467 is green; the `Tests` run still fails on the Eden layout
+copy check, as on every branch of this fork.
 
 **Test request 53 (v0.6 combined).** One console run of this build (13.60) with `bettervr.json` `"profile": true`.
 (a) Play in VR at 1x for two minutes in the overworld and send every `[frame]` and `[perf]` line. `[frame]` must appear

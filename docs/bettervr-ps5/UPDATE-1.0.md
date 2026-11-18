@@ -814,4 +814,7 @@ image on a ~836x487 eye quad sampled once bilinearly at level 0, and the frame e
 Open: nothing here has run on a console. The mip chain's cost and the skipped passes need the `[frame]` line; the
 HUD quads' edges need a headset. The optional FSR/upscale for presets below 1x (task 6) is not done; the compose
 still samples BetterVR's already-upscaled eye image. The depth write in the present shader is not removed.
-Next step: push `bettervr-1.0/v06-perf`, wait for `BetterVR build`, then Test request 53 in `STATUS.md`.
+CI: `BetterVR build` run 44351547726 on 0ca3467 is green; the ELF contains `[frame] swap`, `HUD mip chain`,
+`VR Resolution`, `Accurate barriers` and `Graphics pack presets`. The `Tests` run fails on the Eden layout copy
+check, as it does on every branch of this fork.
+Next step: console Test request 53 in `STATUS.md`.
