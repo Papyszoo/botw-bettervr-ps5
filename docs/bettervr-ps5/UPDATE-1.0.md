@@ -804,5 +804,5 @@ Branch `bettervr-1.0/v06-triggers`, from `ce1ee2c` (v0.6's menu work merged). Bu
 - **Open:** the Sense payload and its return code semantics are unverified; a call returning 0 may still not move
   the trigger. The DualSense's handle is opened in libScePad's vibration mode 2 (the app's choice for rumble), and
   whether the trigger setter works in that mode is unverified. Neither has run on a console.
-- **Exact next step:** push, wait for the CI build, then Test request 53 in `STATUS.md`; read the `[trig]` lines to
-  learn which Sense layout the firmware accepted and whether the DualSense setter answers 0.
+- **Exact next step:** the CI build is green; the next console run is Test request 53 in `STATUS.md`. Read the
+  `[trig]` lines to learn which Sense layout the firmware accepted and whether the DualSense setter answers 0.
