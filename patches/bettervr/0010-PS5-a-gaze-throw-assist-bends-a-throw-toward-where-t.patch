@@ -6,9 +6,8 @@ Subject: [PATCH] PS5: a gaze throw assist bends a throw toward where the
 
 ---
  src/game/botw/input/controls.cpp | 53 +++++++++++++++++++++++++++++++-
- src/rendering/imgui_menus.cpp    |  3 ++
  src/utils/mod_settings.h         |  3 ++
- 3 files changed, 58 insertions(+), 1 deletion(-)
+ 2 files changed, 55 insertions(+), 1 deletion(-)
 
 diff --git a/src/game/botw/input/controls.cpp b/src/game/botw/input/controls.cpp
 index d8580b6..8a47788 100644
@@ -81,20 +80,6 @@ index d8580b6..8a47788 100644
          Log::print<CONTROLS>("[Throw] released with hand speed {:.2f}, boosted {:.2f}x", handSpeed, boost);
      }
      else {
-diff --git a/src/rendering/imgui_menus.cpp b/src/rendering/imgui_menus.cpp
-index 3dff90a..68db424 100644
---- a/src/rendering/imgui_menus.cpp
-+++ b/src/rendering/imgui_menus.cpp
-@@ -1161,6 +1161,9 @@ void RND_Renderer::ImGuiOverlay::DrawControlsPage(bool* changed) {
-             DrawSetting(ICON_MS_SWORDS, "Sword Swings", [&]() {
-                 DrawEnumSegments(settings.swingSensitivity, swingChoices, changed);
-             });
-+            DrawSetting(ICON_MS_EYE_TRACKING, "Gaze Throw Assist", "Bends a throw up to 15 degrees toward where you look; with eye tracking off, toward where you face. Off by default.", [&]() {
-+                DrawToggle(settings.eyeGazeThrowAssist, changed);
-+            });
-             EndCard();
-         }
-     }
 diff --git a/src/utils/mod_settings.h b/src/utils/mod_settings.h
 index cf553da..9b3877b 100644
 --- a/src/utils/mod_settings.h

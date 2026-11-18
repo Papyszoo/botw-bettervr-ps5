@@ -1882,6 +1882,8 @@ int set_vibration(int level) {
         g_headset_vibration_logged++;
     }
     return rc;
+}
+
 int pad_set_trigger_effect(int handle, const void *param) {
     if (!bind_pad_trigger())
         return kPadTriggerUnavailable;
