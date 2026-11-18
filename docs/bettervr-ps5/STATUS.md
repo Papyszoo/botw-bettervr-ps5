@@ -3,6 +3,25 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-18: 1.0.0 port, stage 4 (Sense controllers, menu, vibration, written blind), built, untested on console
+
+Branch `bettervr-1.0/stage4`. The Sense controllers answer BetterVR 1.0.0's Oculus Touch bindings (sticks, grips,
+triggers, face buttons, stick clicks, poses with the calibrated grip defaults 17/32/30). One short press of Options on
+the right controller opens and closes BetterVR's own menu (patch 0004; the 1.0.0 default of holding Square on the left
+also works); haptics go to the Sense through hmd2's vibration functions. PlayPosition starts on Seated. Details:
+`UPDATE-1.0.md`, "Stage 4 progress". Stages 1 to 3's Test requests (46 to 48) and 45 are still unanswered, so a stage 4
+run may stop at an earlier problem.
+
+**Test request 49 (stage 4 build, 13.60 console).** Install the stage 4 build, Play in VR. (a) Walk with the left stick,
+turn with the right stick, jump (B), run (A), draw a weapon with the grip and swing it at a bokoblin or a tree, draw
+the bow (grip, then pull with the trigger) and shoot, use magnesis from the Runes (Y on the left, then pick an object
+with the trigger). Say whether anything is late or missing, and whether Link's hands sit where yours do. (b) Press
+Options on the right controller once, quickly: the menu should appear in the headset; change one setting (for example
+Play position), press Options again to close it. Say whether the menu is readable and where it hangs, and what the
+sticks and A/B do inside it. (c) Take a hit or hit something with a weapon: say whether either controller vibrates.
+Send the logs zip and `BetterVR_log.txt`: every `[menu]` line, `Seated height`, `Touch profile`, `Sense controller`,
+`Sense buttons`, `haptic call` and `Sense controller vibration` line, the `[vr-xr] ... frames` lines, and any `[crash]`.
+
 ## 2026-11-18: 1.0.0 port, stage 3 (stereo in the headset, written blind), built, untested on console
 
 Branch `bettervr-1.0/stage3`. The OpenXR runtime over hmd2 now answers what BetterVR 1.0.0 asks (no depth swapchains,

@@ -531,3 +531,66 @@ medium defects. Backlog (low): xrDestroySession from another thread during the c
 would write freed memory (runtime.cpp, after the wait; needs a concurrent destroy); the comment saying
 hmd2::begin_frame does not nap is wrong (it naps under `s.lock`); the frame counters also count discarded
 attempts; the VR-failed reason can name a stale hmd2 error step.
+
+## Stage 4 progress
+
+Branch `bettervr-1.0/stage4` (from stage 3's head 36623bd). Built only on CI; every result is "built, untested on
+console". Written blind.
+
+Done:
+- **Input through the runtime** (`port/bettervr/xr/runtime.cpp`, already in place from 0.9.23): read against 1.0.0's
+  `controller_bindings.h` Touch profile (`/interaction_profiles/oculus/touch_controller`). Every path 1.0.0 suggests
+  is in the runtime's table: grip/aim pose, `thumbstick` (move left, camera right, scroll/navigate in menus),
+  `squeeze/value` (grab, tab switch), `trigger/value`, `a/b/x/y/click`, `thumbstick/click`, `output/haptic`. Sense
+  mapping: Square = X, Triangle = Y, Cross = A, Circle = B, L1/R1 = squeeze, L2/R2 = trigger, L3/R3 = stick click.
+  `xrSuggestInteractionProfileBindings` logs `Touch profile: N bindings onto the Sense controllers, M not mapped`:
+  M should be 0. 1.0.0 binds the right Options (`menu/click`) only in the simple profile, so it has no action in
+  the Touch profile (the 0.9.23 patches had added it).
+- **Hand pose**: the runtime's grip/aim turn is unchanged (gripYaw 17, gripPitch 32, gripRoll 30, aimPitch 0, left +,
+  right -). 1.0.0 applies no grip or aim offset of its own on top: its only fixed angles are the wrist turns in
+  `hand_aim.cpp` and `link_skeleton.cpp` (90, -90, 30 degrees on Z, ...), which 0.9.23 had with the same values
+  (`2e06b31:src/hooking/skeleton.cpp:690-697`), so the correction is not doubled and the result should equal
+  build24-27's.
+- **Menu**: patches/bettervr 0004. `ProcessModMenuInput` (`controls.cpp`) takes `BetterVR_PS5_OptionsDown()` (the
+  runtime's, set at each `xrSyncActions` from the right Sense's Options bit, false when the hand is gone or the
+  system has the pad) and toggles `ImGuiMenus::g_isOpen` on a press released within 1 s (a hold does nothing; no
+  combination, no 3 s hold). Logs: `[menu] Options down`, `[menu] Options up after N ms`, `[menu] toggle -> open/closed`,
+  `[menu] toggle ignored, the menu's overlay is not ready`. On by default: no `bettervr.json` switch. 1.0.0's own left
+  Square long press stays. The first-run prompt names Options on the PS5. The overlay is 1.0.0's own: drawn into the
+  HUD layer the runtime shows (`capture.cpp` `Draw3DLayerAsBackground`), its font upload under the queue lock from
+  stage 2. Create on the left (the recording button) is not used.
+- **Vibration**: 1.0.0's rumble calls `xrApplyHapticFeedback` (`rumble.h`), the runtime sets the Sense's vibration
+  through `hmd2::sense_set_vibration_mode` (mode 2, at open) and `hmd2::sense_set_vibration`, the libScePad lookup
+  living only in `third_party/hmd2/hmd2.cpp` (unchanged; Test request 45's result may still change it). New logs:
+  the first six `haptic call n: hand, amplitude, duration, frequency` lines, and the level and result of the first
+  three vibrations per hand and of every failure (at most 20).
+- **Old patches** (decision table, 0.9.23 numbers):
+  - 0008 (XR input without the ImGui overlay): dropped. In 1.0.0 `hook_InjectXRInput` does not depend on the overlay;
+    `ImGuiMenus::ProcessInputs` returns when there is none.
+  - 0011 (seated height moves the stage space): replaced by 1.0.0's own `UpdateSeatedHeightCalibration`, which moves
+    the stage space already. Kept from it: Seated is the PS5 default (`PlayPosition`; the tracker's origin is not known
+    to be the floor, and builds 24-27 ran Seated), and the first in-game frame asks for the calibration when the
+    loading screen passed before the session existed (the PS5 starts the session after the boot load). Logs
+    `Seated height calibration requested on the first in-game frame` and 1.0.0's `Seated height calibrated: eyes are
+    X m above the floor`. A player's choice in the menu stands (the ini wins over the default).
+  - 0005 (large input state through a mutex): done in stage 2 as the app's own `__atomic_load/store/exchange/
+    compare_exchange` with a lock per address (`PlatformPS5.cpp`), which covers 1.0.0's `std::atomic<InputState>`.
+- **Late physics (2026-11-05)**: 1.0.0 replays one simulation per game frame and latches one input sample per game
+  frame (`m_frameInputLatched`, `Tracking::SampleHands`), where 0.9.23 ran the player update in two passes. This should
+  remove the cause; only a console tells. The `[vr-xr]` frame lines (render pose found / not found, ends without a
+  frame) and Test request 49 (a) show whether anything is still late.
+- Test request 49 in `STATUS.md`.
+
+Open problems and risks (none seen on a console):
+- The runtime's Options bit comes from the pad's state word (`kOptions` 0x8); if a press does not register, the
+  `Sense buttons 0x...` lines (first 40 changes) show which bit the right controller sends.
+- `DetectActiveControllerType` runs at session creation, when the hands may not be open yet: the type is `Unknown`
+  until the profile-changed event (`QueueProfileChanged`) makes BetterVR ask again; the prompt text and button glyphs
+  follow it.
+- Seated calibration needs a valid head pose; until it runs the stage origin is the tracker's.
+
+Backlog (outside stage 4): headset vibration on damage; calibration UI.
+
+Next step: `gh run list --branch bettervr-1.0/stage4`; on failure `gh run view <id> --log-failed | tail -80` and fix the
+first error (likeliest in `controls.cpp`: an include for `VRManager` / `RND_Renderer`); on green check the ELF for
+`[menu] Options down` and `haptic call`, then report.

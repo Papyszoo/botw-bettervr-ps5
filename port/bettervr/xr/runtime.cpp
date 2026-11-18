@@ -388,7 +388,8 @@ namespace
 			Pose pose;
 			Vec3 linear, angular;
 			XrTime hapticUntil = 0;
-			bool vibrating = false, vibrationLogged = false, poseLogged = false;
+			bool vibrating = false, poseLogged = false;
+			int vibrationsLogged = 0;
 		} hands[2];
 		float gripYaw = 17, gripPitch = 32, gripRoll = 30, aimPitch = 0; // degrees: the grip and aim poses' turn, bettervr.json's keys
 		// How a frame is composed, fixed (1.0.0 has no use for the 0.9.23 mod's presentation switches): a mono
@@ -565,9 +566,19 @@ namespace
 	}
 
 	// once a frame (xrSyncActions): buttons, stick, trigger and pose of each hand
+	// Whether Options on the right Sense is down, as of the last sync: BetterVR's menu toggle reads it
+	// (BetterVR_PS5_OptionsDown), as the Touch profile gives that button no action
+	std::atomic<bool> s_optionsDown{false};
+
 	void ReadHands()
 	{
 		OpenHands();
+		// stored when the sync is read, whichever way the loop leaves: a hand that is gone or intercepted is not down
+		struct Publish
+		{
+			bool optionsDown = false;
+			~Publish() { s_optionsDown.store(optionsDown, std::memory_order_release); }
+		} publish;
 		const XrTime now = Now();
 		for (int i = 0; i < 2; i++)
 		{
@@ -601,15 +612,8 @@ namespace
 			}
 			if (buttons & kIntercepted)
 				continue; // the system menu has it: nothing pressed here
-			if (i == 1)
-			{
-				static bool s_optionsWas = false;
-				static int s_optionsLogged = 0;
-				const bool down = (buttons & kOptions) != 0;
-				if (down != s_optionsWas && s_optionsLogged++ < 60)
-					Log("Options %s", down ? "down" : "up");
-				s_optionsWas = down;
-			}
+			if (i == 1 && (buttons & kOptions) != 0)
+				publish.optionsDown = true;
 			hand.buttons = buttons;
 			hand.stickX = Axis(state[kSenseStickX]);
 			hand.stickY = -Axis(state[kSenseStickY]); // its byte is down positive
@@ -750,6 +754,8 @@ namespace
 		return false;
 	}
 
+	// The one place that sets a Sense controller's vibration (hmd2's libScePad lookup is behind it). The first
+	// three calls with a level and every call that fails are in the log, with the level and libScePad's answer.
 	void SetVibration(int i, float amplitude)
 	{
 		auto& hand = s.hands[i];
@@ -757,10 +763,13 @@ namespace
 			return;
 		const uint8_t level = (uint8_t)std::lround(std::max(0.0f, std::min(1.0f, amplitude)) * 255.0f);
 		const int result = hmd2::sense_set_vibration(hand.handle, level);
-		if (!hand.vibrationLogged && level)
+		if (level && (hand.vibrationsLogged < 3 || result != 0))
 		{
-			hand.vibrationLogged = true;
-			Log("%s Sense controller vibration -> 0x%08x (first one)", HandName(i), (unsigned)result);
+			static int s_failures = 0;
+			if (result == 0 || s_failures++ < 20)
+				Log("%s Sense controller vibration level %u -> 0x%08x (%s)", HandName(i), (unsigned)level, (unsigned)result,
+					hand.vibrationsLogged < 3 ? "one of the first" : "failed");
+			hand.vibrationsLogged++;
 		}
 		hand.vibrating = level != 0;
 	}
@@ -2422,6 +2431,14 @@ XRAPI_ATTR XrResult XRAPI_CALL xrApplyHapticFeedback(XrSession, const XrHapticAc
 		return XR_SUCCESS;
 	const auto* vibration = reinterpret_cast<const XrHapticVibration*>(header);
 	const int which = HandOf(info->subactionPath);
+	// the first calls BetterVR's rumble makes, to show whether a hit reaches the controller
+	static int s_haptics = 0;
+	if (s_haptics < 6)
+	{
+		s_haptics++;
+		Log("haptic call %d: hand %d, amplitude %.2f, duration %lld ns, frequency %.0f", s_haptics, which, vibration->amplitude,
+			(long long)vibration->duration, vibration->frequency);
+	}
 	// XR_MIN_HAPTIC_DURATION (-1) asks for the shortest the device does: a frame
 	const XrDuration duration = vibration->duration <= 0 ? kFramePeriod : std::min<XrDuration>(vibration->duration, 2'000'000'000);
 	for (const Binding& binding : info->action->bindings)
@@ -2530,3 +2547,9 @@ void BetterVR_PS5_Stop()
 }
 
 } // extern "C"
+
+// BetterVR's mod menu (patches/bettervr): Options on the right Sense controller, as of the last xrSyncActions
+extern "C" bool BetterVR_PS5_OptionsDown()
+{
+	return s_optionsDown.load(std::memory_order_acquire);
+}
