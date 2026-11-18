@@ -1272,7 +1272,7 @@ namespace
 // BetterVR's mixer (rendering/rumble.h) calls the two sinks below every 60 Hz tick with 0..1. The headset's motor
 // takes 0..25 and one motor has no direction; a level is sent when it changes, and a continuous hold is capped at
 // 2 s like AstroBotVR2 so the forehead never buzzes for long. The Vibration page's test buttons override the level
-// for 400 ms. The pad's level is 0..255 and its own scale is applied in port/cemu/PS5PadController.cpp.
+// for 400 ms. The pad's level is 0..255, sent to port/cemu/PS5PadController.cpp; BetterVR's page is its strength.
 namespace
 {
 	constexpr int kHeadsetTestLevel = 25;
@@ -1305,6 +1305,13 @@ namespace
 		const XrTime now = Now();
 		const bool testing = now < s_headset.testUntil;
 		const int wanted = testing ? kHeadsetTestLevel : s_headset.wanted;
+		if (wanted == 0 && s_headset.sent <= 0)
+		{
+			// nothing to stop and the export has not been proven yet: VR start must not be its first call. The
+			// Vibration page's test button is the first one, as the brief asks.
+			s_headset.sent = 0;
+			return 0;
+		}
 		if (wanted == s_headset.sent)
 		{
 			if (!testing && wanted > 0 && !s_headset.capped && now - s_headset.sameAt >= kHeadsetHoldCap)
@@ -1373,6 +1380,11 @@ extern "C" void BetterVR_PS5_TestHeadset()
 extern "C" void BetterVR_PS5_TestPad()
 {
 	std::lock_guard lock(s.lock);
+	if (!s.padTakenOver)
+	{
+		VibLog("test pad: no VR session is driving the DualSense");
+		return;
+	}
 	PS5Pad_ExternalRumble(kPadTestLevel / 255.0f);
 	s_pad.sent = kPadTestLevel;
 	s_pad.testUntil = Now() + kDeviceTestHold;

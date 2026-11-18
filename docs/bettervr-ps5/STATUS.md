@@ -29,9 +29,10 @@ here at merge time). Play in VR, then:
 - (a) Hold Options: a **Vibration** page sits between Controls and Display. Open it and say whether it draws (the
   master switch, the headset cap, three test buttons and nine category rows with On / Strength / Hands / Headset /
   DualSense).
-- (b) Press **Sense Controllers**, **Headset**, **DualSense**. Say which buzzed. Send the `[vib] test hands`, `[vib]
-  test headset` and `[vib] test pad` lines, and the `hmd2: headset vibration bound` line (or `not found on this
-  firmware`).
+- (b) Press **Sense Controllers**, **Headset**, **DualSense**. Say which buzzed. Press **Headset first, before taking
+  any damage**: that is the first call to the motor's unverified offset, and the design keeps it from being called at
+  VR start. Send the `[vib] test hands`, `[vib] test headset` and `[vib] test pad` lines, and the `hmd2: headset
+  vibration bound` line (or `not found on this firmware`).
 - (c) Each category's toggle and strength: at 0 % (or Off) a sword swing, a weapon/gear equip, a bow draw, a shield
   raise and the slate's hum are each silent on their own; turning Game Rumble to 0 % silences the game's own rumble
   while BetterVR's rows still work. Strength 30 % is clearly weaker than 100 %.

@@ -788,13 +788,15 @@ built only on CI, **untested on console**.
 - **The PS VR2 headset's motor** is bound in `third_party/hmd2` as an optional export: `sceHmd2SetVibration(handle,
   level)`, 0-25, one motor. `sceKernelDlsym` first; otherwise the 13.60 table's `+0x2ae00` only behind libSceHmd2's
   anchor check. Other firmware leaves it unbound (one `hmd2:` line) and VR continues. The runtime sends on change, caps
-  a continuous hold at 2 s, maps 0..1 to 0..25 and logs the first calls and every failure. The page's Headset button
-  logs `[vib] test headset: level 25 -> 0x...`.
+  a continuous hold at 2 s, maps 0..1 to 0..25 and logs the first calls and every failure. It is not called with a zero
+  level at VR start: the page's Headset test is its first call, so an unproven offset cannot crash a session that never
+  uses the motor. The page's Headset button logs `[vib] test headset: level 25 -> 0x...`.
 - **The DualSense is taken over while VR runs.** `port/cemu/PS5PadController.cpp` gains `PS5Pad_SetExternalRumble`
   (Cemu's own `start_rumble`/`stop_rumble` return at once, and both motors are cleared when the mode changes) and
-  `PS5Pad_ExternalRumble` (the mixer's level, scaled by player 1's Cemu rumble setting; the launcher's Vibration row
-  still gates it). `port/bettervr/xr/runtime.cpp` turns it on at `xrBeginSession` and off at `xrDestroySession` and
-  `BetterVR_PS5_Stop`; one `[pad] rumble:` line says which side drives the pad. No Cemu patch was needed.
+  `PS5Pad_ExternalRumble` (the mixer's level; the launcher's Vibration row stays the outer switch, and Cemu's own
+  per-controller rumble percentage is not applied while VR drives the pad). `port/bettervr/xr/runtime.cpp` turns it on
+  at `xrBeginSession` and off at `xrDestroySession` and `BetterVR_PS5_Stop`; one `[pad] rumble:` line says which side
+  drives the pad. No Cemu patch was needed.
 - **Damage taken** uses the existing `PlayerNormal` damage-state hook (`player.cpp`): one falling rumble on both hands,
   once per state change (300 ms apart at most), plus `[vib] damage state '...'` for the first six, which also names the
   three states the first-person block hides today.
