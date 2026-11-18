@@ -124,6 +124,18 @@ struct DeviceState {
     uint32_t lens_mm;  // lens-to-eye distance Hmd2 reports
 };
 
+// One eye-tracking sample. The gaze exports are optional: they are resolved by
+// name only, and a library that does not export them leaves `valid` false (one
+// line says why). `direction` is the firmware's own headset-frame direction,
+// +z forward and not yet turned into tracker space; `status` is the result's
+// status field (0 = a tracked sample). init() activates the stream and logs the
+// device and calibration state; the first 10 s of samples are logged as hex.
+struct Gaze {
+    float direction[3];
+    bool valid;
+    int32_t status;
+};
+
 // Where init() got to when it failed: the failing call and its return code.
 struct Error {
     const char *step;  // "" when nothing failed
@@ -199,6 +211,9 @@ uint64_t display_time_us();   // Hmd2's predicted display time for this frame
 Fov field_of_view();
 DeviceState device_state();   // cached, polled at most every 0.5 s
 bool worn();
+// One poll of the headset's eye tracking. Cheap (two exports), safe before
+// init() (returns invalid), and rate-limits its own first-10-s log.
+Gaze gaze();
 
 // -- Sense controllers -----------------------------------------------------------------
 // Register one Sense controller's scePad handle with VrTracker2 so GetResult

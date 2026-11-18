@@ -3,7 +3,6 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
-<<<<<<< HEAD
 ## 2026-11-18: v0.6 performance and menu/HUD shimmer, built, untested on console
 
 Branch `bettervr-1.0/v06-perf`, from v0.5.0. The HUD image gets a mip chain each frame and the compose samples it
@@ -29,7 +28,6 @@ Multiplier` lines: the eye size must be smaller; restart after 1x and it must be
 `bettervr.json` `"accurateBarriers": true`, restart, and send the `Accurate barriers: on` and `[perf] ... accurate
 barriers on` lines (then remove the key). Send the logs zip and say whether the menu, HUD alpha and gameplay still look
 right.
-=======
 ## 2026-11-18: v0.6 adaptive triggers (DualSense; Sense behind a json switch), built, untested on console
 
 Branch `bettervr-1.0/v06-triggers`, from `ce1ee2c` (v0.6's menu work). The bow's live draw now firms R2 and the
@@ -56,7 +54,6 @@ Send the logs zip and every `[trig]` line: the `DualSense` lines with their `0x.
 effects on` line, the `Sense both hands (0x78 ...)` and/or `Sense one hand (0x38 ...)` results, `Sense payload ...
 accepted`, and the `off` lines. If the Sense triggers are not felt although a layout was accepted, add
 `"senseTriggerLayout": 2` (or 1) and repeat (e) with the new `[trig]` lines.
->>>>>>> origin/bettervr-1.0/v06-triggers
 
 ## 2026-11-18: v0.6, Options holds for the menu and taps for pause, no popup at start, no one-frame body flash, HUD alpha, built, untested on console
 
@@ -68,6 +65,11 @@ the PS5. Reported from run 4: Link flashes (jumps) while strafing with the left 
 lacks its left and right arrows. A camera stall of five presented frames now keeps first person for up to 250 ms, so a
 streaming hitch no longer shows the body for one frame (patch bettervr 0006), and the runtime compositor blends the
 premultiplied HUD correctly, so the dimmed arrows, minimap and clock keep their alpha. Details: `UPDATE-1.0.md`, "v0.6".
+
+From the parallel eye-tracking branch (`bettervr-1.0/v06-eye`): the optional PS VR2 gaze exports are probed at VR
+start, exposed to BetterVR as `XR_EXT_eye_gaze_interaction`, and a new default-off `Gaze Throw Assist` setting bends a
+throw up to 15 degrees toward where the player looks (head direction when gaze is unavailable). Built, untested on
+console; details in `UPDATE-1.0.md`, "v0.6 eye tracking".
 
 **Test request 52 (the build of this commit, 13.60 console).** Play in VR. (a) Tap Options on the right controller once:
 the game's pause screen (the inventory) opens; tap it again: the screen closes. (b) Hold Options for about a second:
@@ -106,6 +108,16 @@ here at merge time). Play in VR, then:
 - (f) Send every `[vib] game rumble ...` line (at most 40, 150 ms apart): play a few minutes with a hit, damage, a
   remote bomb, a cutscene and a shrine. Each has `caller=`, `state=`, the VPAD `bytes=` and, when it was found, the
   sead `pattern="..." repeat=`. Say whether the run crashed or stuttered around them.
+**Test request 53 (v0.6 combined).** Eye tracking, from the branch `bettervr-1.0/v06-eye`: in the PS5 settings, turn
+on Settings > Accessories > PS VR2 > Eye Tracking and run Adjust Eye Tracking, then play in VR and send the logs zip.
+(a) Send every `[gaze]` line: `five exports bound by name`, `ActivateGazeTracking(1)`, `device detected` or the device
+status line, `calibrated` or the calibration status line, and the first-10-s lines `result 0x38`, `foveated 0x18`,
+`raw direction ... status full N foveated N`. They say whether the five names resolve and whether status 0 means
+detected/calibrated on 13.60. If the log says eye tracking is off or not calibrated while the PS5 settings say
+otherwise, send those lines as they are. (b) In BetterVR's menu open Controls > Motion Controls, turn on Gaze Throw
+Assist, then throw something while looking left of the head direction and again while looking right. Say which way
+each throw went (left/right of where the hand threw) and send the `[Throw] gaze assist bent N degrees toward the gaze`
+lines (or `toward the head` if the gaze lines were not valid). With the setting off, the same throw must not bend.
 
 ## 2026-11-18: console run 4 (37c6028, 13.60)
 
