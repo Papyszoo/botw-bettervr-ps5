@@ -622,7 +622,8 @@ const export_sig_t kExports_libScePad_1360[] = {
     {"scePadVrControllerSetVibrationMode", 0x100b0u},
     {"scePadVrControllerSetVibration", 0x5610u},
 };
-const export_anchor_t kAnchor_libScePad_1360 = {0x1f650u, "scePadCtrlpSyncInit Error : cannot open [%08x]"};
+// the string ends in a line feed (read on a 13.60 console: 5d 0a 00)
+const export_anchor_t kAnchor_libScePad_1360 = {0x1f650u, "scePadCtrlpSyncInit Error : cannot open [%08x]\n"};
 const export_table_t kTables_libScePad[] = {
     {1360, kExports_libScePad_1360, 2, &kAnchor_libScePad_1360},
 };
