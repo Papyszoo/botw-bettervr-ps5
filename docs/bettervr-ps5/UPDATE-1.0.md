@@ -636,8 +636,26 @@ leave the default heap (about 2.2 GiB after the MEM2 extension) too little for t
 plus the PS5's memory differ from PC. The old 0.9.23 build did not map extended memory. Fix in this change: Cemu patch
 0052 leaves the callback out and logs one line instead of crashing: `ProcUI: no memory for a callback (allocator, memory
 pool, initialized, default heap free, MEM2 end)`. The game then goes on without that foreground callback (it is the
-Home-menu handling; a guest crash later would still show in the PPC dump). Extended Memory stays on until the next run
-shows that line.
+Home-menu handling; a guest crash later would still show in the PPC dump). Extended Memory is now off (below).
+
+**Extended Memory (answered from the code).**
+1. It is the bundled pack `Mods/ExtendedMemory` (`rules.txt`: `default = true`, so Cemu enables it unless a saved choice in
+   settings.xml says otherwise; no Cemu setting, game profile or BetterVR module code switches it). Its RAM section widens
+   MEM2 to 10000000-a0000000 and the overlay area to a0000000-e0000000; `BotW_ExtendedMemory_V208` raises the main game heap
+   0x3B600000 to 0x8B600000 and grows the save-area, trigger-param, Havok and physics heaps, terrain and forest buffers. Its
+   own text says "only enable this if a mod you want to use requires this". BetterVR 1.0.0 does not require it: nothing in
+   its source or its pack mentions it; only DrawDistance's "Extreme (2x)" and "Ultra (1.5x)" presets say "requires Extended
+   Memory". Optional (proven by the code).
+2. Same backing (proven): `MemMapperPS5.cpp` commits every range of the guest reservation through `MapDirect` (direct
+   memory, 256 MiB chunks); there is no separate path for 0x50000000 and up. The "flexible memory free 394 MiB" in the log is
+   `sceKernelAvailableFlexibleMemorySize`, which this backing does not use; the same line (taken at 11.0 s, before the game
+   loaded) says largest free direct block 9970 MiB, 1471 MiB committed. The extension adds about 1.8 GiB, and a failed commit
+   would have logged `[memmap] out of direct memory` and a toast: neither is in the log. So the backing is unlikely to be why
+   the allocator gave 0; the enlarged game heaps are the likelier cause (not proven).
+3. Decision: off by default. Patch bettervr 0005 sets `default = false` in the pack's rules.txt, so the guest memory
+   layout is 0.9.23's again; the player can still turn it on in Graphic packs (a saved choice wins). Logged as one line at
+   start: `Extended Memory pack: off unless turned on in Graphic packs (default = false)` (`VrPS5.cpp`). A settings.xml that
+   already holds an entry for the pack from an earlier build keeps its choice. Patch cemu 0052 and its log line stay.
 
 **0 draws and 0 game frames for about 30 s (proven: not BetterVR, not frame pacing).** Cemu starts the guest only after
 the GPU thread has loaded the shader cache (`CafeSystem` waits for `g_isGPUInitFinished`, set after
@@ -661,5 +679,5 @@ stays as it is (a prefix match would pick unverified offsets) and the log now pr
 and hex, with how many leading bytes match. Execute-only code stays unread. The Sense vibration stays off until that line
 shows the real string; the Sense's mode calls still answered 0x80000001.
 
-Next console run must show: `[perf]` lines and the time to `OSSched`, the `ProcUI: no memory for a callback` line if it
+Next console run must show: no `modified RAM mapping` and no `BotW_ExtendedMemory_V208` in Cemu's log (the line above says the pack is off), the game starting past ProcUI, `[perf]` lines and the time to `OSSched`, the `ProcUI: no memory for a callback` line if it
 fires (its numbers decide the heap question), `VR start 4/5` and `5/5`, and the `at anchor +0x1f650` line.

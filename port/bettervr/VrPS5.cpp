@@ -12,6 +12,7 @@
 
 #include <cstdio>
 #include <filesystem>
+#include <fstream>
 #include <cstring>
 #include <mutex>
 #include <string>
@@ -521,6 +522,15 @@ void PS5Cemu_BetterVRPrepareGraphicPack()
 	const std::string settings = ps5paths::BetterVrSettings();
 	std::error_code present;
 	ps5vr::Log(fmt::format("BetterVR reads its settings from {} ({})", settings, fs::exists(settings, present) ? "found" : "not there yet: the defaults"));
+	// the Extended Memory pack (patches/bettervr 0005 starts it off): its rules in the app's packs say whether it is on
+	// until a choice of the player's in Graphic packs says otherwise; the Cemu log's "modified RAM mapping" shows it on
+	std::ifstream rules(fs::path(ps5paths::AppDir()) / "assets/bettervr/BetterVR/packs/graphicPacks/BreathOfTheWild/Mods/ExtendedMemory/rules.txt");
+	for (std::string line; std::getline(rules, line);)
+		if (line.rfind("default", 0) == 0)
+		{
+			ps5vr::Log(fmt::format("Extended Memory pack: {} ({})", line.find("false") != std::string::npos ? "off unless turned on in Graphic packs" : "on", line));
+			break;
+		}
 	const fs::path older = fs::path(ps5paths::CemuRoot()) / "graphicPacks" / "bettervr";
 	std::error_code ec;
 	if (ps5files::OwnStatus(older, ec).type() != fs::file_type::directory)

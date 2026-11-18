@@ -8,13 +8,13 @@ tested.
 Reported from the console: the PS5's play-area scan ran, then "PSVR crashed during room scan". The log: VR start 1/5 to
 3/5 reached, the game's start waited about 30 s for the shader cache (0 draws), then signal 11 at 0x60 in
 `proc_ui::AddCallbackInternal`: the game's allocator returned 0 for the first ProcUI callback. Why it returned 0 is not
-proven (Extended Memory is the new variable, on by default in 1.0.0). Patch cemu 0052 leaves such a callback out and logs
+proven (Extended Memory is the new variable, on by default in 1.0.0; optional for BetterVR, so it is now off by default, patch bettervr 0005). Patch cemu 0052 leaves such a callback out and logs
 the allocator, pool and heap sizes. The libScePad anchor check now logs 64 bytes at the anchor. Nothing else changed;
 details in `UPDATE-1.0.md`, "Console run 1".
 
 **Test request 50 (the build of this commit, 13.60 console).** Play in VR again. Send the logs zip: the `[perf]` lines, the
 `OSSched` line, every `ProcUI:` line in Cemu's log.txt, `VR start 4/5` and `5/5`, the `at anchor +0x1f650` line, any
-`[crash]`. Say whether the game reached the title screen and whether the scan ran before or after the game started.
+`[crash]`; the `Extended Memory pack:` line in the boot log, and that Cemu's log has no `modified RAM mapping` and no `BotW_ExtendedMemory_V208` (the memory layout is 0.9.23's again). Say whether the game reached the title screen and whether the scan ran before or after the game started.
 
 ## 2026-11-18: 1.0.0 port, stage 4 (Sense controllers, menu, vibration, written blind), built, untested on console
 
