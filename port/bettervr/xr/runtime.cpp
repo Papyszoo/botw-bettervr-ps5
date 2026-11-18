@@ -2404,10 +2404,11 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
 			const uint64_t gpuNs = g_ps5GpuBusyNs.load(std::memory_order_relaxed);
 			const double gpuBusy = now > s.profileAt ? (double)(gpuNs - s.profileGpuAt) / 1000.0 * 100.0 / (double)(now - s.profileAt) : 0.0;
 			s.profileGpuAt = gpuNs;
-			const double frames = samples ? (double)samples : (s.profileFrames ? (double)s.profileFrames : 1.0);
+			const double notifyFrames = samples ? (double)samples : (s.profileFrames ? (double)s.profileFrames : 1.0);
+			const double runtimeFrames = s.profileFrames ? (double)s.profileFrames : notifyFrames;
 			Log("[frame] swap %.2f ms | VR end %.2f ms | compose fence %.2f ms | hmd2 submit %.2f ms | %.1f fps | GPU busy %.0f%% (over %.1f s, %u frames)",
-				(double)swapNs / 1e6 / frames, (double)vrEndNs / 1e6 / frames, (double)s.profileFenceNs / 1e6 / frames,
-				(double)s.profileSubmitNs / 1e6 / frames, frames / seconds, gpuBusy, seconds, samples);
+				(double)swapNs / 1e6 / notifyFrames, (double)vrEndNs / 1e6 / notifyFrames, (double)s.profileFenceNs / 1e6 / runtimeFrames,
+				(double)s.profileSubmitNs / 1e6 / runtimeFrames, notifyFrames / seconds, gpuBusy, seconds, samples);
 #endif
 			s.profileAt = now;
 			s.profileFenceNs = s.profileSubmitNs = 0;

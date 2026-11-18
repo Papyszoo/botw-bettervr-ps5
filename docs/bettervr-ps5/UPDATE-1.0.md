@@ -789,10 +789,11 @@ image on a ~836x487 eye quad sampled once bilinearly at level 0, and the frame e
   depth image; `Capture::On3DDepth` still accepts the depth capture (the frame must count as complete) but makes no
   `CopyDepthToLayer`. The present pass still writes `gl_FragDepth` into its local attachment, which nothing reads;
   removing that needs a fade shader without depth (open, low).
-- **Accurate barriers off by default, as on a PC VR run.** `patches/bettervr` 0007 sets Cemu's
-  `vk_accurate_barriers` false for the run (the PS5 app keeps Cemu's settings itself, so `CemuSettings::Enforce`
-  does not run). `bettervr.json` `"accurateBarriers": true` (or `1`) puts them back for a comparison; the start log
-  has `Accurate barriers: off/on`, and the app's `[perf]` line keeps saying `accurate barriers off/on`.
+- **Accurate barriers off by default, as on a PC VR run.** The app's `StartBetterVR` (`port/app/emulator.cpp`) sets
+  Cemu's `vk_accurate_barriers` false for the run (the PS5 app keeps Cemu's settings itself, so
+  `CemuSettings::Enforce` does not run). `bettervr.json` `"accurateBarriers": true` (or `1`) puts them back for a
+  comparison; the boot log has `[bettervr] Accurate barriers: off/on`, and the app's `[perf]` line keeps saying
+  `accurate barriers off/on`.
 - **Frame profile.** `bettervr.json` `"profile": true` turns on Cemu's GPU timestamps and one `[frame]` line every
   10 s: `swap X ms | VR end Y ms | compose fence Z ms | hmd2 submit W ms | fps | GPU busy N%`. `swap` and `VR end`
   come from a new Cemu patch (`patches/cemu` 0055, ticks around `SwapBuffers` and `NotifyFrameSubmitted`); the fence

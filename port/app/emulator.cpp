@@ -87,6 +87,7 @@ extern std::atomic<uint64> g_ps5FrameSwapNs;
 extern std::atomic<uint64> g_ps5FrameVrEndNs;
 extern std::atomic<uint32> g_ps5FrameProfileSamples;
 extern "C" bool BetterVR_PS5_Profile();
+extern "C" float BetterVR_PS5_Setting(const char* name, float fallback); // bettervr.json
 #if defined(__PROSPERO__)
 extern "C" void BetterVR_PS5_LogPresets(); // patches/bettervr 0007: the pack presets, once Cemu loaded them
 #endif
@@ -404,6 +405,13 @@ namespace ps5emu
 				return;
 			started = true;
 			ps5log::Line("[emu] BetterVR's host module starts");
+			// The PC VR path forces Cemu's accurate barriers off (BetterVR's CemuSettings::Enforce); the
+			// PS5 app keeps Cemu's settings itself, so set it in memory for this run. bettervr.json's
+			// "accurateBarriers" (true or 1) puts them back for a comparison.
+			const bool accurateBarriers = BetterVR_PS5_Setting("accurateBarriers", 0.0f) != 0.0f;
+			GetConfig().vk_accurate_barriers = accurateBarriers;
+			ps5log::Line("[bettervr] Accurate barriers: {} (bettervr.json's accurateBarriers; {} on a PC VR run)",
+				accurateBarriers ? "on" : "off", accurateBarriers ? "on" : "off");
 			// bettervr.json's "profile": the [perf] lines get the GPU's busy time, and the runtime
 			// logs one [frame] line every 10 s; off unless asked for
 			if (BetterVR_PS5_Profile())

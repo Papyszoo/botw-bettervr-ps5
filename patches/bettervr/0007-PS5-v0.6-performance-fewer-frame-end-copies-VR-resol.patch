@@ -1,16 +1,16 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Patryk Kowalczyk <papyszoo@gmail.com>
 Date: Wed, 18 Nov 2026 17:14:28 +0100
-Subject: [PATCH] PS5: v0.6 performance: accurate barriers, fewer frame-end
- copies, VR resolution, preset log
+Subject: [PATCH] PS5: v0.6 performance: fewer frame-end copies, VR resolution,
+ preset log
 
 ---
  src/cemu/capture.cpp           | 41 +++++++++++++---
- src/cemu/host_module.cpp       | 28 +++++++++++
+ src/cemu/host_module.cpp       | 18 +++++++
  src/rendering/imgui_menus.cpp  | 85 ++++++++++++++++++++++++++++------
  src/rendering/renderer.h       | 10 +++-
  src/rendering/vulkan_imgui.cpp | 46 +++++++++++++-----
- 5 files changed, 174 insertions(+), 36 deletions(-)
+ 5 files changed, 164 insertions(+), 36 deletions(-)
 
 diff --git a/src/cemu/capture.cpp b/src/cemu/capture.cpp
 index 7bcd3b7..84e7ad3 100644
@@ -105,23 +105,10 @@ index 7bcd3b7..84e7ad3 100644
  }
  
 diff --git a/src/cemu/host_module.cpp b/src/cemu/host_module.cpp
-index 5d6b807..69f080a 100644
+index 5d6b807..42cde58 100644
 --- a/src/cemu/host_module.cpp
 +++ b/src/cemu/host_module.cpp
-@@ -16,10 +16,12 @@
- #include <fstream>
- 
- #include "Cafe/HostModule/HostModule.h"
-+#include "config/CemuConfig.h"
- 
- #if defined(__PROSPERO__)
- bool PS5Cemu_BetterVRWanted(uint64_t titleId); // port/bettervr/VrPS5.cpp
- extern "C" void BetterVR_PS5_VrFailed(const char* what); // port/bettervr/VrPS5.cpp: the game ends, the library says why
-+extern "C" float BetterVR_PS5_Setting(const char* name, float fallback); // port/bettervr/VrPS5.cpp: bettervr.json
- #endif
- 
- PFN_vkGetInstanceProcAddr VulkanLoader::GetInstanceProcAddr() {
-@@ -64,6 +66,24 @@ void CemuHost::SetGraphicsPreset(std::string_view category, std::string_view pre
+@@ -64,6 +64,24 @@ void CemuHost::SetGraphicsPreset(std::string_view category, std::string_view pre
      }
  }
  
@@ -146,21 +133,6 @@ index 5d6b807..69f080a 100644
  void CemuHost::OpenGraphicPacksWindow() {
      HostModule::OpenGraphicPacksWindow();
  }
-@@ -252,6 +272,14 @@ public:
-         static std::filesystem::path s_settingsFile = settingsFile;
-         std::atexit([] { CemuSettings::ShareBack(s_settingsFile, s_settingsFile.parent_path() / "settings.xml"); });
-         CemuSettings::Enforce(settingsFile);
-+#else
-+        // The PC VR path forces Cemu's accurate barriers off (CemuSettings::Enforce); the PS5 app keeps
-+        // Cemu's settings itself, so do the same in memory for this run. bettervr.json's
-+        // "accurateBarriers" (true or 1) puts them back for a comparison run.
-+        const bool accurateBarriers = BetterVR_PS5_Setting("accurateBarriers", 0.0f) != 0.0f;
-+        GetConfig().vk_accurate_barriers = accurateBarriers;
-+        Log::print<INFO>("Accurate barriers: {} (bettervr.json's accurateBarriers; {} on a PC VR run)",
-+            accurateBarriers ? "on" : "off", accurateBarriers ? "on" : "off");
- #endif
-     }
- 
 diff --git a/src/rendering/imgui_menus.cpp b/src/rendering/imgui_menus.cpp
 index 3fc94d9..c1f896d 100644
 --- a/src/rendering/imgui_menus.cpp
