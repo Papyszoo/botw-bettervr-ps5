@@ -3,6 +3,25 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-18: 1.0.0 port, stage 2 (BetterVR 1.0.0 compiled in, no headset work), built, untested on console
+
+Branch `bettervr-1.0/stage2`. BetterVR 1.0.0 (`db5495b`) is a host module of the Cemu fork
+(`CEMU_EXTERNAL_MODULES`), with the PS5 platform layer and the OpenXR runtime over hmd2 linked in
+beside it. `patches/bettervr` is one patch now (28 of the 0.9.23 patches are gone); Play in VR starts
+the module as the game starts, Play on TV starts none. No stereo, controller or menu work yet: the
+headset may show nothing. Details: `UPDATE-1.0.md`, "Stage 2 progress".
+
+**Test request 47 (stage 2 build, 13.60 console).** Install the stage 2 build and start the app.
+(a) Play on TV with Breath of the Wild, two minutes in Kakariko or Hateno: it runs flat as in the
+stage 1 build; say whether the picture and fps match. (b) Play in VR, with the headset on, and let it
+run for a minute or until it stops. Send the logs zip (`/data/botwvr/cemu/log.txt`, the boot log) and
+`/data/botwvr/cemu/BetterVR_log.txt`: every `[emu] BetterVR`, `[bettervr]`, `[vr]` and `hmd2` line,
+and any `[crash]`. Expected in the boot log: `BetterVR's host module starts`, `Registered host
+module: BetterVR`, BetterVR's `Acquired system to be used` with the system and runtime names, its
+`Graphics pack preset ...` lines, then the Vulkan instance and device lines through the module and
+the first frames. Say whether the headset shows anything (a picture, black, or the system's), whether
+the app crashed or returned to the library, and, if the game ended, how.
+
 ## 2026-11-18: 1.0.0 port, stage 1 (Cemu fork base, flat only), built, untested on console
 
 Branch `bettervr-1.0/stage1`, commit 576d15a, CI run 44198974605 green (`make release`). Cemu moves

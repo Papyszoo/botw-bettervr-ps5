@@ -325,3 +325,85 @@ Backlog: the workflow's "Cemu from the pin" step does not reset submodules of a 
 `tools/deps.json` still serves the 0.9.23 graphic packs for `tools/package.sh` until stage 2.
 Next step: Test request 46 on the console; stage 2 (`CEMU_EXTERNAL_MODULES`, BetterVR 1.0.0 `db5495b`
 compiled in) can start on this branch meanwhile.
+
+## Stage 2 progress
+
+Branch `bettervr-1.0/stage2` (from stage 1's head 795b56f). Built only on CI; every result is "built,
+untested on console".
+
+How it fits together:
+- **Build.** `tools/build-cemu.sh` applies `patches/bettervr` (`tools/bettervr-patches.sh`, branch `ps5` in
+  `.deps/BotW-BetterVR`, pin `db5495b`) and passes `-DCEMU_EXTERNAL_MODULES=.deps/BotW-BetterVR/src`. BetterVR's
+  `src/CMakeLists.txt` (patch 0001) includes `port/bettervr/module.cmake` for `CEMU_PS5`, which adds
+  `PlatformPS5.cpp` and `xr/runtime.cpp` to the module's library instead of `platform_linux.cpp` and the
+  vendored OpenXR loader (only its headers are used: `dependencies/CMakeLists.txt`). The module needs
+  nothing the Cemu build lacks (glm, fmt, pugixml, curl are Cemu's; ImGui headers equal the fork's, checked).
+  Gone: `tools/build-bettervr.sh`, `make bettervr`, `port/bettervr/layer/`, `BetterVRStubPS5.cpp`,
+  `VulkanLayerPS5.cpp` (1.0.0 creates its own Vulkan instance and device through the host module),
+  `PS5CEMU_BETTERVR_LAYER` (old `patches/cemu` 0049).
+- **Deps.** `bettervr` is `db5495b`. `openxr-sdk`, `imgui-bettervr` and `implot-bettervr` are dropped:
+  1.0.0's `dependencies/` has the OpenXR headers, ImGui headers (equal to the fork's `dependencies/imgui`,
+  `f65bcf4`), ImPlot and its own Vulkan ImGui backend. Its `cemu-src` submodule is not fetched.
+- **Starting the module.** The PS5 app has no `main.cpp`, so `ps5emu::StartBetterVR` (`port/app/emulator.cpp`)
+  calls `HostModule::Startup`, `BeforeConfigLoad`, `Initialize` and loads the graphic packs again, in
+  `LaunchGame`, only when `PS5Cemu_BetterVRWanted` (`port/bettervr/VrPS5.cpp`: Breath of the Wild,
+  `bettervr.json` "vr" on, "bettervr" not false). Play on TV registers no module. The packs are the app's
+  `assets/bettervr/BetterVR/packs` (`tools/package.sh`, as BetterVR's Linux download lays them out);
+  `Platform::GetExecutableDirectory` is `<app>/assets/bettervr`. `PS5Cemu_BetterVRPrepareGraphicPack` now only
+  removes the `graphicPacks/bettervr` folder older builds made; the by-name toggling of "Better VR" and
+  "FPS++" (`PS5Cemu_BetterVRApplyMode`) is gone. BetterVR's settings and log are in Cemu's data folder
+  (`HostModule::GetUserDataPath()`: `BetterVR_settings.ini`, `BetterVR_log.txt`).
+- **Log.** The module's lines also go to the boot log as `[bettervr] ...` (`BetterVR_PS5_LogBatch`, patch 0001);
+  the app's own lines: `[emu] BetterVR's host module starts`, the runtime's `[vr] ...`.
+
+`patches/bettervr` (28 on 0.9.23, now 1):
+- **0001 (new, 1.0.0):** the CMake switch above; `BETTERVR_PS5_QUEUE_LOCK` around the module's own submit
+  (`vk_backend.cpp`); libc++ 18 gaps: `std::ranges::contains` (`game.cpp`), floating-point `std::from_chars`
+  (`mod_settings.h`, strtod as in old 0002), `gettid` (`logger.cpp`); boot-log mirror; no update check; no
+  settings sharing with the Cemu fork's second settings file (`host_module.cpp`: `Sync`/`Enforce`/`ShareBack`
+  skipped).
+- **Redone:** old 0002 (platform, libc++, queue lock) and 0003 (log, data path) into 0001 and `PlatformPS5.cpp`;
+  old 0005 (large atomics through a mutex) as the generic `__atomic_load/store/exchange/compare_exchange`
+  defined in `PlatformPS5.cpp` (libatomic's interface, a lock per address, in place of the system
+  libSceLibcInternal's version that gave SIGILL on 0x6c0 bytes): covers every std::atomic of a large struct
+  in 1.0.0 (camera matrix, game state, events) without editing them. Not confirmed on console.
+- **Dropped, purpose gone (reasons as the table in "patches/bettervr on 1.0.0"):** 0001 (Linux backend:
+  upstream has it), 0004 (hook list gone; the VR-failed fallback returns in stage 3, `BetterVR_PS5_VrFailed`
+  stays in `VrPS5.cpp` unused), 0006, 0009, 0010, 0013 to 0025 (two-pass model, flat view and menu pictures,
+  replay model), 0026 (1.0.0 has `GetPhysicalDeviceMemoryProperties2`), 0012 (settings file read upstream),
+  0007 (the headset's eye size now comes from the runtime: `xrEnumerateViewConfigurationViews`; the pack's
+  presets are filled at start by `WriteGraphicsPack`).
+- **Dropped for stage 4:** 0027, 0028 (the Options menu toggle on the 0.9.23 ImGui path) and the Sense
+  haptics side stay in `SensePS5.cpp` untouched; the 1.0.0 menu is opened by its own action in stage 4. Not
+  redone: 0008 (XR input without ImGui), 0011 (seated height): re-check on a headset in stage 4.
+- Count: 28 on 0.9.23 -> kept 0, redone 3 (into 0001/`PlatformPS5.cpp`), dropped 25 (incl. 0027/0028 for stage 4).
+
+`patches/cemu` (51 -> 51): 0049 (stub layer CMake) removed; new 0051 puts `ps5xr::QueueMutex` around the
+renderer's `vkQueueSubmit` and `vkQueuePresentKHR` (the runtime and the module's own submit already take it),
+as the 0.9.23 layer's hooks did for Cemu's calls. Old 0050 and 0051 are now 0049 and 0050.
+
+Stand-ins: `runtime.cpp` still asks for 0.9.23's `BetterVR_PS5_PlayerOnce/Fades/FlatScene/MonoQuad/MenuLock/QuadPlane/PoseKeep/SaveHold/PoseFreeze/LeftSlot/StereoRays`
+and the three `*Proof` counters; `PlatformPS5.cpp` answers all off and zero. Stage 3 takes that use out of the
+runtime.
+
+Open problems and risks (none seen on a console):
+- The module is started in `LaunchGame`, on the thread that launches the game, and `GraphicPack2::ClearGraphicPacks`
+  and `LoadAll` run again then: a launcher thread listing packs at that moment would race. Not checked.
+- `HostModule::GetTitleId()` (what `CreateVkInstance` checks) is `CafeSystem::GetForegroundTitleId`, set by
+  `PrepareForegroundTitle`, which `LaunchGame` runs after `StartSystem` but before Cemu creates its renderer;
+  if the renderer is made earlier, the module stays inactive and the log says nothing: check the order in the
+  first log (`Cemu's Vulkan instance` lines).
+- The old runtime lists only `XR_KHR_vulkan_enable`; 1.0.0 takes that path (`usesVulkanEnable2` false). Its
+  `XrGraphicsBindingVulkan2KHR` has the layout of the KHR one. `7fbceeb` (no compositor depth) is not backported:
+  the runtime lists `XR_KHR_composition_layer_depth` as before.
+- The module's Cemu settings sync, which forces `vkAccurateBarriers=false` and the VSync mode, is off; the app's
+  own settings stand. Whether `vkAccurateBarriers` should be false for speed is a stage 3 question.
+- If the OpenXR instance fails, the module stays off (`BetterVR is off for this run`) and the game runs with an
+  empty headset; the flat fallback is stage 3.
+- `__atomic_*` defined in the app: if the link finds them twice (a static compiler runtime with them), the
+  build fails with a duplicate symbol; remove the member that clashes.
+- The settings ini and the log are in the Cemu data folder; BetterVR copies packs with `std::filesystem::copy`
+  there, which the app did before for 35 files.
+
+Backlog (outside stage 2): the `bettervr.json` keys `roomscale`, `stereoRays`, `graphicsPack` and the other
+old switches are no longer read; `docs/bettervr-ps5/INSTALL.md` still describes the 0.9.23 flow (stage 5).
