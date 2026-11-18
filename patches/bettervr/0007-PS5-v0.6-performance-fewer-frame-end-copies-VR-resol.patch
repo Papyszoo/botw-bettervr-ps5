@@ -1,16 +1,16 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: ps5cemu <ps5cemu@localhost>
-Date: Wed, 18 Nov 2026 18:37:23 +0100
+Date: Wed, 18 Nov 2026 19:15:34 +0100
 Subject: [PATCH] PS5: v0.6 performance: fewer frame-end copies, VR resolution,
  preset log
 
 ---
- src/cemu/capture.cpp           |  41 +++++-
- src/cemu/host_module.cpp       |  18 +++
- src/rendering/imgui_menus.cpp  | 247 +++++++++++++++++++++++++++++++--
- src/rendering/renderer.h       |  10 +-
- src/rendering/vulkan_imgui.cpp |  46 ++++--
- 5 files changed, 326 insertions(+), 36 deletions(-)
+ src/cemu/capture.cpp           | 41 +++++++++++++---
+ src/cemu/host_module.cpp       | 18 +++++++
+ src/rendering/imgui_menus.cpp  | 85 ++++++++++++++++++++++++++++------
+ src/rendering/renderer.h       | 10 +++-
+ src/rendering/vulkan_imgui.cpp | 46 +++++++++++++-----
+ 5 files changed, 164 insertions(+), 36 deletions(-)
 
 diff --git a/src/cemu/capture.cpp b/src/cemu/capture.cpp
 index 7bcd3b7..84e7ad3 100644
@@ -134,59 +134,10 @@ index 5d6b807..42cde58 100644
      HostModule::OpenGraphicPacksWindow();
  }
 diff --git a/src/rendering/imgui_menus.cpp b/src/rendering/imgui_menus.cpp
-index 3fc94d9..d7f6588 100644
+index 3fc94d9..c1f896d 100644
 --- a/src/rendering/imgui_menus.cpp
 +++ b/src/rendering/imgui_menus.cpp
-@@ -8,6 +8,7 @@
- #include "game/botw/debug/weapon_attack_debugger.h"
- #include "imgui_internal.h"
- #include "instance.h"
-+#include "rendering/haptics.h"
- #include "rendering/renderer.h"
- #include "rendering/openxr.h"
- #include "utils/profiler.h"
-@@ -348,6 +349,22 @@ static void DrawPercentSlider(FloatSetting& setting, float minPercent, float max
-     ImGui::PopID();
- }
- 
-+// the same for a whole-number percent setting (the Vibration page's headset cap)
-+static void DrawPercentIntSlider(UIntSetting& setting, bool* changed) {
-+    ImGui::PushID(setting.name);
-+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - ResetButtonReserve());
-+    int percent = (int)setting.load();
-+    if (ImGui::SliderInt("##value", &percent, 0, 100, "%d%%")) {
-+        setting = (uint32_t)std::clamp(percent, 0, 100);
-+        *changed = true;
-+    }
-+    if (DrawResetButton(setting.load() != setting.defaultValue)) {
-+        setting.Reset();
-+        *changed = true;
-+    }
-+    ImGui::PopID();
-+}
-+
- static void DrawBowArcSlider(FloatSetting& setting, bool* changed) {
-     static constexpr const char* kStepLabels[] = { "Off", "Dot Only", "10%%", "20%%", "30%%", "40%%", "50%%", "60%%", "70%%", "80%%", "90%%", "100%%" };
-     ImGui::PushID(setting.name);
-@@ -439,6 +456,7 @@ static constexpr MenuPageEntry kSettingsPages[] = {
-     { ImGuiMenus::PLAYSTYLE_PAGE, ICON_MS_ACCESSIBILITY_NEW "  Play Style" },
-     { ImGuiMenus::COMFORT_PAGE, ICON_MS_SPA "  Comfort" },
-     { ImGuiMenus::CONTROLS_PAGE, ICON_MS_STADIA_CONTROLLER "  Controls" },
-+    { ImGuiMenus::VIBRATION_PAGE, ICON_MS_SPORTS "  Vibration" },
-     { ImGuiMenus::DISPLAY_PAGE, ICON_MS_DESKTOP_WINDOWS "  Display" },
-     { ImGuiMenus::SYSTEM_PAGE, ICON_MS_SETTINGS "  System" },
- };
-@@ -1143,6 +1161,9 @@ void RND_Renderer::ImGuiOverlay::DrawControlsPage(bool* changed) {
-             DrawSetting(ICON_MS_SWORDS, "Sword Swings", [&]() {
-                 DrawEnumSegments(settings.swingSensitivity, swingChoices, changed);
-             });
-+            DrawSetting(ICON_MS_EYE_TRACKING, "Gaze Throw Assist", "Bends a throw up to 15 degrees toward where you look; with eye tracking off, toward where you face. Off by default.", [&]() {
-+                DrawToggle(settings.eyeGazeThrowAssist, changed);
-+            });
-             EndCard();
-         }
-     }
-@@ -1220,6 +1241,171 @@ static void DrawRecordingModeSetting() {
+@@ -1220,6 +1220,45 @@ static void DrawRecordingModeSetting() {
      });
  }
  
@@ -228,137 +179,11 @@ index 3fc94d9..d7f6588 100644
 +        Log::print<WARNING>("VR resolution: no preset for {} in {}", kVRResolutionLabels[selected], kResolutionMultiplierCategory);
 +    });
 +}
-+// the categories the Vibration page lists, in its order
-+struct HapticCategoryRow {
-+    HapticCategory category;
-+    const char* icon;
-+    const char* label;
-+};
-+static constexpr HapticCategoryRow kHapticCategoryRows[] = {
-+    { HapticCategory::Swing, ICON_MS_SWORDS, "Weapon Swings" },
-+    { HapticCategory::Bow, ICON_MS_BOW_ARC, "Bow" },
-+    { HapticCategory::Guard, ICON_MS_SHIELD, "Shield & Guard" },
-+    { HapticCategory::Equip, ICON_MS_BACK_HAND, "Gear & Inventory" },
-+    { HapticCategory::UseThrow, ICON_MS_SPEED, "Attacks, Items & Throws" },
-+    { HapticCategory::Rune, ICON_MS_TABLET_ANDROID, "Runes" },
-+    { HapticCategory::Game, ICON_MS_STADIA_CONTROLLER, "Game Rumble" },
-+    { HapticCategory::Damage, ICON_MS_FALLING, "Damage Taken" },
-+    { HapticCategory::Explosion, ICON_MS_LOCAL_FIRE_DEPARTMENT, "Explosions" },
-+};
-+
-+// the strength slider's narrow home in the categories table (DrawPercentSlider's reset button does not fit)
-+static void DrawStrengthSlider(UIntSetting& setting, bool* changed) {
-+    ImGui::PushID(setting.name);
-+    ImGui::SetNextItemWidth(-FLT_MIN);
-+    int percent = (int)setting.load();
-+    if (ImGui::SliderInt("##strength", &percent, 0, 100, "%d%%")) {
-+        setting = (uint32_t)std::clamp(percent, 0, 100);
-+        *changed = true;
-+    }
-+    ImGui::PopID();
-+}
-+
-+void RND_Renderer::ImGuiOverlay::DrawVibrationPage(bool* changed) {
-+    auto& settings = GetSettings();
-+
-+    DrawPageHeader(ICON_MS_SPORTS, "Vibration");
-+
-+    if (BeginCard("##VibrationDevices", "Devices")) {
-+        DrawSetting(ICON_MS_SPORTS, "Vibration", "BetterVR's own rumbles and the game's, with the strength and devices each row picks.", [&]() {
-+            DrawToggle(settings.haptics, changed);
-+        });
-+        DrawSetting(ICON_MS_HEAD_MOUNTED_DEVICE, "Headset Limit", "The headset's motor rests on your forehead, so it is capped below the controllers.", [&]() {
-+            DrawPercentIntSlider(settings.hapticsHeadsetLimit, changed);
-+        });
-+        EndCard();
-+    }
-+
-+    DrawSectionCaption("Test");
-+    ImGui::Dummy(ImVec2(0.0f, 2.0f));
-+    const float testSpacing = 6.0f;
-+    const float testWidth = (ImGui::GetContentRegionAvail().x - testSpacing * 2.0f) / 3.0f;
-+    if (ImGui::Button("Sense Controllers", ImVec2(testWidth, 0.0f)))
-+        Haptics::TestHands();
-+    ImGui::SameLine(0.0f, testSpacing);
-+    if (ImGui::Button("Headset", ImVec2(testWidth, 0.0f)))
-+        Haptics::TestHeadset();
-+    ImGui::SameLine(0.0f, testSpacing);
-+    if (ImGui::Button("DualSense", ImVec2(testWidth, 0.0f)))
-+        Haptics::TestPad();
-+    DrawPageNote("Each test says what answered in the log line that starts with [vib].");
-+
-+    DrawSectionCaption("Categories");
-+    ImGuiWindow* window = ImGui::GetCurrentWindow();
-+    ImGui::Dummy(ImVec2(0.0f, 4.0f));
-+    const ImVec2 cardMin = ImGui::GetCursorScreenPos();
-+    const ImGuiID cardId = window->GetID("##VibrationCategories");
-+    const float cardWidth = ImGui::GetContentRegionAvail().x;
-+    const float cardHeight = window->StateStorage.GetFloat(cardId, 0.0f);
-+    if (cardHeight > 0.0f) {
-+        window->DrawList->AddRectFilled(cardMin, ImVec2(cardMin.x + cardWidth, cardMin.y + cardHeight), ImGui::GetColorU32(kCardColor), kCardRounding);
-+    }
-+    ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(8.0f, 9.0f));
-+    if (ImGui::BeginTable("##VibrationCategories", 6, ImGuiTableFlags_NoSavedSettings | ImGuiTableFlags_PadOuterX)) {
-+        ImGui::TableSetupColumn("##category", ImGuiTableColumnFlags_WidthStretch);
-+        ImGui::TableSetupColumn("On", ImGuiTableColumnFlags_WidthFixed, 40.0f);
-+        ImGui::TableSetupColumn("Strength", ImGuiTableColumnFlags_WidthFixed, 150.0f);
-+        ImGui::TableSetupColumn("Hands", ImGuiTableColumnFlags_WidthFixed, 58.0f);
-+        ImGui::TableSetupColumn("Headset", ImGuiTableColumnFlags_WidthFixed, 72.0f);
-+        ImGui::TableSetupColumn("DualSense", ImGuiTableColumnFlags_WidthFixed, 88.0f);
-+        ImGui::TableHeadersRow();
-+        for (const HapticCategoryRow& row : kHapticCategoryRows) {
-+            BoolSetting& enabled = settings.HapticsEnabled(row.category);
-+            UIntSetting& strength = settings.HapticsStrength(row.category);
-+            UIntSetting& devices = settings.HapticsDevices(row.category);
-+            const bool active = settings.haptics.load() && enabled.load();
-+
-+            ImGui::TableNextRow();
-+            ImGui::TableSetColumnIndex(0);
-+            ImGui::AlignTextToFramePadding();
-+            ImGui::Text("%s  %s", row.icon, row.label);
-+
-+            ImGui::TableSetColumnIndex(1);
-+            bool on = enabled.load();
-+            if (ImGui::Checkbox("##on", &on)) {
-+                enabled = on;
-+                *changed = true;
-+            }
-+
-+            ImGui::TableSetColumnIndex(2);
-+            ImGui::BeginDisabled(!enabled.load());
-+            DrawStrengthSlider(strength, changed);
-+            ImGui::EndDisabled();
-+
-+            for (int column = 0; column < 3; column++) {
-+                const uint32_t bit = column == 0 ? HapticDeviceSense : column == 1 ? HapticDeviceHeadset : HapticDevicePad;
-+                ImGui::TableSetColumnIndex(3 + column);
-+                ImGui::BeginDisabled(!active);
-+                bool picked = (devices.load() & bit) != 0;
-+                ImGui::PushID(row.label);
-+                ImGui::PushID(column);
-+                if (ImGui::Checkbox("##device", &picked)) {
-+                    const uint32_t value = devices.load();
-+                    devices = picked ? (value | bit) : (value & ~bit);
-+                    *changed = true;
-+                }
-+                ImGui::PopID();
-+                ImGui::PopID();
-+                ImGui::EndDisabled();
-+            }
-+        }
-+        ImGui::EndTable();
-+    }
-+    ImGui::PopStyleVar();
-+    const float bottom = ImGui::GetCursorScreenPos().y - ImGui::GetStyle().ItemSpacing.y;
-+    window->StateStorage.SetFloat(cardId, bottom - cardMin.y);
-+
-+    DrawPageNote("Game Rumble is whatever the game asks for itself: damage, hits, explosions and cutscenes all arrive on it today, so turning it down turns all of them down. Damage Taken is the hit that starts one of the game's damage reactions; it is felt on top of Game Rumble unless that row is off. The launcher's Vibration row under Settings > VR stays the DualSense's outer switch.");
-+}
 +
  void RND_Renderer::ImGuiOverlay::DrawDisplayPage(bool* changed) {
      auto& settings = GetSettings();
  
-@@ -1264,12 +1450,18 @@ void RND_Renderer::ImGuiOverlay::DrawSystemPage(bool* changed) {
+@@ -1264,12 +1303,18 @@ void RND_Renderer::ImGuiOverlay::DrawSystemPage(bool* changed) {
          DrawSetting(ICON_MS_ROCKET_LAUNCH, "Boot Straight Into BotW", [&]() {
              DrawToggle(settings.bootDirectlyIntoGame, changed);
          });
@@ -377,28 +202,7 @@ index 3fc94d9..d7f6588 100644
          EndCard();
      }
  
-@@ -1290,6 +1482,20 @@ void RND_Renderer::ImGuiOverlay::DrawSystemPage(bool* changed) {
-         EndCard();
-     }
- 
-+#if defined(__PROSPERO__)
-+    if (BeginCard("##AdaptiveTriggers", "Adaptive Triggers")) {
-+        DrawSetting(ICON_MS_STADIA_CONTROLLER, "Adaptive Triggers", "R2 firms up as the bow is drawn, L2 clicks while the shield is up.", [&]() {
-+            DrawToggle(settings.adaptiveTriggers, changed);
-+        });
-+        if (settings.adaptiveTriggers) {
-+            DrawSetting(ICON_MS_SPORTS, "Strength", [&]() {
-+                DrawFloatSlider(settings.adaptiveTriggerStrength, 0.0f, 1.0f, [](float value) { return fmt::format("{:.0f}%", value * 100.0f); }, changed);
-+            });
-+        }
-+        EndCard();
-+    }
-+#endif
-+
-     if (BeginCard("##Reset")) {
-         DrawSetting(ICON_MS_RESTART_ALT, "Reset All Settings", [&]() {
-             ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.55f, 0.18f, 0.18f, 1.0f));
-@@ -1550,11 +1756,11 @@ static bool FooterItem(const std::string& label, bool clickable) {
+@@ -1550,11 +1595,11 @@ static bool FooterItem(const std::string& label, bool clickable) {
      return pressed;
  }
  
@@ -412,7 +216,7 @@ index 3fc94d9..d7f6588 100644
  #else
      auto& settings = GetSettings();
  
-@@ -1569,13 +1775,15 @@ static void DrawTutorialPromptAndControllerVerification(bool isMenuOpen) {
+@@ -1569,13 +1614,15 @@ static void DrawTutorialPromptAndControllerVerification(bool isMenuOpen) {
      }
  
      if (isMenuOpen || ImGui::GetTime() >= timeLimit) {
@@ -429,7 +233,7 @@ index 3fc94d9..d7f6588 100644
          if (!settings.tutorialPromptShown) {
              ImGui::Text("First-Time Setup:");
              ImGui::Separator();
-@@ -1591,10 +1799,11 @@ static void DrawTutorialPromptAndControllerVerification(bool isMenuOpen) {
+@@ -1591,10 +1638,11 @@ static void DrawTutorialPromptAndControllerVerification(bool isMenuOpen) {
          }
      }
      ImGui::End();
@@ -442,7 +246,7 @@ index 3fc94d9..d7f6588 100644
      constexpr double kShownFor = 20.0;
      constexpr double kFadeOutFor = 2.0;
      static double s_shownSince = -1.0;
-@@ -1603,7 +1812,7 @@ static void DrawUpdateBanner(bool isMenuOpen) {
+@@ -1603,7 +1651,7 @@ static void DrawUpdateBanner(bool isMenuOpen) {
      const std::optional<std::string> newerRelease = UpdateCheck::GetNewerRelease();
      s_dismissed |= isMenuOpen;
      if (!newerRelease || s_dismissed) {
@@ -451,7 +255,7 @@ index 3fc94d9..d7f6588 100644
      }
      if (s_shownSince < 0.0) {
          s_shownSince = ImGui::GetTime();
-@@ -1611,7 +1820,7 @@ static void DrawUpdateBanner(bool isMenuOpen) {
+@@ -1611,7 +1659,7 @@ static void DrawUpdateBanner(bool isMenuOpen) {
      const double shownFor = ImGui::GetTime() - s_shownSince;
      if (shownFor >= kShownFor) {
          s_dismissed = true;
@@ -460,7 +264,7 @@ index 3fc94d9..d7f6588 100644
      }
  
      const ImVec2 displaySize = ImGui::GetIO().DisplaySize;
-@@ -1619,7 +1828,9 @@ static void DrawUpdateBanner(bool isMenuOpen) {
+@@ -1619,7 +1667,9 @@ static void DrawUpdateBanner(bool isMenuOpen) {
      ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(24.0f, 16.0f));
      ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.10f, 0.24f, 0.42f, 0.96f));
      ImGui::SetNextWindowPos(ImVec2(displaySize.x * 0.5f, displaySize.y * 0.12f), ImGuiCond_Always, ImVec2(0.5f, 0.0f));
@@ -470,7 +274,7 @@ index 3fc94d9..d7f6588 100644
          if (ImGuiMenus::g_titleFont != nullptr) {
              ImGui::PushFont(ImGuiMenus::g_titleFont);
          }
-@@ -1634,10 +1845,11 @@ static void DrawUpdateBanner(bool isMenuOpen) {
+@@ -1634,10 +1684,11 @@ static void DrawUpdateBanner(bool isMenuOpen) {
      ImGui::End();
      ImGui::PopStyleColor();
      ImGui::PopStyleVar(2);
@@ -483,7 +287,7 @@ index 3fc94d9..d7f6588 100644
      constexpr double kShowAfter = 3.0;
      constexpr double kShownFor = 5.0;
      constexpr double kMinimalShownFor = 2.5;
-@@ -1658,7 +1870,7 @@ static void DrawCutsceneCameraPrompt(bool isMenuOpen) {
+@@ -1658,7 +1709,7 @@ static void DrawCutsceneCameraPrompt(bool isMenuOpen) {
              s_cutsceneStart = -1.0;
          }
          s_seenToggles = game.cutsceneCameraToggles;
@@ -492,7 +296,7 @@ index 3fc94d9..d7f6588 100644
      }
      if (s_cutsceneStart < 0.0) {
          s_cutsceneStart = now;
-@@ -1681,7 +1893,7 @@ static void DrawCutsceneCameraPrompt(bool isMenuOpen) {
+@@ -1681,7 +1732,7 @@ static void DrawCutsceneCameraPrompt(bool isMenuOpen) {
      const bool canShow = game.cutsceneCameraSwitchable && !game.dialogVisible && !isMenuOpen && controllerType != ControllerType::Unknown && controllerType != ControllerType::Simple;
      if (s_shownSince < 0.0) {
          if (!game.cutsceneShowsCameraPrompt || !canShow || now - s_cutsceneStart < kShowAfter) {
@@ -501,7 +305,7 @@ index 3fc94d9..d7f6588 100644
          }
          s_shownSince = now;
      }
-@@ -1690,14 +1902,16 @@ static void DrawCutsceneCameraPrompt(bool isMenuOpen) {
+@@ -1690,14 +1741,16 @@ static void DrawCutsceneCameraPrompt(bool isMenuOpen) {
      const double shownFor = now - s_shownSince;
      const double showFor = minimal ? kMinimalShownFor : kShownFor;
      if (!canShow || shownFor >= showFor) {
@@ -519,7 +323,7 @@ index 3fc94d9..d7f6588 100644
          if (minimal) {
              ImGui::SetWindowFontScale(0.8f);
              ImGui::Text(ICON_KI_STICK_LEFT_TOP " %s person", game.cutsceneFirstPerson ? "Third" : "First");
-@@ -1708,15 +1922,16 @@ static void DrawCutsceneCameraPrompt(bool isMenuOpen) {
+@@ -1708,15 +1761,16 @@ static void DrawCutsceneCameraPrompt(bool isMenuOpen) {
      }
      ImGui::End();
      ImGui::PopStyleVar();
@@ -540,7 +344,7 @@ index 3fc94d9..d7f6588 100644
  
      static bool wasMenuPrevOpened = false;
      static bool shouldLogSavedSettingsOnClose = false;
-@@ -1733,7 +1948,7 @@ void RND_Renderer::ImGuiOverlay::DrawHelpMenu() {
+@@ -1733,7 +1787,7 @@ void RND_Renderer::ImGuiOverlay::DrawHelpMenu() {
      }
  
      if (!isMenuOpen) {
@@ -549,15 +353,7 @@ index 3fc94d9..d7f6588 100644
      }
  
      if (isMenuOpen && !wasMenuPrevOpened) {
-@@ -1808,6 +2023,7 @@ void RND_Renderer::ImGuiOverlay::DrawHelpMenu() {
-                 case ImGuiMenus::PLAYSTYLE_PAGE: DrawPlaystylePage(&changed); break;
-                 case ImGuiMenus::COMFORT_PAGE: DrawComfortPage(&changed); break;
-                 case ImGuiMenus::CONTROLS_PAGE: DrawControlsPage(&changed); break;
-+                case ImGuiMenus::VIBRATION_PAGE: DrawVibrationPage(&changed); break;
-                 case ImGuiMenus::DISPLAY_PAGE: DrawDisplayPage(&changed); break;
-                 case ImGuiMenus::SYSTEM_PAGE: DrawSystemPage(&changed); break;
-                 case ImGuiMenus::GUIDE_CONTROLS_PAGE:
-@@ -1886,4 +2102,5 @@ void RND_Renderer::ImGuiOverlay::DrawHelpMenu() {
+@@ -1886,4 +1940,5 @@ void RND_Renderer::ImGuiOverlay::DrawHelpMenu() {
      if (!shouldStayOpen) {
          isMenuOpen = false;
      }

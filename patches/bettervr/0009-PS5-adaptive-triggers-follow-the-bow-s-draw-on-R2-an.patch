@@ -1,6 +1,6 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: ps5cemu <ps5cemu@localhost>
-Date: Wed, 18 Nov 2026 18:37:23 +0100
+Date: Wed, 18 Nov 2026 19:15:34 +0100
 Subject: [PATCH] PS5: adaptive triggers follow the bow's draw on R2 and the
  shield on L2
 
@@ -8,8 +8,9 @@ Subject: [PATCH] PS5: adaptive triggers follow the bow's draw on R2 and the
  src/game/botw/input/controls.cpp | 20 +++++++++++++++++++-
  src/game/botw/player/bow.cpp     | 12 ++++++++++++
  src/game/botw/player/bow.h       |  2 ++
+ src/rendering/imgui_menus.cpp    | 14 ++++++++++++++
  src/utils/mod_settings.h         |  4 ++++
- 4 files changed, 37 insertions(+), 1 deletion(-)
+ 5 files changed, 51 insertions(+), 1 deletion(-)
 
 diff --git a/src/game/botw/input/controls.cpp b/src/game/botw/input/controls.cpp
 index 888895d..d8580b6 100644
@@ -98,6 +99,31 @@ index ebe19e9..4c9543d 100644
 +    // The held bow's live draw (the game's +0x94C, 0 when no bow is held), for the PS5's adaptive R2 trigger.
 +    float GetDrawAmount();
  }
+diff --git a/src/rendering/imgui_menus.cpp b/src/rendering/imgui_menus.cpp
+index 3e66f4d..2d811b5 100644
+--- a/src/rendering/imgui_menus.cpp
++++ b/src/rendering/imgui_menus.cpp
+@@ -1479,6 +1479,20 @@ void RND_Renderer::ImGuiOverlay::DrawSystemPage(bool* changed) {
+         EndCard();
+     }
+ 
++#if defined(__PROSPERO__)
++    if (BeginCard("##AdaptiveTriggers", "Adaptive Triggers")) {
++        DrawSetting(ICON_MS_STADIA_CONTROLLER, "Adaptive Triggers", "R2 firms up as the bow is drawn, L2 clicks while the shield is up.", [&]() {
++            DrawToggle(settings.adaptiveTriggers, changed);
++        });
++        if (settings.adaptiveTriggers) {
++            DrawSetting(ICON_MS_SPORTS, "Strength", [&]() {
++                DrawFloatSlider(settings.adaptiveTriggerStrength, 0.0f, 1.0f, [](float value) { return fmt::format("{:.0f}%", value * 100.0f); }, changed);
++            });
++        }
++        EndCard();
++    }
++#endif
++
+     if (BeginCard("##Reset")) {
+         DrawSetting(ICON_MS_RESTART_ALT, "Reset All Settings", [&]() {
+             ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.55f, 0.18f, 0.18f, 1.0f));
 diff --git a/src/utils/mod_settings.h b/src/utils/mod_settings.h
 index 0f57532..cf553da 100644
 --- a/src/utils/mod_settings.h

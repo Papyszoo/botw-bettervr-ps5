@@ -1,6 +1,6 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: ps5cemu <ps5cemu@localhost>
-Date: Wed, 18 Nov 2026 18:37:23 +0100
+Date: Wed, 18 Nov 2026 19:15:34 +0100
 Subject: [PATCH] PS5: BetterVR's rumbles and the game's are one Vibration
  page, one mixer
 
@@ -30,13 +30,13 @@ situations make which pattern.
  src/rendering/haptic_types.h     |  26 ++++
  src/rendering/haptics.cpp        |  33 ++++-
  src/rendering/haptics.h          |  12 +-
- src/rendering/imgui_menus.cpp    | 125 +++++++++++++++++
+ src/rendering/imgui_menus.cpp    | 145 ++++++++++++++++++++
  src/rendering/imgui_menus.h      |  19 +--
  src/rendering/renderer.h         |   1 +
  src/rendering/rumble.h           | 222 +++++++++++++++++++------------
  src/utils/mod_settings.cpp       |  60 +++++++++
  src/utils/mod_settings.h         |  46 +++++++
- 14 files changed, 587 insertions(+), 124 deletions(-)
+ 14 files changed, 607 insertions(+), 124 deletions(-)
  create mode 100644 src/rendering/haptic_types.h
 
 diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
@@ -563,13 +563,52 @@ index 8333739..ae71dc1 100644
 +    void TestPad();
  }
 diff --git a/src/rendering/imgui_menus.cpp b/src/rendering/imgui_menus.cpp
-index d7f6588..f73f7b6 100644
+index c1f896d..3e66f4d 100644
 --- a/src/rendering/imgui_menus.cpp
 +++ b/src/rendering/imgui_menus.cpp
-@@ -1278,6 +1278,131 @@ static void DrawVRResolutionSetting() {
-         }
+@@ -8,6 +8,7 @@
+ #include "game/botw/debug/weapon_attack_debugger.h"
+ #include "imgui_internal.h"
+ #include "instance.h"
++#include "rendering/haptics.h"
+ #include "rendering/renderer.h"
+ #include "rendering/openxr.h"
+ #include "utils/profiler.h"
+@@ -348,6 +349,22 @@ static void DrawPercentSlider(FloatSetting& setting, float minPercent, float max
+     ImGui::PopID();
+ }
+ 
++// the same for a whole-number percent setting (the Vibration page's headset cap)
++static void DrawPercentIntSlider(UIntSetting& setting, bool* changed) {
++    ImGui::PushID(setting.name);
++    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - ResetButtonReserve());
++    int percent = (int)setting.load();
++    if (ImGui::SliderInt("##value", &percent, 0, 100, "%d%%")) {
++        setting = (uint32_t)std::clamp(percent, 0, 100);
++        *changed = true;
++    }
++    if (DrawResetButton(setting.load() != setting.defaultValue)) {
++        setting.Reset();
++        *changed = true;
++    }
++    ImGui::PopID();
++}
++
+ static void DrawBowArcSlider(FloatSetting& setting, bool* changed) {
+     static constexpr const char* kStepLabels[] = { "Off", "Dot Only", "10%%", "20%%", "30%%", "40%%", "50%%", "60%%", "70%%", "80%%", "90%%", "100%%" };
+     ImGui::PushID(setting.name);
+@@ -439,6 +456,7 @@ static constexpr MenuPageEntry kSettingsPages[] = {
+     { ImGuiMenus::PLAYSTYLE_PAGE, ICON_MS_ACCESSIBILITY_NEW "  Play Style" },
+     { ImGuiMenus::COMFORT_PAGE, ICON_MS_SPA "  Comfort" },
+     { ImGuiMenus::CONTROLS_PAGE, ICON_MS_STADIA_CONTROLLER "  Controls" },
++    { ImGuiMenus::VIBRATION_PAGE, ICON_MS_SPORTS "  Vibration" },
+     { ImGuiMenus::DISPLAY_PAGE, ICON_MS_DESKTOP_WINDOWS "  Display" },
+     { ImGuiMenus::SYSTEM_PAGE, ICON_MS_SETTINGS "  System" },
+ };
+@@ -1258,6 +1276,132 @@ static void DrawVRResolutionSetting() {
          Log::print<WARNING>("VR resolution: no preset for {} in {}", kVRResolutionLabels[selected], kResolutionMultiplierCategory);
      });
+ }
 +// the categories the Vibration page lists, in its order
 +struct HapticCategoryRow {
 +    HapticCategory category;
@@ -695,9 +734,18 @@ index d7f6588..f73f7b6 100644
 +    window->StateStorage.SetFloat(cardId, bottom - cardMin.y);
 +
 +    DrawPageNote("Game Rumble is whatever the game asks for itself: damage, hits, explosions and cutscenes all arrive on it today, so turning it down turns all of them down. Damage Taken is the hit that starts one of the game's damage reactions; it is felt on top of Game Rumble unless that row is off. The launcher's Vibration row under Settings > VR stays the DualSense's outer switch.");
- }
- // the categories the Vibration page lists, in its order
- struct HapticCategoryRow {
++}
+ 
+ void RND_Renderer::ImGuiOverlay::DrawDisplayPage(bool* changed) {
+     auto& settings = GetSettings();
+@@ -1862,6 +2006,7 @@ bool RND_Renderer::ImGuiOverlay::DrawHelpMenu() {
+                 case ImGuiMenus::PLAYSTYLE_PAGE: DrawPlaystylePage(&changed); break;
+                 case ImGuiMenus::COMFORT_PAGE: DrawComfortPage(&changed); break;
+                 case ImGuiMenus::CONTROLS_PAGE: DrawControlsPage(&changed); break;
++                case ImGuiMenus::VIBRATION_PAGE: DrawVibrationPage(&changed); break;
+                 case ImGuiMenus::DISPLAY_PAGE: DrawDisplayPage(&changed); break;
+                 case ImGuiMenus::SYSTEM_PAGE: DrawSystemPage(&changed); break;
+                 case ImGuiMenus::GUIDE_CONTROLS_PAGE:
 diff --git a/src/rendering/imgui_menus.h b/src/rendering/imgui_menus.h
 index 0011c54..fae71af 100644
 --- a/src/rendering/imgui_menus.h
