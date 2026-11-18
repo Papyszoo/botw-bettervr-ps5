@@ -3,6 +3,17 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-18: console run 4 (37c6028, 13.60)
+
+Reported from the console: the community graphic packs are listed again; opening and closing the inventory no longer
+corrupts the scene; Sense vibration works; the in-game menu works; the game feels smooth. From the log: VR resolution
+1x (2000x2040 per eye); median 50.0 fps over 39 ten-second windows in game (37.9 to 53.1); 410 packs at start, 411
+with BetterVR's. Known minor issues reported: the character flashes (seems to jump between positions) while moving
+left or right with the left stick; the weapon-change wheel lacks its left and right arrows. Play on TV is untested on
+the 1.0.0 builds.
+
+Released as v0.5.0.
+
 ## 2026-11-18: 1.0.0 port, console run 3 (50143ed, 1x): scene corruption after the inventory, patch cemu 0054, built, untested on console
 
 Reported from the console: after closing the inventory the 3D scene shows coloured and black patches; it gets worse with

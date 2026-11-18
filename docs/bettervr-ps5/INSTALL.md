@@ -2,8 +2,8 @@
 
 Everything needed to play BotW-BetterVR on a jailbroken PS5 with PlayStation VR2, with this fork's
 app, **BotW VR** (title ID `PPSA98720`, from the `m5-botw-vr` pre-release on). It is
-an app of its own: it sits next to PS5-ECAM, if you have it, and shares nothing with it. **Nobody has run these builds on a console yet** (see `STATUS.md`): this page says how
-they are meant to be set up, not what has been seen to work.
+an app of its own: it sits next to PS5-ECAM, if you have it, and shares nothing with it. Version 0.5.0 (BetterVR 1.0.0 on Crementif's Cemu fork) was tested on firmware 13.60 (see `STATUS.md`).
+Play on TV is untested on this version.
 
 Nothing from Nintendo or Sony comes with the app. You bring the game, dumped from your own Wii U
 disc or console.
@@ -123,8 +123,8 @@ Skip this if your WUA already has update v208 in it.
 
 ## 5. Install this build
 
-1. From the rolling `testing` pre-release (its title names the build), download the zip and
-   `SHA256SUMS`, and check them on a PC:
+1. From the latest release (`BotW-VR-v0.5.0.zip`), or the rolling `testing` pre-release (its title names the
+   build), download the zip and `SHA256SUMS`, and check them on a PC:
 
    ```bash
    sha256sum -c SHA256SUMS --ignore-missing
@@ -201,7 +201,12 @@ Optional settings in `/data/botwvr/launcher/bettervr.json`, with any build:
 | `"gripPitch": 30`, `"aimPitch": 30` | Tilt the controllers' poses, in degrees, if Link's hands point the wrong way (`gripPitch` default 32, `aimPitch` default 0). |
 | `"gripYaw": 30`, `"gripRoll": 30` | Turn the controllers' poses about their vertical axis and their long axis, in degrees (left hand +, right hand -; defaults 17 and 30; `gripPitch` defaults to 32). Tune by editing `bettervr.json`. |
 
-BetterVR's own menu does not exist on this port. The app's in-game menu opens with a touchpad click plus Options (O closes it); it takes the input and is drawn on the TV only, not yet in the headset.
+The in-game menu opens with a short press of Options.
+
+Version 0.5.0 details: the VR resolution is fixed at 1x (BetterVR's Graphics pack is added only at Play in
+VR, so it is not in the launcher's list of graphic packs). The Extended Memory pack is off by default. Sense
+vibration works only on firmware 13.60 and is off on other firmware. An older BetterVR settings file is
+moved by the app itself.
 
 
 ## 8. If something goes wrong

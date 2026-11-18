@@ -5,11 +5,12 @@ the Wild VR mod for Cemu) to a jailbroken PS5, shown on PlayStation VR2 with the
 It is a fork of [PlayTendoh](https://github.com/premohq/PlayTendoh) (formerly PS5-ECAM), whose native Cemu it runs in.
 For what PlayTendoh itself does (the launcher, other systems, settings), see its repository.
 
-**Status: experimental.** Tested on a PS5 with firmware 13.60: the app starts, the game runs, and in VR
-it shows the game on PS VR2 with head tracking and the Sense controllers controlling the game, and
-fighting works. This also holds with kstuff and no etaHEN, where VR starts through the sandbox path.
-Newer builds are built but not yet tested on a console;
-[docs/bettervr-ps5/STATUS.md](docs/bettervr-ps5/STATUS.md) says which.
+**Status: experimental.** Version 0.5.0 runs BetterVR 1.0.0 on Crementif's Cemu fork. Tested on a PS5
+with firmware 13.60: the game runs in VR on PS VR2 with head tracking and the Sense controllers (including
+vibration), the in-game menu opens with a short press of Options, and the overworld runs at about 50 fps
+at the 1x VR resolution (about 33 fps on 0.1.x). This also holds with kstuff and no etaHEN, where VR
+starts through the sandbox path. Play on TV is untested on this version. The newest builds may be untested
+on a console; [docs/bettervr-ps5/STATUS.md](docs/bettervr-ps5/STATUS.md) says which.
 
 ## What you need
 
@@ -25,7 +26,7 @@ No game files, keys, firmware or Sony SDK material are provided here, and none w
 ## Install
 
 1. Download the zip from the [releases](https://github.com/Papyszoo/botw-bettervr-ps5/releases).
-   Full releases (`v0.1.1` is the latest) are the stable choice. The rolling `testing` pre-release is
+   Full releases (`v0.5.0` is the latest) are the stable choice. The rolling `testing` pre-release is
    replaced for each new build and carries the newest changes; its notes start with "Untested on
    console" until a console result is recorded in STATUS.md.
 2. Follow [docs/bettervr-ps5/INSTALL.md](docs/bettervr-ps5/INSTALL.md): the game's formats, where the
@@ -35,23 +36,16 @@ To build it yourself, see [docs/BUILDING.md](docs/BUILDING.md).
 
 ## Known issues
 
-- Sense controller vibration does not work yet.
-- BetterVR's in-game menu (touchpad click plus Options) shows on the TV, not in the headset.
-- Some visual glitches in VR, such as the two eyes disagreeing in menus, scopes and some lighting.
-- Link's hands were turned inward. The default hand angles are now calibrated, and tapping Options on
-  the right Sense controller starts and saves a live calibration. The defaults are built but not yet
-  tested on a console.
-- Link's physics was off in VR in earlier reports (movement delayed or launched); flat play is normal.
+- The character flashes (seems to jump between positions) while moving left or right with the left stick.
+- The weapon-change wheel lacks its left and right arrows.
+- Sense controller vibration works only on firmware 13.60; on other firmware it is off.
+- The VR resolution is fixed at 1x for now. BetterVR's Graphics pack is added only at Play in VR, so it
+  is not in the launcher's list of graphic packs.
+- The Extended Memory graphic pack is off by default.
 - Open reports: [#2](https://github.com/Papyszoo/botw-bettervr-ps5/issues/2) (feedback and
   troubleshooting) and [#3](https://github.com/Papyszoo/botw-bettervr-ps5/issues/3) (a crash at
   launch in VR on firmware 13.20).
 - The app's launcher is the emulator's, not made for one game.
-
-## Planned
-
-BetterVR 1.0.0 renders both eyes from one simulation, which should fix several of the glitches above.
-It needs Crementif's Cemu fork and a check that the PS5's Vulkan driver runs it. The work is planned,
-not started: [docs/bettervr-ps5/UPDATE-1.0.md](docs/bettervr-ps5/UPDATE-1.0.md).
 
 ## Credits
 
