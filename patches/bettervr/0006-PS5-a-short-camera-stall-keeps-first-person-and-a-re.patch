@@ -1,0 +1,112 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Patryk Kowalczyk <papyszoo@gmail.com>
+Date: Wed, 18 Nov 2026 16:19:52 +0100
+Subject: [PATCH] PS5: a short camera stall keeps first person, and a
+ rebuilding actor list keeps Link's head hidden
+
+---
+ src/game/botw/player/head_visibility.cpp |  5 ++-
+ src/game/botw/player/skeleton.cpp        | 55 +++++++++++++++++++++++-
+ 2 files changed, 56 insertions(+), 4 deletions(-)
+
+diff --git a/src/game/botw/player/head_visibility.cpp b/src/game/botw/player/head_visibility.cpp
+index 5d713cf..4210641 100644
+--- a/src/game/botw/player/head_visibility.cpp
++++ b/src/game/botw/player/head_visibility.cpp
+@@ -104,11 +104,12 @@ static uint32_t ResolveBaseProcLinkActor(uint32_t baseProcLinkAddress) {
+ }
+ 
+ static void RefreshPlayerHeadMaterials() {
+-    s_playerHeadMaterialCount = 0;
+-
+     const uint32_t playerActorPtr = Player::GetAddress();
++    // a missing actor for a frame (the list rebuilds) keeps the last materials; each is checked live below
+     if (playerActorPtr == 0) return;
+ 
++    s_playerHeadMaterialCount = 0;
++
+     const uint32_t playerModel = Guest::Get<uint32_t>(playerActorPtr + ActorGsysModelOffset).getLE();
+     if (playerModel != 0)
+         CollectHeadMaterialsFromModel(playerModel, false);
+diff --git a/src/game/botw/player/skeleton.cpp b/src/game/botw/player/skeleton.cpp
+index 3a343f2..b6cd04c 100644
+--- a/src/game/botw/player/skeleton.cpp
++++ b/src/game/botw/player/skeleton.cpp
+@@ -427,6 +427,49 @@ static glm::mat4 ResolveArmTargetModel(const BoneFrameContext& ctx, OpenXR::EyeS
+ // taken once on the root bone so all bones use the same controller sample
+ static OpenXR::InputState s_skeletonPassInputs = {};
+ 
++// A texture-streaming hitch can leave the gameplay camera without an update for five presented frames, which
++// IsInGame() reports as "not in game" for one frame; the body then flashes in first person. Tolerate a stall
++// shorter than this, while the pause menu and the third-person setting still switch at once.
++static constexpr auto kCameraStallTolerance = std::chrono::milliseconds(250);
++static std::chrono::steady_clock::time_point s_cameraStallSince{};
++static bool s_cameraStallActive = false;
++static bool s_isThirdPersonForPose = false;
++static bool s_hasPoseDecision = false;
++static uint64_t s_cameraStallKeptFrames = 0;
++static std::chrono::steady_clock::time_point s_cameraStallLastLog{};
++
++// one decision a frame, taken on Skl_Root, which comes first
++static bool IsThirdPersonForPose(bool rootBone) {
++    if (!rootBone && s_hasPoseDecision)
++        return s_isThirdPersonForPose;
++
++    const bool inPauseMenu = Screens::HasInstance(ScreenId::PauseMenuInfo_00);
++    bool thirdPerson = GameState::IsThirdPerson() || inPauseMenu;
++    if (thirdPerson || GameState::IsInGame()) {
++        s_cameraStallActive = false;
++    }
++    else {
++        const auto now = std::chrono::steady_clock::now();
++        if (!s_cameraStallActive) {
++            s_cameraStallActive = true;
++            s_cameraStallSince = now;
++        }
++        if (now - s_cameraStallSince < kCameraStallTolerance) {
++            ++s_cameraStallKeptFrames;
++            if (now - s_cameraStallLastLog >= std::chrono::seconds(1)) {
++                s_cameraStallLastLog = now;
++                Log::print<INFO>("[pose] a short camera stall kept first person ({} frames)", (unsigned long long)s_cameraStallKeptFrames);
++            }
++        }
++        else {
++            thirdPerson = true;
++        }
++    }
++    s_isThirdPersonForPose = thirdPerson;
++    s_hasPoseDecision = true;
++    return thirdPerson;
++}
++
+ static void hook_ModifyBoneMatrix(PPCInterpreter_t* hCPU) {
+     hCPU->instructionPointer = hCPU->sprNew.LR;
+     const uint32_t modelUnitPtr = hCPU->gpr[7];
+@@ -442,9 +485,17 @@ static void hook_ModifyBoneMatrix(PPCInterpreter_t* hCPU) {
+ 
+     std::string boneName(Guest::CString(boneNamePtr));
+     const auto modelName = Guest::Get<sead::FixedSafeString100>(gsysModelPtr + 0x128);
++    if (modelName.getLE() != "GameROMPlayer")
++        return;
+     EnsureSkeletonInitialized();
+     const uint32_t playerActor = Player::GetAddress();
+-    if (modelName.getLE() != "GameROMPlayer" || playerActor == 0 || Guest::Get<uint32_t>(playerActor + 0x330).getLE() != gsysModelPtr)
++    if (playerActor == 0) {
++        // the actor list can miss the player for a frame while it rebuilds: keep the head by the pose decision,
++        // as the game would show it in first person, and leave the arms to the game until the actor is back
++        HeadVisibility::SubmitNextMaterial(hCPU, !IsThirdPersonForPose(boneName == "Skl_Root"));
++        return;
++    }
++    if (Guest::Get<uint32_t>(playerActor + 0x330).getLE() != gsysModelPtr)
+         return;
+ 
+     const bool isLeft = boneName.ends_with("_L");
+@@ -480,7 +531,7 @@ static void hook_ModifyBoneMatrix(PPCInterpreter_t* hCPU) {
+         Guest::Set(scalePtr, scale);
+     };
+ 
+-    const bool isThirdPerson = GameState::IsThirdPerson() || !GameState::IsInGame();
++    const bool isThirdPerson = IsThirdPersonForPose(boneName == "Skl_Root");
+ 
+     // one material per bone, so a whole head model converges well within a single frame
+     HeadVisibility::SubmitNextMaterial(hCPU, !isThirdPerson);

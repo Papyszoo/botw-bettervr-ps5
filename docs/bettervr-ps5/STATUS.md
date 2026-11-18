@@ -3,20 +3,26 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
-## 2026-11-18: v0.6, Options holds for the menu and taps for pause, no popup at start, built, untested on console
+## 2026-11-18: v0.6, Options holds for the menu and taps for pause, no popup at start, no one-frame body flash, HUD alpha, built, untested on console
 
 Branch `bettervr-1.0/v06`, from v0.5.0. Requested from the console (v0.5.0): the short press of Options was too easy to
 hit when the player meant to pause, and the popup at game start that tells the player how the menu opens was unwanted.
 Hold Options on the right Sense for 700 ms and BetterVR's menu opens at that moment (hold again 700 ms: it closes);
 release it earlier and the press is the game's "+", the pause screen, sent as one tap. The popup is no longer drawn on
-the PS5. Details: `UPDATE-1.0.md`, "v0.6".
+the PS5. Reported from run 4: Link flashes (jumps) while strafing with the left stick near grass, and the weapon wheel
+lacks its left and right arrows. A camera stall of five presented frames now keeps first person for up to 250 ms, so a
+streaming hitch no longer shows the body for one frame (patch bettervr 0006), and the runtime compositor blends the
+premultiplied HUD correctly, so the dimmed arrows, minimap and clock keep their alpha. Details: `UPDATE-1.0.md`, "v0.6".
 
 **Test request 52 (the build of this commit, 13.60 console).** Play in VR. (a) Tap Options on the right controller once:
 the game's pause screen (the inventory) opens; tap it again: the screen closes. (b) Hold Options for about a second:
 BetterVR's menu opens while the button is still held, and the game's pause screen does not open; hold it about a second
 again: the menu closes. (c) Say whether anything (a help card, a popup) still appears over the game at start. (d) Send
 the logs zip and the `[menu]` lines: `Options down`, `Options up after N ms`, `long press -> open` / `closed`, `short
-press -> pause`. Say whether the "+" on the right stick click still opens the same pause screen.
+press -> pause`. Say whether the "+" on the right stick click still opens the same pause screen. (e) Strafe left and
+right with the left stick near grass and say whether Link's body still flashes for a frame; the `[pose]` lines (at most
+one a second) count the stalls the tolerance kept first person. (f) Open the weapon wheel: the left and right arrows
+must be visible on the black buttons, and the minimap and clock must not look faded or black.
 
 ## 2026-11-18: console run 4 (37c6028, 13.60)
 

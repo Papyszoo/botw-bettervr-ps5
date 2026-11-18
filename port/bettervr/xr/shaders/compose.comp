@@ -56,7 +56,7 @@ void main() {
 	}
 	if (inQuad) {
 		const vec4 c = textureLod(hud, h, 0.0);
-		color.rgb = (p.flags & 8u) != 0u ? mix(color.rgb, c.rgb, c.a) : c.rgb;
+		color.rgb = (p.flags & 8u) != 0u ? c.rgb + color.rgb * (1.0 - c.a) : c.rgb;
 	}
 	const uvec4 b = uvec4(round(vec4(toSrgb(color.rgb), 1.0) * 255.0));
 	pixels[at.y * 2 * p.eyeSize.x + at.x] = b.r | (b.g << 8) | (b.b << 16) | (b.a << 24);

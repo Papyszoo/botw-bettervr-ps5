@@ -749,5 +749,19 @@ game start was unwanted.
 - **Logs** (BetterVR's, mirrored to the boot log as `[bettervr] ...`): `[menu] Options down`, `[menu] Options up after
   N ms`, `[menu] long press -> open` or `closed` (or `[menu] long press ignored, the menu's overlay is not ready`), and
   `[menu] short press -> pause`.
+- **The one-frame body flash is gone.** `IsInGame()` is false while the gameplay camera has not updated for five
+  presented frames, a texture-streaming hitch at 50-60 fps, and the pose switched to the third-person path for that
+  frame: Link's head materials were shown and the controller arm pose was skipped. `skeleton.cpp` now tolerates a camera
+  stall shorter than 250 ms and keeps the first-person pose; the pause menu, a cutscene's event setting and the
+  third-person camera setting still switch at once. The same frame the investigation also found is guarded differently:
+  if the actor list misses the player for a frame, the head is still hidden by the last decision and the head-material
+  list survives the missing actor (each unit is checked live before it is used). Log line (at most once a second):
+  `[pose] a short camera stall kept first person (N frames)`, N the frames the tolerance kept since the run started.
+  Patch bettervr 0006; built, untested on console.
+- **The HUD alpha is no longer squared.** The runtime compositor blended the premultiplied HUD (ImGui writes `rgb*a,
+  a`) as straight alpha at `compose.comp:59`, so semi-transparent UI became `rgb*a²`: the weapon wheel's dimmed white
+  arrows vanished on the black buttons, and the minimap and clock looked faded. The compositor has one blend for the
+  HUD and the menu quad, and it now blends premultiplied, `color.rgb = c.rgb + color.rgb * (1.0 - c.a)`;
+  `port/bettervr/xr/shaders.h` is regenerated with `tools/render-shaders.sh` and committed. Built, untested on console.
 - Unchanged: the left Square long press still opens the menu, with its own 250 ms threshold.
 - Test request 52 in `STATUS.md`.
