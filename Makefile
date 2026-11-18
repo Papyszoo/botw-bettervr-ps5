@@ -14,7 +14,7 @@ APP := build/app/PPSA98720
 JOBS ?= $(shell nproc)
 export JOBS
 
-.PHONY: gameboy retro-upgrades retro test-retro help deps deps-status radv azahar melonds bettervr eden build check package release clean distclean test-contribution esde
+.PHONY: gameboy retro-upgrades retro test-retro help deps deps-status radv azahar melonds eden build check package release clean distclean test-contribution esde
 
 test-retro: ## Host verification for the additional system integration
 	bash tools/tests/test-retro.sh
@@ -67,9 +67,6 @@ eden: deps ## Build ProsperoEdenX, the Switch side's program (Eden), with patche
 
 esde: ## Build EmulationStation (ES-DE), the optional other frontend, with PS5-ECAM's glue: build/esde/es-de
 	bash tools/build-esde.sh
-
-bettervr: deps ## (not part of build or check until stage 2 of the 1.0.0 port) BotW-BetterVR on PS5: BetterVR, its ImGui and the OpenXR runtime over hmd2 in one object: build/bettervr/bettervr.o
-	bash tools/build-bettervr.sh
 
 build: deps $(if $(RADV_ARCHIVE),,radv) ## Build BotW VR (Cemu with BetterVR) and link it with RADV: build/cemu/ps5cemu.elf
 	bash tools/build-cemu.sh

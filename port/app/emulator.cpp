@@ -33,6 +33,7 @@
 #include "Cafe/Filesystem/fsc.h"
 #include "Cafe/GameProfile/GameProfile.h"
 #include "Cafe/GraphicPack/GraphicPack2.h"
+#include "Cafe/HostModule/HostModule.h"
 #include "Cafe/HW/Espresso/PPCState.h"
 #include "Cafe/HW/Latte/Core/Latte.h"
 #include "Cafe/HW/Latte/Core/LatteOverlay.h"
@@ -89,10 +90,10 @@ extern std::atomic<uint64> g_ps5GpuWaitTicks[6];
 void PS5Cemu_PipelineCacheProgress(uint32& loaded, uint32& queued, uint32& lastIndex);
 // BotW-BetterVR (port/bettervr/VrPS5.h): the PS VR2 headset off, before the process is replaced
 void PS5Cemu_VrStop();
-// BotW-BetterVR (port/bettervr/VrPS5.cpp): BetterVR's graphic pack in graphicPacks/, and on or off as
-// a game starts, as bettervr.json asks
+// BotW-BetterVR (port/bettervr/VrPS5.cpp): whether a game goes through BetterVR's host module (bettervr.json),
+// and the packs an older build left in graphicPacks/ taken away
+bool PS5Cemu_BetterVRWanted(uint64_t titleId);
 void PS5Cemu_BetterVRPrepareGraphicPack();
-void PS5Cemu_BetterVRApplyMode(uint64_t titleId);
 
 namespace ps5emu
 {
@@ -321,7 +322,7 @@ namespace ps5emu
 			GetConfigHandle().Save();
 			if (NetworkConfig::XMLExists())
 				n_config.Load();
-			PS5Cemu_BetterVRPrepareGraphicPack(); // BotW-BetterVR: its pack in graphicPacks/
+			PS5Cemu_BetterVRPrepareGraphicPack(); // BotW-BetterVR: the packs of an older build away
 			GraphicPack2::LoadAll();
 			InputManager::instance().load();
 			DefaultControllers();
@@ -379,6 +380,21 @@ namespace ps5emu
 			}
 			ps5log::Line("[emu] the emulated Wii U started");
 			return true;
+		}
+
+		// BotW VR, Play in VR: BetterVR 1.0.0 (patches/bettervr, built into Cemu as a host module) started
+		// as Cemu's own start does it (main.cpp, CemuApp.cpp), once a game is chosen: the module is
+		// registered, its log put in the data folder, its OpenXR instance made and its packs registered,
+		// and the graphic packs loaded again for those. The module lives for this one game, as the app
+		// ends the process with it.
+		void StartBetterVR()
+		{
+			ps5log::Line("[emu] BetterVR's host module starts");
+			HostModule::Startup();
+			HostModule::BeforeConfigLoad();
+			HostModule::Initialize();
+			GraphicPack2::ClearGraphicPacks();
+			GraphicPack2::LoadAll();
 		}
 
 		// the game playing and the settings it started with (SetGameSettings)
@@ -760,7 +776,8 @@ namespace ps5emu
 	bool LaunchGame(const Game& game, std::string& error)
 	{
 		ps5log::Line("[emu] launching {} ({:016x}) from {}", game.name, game.titleId, _pathToUtf8(game.path));
-		PS5Cemu_BetterVRApplyMode(game.titleId); // BotW VR: BetterVR's pack on for VR, off for the TV
+		if (PS5Cemu_BetterVRWanted(game.titleId))
+			StartBetterVR(); // BotW VR: BetterVR's host module (Play on TV starts none)
 		ps5ingame::SetGame(game); // the in-game menu's top: its name, box art and GameTDB's facts
 		if (!StartSystem(error))
 			return false;

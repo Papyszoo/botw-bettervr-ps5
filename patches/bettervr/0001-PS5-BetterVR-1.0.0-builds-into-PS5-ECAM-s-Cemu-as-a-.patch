@@ -1,0 +1,238 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Patryk <papyszoo@gmail.com>
+Date: Wed, 18 Nov 2026 00:59:37 +0100
+Subject: [PATCH] PS5: BetterVR 1.0.0 builds into PS5-ECAM's Cemu as a host
+ module
+
+CEMU_PS5 takes the platform, the OpenXR runtime over hmd2 and the stand-ins from the port
+(port/bettervr/module.cmake) in place of platform_linux.cpp and the vendored OpenXR loader, whose
+headers stay; no libatomic link (the port defines the generic atomic functions).
+
+- the one graphics queue's lock (ps5xr::QueueMutex) around the mod's own submit
+- libc++ 18: no ranges::contains, no floating-point from_chars (strtod), no gettid
+- the log also goes to the app's boot log; Cemu's settings are not shared with a second file
+- no update check
+---
+ dependencies/CMakeLists.txt  |  9 ++++++++-
+ src/CMakeLists.txt           |  8 ++++++--
+ src/cemu/host_module.cpp     |  2 ++
+ src/game/botw/game.cpp       |  2 +-
+ src/rendering/vk_backend.cpp |  6 +++++-
+ src/utils/logger.cpp         | 13 +++++++++++++
+ src/utils/mod_settings.h     | 25 +++++++++++++++++++++++++
+ src/utils/platform.h         | 10 ++++++++++
+ src/utils/update_check.cpp   |  2 +-
+ 9 files changed, 71 insertions(+), 6 deletions(-)
+
+diff --git a/dependencies/CMakeLists.txt b/dependencies/CMakeLists.txt
+index 48c1e60..7ff8007 100644
+--- a/dependencies/CMakeLists.txt
++++ b/dependencies/CMakeLists.txt
+@@ -15,6 +15,13 @@ target_compile_definitions(BetterVR_ImGuiVulkan PUBLIC IMGUI_IMPL_VULKAN_NO_PROT
+ target_include_directories(BetterVR_ImGuiVulkan PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+ target_link_libraries(BetterVR_ImGuiVulkan PUBLIC BetterVR_ImGui)
+ 
+-add_subdirectory(openxr)
++if (CEMU_PS5)
++    # PS5-ECAM: the OpenXR runtime over hmd2 (port/bettervr/xr) answers the xr functions, only the headers are used
++    add_library(BetterVR_OpenXR INTERFACE)
++    target_include_directories(BetterVR_OpenXR INTERFACE openxr/include)
++    add_library(OpenXR::openxr_loader ALIAS BetterVR_OpenXR)
++else ()
++    add_subdirectory(openxr)
++endif ()
+ 
+ set_target_properties(BetterVR_ImPlot BetterVR_ImGuiVulkan PROPERTIES FOLDER "dependencies")
+diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
+index 26f58ee..ee8d53e 100644
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
+@@ -121,6 +121,9 @@ add_library(BetterVR STATIC
+ )
+ if (WIN32)
+     target_sources(BetterVR PRIVATE utils/platform_win32.cpp)
++elseif (CEMU_PS5)
++    # PS5-ECAM: the platform, the OpenXR runtime over hmd2 and the stand-ins are the port's
++    include("${CEMU_PS5_PORT_DIR}/bettervr/module.cmake")
+ else ()
+     target_sources(BetterVR PRIVATE utils/platform_linux.cpp)
+ endif ()
+@@ -142,8 +145,9 @@ if (NOT TARGET glm::glm)
+     find_package(glm CONFIG REQUIRED)
+ endif ()
+ target_link_libraries(BetterVR PRIVATE BetterVR_ImPlot BetterVR_ImGuiVulkan OpenXR::openxr_loader glm::glm fmt::fmt pugixml::pugixml CURL::libcurl)
+-# std::atomic of structs wider than 8 bytes calls into libatomic outside of MSVC
+-if (NOT MSVC)
++# std::atomic of structs wider than 8 bytes calls into libatomic outside of MSVC (the PS5 port
++# defines those functions itself, port/bettervr/PlatformPS5.cpp)
++if (NOT MSVC AND NOT CEMU_PS5)
+     target_link_libraries(BetterVR PRIVATE atomic)
+ endif ()
+ 
+diff --git a/src/cemu/host_module.cpp b/src/cemu/host_module.cpp
+index 85f7e35..28f2ec3 100644
+--- a/src/cemu/host_module.cpp
++++ b/src/cemu/host_module.cpp
+@@ -242,10 +242,12 @@ public:
+         SetEnvironmentVariableW(L"DISABLE_VULKAN_OBS_CAPTURE", L"1");
+         SetEnvironmentVariableW(L"DISABLE_LAYER_NV_PRESENT_1", L"1");
+ #endif
++#if !defined(__PROSPERO__) // the PS5 app keeps Cemu's settings itself, and has no second settings file for the mod to share
+         CemuSettings::Sync(settingsFile.parent_path() / "settings.xml", settingsFile);
+         static std::filesystem::path s_settingsFile = settingsFile;
+         std::atexit([] { CemuSettings::ShareBack(s_settingsFile, s_settingsFile.parent_path() / "settings.xml"); });
+         CemuSettings::Enforce(settingsFile);
++#endif
+     }
+ 
+     // the OpenXR instance has to exist before Cemu loads the graphic packs, since the presets need the headset's resolution
+diff --git a/src/game/botw/game.cpp b/src/game/botw/game.cpp
+index 631b67c..7a82e1a 100644
+--- a/src/game/botw/game.cpp
++++ b/src/game/botw/game.cpp
+@@ -34,7 +34,7 @@ std::span<const Game::Title> Game::GetTitles() {
+ 
+ const Game::Title* Game::FindTitle(uint64_t titleId) {
+     for (const Title& title : kTitles) {
+-        if (std::ranges::contains(title.titleIds, titleId)) {
++        if (std::ranges::find(title.titleIds, titleId) != title.titleIds.end()) { // ranges::contains is libc++ 19's
+             return &title;
+         }
+     }
+diff --git a/src/rendering/vk_backend.cpp b/src/rendering/vk_backend.cpp
+index d947707..70d8e24 100644
+--- a/src/rendering/vk_backend.cpp
++++ b/src/rendering/vk_backend.cpp
+@@ -1,6 +1,7 @@
+ #include "pch.h"
+ 
+ #include "vk_backend.h"
++#include "utils/platform.h"
+ #include "instance.h"
+ #include "renderer.h"
+ 
+@@ -212,7 +213,10 @@ uint64_t RND_VkBackend::SubmitCommandBuffer(VkCommandBuffer commandBuffer, const
+     submitInfo.signalSemaphoreCount = (uint32_t)signalSemaphores.size();
+     submitInfo.pSignalSemaphores = signalSemaphores.data();
+ 
+-    checkVkResult(m_dispatch->QueueSubmit(m_queue, 1, &submitInfo, VK_NULL_HANDLE), "Failed to submit a mod command buffer!");
++    {
++        BETTERVR_PS5_QUEUE_LOCK();
++        checkVkResult(m_dispatch->QueueSubmit(m_queue, 1, &submitInfo, VK_NULL_HANDLE), "Failed to submit a mod command buffer!");
++    }
+ 
+     m_lastSubmittedTimelineValue = completionTimelineValue;
+     return completionTimelineValue;
+diff --git a/src/utils/logger.cpp b/src/utils/logger.cpp
+index b7809db..6f05918 100644
+--- a/src/utils/logger.cpp
++++ b/src/utils/logger.cpp
+@@ -238,7 +238,11 @@ static bool DecodeWallClock(uint64_t ticks, WallClock& out) {
+ }
+ 
+ static uint32_t CurrentThreadId() {
++#if defined(__PROSPERO__)
++    return (uint32_t)std::hash<std::thread::id>{}(std::this_thread::get_id()); // the PS5 libc has no gettid
++#else
+     return (uint32_t)gettid();
++#endif
+ }
+ 
+ static uint32_t CurrentProcessId() {
+@@ -370,11 +374,20 @@ static void AppendRecord(std::string& batch, const LogRecord& record) {
+     batch.append("\n");
+ }
+ 
++#if defined(__PROSPERO__)
++// port/bettervr/PlatformPS5.cpp: the lines in the app's boot log, which has the PS5's other logs
++void BetterVR_PS5_LogBatch(const char* data, size_t size);
++#endif
++
+ static void WriteBatch(const std::string& batch) {
+     if (batch.empty()) {
+         return;
+     }
+ 
++#if defined(__PROSPERO__)
++    BetterVR_PS5_LogBatch(batch.data(), batch.size());
++#endif
++
+     if (IsLogFileOpen()) {
+         WriteToLogFile(batch.data(), batch.size());
+     }
+diff --git a/src/utils/mod_settings.h b/src/utils/mod_settings.h
+index 700669c..d75c505 100644
+--- a/src/utils/mod_settings.h
++++ b/src/utils/mod_settings.h
+@@ -1,4 +1,6 @@
+ #pragma once
++#include <cerrno>
++#include <cstdlib>
+ 
+ class ModSettingBase;
+ 
+@@ -134,7 +136,30 @@ public:
+             valueString.remove_prefix(1);
+         }
+         T parsed{};
++#if defined(__PROSPERO__) && defined(_LIBCPP_VERSION)
++        // the PS5 SDK's libc++ 18 has no floating-point std::from_chars: strtod, with its errors as from_chars gives them
++        std::errc ec{};
++        if constexpr (std::floating_point<T>) {
++            const std::string text(valueString);
++            char* end = nullptr;
++            errno = 0;
++            const double value = std::strtod(text.c_str(), &end);
++            if (end == text.c_str() || *end != '\0') {
++                ec = std::errc::invalid_argument;
++            }
++            else if (errno == ERANGE || value > (double)std::numeric_limits<T>::max() || value < (double)std::numeric_limits<T>::lowest()) {
++                ec = std::errc::result_out_of_range;
++            }
++            else {
++                parsed = (T)value;
++            }
++        }
++        else {
++            ec = std::from_chars(valueString.data(), valueString.data() + valueString.size(), parsed).ec;
++        }
++#else
+         const auto [parseEnd, ec] = std::from_chars(valueString.data(), valueString.data() + valueString.size(), parsed);
++#endif
+         if (ec == std::errc::result_out_of_range) {
+             parsed = valueString.starts_with('-') ? std::numeric_limits<T>::lowest() : std::numeric_limits<T>::max();
+         }
+diff --git a/src/utils/platform.h b/src/utils/platform.h
+index 2291e2c..32123ce 100644
+--- a/src/utils/platform.h
++++ b/src/utils/platform.h
+@@ -11,6 +11,16 @@
+ #define BETTERVR_DEBUG_BREAK() __builtin_trap()
+ #endif
+ 
++#if defined(__PROSPERO__)
++// the console has one graphics queue, which Cemu's GPU thread, the mod and the OpenXR runtime over hmd2
++// (port/bettervr/xr) share: every submit or present on it holds this lock
++#include <mutex>
++namespace ps5xr { std::mutex& QueueMutex(); }
++#define BETTERVR_PS5_QUEUE_LOCK() std::lock_guard<std::mutex> bettervrPs5QueueLock(ps5xr::QueueMutex())
++#else
++#define BETTERVR_PS5_QUEUE_LOCK() ((void)0)
++#endif
++
+ namespace Platform {
+     // implemented by the host (host_module.cpp)
+     void ShowFatalError(const char* title, const char* message);
+diff --git a/src/utils/update_check.cpp b/src/utils/update_check.cpp
+index d2080a4..072e96c 100644
+--- a/src/utils/update_check.cpp
++++ b/src/utils/update_check.cpp
+@@ -66,7 +66,7 @@ static std::optional<std::string> FetchLatestTag() {
+ }
+ 
+ void UpdateCheck::Start(std::function<void(const std::string&)> onNewerRelease) {
+-#if !defined(_DEBUG)
++#if !defined(_DEBUG) && !defined(__PROSPERO__) // no update check on the PS5
+     std::thread([onNewerRelease = std::move(onNewerRelease)] {
+         const std::optional<std::string> latest = FetchLatestTag();
+         if (!latest || ParseVersion(*latest) <= ParseVersion(BETTERVR_VERSION)) {

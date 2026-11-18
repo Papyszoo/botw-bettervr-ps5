@@ -1,0 +1,53 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Patryk <papyszoo@gmail.com>
+Date: Wed, 18 Nov 2026 01:01:43 +0100
+Subject: [PATCH] BotW-BetterVR: Cemu's submit and present on the one graphics
+ queue hold ps5xr::QueueMutex
+
+The queue is shared with BetterVR's host module (its own submit) and the OpenXR runtime over hmd2
+(port/bettervr/xr/runtime.cpp), which took the same lock in the 0.9.23 layer's hooks of Cemu's calls.
+---
+ .../HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp  | 16 ++++++++++++++--
+ 1 file changed, 14 insertions(+), 2 deletions(-)
+
+diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
+index d066e86a..c738a37b 100644
+--- a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
++++ b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
+@@ -16,6 +16,10 @@ extern bool g_ps5StandardBorderColors; // below
+ void PS5Cemu_StreamFrame(const uint8* rgb, int width, int height);
+ // BotW-BetterVR: the TV's picture in the PS VR2 headset (port/bettervr/VrPS5.h)
+ #include "VrPS5.h"
++#include <mutex>
++// BotW-BetterVR: the console has one graphics queue, which this renderer, BetterVR's host module and the
++// OpenXR runtime over hmd2 (port/bettervr/xr/runtime.cpp) share: a submit or present on it holds this lock
++namespace ps5xr { std::mutex& QueueMutex(); }
+ #endif
+ #include "Cafe/HW/Latte/Renderer/Vulkan/VulkanAPI.h"
+ #include "Cafe/HW/Latte/Renderer/Vulkan/LatteTextureVk.h"
+@@ -2544,7 +2548,11 @@ void VulkanRenderer::SubmitCommandBuffer(VkSemaphore signalSemaphore, VkSemaphor
+ 	VkTimelineSemaphoreSubmitInfo hostModuleTimelineInfo{};
+ 	HostModule_AttachSubmitSemaphores(submitInfo, hostModuleTimelineInfo);
+ 
+-	const VkResult result = vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, m_cmdBufferFences[m_commandBufferIndex]);
++	VkResult result;
++	{
++		std::lock_guard ps5QueueLock(ps5xr::QueueMutex());
++		result = vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, m_cmdBufferFences[m_commandBufferIndex]);
++	}
+ 	if (result != VK_SUCCESS)
+ 		UnrecoverableError(fmt::format("failed to submit command buffer. Error {}", result).c_str());
+ 	m_numSubmittedCmdBuffers++;
+@@ -3432,7 +3440,11 @@ void VulkanRenderer::SwapBuffer(bool mainWindow)
+ 
+ 	performanceMonitor.gpuTime_waitForHostGPU.beginMeasuring();
+ 	PS5_WAIT_BEGIN();
+-	VkResult result = vkQueuePresentKHR(m_presentQueue, &presentInfo);
++	VkResult result;
++	{
++		std::lock_guard ps5QueueLock(ps5xr::QueueMutex());
++		result = vkQueuePresentKHR(m_presentQueue, &presentInfo);
++	}
+ 	PS5_WAIT_END(4);
+ 	performanceMonitor.gpuTime_waitForHostGPU.endMeasuring();
+ 	if (result < 0 && result != VK_ERROR_OUT_OF_DATE_KHR)

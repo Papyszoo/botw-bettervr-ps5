@@ -92,13 +92,17 @@ jobs:
             bettervr-ccache-
 
       # a cached .deps keeps the ps5 branch of the last run's patches: start it from the pin again, so
-      # a changed patch in patches/bettervr is applied (tools/build-bettervr.sh refuses a branch that differs)
+      # a changed patch in patches/bettervr is applied (tools/bettervr-patches.sh refuses a branch that differs)
       - name: Patches from the pin
         shell: bash
         run: |
           if [ -d .deps/BotW-BetterVR/.git ]; then
             pin=$(python3 -c 'import json,sys; print(next(i["commit"] for i in json.load(open(sys.argv[1]))["items"] if i["name"] == "bettervr"))' tools/deps.json)
-            git -C .deps/BotW-BetterVR checkout -q -f -B ps5 "$pin"
+            if git -C .deps/BotW-BetterVR cat-file -e "$pin^{commit}"; then
+              git -C .deps/BotW-BetterVR checkout -q -f -B ps5 "$pin"
+            else
+              rm -rf .deps/BotW-BetterVR # a cache from before the pin changed: fetched again by `make deps`
+            fi
           fi
 
       # a cached .deps may hold Cemu from another repository or pin (upstream's, before the BetterVR

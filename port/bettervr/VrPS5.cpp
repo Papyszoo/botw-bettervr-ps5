@@ -22,7 +22,7 @@ namespace CafeSystem { uint64_t GetForegroundTitleId(); }
 // the port's (ps5/log.cpp): a line of the boot log
 void PS5Cemu_LogLine(std::string_view line);
 
-// port/bettervr/xr/runtime.cpp, in BetterVR's object: the in-game menu's probe's counter
+// port/bettervr/xr/runtime.cpp, in the BetterVR module's library: the in-game menu's probe's counter
 extern "C" void BetterVR_PS5_TvPresent();
 
 namespace ps5vr
@@ -88,7 +88,7 @@ namespace ps5vr
 		{
 			Off,
 			Flat,	 // M2: the TV's picture on a screen in the headset (this file)
-			BetterVR // M3: Breath of the Wild in stereo through BetterVR (port/bettervr/layer, xr)
+			BetterVR // M3: Breath of the Wild in stereo through BetterVR (the host module, port/bettervr/xr)
 		};
 
 		bool IsBreathOfTheWild(uint64_t titleId)
@@ -107,12 +107,6 @@ namespace ps5vr
 			if (!on)
 				return Mode::Off;
 			const uint64_t titleId = CafeSystem::GetForegroundTitleId();
-#if defined(CEMU_PS5_NO_BETTERVR)
-			// stage 1 of the BetterVR 1.0.0 port: BetterVR is not compiled in (BetterVRStubPS5.cpp)
-			if (betterVR && IsBreathOfTheWild(titleId))
-				Log("BetterVR is not in this build: Breath of the Wild's picture goes to the headset as the TV's");
-			betterVR = false;
-#endif
 			if (IsBreathOfTheWild(titleId) && betterVR)
 			{
 				Log(fmt::format("{:016x} is Breath of the Wild: BetterVR in stereo", titleId));
@@ -508,74 +502,33 @@ namespace ps5vr
 	}
 }
 
-// BetterVR's layer (patches/bettervr: IsLayerActiveForProcess) and the Vulkan loader's stand-in
-// (VulkanLayerPS5.cpp): whether Breath of the Wild goes through BetterVR
-extern "C" bool BetterVR_PS5_LayerWanted()
+// app/emulator.cpp, as a game starts: whether it goes through BetterVR (the host module in Cemu, which the
+// app then starts, and whose own graphic packs Cemu loads): Breath of the Wild, bettervr.json's "vr" on
+// and "bettervr" not false. Play on TV starts no module, so no pack of BetterVR's is on.
+bool PS5Cemu_BetterVRWanted(uint64_t titleId)
 {
-	std::lock_guard lock(ps5vr::s_lock);
-	ps5vr::Wanted();
-	return ps5vr::s_mode == ps5vr::Mode::BetterVR;
+	bool betterVR = true;
+	return ps5vr::IsBreathOfTheWild(titleId) && ps5vr::ReadSwitch(betterVR) && betterVR;
 }
 
-// app/emulator.cpp, before Cemu loads its graphic packs: BetterVR's pack and its Graphics pack (the
-// app's assets/bettervr, tools/package.sh) in graphicPacks/bettervr, always: the launcher's Play in
-// VR and Play on TV choose between them without a restart, and PS5Cemu_BetterVRApplyMode turns the
-// packs on or off before each start. (They are on by default for Breath of the Wild, and BetterVR's
-// patches call BetterVR's hooks, which only exist while BetterVR runs: on, they would break the game
-// flat.) Without the Graphics pack the game draws both eyes at 1280x720, 16:9, with the part of the
-// picture outside each eye's field of view too; with it, at the eye's shape and size.
+// app/emulator.cpp, before Cemu loads its graphic packs: the folder the 0.9.23 app made with BetterVR's pack
+// and its Graphics pack, which the module's own packs (the app's assets/bettervr) now replace, taken
+// away: left there, Cemu would load them beside the module's
 void PS5Cemu_BetterVRPrepareGraphicPack()
 {
 	namespace fs = std::filesystem;
-	const fs::path source = fs::path(ps5paths::AppDir()) / "assets" / "bettervr" / "BreathOfTheWild_BetterVR";
-	const fs::path target = fs::path(ps5paths::CemuRoot()) / "graphicPacks" / "bettervr";
+	const fs::path older = fs::path(ps5paths::CemuRoot()) / "graphicPacks" / "bettervr";
 	std::error_code ec;
-	if (ps5files::OwnStatus(source / "rules.txt", ec).type() != fs::file_type::regular)
-	{
-		ps5vr::Log(fmt::format("BetterVR's graphic pack is not in the app ({}): Breath of the Wild will not start in stereo", source.string()));
+	if (ps5files::OwnStatus(older, ec).type() != fs::file_type::directory)
 		return;
-	}
-	// copied again each start, so a new app's pack replaces the last one (35 small files)
-	fs::remove_all(target, ec);
-	fs::create_directories(target, ec);
-	fs::copy(source, target / "BreathOfTheWild_BetterVR", fs::copy_options::recursive, ec);
-	ps5vr::Log(fmt::format("BetterVR's graphic pack in {}{}", (target / "BreathOfTheWild_BetterVR").string(), ec ? " failed: " + ec.message() : ""));
-	// the Graphics pack is not needed for the game to start: a missing one is only said
-	const fs::path graphics = source.parent_path() / "BreathOfTheWild_Graphics";
-	fs::copy(graphics, target / "BreathOfTheWild_Graphics", fs::copy_options::recursive, ec);
-	ps5vr::Log(fmt::format("BetterVR's Graphics pack in {}{}", (target / "BreathOfTheWild_Graphics").string(), ec ? " failed: " + ec.message() : ""));
+	fs::remove_all(older, ec);
+	ps5vr::Log(fmt::format("the graphic packs an older build left in {} removed{}", older.string(), ec ? " failed: " + ec.message() : ""));
 }
 
-// app/emulator.cpp, as a game starts, before Cemu activates its graphic packs: for Breath of the
-// Wild, BetterVR's pack on when bettervr.json asks for BetterVR and off otherwise, and FPS++ on with
-// it (BetterVR crashes without it), as the player would set them in the game's Graphic packs. The
-// Graphics pack (Modified Version For BetterVR) is the player's own choice there: it is not touched
-void PS5Cemu_BetterVRApplyMode(uint64_t titleId)
+// the app's folder (Platform::GetExecutableDirectory in PlatformPS5.cpp, where BetterVR looks for its packs)
+extern "C" const char* BetterVR_PS5_AppDir()
 {
-	if (!ps5vr::IsBreathOfTheWild(titleId))
-		return;
-	bool betterVR = true;
-#if defined(CEMU_PS5_NO_BETTERVR)
-	const bool wanted = false; // BetterVR is not in this build, so its pack stays off (BetterVRStubPS5.cpp)
-#else
-	const bool wanted = ps5vr::ReadSwitch(betterVR) && betterVR;
-#endif
-	const std::vector<ps5emu::GraphicPackInfo> packs = ps5emu::ListGraphicPacks(titleId);
-	bool found = false;
-	for (size_t i = 0; i < packs.size(); i++)
-	{
-		const bool vrPack = packs[i].name == "Better VR";
-		const bool fpsPack = packs[i].name == "FPS++";
-		if (vrPack)
-			found = true;
-		if ((vrPack && packs[i].enabled != wanted) || (fpsPack && wanted && !packs[i].enabled))
-		{
-			const bool now = ps5emu::ToggleGraphicPack(titleId, i);
-			ps5vr::Log(fmt::format("graphic pack {} turned {} for {}", packs[i].name, now ? "on" : "off", wanted ? "VR" : "the TV"));
-		}
-	}
-	if (wanted && !found)
-		ps5vr::Log("BetterVR's graphic pack is not among Breath of the Wild's: the game will not start in stereo");
+	return ps5paths::AppDir().c_str();
 }
 
 // Cemu's export for BetterVR, which Cemu defines in src/main.cpp: the PS5's entry point is
@@ -605,15 +558,7 @@ extern "C" float BetterVR_PS5_Setting(const char* name, float fallback)
 	return json[name].GetFloat();
 }
 
-// BetterVR's own settings (its ImGui ini, patches/bettervr): beside bettervr.json, as the app's working
-// directory is not writable
-extern "C" const char* BetterVR_PS5_SettingsPath()
-{
-	static const std::string path = ps5paths::Root() + "/bettervr_settings.ini";
-	return path.c_str();
-}
-
-// port/bettervr/xr/runtime.cpp, in BetterVR's object
+// port/bettervr/xr/runtime.cpp, in the BetterVR module's library
 extern "C" void BetterVR_PS5_Stop();
 
 // app/emulator.cpp, before every LoadExec: the headset off, whichever mode had it
@@ -623,11 +568,11 @@ void PS5Cemu_VrStop()
 	BetterVR_PS5_Stop();
 }
 
-// BetterVR's layer (patches/bettervr: the first clear through it), when VR did not start: the game
-// ends and the app starts over on Breath of the Wild's page with why, as a game that did not start
-// shows it (ps5settings::RememberSide), not with a crash report. The game cannot go on flat: its
-// pack's patches already call BetterVR's hooks, and the layer has replaced images Cemu made. Returns
-// only when the app could not start itself again (the layer then throws as it did).
+// When VR did not start: the game ends and the app starts over on Breath of the Wild's page with why, as a
+// game that did not start shows it (ps5settings::RememberSide), not with a crash report. The game cannot go
+// on flat: its pack's patches already call the module's hooks. Returns only when the app could not start
+// itself again. Called by 0.9.23's layer; stage 3 of the BetterVR 1.0.0 port (docs/bettervr-ps5/UPDATE-1.0.md)
+// calls it from the module again.
 extern "C" void BetterVR_PS5_VrFailed(const char* what)
 {
 	const hmd2::Error error = hmd2::error();

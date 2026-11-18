@@ -38,7 +38,9 @@
 // The app ends a game with a LoadExec: BetterVR_PS5_Stop (app/emulator.cpp, before it) turns Hmd2 off
 // from any thread, and every call after it answers XR_ERROR_SESSION_LOST.
 
+#ifndef VK_NO_PROTOTYPES
 #define VK_NO_PROTOTYPES
+#endif
 #include <vulkan/vulkan.h>
 #define XR_USE_GRAPHICS_API_VULKAN
 #include <openxr/openxr.h>
