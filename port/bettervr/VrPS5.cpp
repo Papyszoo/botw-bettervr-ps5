@@ -567,9 +567,21 @@ extern "C" float BetterVR_PS5_Setting(const char* name, float fallback)
 	std::fclose(file);
 	rapidjson::Document json;
 	json.Parse(text.c_str());
-	if (json.HasParseError() || !json.IsObject() || !json.HasMember(name) || !json[name].IsNumber())
+	if (json.HasParseError() || !json.IsObject() || !json.HasMember(name))
+		return fallback;
+	if (json[name].IsBool())
+		return json[name].GetBool() ? 1.0f : 0.0f;
+	if (!json[name].IsNumber())
 		return fallback;
 	return json[name].GetFloat();
+}
+
+// The runtime's frame profile (bettervr.json's "profile"): read once, so the per-frame check is a
+// load. True or 1 turns it on; the default is off.
+extern "C" bool BetterVR_PS5_Profile()
+{
+	static const bool on = BetterVR_PS5_Setting("profile", 0.0f) != 0.0f;
+	return on;
 }
 
 // port/bettervr/xr/runtime.cpp, in the BetterVR module's library

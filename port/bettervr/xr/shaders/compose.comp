@@ -3,6 +3,10 @@
 // writes hmd2's side-by-side eye image, linear RGBA8 bytes in a buffer Hmd2 samples: each eye's
 // projection view (an sRGB swapchain image, scaled to the eye) and, over it, the HUD quad where it
 // falls in that eye, blended by its alpha. The bytes are sRGB-encoded, as the TV's are.
+//
+// The eye images are sampled through UNORM views on their sRGB swapchain images, so the bytes are
+// already encoded and the pass writes them out without the sRGB pow chain. Only the pixels the HUD
+// covers decode and encode again, to blend it in linear light.
 // Compiled by tools/render-shaders.sh into port/bettervr/xr/shaders.h.
 #version 450
 layout(local_size_x = 8, local_size_y = 8) in;
@@ -14,12 +18,18 @@ layout(set = 0, binding = 2, std430) writeonly buffer Out { uint pixels[]; };
 layout(push_constant) uniform Params {
 	ivec2 eyeSize;   // one eye of the output, in pixels
 	uint flags;      // 1, 2: left, right eye has a projection view; 4: a HUD; 8: the HUD blends by its alpha;
-	                 // 16: the mono picture (eye 0's view) rides the HUD quad, black outside it
+	                 // 16: the mono picture (eye 0's view) rides the HUD quad, black outside it; 32: the HUD has mips;
+	                 // 64: the HUD image is UNORM (its bytes are already what they should show)
 	uint pad;
 	vec4 source[2];  // each eye's image rect in its image, as UVs (u0, v0, u1, v1)
 	float quad[2][9]; // where the HUD quad falls in each eye: eye UV (u, v, 1) dotted with rows 0-2, 3-5 and 6-8
 	                  // gives the quad UV's two numerators and the divisor (a homography); a divisor <= 0 is nowhere
 } p;
+
+vec3 toLinear(vec3 c) {
+	c = clamp(c, 0.0, 1.0);
+	return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c));
+}
 
 vec3 toSrgb(vec3 c) {
 	c = clamp(c, 0.0, 1.0);
@@ -35,29 +45,46 @@ void main() {
 
 	// the quad UV of this pixel, or (-1) when the quad is not here
 	vec2 h = vec2(-1.0);
+	float nx = 0.0, ny = 0.0, den = 0.0;
 	if ((p.flags & 4u) != 0u) {
 		const vec3 a = vec3(uv, 1.0);
-		const float den = dot(vec3(p.quad[eye][6], p.quad[eye][7], p.quad[eye][8]), a);
+		nx = dot(vec3(p.quad[eye][0], p.quad[eye][1], p.quad[eye][2]), a);
+		ny = dot(vec3(p.quad[eye][3], p.quad[eye][4], p.quad[eye][5]), a);
+		den = dot(vec3(p.quad[eye][6], p.quad[eye][7], p.quad[eye][8]), a);
 		if (den > 1.0e-6)
-			h = vec2(dot(vec3(p.quad[eye][0], p.quad[eye][1], p.quad[eye][2]), a),
-				dot(vec3(p.quad[eye][3], p.quad[eye][4], p.quad[eye][5]), a)) / den;
+			h = vec2(nx, ny) / den;
 	}
 	const bool inQuad = all(greaterThanEqual(h, vec2(0.0))) && all(lessThan(h, vec2(1.0)));
 
-	vec4 color = vec4(0.0, 0.0, 0.0, 1.0);
+	// the eye images are sampled as UNORM: these bytes are already sRGB-encoded
+	vec3 color = vec3(0.0);
 	if ((p.flags & 16u) != 0u) {
 		if (inQuad) {
 			const vec4 s = p.source[0];
-			color = vec4(textureLod(eyeImage[0], mix(s.xy, s.zw, h), 0.0).rgb, 1.0);
+			color = textureLod(eyeImage[0], mix(s.xy, s.zw, h), 0.0).rgb;
 		}
 	} else if ((p.flags & (1u << eye)) != 0u) {
 		const vec4 s = p.source[eye];
-		color = vec4(textureLod(eyeImage[eye], mix(s.xy, s.zw, uv), 0.0).rgb, 1.0);
+		color = textureLod(eyeImage[eye], mix(s.xy, s.zw, uv), 0.0).rgb;
 	}
 	if (inQuad) {
-		const vec4 c = textureLod(hud, h, 0.0);
-		color.rgb = (p.flags & 8u) != 0u ? c.rgb + color.rgb * (1.0 - c.a) : c.rgb;
+		// the HUD's mip chain (runtime.cpp) is sampled with the homography's own gradients, so the
+		// ~2.4x minification picks a level instead of one bilinear tap at level 0
+		vec2 dHdx = vec2(0.0), dHdy = vec2(0.0);
+		if ((p.flags & 32u) != 0u) {
+			const float den2 = den * den;
+			const vec2 n = vec2(nx, ny);
+			const vec2 dhdu = (vec2(p.quad[eye][0], p.quad[eye][3]) * den - n * p.quad[eye][6]) / den2;
+			const vec2 dhdv = (vec2(p.quad[eye][1], p.quad[eye][4]) * den - n * p.quad[eye][7]) / den2;
+			dHdx = dhdu / float(p.eyeSize.x);
+			dHdy = dhdv / float(p.eyeSize.y);
+		}
+		const vec4 c = (p.flags & 32u) != 0u ? textureGrad(hud, h, dHdx, dHdy) : textureLod(hud, h, 0.0);
+		if ((p.flags & 64u) != 0u)
+			color = (p.flags & 8u) != 0u ? c.rgb + color * (1.0 - c.a) : c.rgb;
+		else
+			color = toSrgb((p.flags & 8u) != 0u ? c.rgb + toLinear(color) * (1.0 - c.a) : c.rgb);
 	}
-	const uvec4 b = uvec4(round(vec4(toSrgb(color.rgb), 1.0) * 255.0));
+	const uvec4 b = uvec4(round(vec4(color, 1.0) * 255.0));
 	pixels[at.y * 2 * p.eyeSize.x + at.x] = b.r | (b.g << 8) | (b.b << 16) | (b.a << 24);
 }

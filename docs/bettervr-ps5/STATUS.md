@@ -3,6 +3,32 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-18: v0.6 performance and menu/HUD shimmer, built, untested on console
+
+Branch `bettervr-1.0/v06-perf`, from v0.5.0. The HUD image gets a mip chain each frame and the compose samples it
+with `textureGrad`, so the ~2.4x minification no longer takes one bilinear tap at level 0. The compose reads the eye
+images as UNORM (no sRGB pow for 8.13 Mpx), skips the ImGui round trip when only the HUD is drawn, copies the HUD
+once instead of twice, skips the depth copy the headset never reads, and does not run the desktop ImGui pass on the
+PS5. Accurate barriers are off by default like a PC VR run, with `bettervr.json` `"accurateBarriers": true` to put
+them back. `bettervr.json` `"profile": true` logs GPU busy and a `[frame]` line every 10 s (swap, VR end, compose
+fence, hmd2 submit), plus a line with the active pack presets. BetterVR's menu System page has a VR Resolution
+selector (0.5x to 1.5x) instead of "Graphic Packs: Open On Desktop". CI fetches zlib 1.3.2's source from its GitHub
+release instead of zlib.net. Details: `UPDATE-1.0.md`, "v0.6 performance and menu/HUD shimmer". New patches: bettervr
+0007, cemu 0055.
+
+**Test request 53 (v0.6 combined).** One console run of this build (13.60) with `bettervr.json` `"profile": true`.
+(a) Play in VR at 1x for two minutes in the overworld and send every `[frame]` and `[perf]` line. `[frame]` must appear
+every 10 s with `swap`, `VR end`, `compose fence`, `hmd2 submit` and `GPU busy`; `[perf]` must carry `GPU busy N%` and
+`accurate barriers off`. Say whether the fps lines are better than v0.5.0's 48-53 at 1x. (b) Turn your head slowly while
+looking at the HUD (minimap, clock) and at menu text, with the menu open and closed: say whether the edges still crawl or
+shimmer, and whether the TV mirror and the headset differ. (c) Open BetterVR's menu > System > VR Resolution: choose
+0.5x, then 1x, then 1.25x. Each choice must log `VR resolution preset: ...` and show the restart notice. Restart after
+0.5x and send the `view configuration`, `Found rendering resolution`, `Graphics pack presets` and `VR Resolution
+Multiplier` lines: the eye size must be smaller; restart after 1x and it must be back to 2000x2040. (d) Set
+`bettervr.json` `"accurateBarriers": true`, restart, and send the `Accurate barriers: on` and `[perf] ... accurate
+barriers on` lines (then remove the key). Send the logs zip and say whether the menu, HUD alpha and gameplay still look
+right.
+
 ## 2026-11-18: v0.6, Options holds for the menu and taps for pause, no popup at start, no one-frame body flash, HUD alpha, built, untested on console
 
 Branch `bettervr-1.0/v06`, from v0.5.0. Requested from the console (v0.5.0): the short press of Options was too easy to

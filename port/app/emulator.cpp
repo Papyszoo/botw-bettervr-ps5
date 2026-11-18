@@ -81,6 +81,15 @@ void PS5Cemu_MemMapperUsage(size_t& committed, size_t& jit);
 // patches/cemu: the GPU's time on Cemu's command buffers, when measured (VulkanRenderer.cpp)
 extern bool g_ps5GpuTimestamps;
 extern std::atomic<uint64> g_ps5GpuBusyNs;
+// patches/cemu 0055: the frame profile (bettervr.json "profile"): the GPU thread's swap and VR end
+extern bool g_ps5FrameProfile;
+extern std::atomic<uint64> g_ps5FrameSwapNs;
+extern std::atomic<uint64> g_ps5FrameVrEndNs;
+extern std::atomic<uint32> g_ps5FrameProfileSamples;
+extern "C" bool BetterVR_PS5_Profile();
+#if defined(__PROSPERO__)
+extern "C" void BetterVR_PS5_LogPresets(); // patches/bettervr 0007: the pack presets, once Cemu loaded them
+#endif
 // patches/cemu 0038: frames longer than 20, 34 and 50 ms, and the longest (LatteRenderTarget.cpp),
 // and the GPU thread's waits on the GPU by what it waits for, in TSC ticks (VulkanRenderer.cpp)
 extern std::atomic<uint32> g_ps5FramesOver[3];
@@ -395,12 +404,23 @@ namespace ps5emu
 				return;
 			started = true;
 			ps5log::Line("[emu] BetterVR's host module starts");
+			// bettervr.json's "profile": the [perf] lines get the GPU's busy time, and the runtime
+			// logs one [frame] line every 10 s; off unless asked for
+			if (BetterVR_PS5_Profile())
+			{
+				g_ps5GpuTimestamps = true;
+				g_ps5FrameProfile = true;
+				ps5log::Line("[frame] profile on (bettervr.json's profile): GPU busy and one [frame] line every 10 s");
+			}
 			HostModule::Startup();
 			HostModule::BeforeConfigLoad();
 			HostModule::Initialize();
 			GraphicPack2::ClearGraphicPacks();
 			GraphicPack2::LoadAll();
 			ps5log::Line("[packs] {} graphic packs loaded with BetterVR's", GraphicPack2::GetGraphicPacks().size());
+#if defined(__PROSPERO__)
+			BetterVR_PS5_LogPresets();
+#endif
 		}
 
 		// the game playing and the settings it started with (SetGameSettings)

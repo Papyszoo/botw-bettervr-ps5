@@ -1,0 +1,528 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Patryk Kowalczyk <papyszoo@gmail.com>
+Date: Wed, 18 Nov 2026 17:14:28 +0100
+Subject: [PATCH] PS5: v0.6 performance: accurate barriers, fewer frame-end
+ copies, VR resolution, preset log
+
+---
+ src/cemu/capture.cpp           | 41 +++++++++++++---
+ src/cemu/host_module.cpp       | 28 +++++++++++
+ src/rendering/imgui_menus.cpp  | 85 ++++++++++++++++++++++++++++------
+ src/rendering/renderer.h       | 10 +++-
+ src/rendering/vulkan_imgui.cpp | 46 +++++++++++++-----
+ 5 files changed, 174 insertions(+), 36 deletions(-)
+
+diff --git a/src/cemu/capture.cpp b/src/cemu/capture.cpp
+index 7bcd3b7..84e7ad3 100644
+--- a/src/cemu/capture.cpp
++++ b/src/cemu/capture.cpp
+@@ -193,13 +193,21 @@ void Capture::On3DDepth(const FrameState& state, VkCommandBuffer commandBuffer,
+     frame.lastActivityOrdinal = renderer->NextCaptureActivityOrdinal();
+ 
+     auto& layer3D = renderer->m_layer3D;
+-    FrameSync* sync = layer3D->CopyDepthToLayer(side, commandBuffer, surface.image, frameIdx, surface.sliceIndex);
++    // The runtime offers no XR_KHR_composition_layer_depth, so Hmd2 never reads a depth image. The
++    // copy is only for BetterVR's own depth write; skip it, but keep the capture bookkeeping so the
++    // frame still counts as a complete stereo record.
++    const bool depthComposition = VRManager::instance().XR->m_capabilities.supportsDepthComposition;
++    FrameSync* sync = depthComposition ? layer3D->CopyDepthToLayer(side, commandBuffer, surface.image, frameIdx, surface.sliceIndex) : nullptr;
+     Log::print<RENDERING>("[Capture] Depth 3D side={}, frameIdx={}, sync={}, counter={}", side == EyeSide::LEFT ? "left" : "right", frameIdx, (void*)sync, sync ? sync->GetWaitValue() : 0);
+     renderer->LatchCaptureViews(frameIdx);
+-    AttachSync(sync);
++    if (sync) {
++        AttachSync(sync);
++    }
+     const Surface& right = rightSurface ? *rightSurface : surface;
+     if (side == EyeSide::LEFT && frame.TryAcceptCapture(RND_Renderer::CaptureMask_DepthRight, right.image, frame.acceptedDepthImages[EyeSide::RIGHT], frameIdx, rightSurface ? "right-eye 3D depth" : "right-eye 3D depth (left stand-in)")) {
+-        AttachSync(layer3D->CopyDepthToLayer(EyeSide::RIGHT, commandBuffer, right.image, frameIdx, right.sliceIndex));
++        if (depthComposition) {
++            AttachSync(layer3D->CopyDepthToLayer(EyeSide::RIGHT, commandBuffer, right.image, frameIdx, right.sliceIndex));
++        }
+     }
+     Release(commandBuffer, surface, std::nullopt);
+ }
+@@ -232,25 +240,42 @@ void Capture::OnHud(const FrameState& state, VkCommandBuffer commandBuffer, cons
+         frame.hudHoldsScene = UsesMonoCapture(state) && !game.flatCamera && !game.pauseMenuOpen;
+ 
+         if (imguiOverlay) {
+-            imguiOverlay->DrawHUDLayerAsBackground(commandBuffer, surface.image, frameIdx);
+-            VulkanUtils::DebugPipelineBarrier(commandBuffer);
+-
+             imguiOverlay->Update();
+             imguiOverlay->Render(frameIdx, false, false);
++#if defined(__PROSPERO__)
++            // With nothing drawn on top and a 3D picture behind it, the HUD image is already the
++            // layer: skip the copy into hudFramebuffer, the clear, the ImGui draw and the copy back.
++            // A screen with nothing behind it still takes the opaque path.
++            if (imguiOverlay->DrewOverlay() || !renderer->IsRendering3D(frameIdx)) {
++                imguiOverlay->DrawHUDLayerAsBackground(commandBuffer, surface.image, frameIdx);
++                VulkanUtils::DebugPipelineBarrier(commandBuffer);
++                imguiOverlay->DrawAndCopyToImage(commandBuffer, surface.image, frameIdx, false);
++                VulkanUtils::DebugPipelineBarrier(commandBuffer);
++            }
++            else {
++                imguiOverlay->SkipDraw();
++            }
++#else
++            imguiOverlay->DrawHUDLayerAsBackground(commandBuffer, surface.image, frameIdx);
++            VulkanUtils::DebugPipelineBarrier(commandBuffer);
+             imguiOverlay->DrawAndCopyToImage(commandBuffer, surface.image, frameIdx, false);
+             VulkanUtils::DebugPipelineBarrier(commandBuffer);
++#endif
+         }
+ 
+         FrameSync* sync = renderer->m_layer2D->CopyColorToLayer(commandBuffer, surface.image, frameIdx);
+         Log::print<RENDERING>("[Capture] HUD 2D side=left, frameIdx={}, sync={}, counter={}", frameIdx, (void*)sync, sync ? sync->GetWaitValue() : 0);
+ 
+-        // there is no right-eye HUD capture, so the desktop pass happens here
++#if !defined(__PROSPERO__)
++        // there is no right-eye HUD capture, so the desktop pass happens here. The PS5 has no Cemu
++        // window to fill: Hmd2's social screen is the TV.
+         if (imguiOverlay) {
+             VulkanUtils::DebugPipelineBarrier(commandBuffer);
+             imguiOverlay->Render(frameIdx, true, true);
+             imguiOverlay->Update();
+             imguiOverlay->DrawAndCopyToImage(commandBuffer, surface.image, frameIdx, true);
+         }
++#endif
+ 
+         AttachSync(sync);
+         Release(commandBuffer, surface, std::nullopt);
+@@ -258,6 +283,7 @@ void Capture::OnHud(const FrameState& state, VkCommandBuffer commandBuffer, cons
+     }
+ 
+     Log::print<RENDERING>("[Capture] HUD 2D side=right, frameIdx={}", frameIdx);
++#if !defined(__PROSPERO__)
+     if (imguiOverlay) {
+         imguiOverlay->Render(frameIdx, true, true);
+         imguiOverlay->Update();
+@@ -265,6 +291,7 @@ void Capture::OnHud(const FrameState& state, VkCommandBuffer commandBuffer, cons
+         Release(commandBuffer, surface, std::nullopt);
+         return;
+     }
++#endif
+     Release(commandBuffer, surface, hudCopied ? std::optional(ClearValue(false)) : std::nullopt);
+ }
+ 
+diff --git a/src/cemu/host_module.cpp b/src/cemu/host_module.cpp
+index 5d6b807..69f080a 100644
+--- a/src/cemu/host_module.cpp
++++ b/src/cemu/host_module.cpp
+@@ -16,10 +16,12 @@
+ #include <fstream>
+ 
+ #include "Cafe/HostModule/HostModule.h"
++#include "config/CemuConfig.h"
+ 
+ #if defined(__PROSPERO__)
+ bool PS5Cemu_BetterVRWanted(uint64_t titleId); // port/bettervr/VrPS5.cpp
+ extern "C" void BetterVR_PS5_VrFailed(const char* what); // port/bettervr/VrPS5.cpp: the game ends, the library says why
++extern "C" float BetterVR_PS5_Setting(const char* name, float fallback); // port/bettervr/VrPS5.cpp: bettervr.json
+ #endif
+ 
+ PFN_vkGetInstanceProcAddr VulkanLoader::GetInstanceProcAddr() {
+@@ -64,6 +66,24 @@ void CemuHost::SetGraphicsPreset(std::string_view category, std::string_view pre
+     }
+ }
+ 
++#if defined(__PROSPERO__)
++// port/app/emulator.cpp, after Cemu has loaded the packs this module registered: one line saying what
++// the game will run with, including the resolution and whether AA is on (the preset names carry both)
++extern "C" void BetterVR_PS5_LogPresets() {
++    std::string presets;
++    for (const char* category : {"VR Resolution Multiplier", "Quality Preset / Performance Hacks", "Anti-Aliasing", "Recording Mode", "Shadows"}) {
++        if (CemuHost::GetGraphicsPresets(category).empty()) {
++            continue;
++        }
++        if (!presets.empty()) {
++            presets += ", ";
++        }
++        presets += fmt::format("{} \"{}\"", category, CemuHost::GetGraphicsPreset(category));
++    }
++    Log::print<INFO>("Graphics pack presets: {}", presets);
++}
++#endif
++
+ void CemuHost::OpenGraphicPacksWindow() {
+     HostModule::OpenGraphicPacksWindow();
+ }
+@@ -252,6 +272,14 @@ public:
+         static std::filesystem::path s_settingsFile = settingsFile;
+         std::atexit([] { CemuSettings::ShareBack(s_settingsFile, s_settingsFile.parent_path() / "settings.xml"); });
+         CemuSettings::Enforce(settingsFile);
++#else
++        // The PC VR path forces Cemu's accurate barriers off (CemuSettings::Enforce); the PS5 app keeps
++        // Cemu's settings itself, so do the same in memory for this run. bettervr.json's
++        // "accurateBarriers" (true or 1) puts them back for a comparison run.
++        const bool accurateBarriers = BetterVR_PS5_Setting("accurateBarriers", 0.0f) != 0.0f;
++        GetConfig().vk_accurate_barriers = accurateBarriers;
++        Log::print<INFO>("Accurate barriers: {} (bettervr.json's accurateBarriers; {} on a PC VR run)",
++            accurateBarriers ? "on" : "off", accurateBarriers ? "on" : "off");
+ #endif
+     }
+ 
+diff --git a/src/rendering/imgui_menus.cpp b/src/rendering/imgui_menus.cpp
+index 3fc94d9..c1f896d 100644
+--- a/src/rendering/imgui_menus.cpp
++++ b/src/rendering/imgui_menus.cpp
+@@ -1220,6 +1220,45 @@ static void DrawRecordingModeSetting() {
+     });
+ }
+ 
++// the presets the pack offers on this headset; the game's resolution preset names carry the
++// multiplier in their " (1x, ...)" part, as the Recording Mode ones do
++static constexpr const char* kVRResolutionLabels[] = { "0.5x", "0.75x", "1x", "1.25x", "1.5x" };
++
++static void DrawVRResolutionSetting() {
++    const std::vector<std::string> presets = CemuHost::GetGraphicsPresets(kResolutionMultiplierCategory);
++    if (presets.empty()) {
++        return;
++    }
++    const std::string current = CemuHost::GetGraphicsPreset(kResolutionMultiplierCategory);
++    int selected = 2; // 1x, the pack's default, when the saved preset is not one of these
++    for (int i = 0; i < (int)std::size(kVRResolutionLabels); i++) {
++        if (current.find(fmt::format(" ({},", kVRResolutionLabels[i])) != std::string::npos) {
++            selected = i;
++            break;
++        }
++    }
++    DrawSetting(ICON_MS_DESKTOP_WINDOWS, "VR Resolution", "Lower runs faster; higher is sharper. Cemu applies it at its next start.", [&]() {
++        if (!Segmented("##vrResolution", kVRResolutionLabels, &selected)) {
++            return;
++        }
++        const std::string suffix = fmt::format(" ({},", kVRResolutionLabels[selected]);
++        for (const std::string& candidate : presets) {
++            if (candidate.find(suffix) == std::string::npos) {
++                continue;
++            }
++            CemuHost::SetGraphicsPreset(kResolutionMultiplierCategory, candidate);
++            Log::print<INFO>("VR resolution preset: {}", candidate);
++            static std::string s_title;
++            s_title = fmt::format("Restart Cemu to switch to {}", kVRResolutionLabels[selected]);
++            // the pack has texture rules, so Cemu's GraphicPack2::RequiresRestart is true for a preset
++            // change: it is saved now and applies at the next start (the same notice as Recording View)
++            RequestRestartNotice(s_title.c_str(), "It's saved and applies the next time you start Cemu.");
++            return;
++        }
++        Log::print<WARNING>("VR resolution: no preset for {} in {}", kVRResolutionLabels[selected], kResolutionMultiplierCategory);
++    });
++}
++
+ void RND_Renderer::ImGuiOverlay::DrawDisplayPage(bool* changed) {
+     auto& settings = GetSettings();
+ 
+@@ -1264,12 +1303,18 @@ void RND_Renderer::ImGuiOverlay::DrawSystemPage(bool* changed) {
+         DrawSetting(ICON_MS_ROCKET_LAUNCH, "Boot Straight Into BotW", [&]() {
+             DrawToggle(settings.bootDirectlyIntoGame, changed);
+         });
++#if defined(__PROSPERO__)
++        // There is no Cemu window on the PS5 to open Graphic packs in, so the row offers the preset
++        // that changes the eye size instead. The other packs stay in Cemu's own list.
++        DrawVRResolutionSetting();
++#else
+         DrawSetting(ICON_MS_EXTENSION, "Graphic Packs", [&]() {
+             if (WideButton("Open On Desktop")) {
+                 CemuHost::OpenGraphicPacksWindow();
+                 RequestRestartNotice("Restart Cemu after changing graphic packs", "Changes in that window apply the next time you start Cemu.");
+             }
+         });
++#endif
+         EndCard();
+     }
+ 
+@@ -1550,11 +1595,11 @@ static bool FooterItem(const std::string& label, bool clickable) {
+     return pressed;
+ }
+ 
+-static void DrawTutorialPromptAndControllerVerification(bool isMenuOpen) {
++static bool DrawTutorialPromptAndControllerVerification(bool isMenuOpen) {
+ #if defined(__PROSPERO__)
+     // no popup over the game at start on the PS5: the game's page in the app says how the menu opens
+     (void)isMenuOpen;
+-    return;
++    return false;
+ #else
+     auto& settings = GetSettings();
+ 
+@@ -1569,13 +1614,15 @@ static void DrawTutorialPromptAndControllerVerification(bool isMenuOpen) {
+     }
+ 
+     if (isMenuOpen || ImGui::GetTime() >= timeLimit) {
+-        return;
++        return false;
+     }
+ 
+     ImVec2 fullWindowWidth = ImVec2(ImGui::GetIO().DisplaySize.x, ImGui::GetIO().DisplaySize.y);
+     ImGui::SetNextWindowBgAlpha(alphaForNotify);
+     ImGui::SetNextWindowPos(fullWindowWidth * 0.5f, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
++    bool drew = false;
+     if (ImGui::Begin("HelpNotify", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoInputs)) {
++        drew = true;
+         if (!settings.tutorialPromptShown) {
+             ImGui::Text("First-Time Setup:");
+             ImGui::Separator();
+@@ -1591,10 +1638,11 @@ static void DrawTutorialPromptAndControllerVerification(bool isMenuOpen) {
+         }
+     }
+     ImGui::End();
++    return drew;
+ #endif
+ }
+ 
+-static void DrawUpdateBanner(bool isMenuOpen) {
++static bool DrawUpdateBanner(bool isMenuOpen) {
+     constexpr double kShownFor = 20.0;
+     constexpr double kFadeOutFor = 2.0;
+     static double s_shownSince = -1.0;
+@@ -1603,7 +1651,7 @@ static void DrawUpdateBanner(bool isMenuOpen) {
+     const std::optional<std::string> newerRelease = UpdateCheck::GetNewerRelease();
+     s_dismissed |= isMenuOpen;
+     if (!newerRelease || s_dismissed) {
+-        return;
++        return false;
+     }
+     if (s_shownSince < 0.0) {
+         s_shownSince = ImGui::GetTime();
+@@ -1611,7 +1659,7 @@ static void DrawUpdateBanner(bool isMenuOpen) {
+     const double shownFor = ImGui::GetTime() - s_shownSince;
+     if (shownFor >= kShownFor) {
+         s_dismissed = true;
+-        return;
++        return false;
+     }
+ 
+     const ImVec2 displaySize = ImGui::GetIO().DisplaySize;
+@@ -1619,7 +1667,9 @@ static void DrawUpdateBanner(bool isMenuOpen) {
+     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(24.0f, 16.0f));
+     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.10f, 0.24f, 0.42f, 0.96f));
+     ImGui::SetNextWindowPos(ImVec2(displaySize.x * 0.5f, displaySize.y * 0.12f), ImGuiCond_Always, ImVec2(0.5f, 0.0f));
++    bool drew = false;
+     if (ImGui::Begin("UpdateBanner", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoInputs)) {
++        drew = true;
+         if (ImGuiMenus::g_titleFont != nullptr) {
+             ImGui::PushFont(ImGuiMenus::g_titleFont);
+         }
+@@ -1634,10 +1684,11 @@ static void DrawUpdateBanner(bool isMenuOpen) {
+     ImGui::End();
+     ImGui::PopStyleColor();
+     ImGui::PopStyleVar(2);
++    return drew;
+ }
+ 
+ // only cutscenes marked PROMPT_ON in patch_Settings_Cutscenes.asm offer it, once per cutscene and never over dialogue
+-static void DrawCutsceneCameraPrompt(bool isMenuOpen) {
++static bool DrawCutsceneCameraPrompt(bool isMenuOpen) {
+     constexpr double kShowAfter = 3.0;
+     constexpr double kShownFor = 5.0;
+     constexpr double kMinimalShownFor = 2.5;
+@@ -1658,7 +1709,7 @@ static void DrawCutsceneCameraPrompt(bool isMenuOpen) {
+             s_cutsceneStart = -1.0;
+         }
+         s_seenToggles = game.cutsceneCameraToggles;
+-        return;
++        return false;
+     }
+     if (s_cutsceneStart < 0.0) {
+         s_cutsceneStart = now;
+@@ -1681,7 +1732,7 @@ static void DrawCutsceneCameraPrompt(bool isMenuOpen) {
+     const bool canShow = game.cutsceneCameraSwitchable && !game.dialogVisible && !isMenuOpen && controllerType != ControllerType::Unknown && controllerType != ControllerType::Simple;
+     if (s_shownSince < 0.0) {
+         if (!game.cutsceneShowsCameraPrompt || !canShow || now - s_cutsceneStart < kShowAfter) {
+-            return;
++            return false;
+         }
+         s_shownSince = now;
+     }
+@@ -1690,14 +1741,16 @@ static void DrawCutsceneCameraPrompt(bool isMenuOpen) {
+     const double shownFor = now - s_shownSince;
+     const double showFor = minimal ? kMinimalShownFor : kShownFor;
+     if (!canShow || shownFor >= showFor) {
+-        return;
++        return false;
+     }
+ 
+     const ImVec2 displaySize = ImGui::GetIO().DisplaySize;
+     ImGui::PushStyleVar(ImGuiStyleVar_Alpha, (float)std::clamp((showFor - shownFor) / kFadeOutFor, 0.0, 1.0) * (minimal ? 0.7f : 1.0f));
+     ImGui::SetNextWindowBgAlpha(minimal ? 0.6f : 0.85f);
+     ImGui::SetNextWindowPos(ImVec2(displaySize.x * 0.5f, displaySize.y * (minimal ? 0.9f : 0.85f)), ImGuiCond_Always, ImVec2(0.5f, 1.0f));
++    bool drew = false;
+     if (ImGui::Begin("CutsceneCameraPrompt", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoInputs)) {
++        drew = true;
+         if (minimal) {
+             ImGui::SetWindowFontScale(0.8f);
+             ImGui::Text(ICON_KI_STICK_LEFT_TOP " %s person", game.cutsceneFirstPerson ? "Third" : "First");
+@@ -1708,15 +1761,16 @@ static void DrawCutsceneCameraPrompt(bool isMenuOpen) {
+     }
+     ImGui::End();
+     ImGui::PopStyleVar();
++    return drew;
+ }
+ 
+-void RND_Renderer::ImGuiOverlay::DrawHelpMenu() {
++bool RND_Renderer::ImGuiOverlay::DrawHelpMenu() {
+     auto& isMenuOpen = ImGuiMenus::g_isOpen;
+     auto& settings = GetSettings();
+ 
+-    DrawTutorialPromptAndControllerVerification(isMenuOpen);
+-    DrawUpdateBanner(isMenuOpen);
+-    DrawCutsceneCameraPrompt(isMenuOpen);
++    bool drew = DrawTutorialPromptAndControllerVerification(isMenuOpen);
++    drew |= DrawUpdateBanner(isMenuOpen);
++    drew |= DrawCutsceneCameraPrompt(isMenuOpen);
+ 
+     static bool wasMenuPrevOpened = false;
+     static bool shouldLogSavedSettingsOnClose = false;
+@@ -1733,7 +1787,7 @@ void RND_Renderer::ImGuiOverlay::DrawHelpMenu() {
+     }
+ 
+     if (!isMenuOpen) {
+-        return;
++        return drew;
+     }
+ 
+     if (isMenuOpen && !wasMenuPrevOpened) {
+@@ -1886,4 +1940,5 @@ void RND_Renderer::ImGuiOverlay::DrawHelpMenu() {
+     if (!shouldStayOpen) {
+         isMenuOpen = false;
+     }
++    return true;
+ }
+diff --git a/src/rendering/renderer.h b/src/rendering/renderer.h
+index 475a83c..4ba9280 100644
+--- a/src/rendering/renderer.h
++++ b/src/rendering/renderer.h
+@@ -58,7 +58,8 @@ public:
+ 
+         std::unique_ptr<VulkanTexture> mainFramebuffer;
+         std::unique_ptr<VulkanTexture> hudFramebuffer;
+-        std::unique_ptr<VulkanTexture> hudWithoutAlphaFramebuffer;
++        // the same HUD image seen with alpha forced to one, when there is nothing behind it
++        VkImageView hudOpaqueView = VK_NULL_HANDLE;
+         std::unique_ptr<VulkanFramebuffer> imguiFramebuffer;
+         VkDescriptorSet mainFramebufferDS = VK_NULL_HANDLE;
+         VkDescriptorSet hudFramebufferDS = VK_NULL_HANDLE;
+@@ -275,7 +276,11 @@ public:
+         static void DrawHUDLayerAsBackground(VkCommandBuffer cb, VkImage srcImage, long frameIdx);
+         void Render(long frameIdx, bool renderBackground, bool isDesktopView);
+         void DrawAndCopyToImage(VkCommandBuffer cb, VkImage destImage, long frameIdx, bool isDesktopView);
+-        void DrawHelpMenu();
++        // whether Render added anything on top of the HUD image (menu, prompts, overlays)
++        bool DrewOverlay() const { return m_drewOverlay; }
++        // the frame was built but not drawn: finish it without the clear/draw/copy pass
++        void SkipDraw();
++        bool DrawHelpMenu();
+         void ProcessInputs(OpenXR::InputState& inputs, const VPADStatus& vpadStatus);
+         bool WantsKeyboard() const;
+ 
+@@ -302,6 +307,7 @@ public:
+         VkSampler m_sampler = VK_NULL_HANDLE;
+         VkExtent2D m_outputRes = {};
+         float m_fontScale = 1.0f;
++        bool m_drewOverlay = false;
+     };
+ 
+     std::unique_ptr<Layer3D> m_layer3D;
+diff --git a/src/rendering/vulkan_imgui.cpp b/src/rendering/vulkan_imgui.cpp
+index 6908e66..bd25ca2 100644
+--- a/src/rendering/vulkan_imgui.cpp
++++ b/src/rendering/vulkan_imgui.cpp
+@@ -2,6 +2,7 @@
+ 
+ #include "vulkan.h"
+ #include "game/game.h"
++#include "game/botw/debug/weapon_attack_debugger.h"
+ #include "cemu/host_window.h"
+ #include "rendering/imgui_menus.h"
+ #include "instance.h"
+@@ -356,10 +357,21 @@ RND_Renderer::ImGuiOverlay::ImGuiOverlay(VkCommandBuffer cb, VkExtent2D fbRes, V
+         frame.hudFramebuffer->vkClear(cb, { 0.0f, 0.0f, 0.0f, 0.0f });
+         frame.hudFramebufferDS = ImGui_ImplVulkan_AddTexture(m_sampler, frame.hudFramebuffer->GetImageView(), VK_IMAGE_LAYOUT_GENERAL);
+ 
+-        frame.hudWithoutAlphaFramebuffer = std::make_unique<VulkanTexture>(fbRes.width, fbRes.height, VK_FORMAT_A2B10G10R10_UNORM_PACK32, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, true);
+-        frame.hudWithoutAlphaFramebuffer->vkTransitionLayout(cb, VK_IMAGE_LAYOUT_GENERAL);
+-        frame.hudWithoutAlphaFramebuffer->vkClear(cb, { 0.0f, 0.0f, 0.0f, 0.0f });
+-        frame.hudWithoutAlphaFramebufferDS = ImGui_ImplVulkan_AddTexture(m_sampler, frame.hudWithoutAlphaFramebuffer->GetImageView(), VK_IMAGE_LAYOUT_GENERAL);
++        // the same image as the HUD, with alpha forced to one for when nothing is behind it: one copy
++        // into hudFramebuffer serves both descriptors (the old code copied it twice)
++        VkImageViewCreateInfo opaqueViewInfo = { VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
++        opaqueViewInfo.image = frame.hudFramebuffer->GetImage();
++        opaqueViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
++        opaqueViewInfo.format = frame.hudFramebuffer->GetFormat();
++        opaqueViewInfo.components = {
++            .r = VK_COMPONENT_SWIZZLE_IDENTITY,
++            .g = VK_COMPONENT_SWIZZLE_IDENTITY,
++            .b = VK_COMPONENT_SWIZZLE_IDENTITY,
++            .a = VK_COMPONENT_SWIZZLE_ONE
++        };
++        opaqueViewInfo.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
++        checkVkResult(VRManager::instance().VK->GetDeviceDispatch()->CreateImageView(VRManager::instance().VK->GetDevice(), &opaqueViewInfo, nullptr, &frame.hudOpaqueView), "Failed to create the HUD's opaque view!");
++        frame.hudWithoutAlphaFramebufferDS = ImGui_ImplVulkan_AddTexture(m_sampler, frame.hudOpaqueView, VK_IMAGE_LAYOUT_GENERAL);
+     }
+ 
+     // uploaded on the mod's queue and waited for, so the staging buffers can go right after
+@@ -409,12 +421,12 @@ RND_Renderer::ImGuiOverlay::~ImGuiOverlay() {
+             frame.mainFramebuffer.reset();
+         if (frame.hudFramebufferDS != VK_NULL_HANDLE)
+             ImGui_ImplVulkan_RemoveTexture(frame.hudFramebufferDS);
+-        if (frame.hudFramebuffer != nullptr)
+-            frame.hudFramebuffer.reset();
+         if (frame.hudWithoutAlphaFramebufferDS != VK_NULL_HANDLE)
+             ImGui_ImplVulkan_RemoveTexture(frame.hudWithoutAlphaFramebufferDS);
+-        if (frame.hudWithoutAlphaFramebuffer != nullptr)
+-            frame.hudWithoutAlphaFramebuffer.reset();
++        if (frame.hudOpaqueView != VK_NULL_HANDLE)
++            VRManager::instance().VK->GetDeviceDispatch()->DestroyImageView(VRManager::instance().VK->GetDevice(), frame.hudOpaqueView, nullptr);
++        if (frame.hudFramebuffer != nullptr)
++            frame.hudFramebuffer.reset();
+         if (frame.imguiFramebuffer != nullptr)
+             frame.imguiFramebuffer.reset();
+     }
+@@ -507,7 +519,7 @@ void RND_Renderer::ImGuiOverlay::Render(long frameIdx, bool renderBackground, bo
+ 
+     auto* renderer = VRManager::instance().XR->GetRenderer();
+     auto& frame = renderer->GetFrame(frameIdx);
+-
++    m_drewOverlay = false;
+     const Game::Presentation game = Game::GetPresentation();
+     const bool shouldHideGameUIInDesktopView = isDesktopView && game.recordingOutputMode == 2;
+ 
+@@ -551,13 +563,16 @@ void RND_Renderer::ImGuiOverlay::Render(long frameIdx, bool renderBackground, bo
+         renderHUDBackground(VRManager::instance().XR->GetRenderer()->IsRendering3D(frameIdx), false);
+     }
+ 
++    m_drewOverlay |= WeaponAttackDebugger::IsOverlayVisible(OpenXR::EyeSide::LEFT) || WeaponAttackDebugger::IsOverlayVisible(OpenXR::EyeSide::RIGHT);
+     Game::DrawDebugWindows();
+ 
+-    if (((renderBackground && GetSettings().performanceOverlay == PerformanceOverlayMode::WINDOW_ONLY) || GetSettings().performanceOverlay == PerformanceOverlayMode::WINDOW_AND_VR || GetSettings().performanceOverlay == PerformanceOverlayMode::WINDOW_AND_VR_WITH_PROFILER) && !ImGuiMenus::g_isOpen) {
++    const bool perfOverlay = ((renderBackground && GetSettings().performanceOverlay == PerformanceOverlayMode::WINDOW_ONLY) || GetSettings().performanceOverlay == PerformanceOverlayMode::WINDOW_AND_VR || GetSettings().performanceOverlay == PerformanceOverlayMode::WINDOW_AND_VR_WITH_PROFILER) && !ImGuiMenus::g_isOpen;
++    if (perfOverlay) {
+         ImGuiMenus::DrawFPSOverlay(renderer);
++        m_drewOverlay = true;
+     }
+ 
+-    DrawHelpMenu();
++    m_drewOverlay |= DrawHelpMenu();
+ }
+ 
+ bool ImGuiMenus::ProcessInputs(OpenXR::InputState& inputs, const VPADStatus& vpadStatus) {
+@@ -725,8 +740,8 @@ void RND_Renderer::ImGuiOverlay::Draw3DLayerAsBackground(VkCommandBuffer cb, VkI
+ void RND_Renderer::ImGuiOverlay::DrawHUDLayerAsBackground(VkCommandBuffer cb, VkImage srcImage, long frameIdx) {
+     auto& frame = VRManager::instance().XR->GetRenderer()->GetFrame(frameIdx);
+ 
++    // one copy; the opaque descriptor is a view of this image with alpha forced to one
+     frame.hudFramebuffer->vkCopyFromImage(cb, srcImage);
+-    frame.hudWithoutAlphaFramebuffer->vkCopyFromImage(cb, srcImage);
+ }
+ 
+ void RND_Renderer::ImGuiOverlay::DrawAndCopyToImage(VkCommandBuffer cb, VkImage destImage, long frameIdx, bool isDesktopView) {
+@@ -785,3 +800,10 @@ void RND_Renderer::ImGuiOverlay::DrawAndCopyToImage(VkCommandBuffer cb, VkImage
+ 
+     BeginImGuiFrame();
+ }
++
++void RND_Renderer::ImGuiOverlay::SkipDraw() {
++    ScopedImGuiContext imguiContext(m_context);
++    // the windows were built (and the prompts had their frame); close the frame without a pass
++    ImGui::Render();
++    BeginImGuiFrame();
++}

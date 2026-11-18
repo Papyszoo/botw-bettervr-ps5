@@ -765,3 +765,52 @@ game start was unwanted.
   `port/bettervr/xr/shaders.h` is regenerated with `tools/render-shaders.sh` and committed. Built, untested on console.
 - Unchanged: the left Square long press still opens the menu, with its own 250 ms threshold.
 - Test request 52 in `STATUS.md`.
+
+## v0.6 performance and menu/HUD shimmer
+
+Branch `bettervr-1.0/v06-perf`, from v0.5.0. Built only on CI; every result is "built, untested on console".
+The starting point is the v0.5 research: the GPU is the limit at 1x (~20.4 ms a frame), the HUD is a 2000x2040
+image on a ~836x487 eye quad sampled once bilinearly at level 0, and the frame end runs on Cemu's GPU thread.
+
+- **HUD mip chain and LOD-aware sampling (`port/bettervr/xr/runtime.cpp`, `compose.comp`).** Each frame the HUD
+  image is copied into a full mip chain (about 5.4 Mpx of copy and linear blits) and the compose samples it with
+  `textureGrad`, the gradients taken analytically from the quad's homography. The ~2.4x minification now picks a
+  level instead of one bilinear tap at level 0. The sampler is mipmap-linear; the eye images still use LOD 0. When
+  the HUD format has no linear blit the old single tap stays and the log says `HUD mip chain ...` only when it was made.
+- **Compose without the eye pow chain.** The eye swapchain images get a UNORM view on the same image
+  (`VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT`), so the compose reads the bytes as written; only the pixels under the HUD
+  decode and encode again, to blend it in linear light. `toSrgb` no longer runs for all 8.13 Mpx.
+- **The ImGui round trip is skipped when it is only the HUD.** With the menu, prompts, performance overlay and
+  weapon debugger all absent and a 3D picture behind it, the HUD image is already the 2D layer: no copy into
+  `hudFramebuffer`, no clear/draw/copy back. The desktop ImGui pass (Cemu's window) is not run on the PS5 at all;
+  Hmd2's social screen is the TV. `hudWithoutAlphaFramebuffer` is now a second view of the same HUD image with
+  alpha forced to one, so the HUD is copied once, not twice.
+- **The depth copy is skipped.** The runtime does not offer `XR_KHR_composition_layer_depth`, so Hmd2 never reads a
+  depth image; `Capture::On3DDepth` still accepts the depth capture (the frame must count as complete) but makes no
+  `CopyDepthToLayer`. The present pass still writes `gl_FragDepth` into its local attachment, which nothing reads;
+  removing that needs a fade shader without depth (open, low).
+- **Accurate barriers off by default, as on a PC VR run.** `patches/bettervr` 0007 sets Cemu's
+  `vk_accurate_barriers` false for the run (the PS5 app keeps Cemu's settings itself, so `CemuSettings::Enforce`
+  does not run). `bettervr.json` `"accurateBarriers": true` (or `1`) puts them back for a comparison; the start log
+  has `Accurate barriers: off/on`, and the app's `[perf]` line keeps saying `accurate barriers off/on`.
+- **Frame profile.** `bettervr.json` `"profile": true` turns on Cemu's GPU timestamps and one `[frame]` line every
+  10 s: `swap X ms | VR end Y ms | compose fence Z ms | hmd2 submit W ms | fps | GPU busy N%`. `swap` and `VR end`
+  come from a new Cemu patch (`patches/cemu` 0055, ticks around `SwapBuffers` and `NotifyFrameSubmitted`); the fence
+  and hmd2 submit are timed in `xrEndFrame`. Off by default: one bool test a frame, nothing else. After Cemu loads
+  the packs, `BetterVR_PS5_LogPresets` logs one `Graphics pack presets:` line with the active VR resolution, quality,
+  AA, recording and shadow presets (their names carry the width and height).
+- **VR Resolution in BetterVR's menu.** On the PS5 the System page's "Graphic Packs: Open On Desktop" row (there is
+  no window) is replaced by `VR Resolution`: 0.5x, 0.75x, 1x, 1.25x, 1.5x from the pack's "VR Resolution Multiplier"
+  presets. It saves through Cemu's preset API and logs `VR resolution preset: ...`; the pack has texture rules, so
+  `GraphicPack2::RequiresRestart` is true and the existing restart notice says it applies at the next start. The
+  pack's default stays 1x.
+- **CI zlib.** `tools/deps.json` now puts zlib 1.3.2's archive where the boilerplate's setup expects it, from the
+  GitHub release (same SHA-256 as zlib.net's); `tools/deps.py` verifies file items by hash instead of their name,
+  so a short or corrupt download is fetched again instead of used.
+- **New patch files:** bettervr 0007; cemu 0055. Existing numbered patches are untouched; the deps branches were
+  exported for the new commits only.
+
+Open: nothing here has run on a console. The mip chain's cost and the skipped passes need the `[frame]` line; the
+HUD quads' edges need a headset. The optional FSR/upscale for presets below 1x (task 6) is not done; the compose
+still samples BetterVR's already-upscaled eye image. The depth write in the present shader is not removed.
+Next step: push `bettervr-1.0/v06-perf`, wait for `BetterVR build`, then Test request 53 in `STATUS.md`.
