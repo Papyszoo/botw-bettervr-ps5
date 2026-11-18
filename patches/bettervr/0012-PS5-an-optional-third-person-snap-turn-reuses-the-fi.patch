@@ -1,0 +1,244 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ps5cemu <ps5cemu@localhost>
+Date: Thu, 19 Nov 2026 00:12:33 +0100
+Subject: [PATCH] PS5: an optional third-person snap turn reuses the
+ first-person snap angle; built, untested on console
+
+In third person the game's CameraChase/CameraTail applies the right-stick yaw itself; BetterVR only writes the stick into VPAD, so the setting withholds the stick's horizontal part and replaces the game's per-frame yaw delta at its two existing hook sites with one step. The Play Style third-person card gets Snap Turn (third person), key ThirdPersonSnapTurn, default off; the first-person threshold and re-arm latch is shared. Off changes nothing.
+---
+ .../patch_CTRL_CameraControls.asm             | 10 ++--
+ src/game/botw/camera/camera.cpp               | 45 +++++++++++++++
+ src/game/botw/input/controls.cpp              | 56 +++++++++++++------
+ src/rendering/imgui_menus.cpp                 |  3 +
+ src/utils/mod_settings.h                      |  2 +
+ 5 files changed, 96 insertions(+), 20 deletions(-)
+
+diff --git a/resources/BreathOfTheWild_BetterVR/patch_CTRL_CameraControls.asm b/resources/BreathOfTheWild_BetterVR/patch_CTRL_CameraControls.asm
+index bf41cca..73f0fe4 100644
+--- a/resources/BreathOfTheWild_BetterVR/patch_CTRL_CameraControls.asm
++++ b/resources/BreathOfTheWild_BetterVR/patch_CTRL_CameraControls.asm
+@@ -194,11 +194,12 @@ stw r0, 0x24(r1)
+ lfs f1, 0x1B4(r1) ; the delta, 0x20 higher up than in the game's own frame
+ bl import.coreinit.hook_AddGameCameraStickYaw
+ 
++lfs f12, 0x194(r1) ; replaced instruction
++bl import.coreinit.hook_OverrideThirdPersonChaseStickYaw
++
+ lwz r0, 0x24(r1)
+ mtlr r0
+ addi r1, r1, 0x20
+-
+-lfs f12, 0x194(r1) ; replaced instruction
+ blr
+ 
+ 0x02B9C96C = bla captureCameraChaseStickYaw
+@@ -212,11 +213,12 @@ stw r0, 0x24(r1)
+ fmuls f1, f28, f24 ; the same delta the following fmadds applies
+ bl import.coreinit.hook_AddGameCameraStickYaw
+ 
++lfs f1, 0x98(r31) ; replaced instruction
++bl import.coreinit.hook_OverrideThirdPersonTailStickYaw
++
+ lwz r0, 0x24(r1)
+ mtlr r0
+ addi r1, r1, 0x20
+-
+-lfs f1, 0x98(r31) ; replaced instruction
+ blr
+ 
+ 0x02BEEBCC = bla captureCameraTailStickYaw
+diff --git a/src/game/botw/camera/camera.cpp b/src/game/botw/camera/camera.cpp
+index 8cf776d..34ddcc6 100644
+--- a/src/game/botw/camera/camera.cpp
++++ b/src/game/botw/camera/camera.cpp
+@@ -117,6 +117,26 @@ static int TryConsumePendingSnapTurnDirection() {
+     return GetTimeStamp() <= request.untilNs ? request.direction : 0;
+ }
+ 
++static bool ShouldSnapTurnThirdPersonCamera() {
++    return GetSettings().ShouldSnapTurnInThirdPerson() && GetSettings().GetSnapTurnAngle() > 0
++        && GameState::IsThirdPerson() && !GameState::IsFlatCameraModeActive() && !Events::IsActive()
++        && !Screens::IsVisible(ScreenId::AppCamera_00) && s_appliesFirstPersonTurning;
++}
++
++// The game's chase and tail cameras add their right-stick yaw themselves. With third-person snap turning on the
++// stick is withheld, so one pending request replaces that smooth delta with a step in the game's own yaw.
++static float ConsumeThirdPersonSnapTurnDelta() {
++    const int direction = TryConsumePendingSnapTurnDirection();
++    if (direction == 0) {
++        return 0.0f;
++    }
++
++    const int32_t snapAngle = GetSettings().GetSnapTurnAngle();
++    Log::print<CONTROLS>("SnapTurn: turning {} degrees in third person", direction * snapAngle);
++    // the game's yaw delta runs opposite the view's turn, as its own right-stick yaw does
++    return (float)-direction * (float)snapAngle;
++}
++
+ static float TryConsumePendingSmoothTurnDelta() {
+     static uint64_t s_lastTimeNs = 0;
+     const uint64_t nowNs = GetTimeStamp();
+@@ -566,6 +586,29 @@ static void hook_AddGameCameraStickYaw(PPCInterpreter_t* hCPU) {
+     s_pendingGameStickYawDelta = NormalizeDegrees(s_pendingGameStickYawDelta + yawDelta);
+ }
+ 
++// Called from the replaced load in each of the game's two stick-yaw sites. In third person the game's own
++// per-frame delta is replaced by a snap step, so no smooth turn reaches the camera as well.
++static void hook_OverrideThirdPersonChaseStickYaw(PPCInterpreter_t* hCPU) {
++    hCPU->instructionPointer = hCPU->sprNew.LR;
++
++    if (!ShouldSnapTurnThirdPersonCamera()) {
++        return;
++    }
++    hCPU->fpr[12].fp0 = ConsumeThirdPersonSnapTurnDelta();
++}
++
++static void hook_OverrideThirdPersonTailStickYaw(PPCInterpreter_t* hCPU) {
++    hCPU->instructionPointer = hCPU->sprNew.LR;
++
++    if (!ShouldSnapTurnThirdPersonCamera()) {
++        return;
++    }
++
++    const float gameYawDelta = (float)hCPU->fpr[28].fp0 * (float)hCPU->fpr[24].fp0;
++    // the tail camera's following fmadds adds gameYawDelta to this base, so take the smooth delta back out
++    hCPU->fpr[1].fp0 = NormalizeDegrees((float)hCPU->fpr[1].fp0 + ConsumeThirdPersonSnapTurnDelta() - gameYawDelta);
++}
++
+ static void hook_CaptureClimbWallSurface(PPCInterpreter_t* hCPU) {
+     hCPU->instructionPointer = hCPU->sprNew.LR;
+ 
+@@ -792,6 +835,8 @@ void Camera::RegisterHooks() {
+     CemuHost::RegisterHook("hook_UpdateCameraForGameplay", &hook_UpdateCameraForGameplay);
+     CemuHost::RegisterHook("hook_AdjustGameplayCameraPivot", &hook_AdjustGameplayCameraPivot);
+     CemuHost::RegisterHook("hook_AddGameCameraStickYaw", &hook_AddGameCameraStickYaw);
++    CemuHost::RegisterHook("hook_OverrideThirdPersonChaseStickYaw", &hook_OverrideThirdPersonChaseStickYaw);
++    CemuHost::RegisterHook("hook_OverrideThirdPersonTailStickYaw", &hook_OverrideThirdPersonTailStickYaw);
+     CemuHost::RegisterHook("hook_CaptureClimbWallSurface", &hook_CaptureClimbWallSurface);
+     CemuHost::RegisterHook("hook_SnapTurnCameraPivot", &hook_SnapTurnCameraPivot);
+     CemuHost::RegisterHook("hook_SnapTurnCameraTailPivot", &hook_SnapTurnCameraTailPivot);
+diff --git a/src/game/botw/input/controls.cpp b/src/game/botw/input/controls.cpp
+index e9d41df..a0e5511 100644
+--- a/src/game/botw/input/controls.cpp
++++ b/src/game/botw/input/controls.cpp
+@@ -166,30 +166,50 @@ static bool ShouldOverrideFirstPersonTurning(bool inGame) {
+     return inGame && GameState::IsFirstPerson() && !Events::IsActive() && !Screens::IsVisible(ScreenId::AppCamera_00);
+ }
+ 
+-static void UpdateFirstPersonTurning(const XrActionStateVector2f& rightStickSource, bool inGame) {
+-    static bool s_snapTurnStickLatched = false;
++static bool ShouldSnapTurnThirdPerson(bool inGame) {
++    return inGame && GameState::IsThirdPerson() && GetSettings().ShouldSnapTurnInThirdPerson()
++        && GetSettings().GetSnapTurnAngle() > 0 && !Events::IsActive() && !Screens::IsVisible(ScreenId::AppCamera_00)
++        && Camera::AppliesFirstPersonTurning();
++}
++
++// One held stick fires one step and must come back past the release threshold before the next, for both modes.
++static void UpdateSnapTurnStick(float stickX, bool& latched) {
++    const float axisThreshold = GetSettings().axisThreshold;
++    const float releaseThreshold = std::max<float>((float)GetSettings().stickDeadzone, axisThreshold * 0.5f);
++    if (latched) {
++        latched = std::fabs(stickX) > releaseThreshold;
++    }
++    else if (std::fabs(stickX) >= axisThreshold) {
++        Camera::RequestSnapTurn(stickX > 0.0f ? 1 : -1);
++        latched = true;
++    }
++}
++
++static void UpdateTurning(const XrActionStateVector2f& rightStickSource, float physicalStickX, bool inGame) {
++    static bool s_firstPersonSnapTurnStickLatched = false;
++    static bool s_thirdPersonSnapTurnStickLatched = false;
+     const float stickX = rightStickSource.currentState.x;
+ 
++    if (ShouldSnapTurnThirdPerson(inGame) && !ImGuiMenus::g_isOpen) {
++        s_firstPersonSnapTurnStickLatched = false;
++        Camera::SetSmoothTurnInput(0.0f);
++        // a DualSense's stick is in the physical sample, a Sense stick is in the XR one
++        UpdateSnapTurnStick(std::clamp(stickX + physicalStickX, -1.0f, 1.0f), s_thirdPersonSnapTurnStickLatched);
++        return;
++    }
++    s_thirdPersonSnapTurnStickLatched = false;
++
+     if (!ShouldOverrideFirstPersonTurning(inGame) || ImGuiMenus::g_isOpen) {
+         Camera::CancelSnapTurn();
+         Camera::SetSmoothTurnInput(0.0f);
+-        s_snapTurnStickLatched = false;
++        s_firstPersonSnapTurnStickLatched = false;
+     }
+     else if (GetSettings().GetSnapTurnAngle() > 0) {
+         Camera::SetSmoothTurnInput(0.0f);
+-
+-        const float axisThreshold = GetSettings().axisThreshold;
+-        const float releaseThreshold = std::max<float>((float)GetSettings().stickDeadzone, axisThreshold * 0.5f);
+-        if (s_snapTurnStickLatched) {
+-            s_snapTurnStickLatched = std::fabs(stickX) > releaseThreshold;
+-        }
+-        else if (std::fabs(stickX) >= axisThreshold) {
+-            Camera::RequestSnapTurn(stickX > 0.0f ? 1 : -1);
+-            s_snapTurnStickLatched = true;
+-        }
++        UpdateSnapTurnStick(stickX, s_firstPersonSnapTurnStickLatched);
+     }
+     else {
+-        s_snapTurnStickLatched = false;
++        s_firstPersonSnapTurnStickLatched = false;
+         Camera::SetSmoothTurnInput(std::fabs(stickX) > (float)GetSettings().stickDeadzone ? stickX : 0.0f);
+     }
+ }
+@@ -1589,7 +1609,8 @@ static void hook_InjectXRInput(PPCInterpreter_t* hCPU) {
+         ProcessMenuInput(newXRBtnHold, inputs, state);
+     }
+ 
+-    UpdateFirstPersonTurning(rightStickSource, state.inGame);
++    const float physicalRightStickX = vpadStatus.rightStick.x.getLE();
++    UpdateTurning(rightStickSource, physicalRightStickX, state.inGame);
+ 
+     Haptics::Update();
+ 
+@@ -1601,7 +1622,10 @@ static void hook_InjectXRInput(PPCInterpreter_t* hCPU) {
+         GetSettings().adaptiveTriggers ? 1 : 0, GetSettings().adaptiveTriggerStrength);
+ #endif
+ 
+-    const bool disableRightStickHorizontalRotation = ShouldOverrideFirstPersonTurning(state.inGame) && !ImGuiMenus::g_isOpen && Camera::AppliesFirstPersonTurning();
++    const bool thirdPersonSnapTurn = ShouldSnapTurnThirdPerson(state.inGame) && !ImGuiMenus::g_isOpen && Camera::AppliesFirstPersonTurning();
++    if (thirdPersonSnapTurn)
++        vpadStatus.rightStick = { 0.0f, vpadStatus.rightStick.y.getLE() }; // the game turns by the step, not the stick
++    const bool disableRightStickHorizontalRotation = (ShouldOverrideFirstPersonTurning(state.inGame) || thirdPersonSnapTurn) && !ImGuiMenus::g_isOpen && Camera::AppliesFirstPersonTurning();
+     VPADButtons newXRStickHold = VPAD_BUTTON_NONE;
+     ProcessJoystickInput(state.previousStickHold, newXRStickHold, vpadStatus, leftStickSource, rightStickSource, disableRightStickHorizontalRotation);
+ 
+diff --git a/src/rendering/imgui_menus.cpp b/src/rendering/imgui_menus.cpp
+index d7f6588..369c54d 100644
+--- a/src/rendering/imgui_menus.cpp
++++ b/src/rendering/imgui_menus.cpp
+@@ -948,6 +948,9 @@ void RND_Renderer::ImGuiOverlay::DrawPlaystylePage(bool* changed) {
+             DrawSetting(ICON_MS_ZOOM_OUT_MAP, "Camera Distance", [&]() {
+                 DrawFloatSlider(settings.thirdPlayerDistance, 0.5f, 0.65f, [](float value) { return fmt::format("{:.2f}", value); }, changed);
+             });
++            DrawSetting(ICON_MS_ROTATE_RIGHT, "Snap Turn (third person)", "Uses the Turning snap angle. Off: the right stick turns smoothly.", [&]() {
++                DrawToggle(settings.thirdPersonSnapTurn, changed);
++            });
+             EndCard();
+         }
+         DrawPageNote("Set up your controller in Cemu's toolbar under Options > Input Settings.");
+diff --git a/src/utils/mod_settings.h b/src/utils/mod_settings.h
+index 9b3877b..a39332a 100644
+--- a/src/utils/mod_settings.h
++++ b/src/utils/mod_settings.h
+@@ -574,6 +574,7 @@ struct ModSettings {
+ #endif
+     FloatSetting thirdPlayerDistance{ "ThirdPlayerDistance", 0.5f, 0.0f };
+     BoolSetting thirdPersonBowCameraAim{ "ThirdPersonBowCameraAim", true };
++    BoolSetting thirdPersonSnapTurn{ "ThirdPersonSnapTurn", false };
+     EnumSetting<EventMode> cutsceneCameraMode{ "CutsceneCameraMode", EventMode::FOLLOW_DEFAULT_EVENT_SETTINGS };
+     BoolSetting useBlackBarsForCutscenes{ "UseBlackBarsForCutscenes", false };
+ 
+@@ -693,6 +694,7 @@ struct ModSettings {
+     float GetBowArcOpacity() const { return bowArcOpacity; }
+     bool IsBowArcDotOnly() const { return bowArcOpacity > 0.0f && bowArcOpacity < 0.05f; }
+     bool ShouldAimThirdPersonBowFromCamera() const { return thirdPersonBowCameraAim; }
++    bool ShouldSnapTurnInThirdPerson() const { return thirdPersonSnapTurn; }
+     bool AlwaysPreventFirstPersonCutsceneCameraMovement() const { return alwaysPreventFirstPersonCutsceneCameraMovement; }
+     bool ShouldPreventFirstPersonRagdoll() const { return preventFirstPersonRagdoll; }
+     bool UseOneHitPerSwing() const { return oneHitPerSwing; }

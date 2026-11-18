@@ -734,7 +734,8 @@ Branch `bettervr-1.0/v06-all`, from v0.5.0, combining the v0.6 tracks (`bettervr
 `v06-triggers`, `v06-eye`). Built only on CI; every result is "built, untested on console". Reported from the console
 on v0.5.0: the short press of Options was too easy to hit when the player meant to pause, the popup at game start was
 unwanted, Link flashed while strafing near grass, and the weapon wheel lacked its left and right arrows. New patch
-files: bettervr 0007 (performance), 0008 (vibration), 0009 (adaptive triggers), 0010 (eye tracking), and cemu 0055
+files: bettervr 0007 (performance), 0008 (vibration), 0009 (adaptive triggers), 0010 (eye tracking), 0011
+(body, HUD and the blue needle) and 0012 (third-person snap turn), and cemu 0055
 (the GPU thread's swap and VR frame end for the profile). Bettervr 0001-0006 are v06's, unchanged; 0055 is the only
 Cemu patch added. `VERSION` stays 0.5.0.
 
@@ -942,6 +943,29 @@ Cemu patch added. `VERSION` stays 0.5.0.
   cursor, and touchpad + Options is still only the port's menu. An older `ps5cemu.json`'s 0 (the old automatic default)
   becomes 2 once (a marker, `touchpadClickMigrated`, keeps a later choice of Automatic); 1 and 2 are kept.
 
+### Snap turn in third person
+
+- **Where the third-person yaw comes from.** In third person BetterVR applies no yaw of its own: the game's
+  `CameraChase` (and `CameraTail`) reads the right stick and adds the per-frame yaw itself, while
+  `hook_UpdateCameraForGameplay` (`camera.cpp`) adopts that game yaw (`ShouldAdoptGameCameraYaw`), and BetterVR only
+  writes the stick into VPAD in `ProcessJoystickInput` (`controls.cpp`). The pivot hooks that correct first-person yaw
+  do not run for third person. The smallest correct place is therefore the game's own stick-yaw integration, already
+  hooked at `captureCameraChaseStickYaw` (`0x02B9C96C`) and `captureCameraTailStickYaw` (`0x02BEEBCC`) in
+  `resources/BreathOfTheWild_BetterVR/patch_CTRL_CameraControls.asm`.
+- **The setting.** Play Style > Third-Person Camera > **Snap Turn (third person)**, key `ThirdPersonSnapTurn`, default
+  off. It reuses the first-person Turning choice's snap angle (`GetSnapTurnAngle`) and
+  the shared threshold/re-arm latch, `UpdateSnapTurnStick` in `controls.cpp`: one step per push, and the stick must
+  come back past the release threshold before the next. With the toggle on but Turning set to a smooth choice there is
+  no snap angle, so third person keeps its smooth turn.
+- **How the step is applied.** With the setting on, the right stick's horizontal part (DualSense's in the physical
+  VPAD sample plus a Sense stick in XR) is withheld from VPAD, and `hook_OverrideThirdPersonChaseStickYaw` /
+  `hook_OverrideThirdPersonTailStickYaw` (`camera.cpp`) replace the game's per-frame smooth yaw delta with one
+  `-direction * angle` step. The tail site takes the smooth delta back out of the base yaw so the following `fmadds`
+  cannot add it again. Off, both hooks return before writing anything and VPAD is untouched: today's behavior.
+- **Log.** One `SnapTurn: turning N degrees in third person` line per step (N is 30, 45 or 60).
+- **Not done:** no comfort fade or blink is added for the third-person step. Patch bettervr 0012. Built, untested on
+  console.
+
 ### Settings and About
 
 - **Settings are BotW VR's alone.** The PayPal card is gone from About, which now has one licence line (Cemu and PS5-ECAM under the GPL, Crementif's BetterVR under MIT) and only the Wii U's paths; the backup, box art, recompiler and remote-screen texts no longer name other systems, and what is left is marked "ask" in the track's settings audit.
@@ -953,7 +977,8 @@ quads' edges need a headset. The optional FSR/upscale for presets below 1x is no
 BetterVR's already-upscaled eye image. The depth write in the present shader is not removed. The Sense trigger payload
 and its return-code meaning are unverified, and the DualSense's pad handle is opened in vibration mode 2. The headset's
 `+0x2ae00` is from public tables, not our own dump; its test button is the proof. Explosions have settings but no
-event source. The five gaze names, the meaning of status 0 and the direction's sign wait for the console.
+event source. The five gaze names, the meaning of status 0 and the direction's sign wait for the console. The
+third-person snap step's direction, its pad/Sense merge and the release threshold wait for the console too.
 
 Test request 53 in `STATUS.md`.
 

@@ -3,7 +3,7 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
-## 2026-11-18: v0.6 combined (Options hold, stall tolerance, performance, Vibration, triggers, eye tracking), built, untested on console
+## 2026-11-19: v0.6 combined (Options hold, stall tolerance, performance, Vibration, triggers, eye tracking, third-person snap turn), built, untested on console
 
 Branch `bettervr-1.0/v06-all`, from v0.5.0, combining the v0.6 tracks. Options on the right Sense and on the
 DualSense now opens BetterVR's menu on a 700 ms hold and is the game's "+" (pause) on a shorter press; the start popup
@@ -18,8 +18,10 @@ Sense controllers behind `"senseTriggers": true`). The PS VR2 gaze exports are p
 `XR_EXT_eye_gaze_interaction`, and an optional `Gaze Throw Assist` bends a throw up to 15 degrees toward where the
 player looks. Bettervr 0011 latches the first-person body root from the camera hook's own head and player pose and
 gives the HUD background its own premultiplied ImGui pipeline, holds the first 2D frame after a screen change, and
-keeps a short press from opening the world guide in third person; the bow aim arc needs a real draw there. New
-patches: bettervr 0007-0011, cemu 0055. Details: `UPDATE-1.0.md`, "v0.6" and "v0.6 body, HUD and needle".
+keeps a short press from opening the world guide in third person; the bow aim arc needs a real draw there. Bettervr
+0012 adds an optional **Snap Turn (third person)** that reuses the first-person snap angle and threshold, and with it
+off third person is unchanged. New patches: bettervr 0007-0012, cemu 0055. Details: `UPDATE-1.0.md`, "v0.6", "v0.6
+body, HUD and needle" and "Snap turn in third person".
 
 **Test request 53 (v0.6 combined).** One console run of this build (13.60), in VR, with `bettervr.json`
 `"profile": true` and the Sense controllers charged; send the logs zip and the lines named under each letter.
@@ -95,6 +97,15 @@ patches: bettervr 0007-0011, cemu 0055. Details: `UPDATE-1.0.md`, "v0.6" and "v0
   whether the thin blue needle still appears, and whether it appears while drawing the bow in third person (it should
   only then). Send every `[guide] short press ignored on the PS5 ...` line, `[guide] world guide ribbon drawn in third
   person ...` if one appears, and `[bow] bow aim arc drawn in third person (draw=..., engaged=...)`.
+- (l) Third-person snap turn. Still in third person, set Comfort > Advanced > Turning to Snap 45 degrees, then open
+  Play Style > Third-Person Camera and turn **Snap Turn (third person)** on. With the DualSense's right stick, push
+  right once: the view must step 45 degrees right, not drift, and holding the stick must not turn further until it is
+  released past the deadzone and pushed again; push left once: 45 degrees left. Repeat with a Sense stick and say
+  whether pad and Sense behave the same. Turn the setting off: the same push must turn smoothly as before. Say whether
+  the row is absent in first person and whether it is still on after quitting and restarting. Send every
+  `SnapTurn: turning N degrees in third person` line (one per step; N is 30, 45 or 60) and say whether each step went
+  the way the stick was pushed; if a step turns twice, is missed or goes the wrong way, say which stick and which
+  direction.
 
 ## 2026-11-18: console run 4 (37c6028, 13.60)
 
