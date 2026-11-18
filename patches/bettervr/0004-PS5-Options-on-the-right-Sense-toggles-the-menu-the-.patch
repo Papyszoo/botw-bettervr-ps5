@@ -24,9 +24,9 @@ Subject: [PATCH] PS5: Options held for 700 ms opens the menu, a short press is
  src/game/botw/input/controls.cpp | 86 +++++++++++++++++++++++++++++++-
  src/rendering/imgui_menus.cpp    |  6 +++
  src/rendering/openxr.cpp         | 11 ++++
- src/rendering/vulkan_imgui.cpp   | 14 ++++++
+ src/rendering/vulkan_imgui.cpp   | 18 +++++++
  src/utils/mod_settings.h         |  4 ++
- 5 files changed, 120 insertions(+), 1 deletion(-)
+ 5 files changed, 124 insertions(+), 1 deletion(-)
 
 diff --git a/src/game/botw/input/controls.cpp b/src/game/botw/input/controls.cpp
 index 195735a..01766bb 100644
@@ -215,10 +215,22 @@ index 433b28a..c5a8b4b 100644
          m_seatedHeightCalibrationRequested.store(false, std::memory_order_relaxed);
          if (m_stageFloorOffset != 0.0f) {
 diff --git a/src/rendering/vulkan_imgui.cpp b/src/rendering/vulkan_imgui.cpp
-index 6908e66..49eca4b 100644
+index 6908e66..73d0e20 100644
 --- a/src/rendering/vulkan_imgui.cpp
 +++ b/src/rendering/vulkan_imgui.cpp
-@@ -611,6 +611,20 @@ void RND_Renderer::ImGuiOverlay::ProcessInputs(OpenXR::InputState& inputs, const
+@@ -20,6 +20,11 @@
+ 
+ using namespace BetterVRImGui;
+ 
++#if defined(__PROSPERO__)
++// the runtime's: whether either Sense controller is connected (port/bettervr/xr/runtime.cpp)
++extern "C" bool BetterVR_PS5_SenseConnected();
++#endif
++
+ // Cemu sets its own ImGui context before drawing its overlays, so ours has to be set every time
+ class ScopedImGuiContext {
+ public:
+@@ -611,6 +616,19 @@ void RND_Renderer::ImGuiOverlay::ProcessInputs(OpenXR::InputState& inputs, const
          pageRight = inputs.inMenu.rightTrigger.currentState && inputs.inMenu.rightTrigger.changedSinceLastSync;
      }
  
@@ -226,7 +238,6 @@ index 6908e66..49eca4b 100644
 +    // The PS5 asks the runtime whether a hand is connected, not whether it has a pose: a hand without a pose still
 +    // feeds navigate and move, so the pad must not join it.
 +#if defined(__PROSPERO__)
-+    extern "C" bool BetterVR_PS5_SenseConnected();
 +    const bool senseConnected = BetterVR_PS5_SenseConnected();
 +#else
 +    const bool senseConnected = inputs.shared.pose[0].isActive || inputs.shared.pose[1].isActive;

@@ -552,10 +552,10 @@ index 248a0c0..0fff98a 100644
          return;
      }
 diff --git a/src/rendering/vulkan_imgui.cpp b/src/rendering/vulkan_imgui.cpp
-index 0116f55..ff09b59 100644
+index 0e1cd27..b158d40 100644
 --- a/src/rendering/vulkan_imgui.cpp
 +++ b/src/rendering/vulkan_imgui.cpp
-@@ -539,7 +539,10 @@ void RND_Renderer::ImGuiOverlay::Render(long frameIdx, bool renderBackground, bo
+@@ -544,7 +544,10 @@ void RND_Renderer::ImGuiOverlay::Render(long frameIdx, bool renderBackground, bo
              hudSize = ImVec2(framebufferUiRegion.z / fbScale.x, framebufferUiRegion.w / fbScale.y);
          }
  
