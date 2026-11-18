@@ -954,3 +954,35 @@ and its return-code meaning are unverified, and the DualSense's pad handle is op
 event source. The five gaze names, the meaning of status 0 and the direction's sign wait for the console.
 
 Test request 53 in `STATUS.md`.
+
+## v0.6 body, HUD and needle
+
+Done, one new patch (bettervr 0011; no Cemu patch was needed):
+
+- **The strafe flash.** `hook_UpdateCameraForGameplay` (`camera.cpp`) now latches one first-person body pose from the
+  same player and head sample it builds the view from (`Camera::FirstPersonBodyPose`, `GetFirstPersonBodyPose`).
+  `hook_ModifyBoneMatrix` (`skeleton.cpp`) poses `Skl_Root` from that pose instead of the live player matrix, and a
+  frame whose actor, model, hand pose or bone is skipped writes the last good root before it returns; the game's stale
+  anim root can no longer put the gear in front of the eyes for that frame. Logs at most once a second:
+  `[pose] first-person body-view yaw delta N deg` and `[pose] first-person body root kept the last good frame (...)`.
+- **The HUD's squared alpha.** The ImGui background draw now binds a second, premultiplied pipeline
+  (`dependencies/imgui_impl_vulkan.cpp`, `ImGui_ImplVulkan_PremultipliedBlendCallback`) for the HUD image only, so the
+  game's premultiplied HUD is written `rgb + dst*(1-a)` instead of `rgb*a²`; menu text, menu quads and the 3D
+  background keep the normal straight-alpha pipeline (`vulkan_imgui.cpp`, `renderHUDBackground`).
+- **The first 2D frame after a screen opens.** `Capture::OnHud` (`capture.cpp`) holds the first 2D capture after a
+  screen change for one frame when a HUD has already been presented, so the wheel's first frame no longer shows the
+  bright pre-menu 3D copy; log: `[capture] held the first 2D capture after a screen change ...`.
+- **The world shift on closing the wheel.** `Camera::ResolveGameplayBasePose` (`camera.cpp`) logs its source for the
+  first frames after a screen change: `[camera] first frame after a screen: source=cached|game (...)`. No fix: the
+  log has to say which source the two frames took before a change is justified.
+- **The blue needle in third person.** A short press no longer opens the world guide on the PS5 (`UpdateGuide`,
+  `controls.cpp`): it is only the game's pause, whichever controller sent it, and a hold still opens BetterVR's menu.
+  The bow aim arc (`Bow::QueueAimingArcPreview`, `bow.cpp`) is cleared in third person below a 5 % draw, so a resting
+  bow no longer draws it. Logs at most once a second: `[guide] world guide ribbon drawn in third person ...` and
+  `[bow] bow aim arc drawn in third person (draw=..., engaged=...)`.
+
+Open: built only on CI; nothing in this section has run on a console. The HUD pipeline is a second pipeline object
+(one more pipeline at ImGui init), and the 2D hold is one skipped capture per screen opening.
+
+Next step: Test request 53 (b), (c) and (k) in `STATUS.md`: the new `[pose]`, `[capture]`, `[camera]`, `[guide]` and
+`[bow]` lines, and whether the flash, the wheel's first frame, the close shift and the needle are gone.

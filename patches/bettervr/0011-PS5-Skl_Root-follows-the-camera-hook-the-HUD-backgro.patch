@@ -1,0 +1,590 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ps5cemu <ps5cemu@localhost>
+Date: Wed, 18 Nov 2026 21:28:15 +0100
+Subject: [PATCH] PS5: Skl_Root follows the camera hook, the HUD background
+ blends premultiplied and third person hides the help guide
+
+The first-person body root is latched from the player and head pose hook_UpdateCameraForGameplay builds the view from, and every skipped root frame writes the last good transform. The HUD background gets its own premultiplied ImGui pipeline, the first 2D capture after a screen change is held one frame, and the camera source after a screen is logged. A short Options press no longer opens the world guide on the PS5, and the bow aim arc needs a real draw in third person. Built, untested on console.
+---
+ dependencies/imgui_impl_vulkan.cpp |  14 +++-
+ dependencies/imgui_impl_vulkan.h   |   3 +
+ src/cemu/capture.cpp               |  26 ++++++-
+ src/game/botw/camera/camera.cpp    |  62 +++++++++++++++-
+ src/game/botw/camera/camera.h      |  10 +++
+ src/game/botw/input/controls.cpp   |  14 +++-
+ src/game/botw/player/bow.cpp       |  16 ++++
+ src/game/botw/player/skeleton.cpp  | 115 +++++++++++++++++++++++++++--
+ src/rendering/vulkan_imgui.cpp     |   3 +
+ src/rendering/world_guide.cpp      |   9 +++
+ 10 files changed, 256 insertions(+), 16 deletions(-)
+
+diff --git a/dependencies/imgui_impl_vulkan.cpp b/dependencies/imgui_impl_vulkan.cpp
+index e88820f..f2c5498 100644
+--- a/dependencies/imgui_impl_vulkan.cpp
++++ b/dependencies/imgui_impl_vulkan.cpp
+@@ -250,6 +250,7 @@ struct ImGui_ImplVulkan_Data
+     VkDescriptorSetLayout       DescriptorSetLayout;
+     VkPipelineLayout            PipelineLayout;
+     VkPipeline                  Pipeline;
++    VkPipeline                  PipelinePremultiplied;
+     VkShaderModule              ShaderModuleVert;
+     VkShaderModule              ShaderModuleFrag;
+     VkDescriptorPool            DescriptorPool;
+@@ -525,6 +526,9 @@ static void ImGui_ImplVulkan_SetupRenderState(ImDrawData* draw_data, VkPipeline
+     }
+ }
+ 
++// A marker callback: the render loop sees it and binds PipelinePremultiplied instead of calling it.
++void ImGui_ImplVulkan_PremultipliedBlendCallback(const ImDrawList*, const ImDrawCmd*) {}
++
+ // Render function
+ void ImGui_ImplVulkan_RenderDrawData(ImDrawData* draw_data, VkCommandBuffer command_buffer, VkPipeline pipeline)
+ {
+@@ -690,7 +694,9 @@ void ImGui_ImplVulkan_RenderDrawData(ImDrawData* draw_data, VkCommandBuffer comm
+             {
+                 // User callback, registered via ImDrawList::AddCallback()
+                 // (ImDrawCallback_ResetRenderState is a special callback value used by the user to request the renderer to reset render state.)
+-                if (pcmd->UserCallback == ImDrawCallback_ResetRenderState)
++                if (pcmd->UserCallback == ImGui_ImplVulkan_PremultipliedBlendCallback)
++                    vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, bd->PipelinePremultiplied);
++                else if (pcmd->UserCallback == ImDrawCallback_ResetRenderState)
+                     ImGui_ImplVulkan_SetupRenderState(draw_data, pipeline, command_buffer, rb, fb_width, fb_height);
+                 else
+                     pcmd->UserCallback(draw_list, pcmd);
+@@ -1028,7 +1034,7 @@ static void ImGui_ImplVulkan_CreateShaderModules(VkDevice device, const VkAlloca
+     }
+ }
+ 
+-static void ImGui_ImplVulkan_CreatePipeline(VkDevice device, const VkAllocationCallbacks* allocator, VkPipelineCache pipelineCache, VkRenderPass renderPass, VkSampleCountFlagBits MSAASamples, VkPipeline* pipeline, uint32_t subpass)
++static void ImGui_ImplVulkan_CreatePipeline(VkDevice device, const VkAllocationCallbacks* allocator, VkPipelineCache pipelineCache, VkRenderPass renderPass, VkSampleCountFlagBits MSAASamples, VkPipeline* pipeline, uint32_t subpass, bool premultiplied = false)
+ {
+     ImGui_ImplVulkan_Data* bd = ImGui_ImplVulkan_GetBackendData();
+     ImGui_ImplVulkan_CreateShaderModules(device, allocator);
+@@ -1090,7 +1096,7 @@ static void ImGui_ImplVulkan_CreatePipeline(VkDevice device, const VkAllocationC
+ 
+     VkPipelineColorBlendAttachmentState color_attachment[1] = {};
+     color_attachment[0].blendEnable = VK_TRUE;
+-    color_attachment[0].srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
++    color_attachment[0].srcColorBlendFactor = premultiplied ? VK_BLEND_FACTOR_ONE : VK_BLEND_FACTOR_SRC_ALPHA;
+     color_attachment[0].dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+     color_attachment[0].colorBlendOp = VK_BLEND_OP_ADD;
+     color_attachment[0].srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+@@ -1215,6 +1221,7 @@ bool ImGui_ImplVulkan_CreateDeviceObjects()
+     }
+ 
+     ImGui_ImplVulkan_CreatePipeline(v->Device, v->Allocator, v->PipelineCache, v->RenderPass, v->MSAASamples, &bd->Pipeline, v->Subpass);
++    ImGui_ImplVulkan_CreatePipeline(v->Device, v->Allocator, v->PipelineCache, v->RenderPass, v->MSAASamples, &bd->PipelinePremultiplied, v->Subpass, true);
+ 
+     return true;
+ }
+@@ -1234,6 +1241,7 @@ void    ImGui_ImplVulkan_DestroyDeviceObjects()
+     if (bd->DescriptorSetLayout)  { vkDestroyDescriptorSetLayout(v->Device, bd->DescriptorSetLayout, v->Allocator); bd->DescriptorSetLayout = VK_NULL_HANDLE; }
+     if (bd->PipelineLayout)       { vkDestroyPipelineLayout(v->Device, bd->PipelineLayout, v->Allocator); bd->PipelineLayout = VK_NULL_HANDLE; }
+     if (bd->Pipeline)             { vkDestroyPipeline(v->Device, bd->Pipeline, v->Allocator); bd->Pipeline = VK_NULL_HANDLE; }
++    if (bd->PipelinePremultiplied) { vkDestroyPipeline(v->Device, bd->PipelinePremultiplied, v->Allocator); bd->PipelinePremultiplied = VK_NULL_HANDLE; }
+     if (bd->DescriptorPool)       { vkDestroyDescriptorPool(v->Device, bd->DescriptorPool, v->Allocator); bd->DescriptorPool = VK_NULL_HANDLE; }
+ }
+ 
+diff --git a/dependencies/imgui_impl_vulkan.h b/dependencies/imgui_impl_vulkan.h
+index 2a4c5dd..9988bfa 100644
+--- a/dependencies/imgui_impl_vulkan.h
++++ b/dependencies/imgui_impl_vulkan.h
+@@ -115,6 +115,9 @@ IMGUI_IMPL_API bool             ImGui_ImplVulkan_Init(ImGui_ImplVulkan_InitInfo*
+ IMGUI_IMPL_API void             ImGui_ImplVulkan_Shutdown();
+ IMGUI_IMPL_API void             ImGui_ImplVulkan_NewFrame();
+ IMGUI_IMPL_API void             ImGui_ImplVulkan_RenderDrawData(ImDrawData* draw_data, VkCommandBuffer command_buffer, VkPipeline pipeline = VK_NULL_HANDLE);
++// BetterVR: bind the premultiplied-alpha pipeline for the next draw commands, whose texture is already rgb*a, a;
++// ImDrawCallback_ResetRenderState returns to the normal straight-alpha pipeline. Used by the game's HUD background.
++IMGUI_IMPL_API void             ImGui_ImplVulkan_PremultipliedBlendCallback(const ImDrawList* parent_list, const ImDrawCmd* cmd);
+ IMGUI_IMPL_API bool             ImGui_ImplVulkan_CreateFontsTexture();
+ IMGUI_IMPL_API void             ImGui_ImplVulkan_DestroyFontsTexture();
+ IMGUI_IMPL_API void             ImGui_ImplVulkan_SetMinImageCount(uint32_t min_image_count); // To override MinImageCount after initialization (e.g. if swap chain is recreated)
+diff --git a/src/cemu/capture.cpp b/src/cemu/capture.cpp
+index 84e7ad3..f52a95f 100644
+--- a/src/cemu/capture.cpp
++++ b/src/cemu/capture.cpp
+@@ -4,6 +4,7 @@
+ #include "instance.h"
+ #include "game/game.h"
+ #include "game/botw/pack_shared_memory.h"
++#include "rendering/imgui_menus.h"
+ #include "utils/vulkan_utils.h"
+ #include "cemu_host.h"
+ #include "utils/debug_draw.h"
+@@ -225,8 +226,31 @@ void Capture::OnHud(const FrameState& state, VkCommandBuffer commandBuffer, cons
+     RND_Renderer::RenderFrame& frame = renderer->GetFrame(frameIdx);
+     auto& imguiOverlay = renderer->m_imguiOverlay;
+     const bool hudCopied = frame.Is2DComplete();
++    const Game::Presentation game = Game::GetPresentation();
++
++    // a screen's first 2D capture can still hold the 3D frame it opened over (the wheel's bright pre-menu copy):
++    // present the last good frame once and take the screen from the next capture
++    static bool s_wasScreenShown = false;
++    static bool s_holdFirstScreenCapture = false;
++    static bool s_hasPresentedHud = false;
++    const bool screenShown = !game.inGame || game.pauseMenuOpen || game.quickMenuOpen || game.flatCamera || game.blackBars || ImGuiMenus::g_isOpen;
++    if (screenShown && !s_wasScreenShown && s_hasPresentedHud)
++        s_holdFirstScreenCapture = true;
++    s_wasScreenShown = screenShown;
+ 
+     if (state.side == EyeSide::LEFT) {
++        if (s_holdFirstScreenCapture) {
++            s_holdFirstScreenCapture = false;
++            Log::print<RENDERING>("[capture] held the first 2D capture after a screen change (inGame={}, quickMenu={}, pause={})",
++                game.inGame, game.quickMenuOpen, game.pauseMenuOpen);
++            if (imguiOverlay) {
++                imguiOverlay->Update();
++                imguiOverlay->SkipDraw();
++            }
++            Release(commandBuffer, surface, std::nullopt);
++            return;
++        }
++
+         if (!frame.IsStereoRecord() && frame.recordKind == RND_Renderer::CaptureRecordKind::None) {
+             renderer->BeginHudCaptureGeneration(frameIdx);
+         }
+@@ -236,7 +260,6 @@ void Capture::OnHud(const FrameState& state, VkCommandBuffer commandBuffer, cons
+             return;
+         }
+         frame.lastActivityOrdinal = renderer->NextCaptureActivityOrdinal();
+-        const Game::Presentation game = Game::GetPresentation();
+         frame.hudHoldsScene = UsesMonoCapture(state) && !game.flatCamera && !game.pauseMenuOpen;
+ 
+         if (imguiOverlay) {
+@@ -264,6 +287,7 @@ void Capture::OnHud(const FrameState& state, VkCommandBuffer commandBuffer, cons
+         }
+ 
+         FrameSync* sync = renderer->m_layer2D->CopyColorToLayer(commandBuffer, surface.image, frameIdx);
++        s_hasPresentedHud = true;
+         Log::print<RENDERING>("[Capture] HUD 2D side=left, frameIdx={}, sync={}, counter={}", frameIdx, (void*)sync, sync ? sync->GetWaitValue() : 0);
+ 
+ #if !defined(__PROSPERO__)
+diff --git a/src/game/botw/camera/camera.cpp b/src/game/botw/camera/camera.cpp
+index dde1e68..aa035f0 100644
+--- a/src/game/botw/camera/camera.cpp
++++ b/src/game/botw/camera/camera.cpp
+@@ -2,6 +2,7 @@
+ #include "camera.h"
+ #include "stereo_view.h"
+ #include "cemu/cemu_host.h"
++#include "game/game.h"
+ #include "game/botw/game_state.h"
+ #include "game/botw/player/player.h"
+ #include "game/botw/player/roomscale.h"
+@@ -17,6 +18,23 @@ static constexpr float hardcodedClimbWallClearance = 0.35f;
+ static std::atomic_uint32_t s_framesSinceLastUpdate = 0;
+ static std::atomic<glm::mat4> s_referenceMtx = glm::mat4(1.0f);
+ 
++// written on the game thread by hook_UpdateCameraForGameplay, read by the same thread's bone pass
++static Camera::FirstPersonBodyPose s_firstPersonBodyPose;
++static std::chrono::steady_clock::time_point s_firstPersonBodySkipLastLog{};
++
++bool Camera::GetFirstPersonBodyPose(FirstPersonBodyPose& pose) {
++    pose = s_firstPersonBodyPose;
++    return pose.valid;
++}
++
++static void LogFirstPersonBodySkip(const char* reason) {
++    const auto now = std::chrono::steady_clock::now();
++    if (now - s_firstPersonBodySkipLastLog < std::chrono::seconds(1))
++        return;
++    s_firstPersonBodySkipLastLog = now;
++    Log::print<INFO>("[pose] camera hook kept the last first-person body pose ({})", reason);
++}
++
+ static glm::fvec3 s_wsCameraPosition = glm::fvec3();
+ static glm::fquat s_wsCameraRotation = glm::identity<glm::fquat>();
+ static glm::fvec3 s_lastGameplayCameraTarget = glm::fvec3();
+@@ -376,7 +394,25 @@ glm::mat4 Camera::GetFreshReferenceMtx() {
+ }
+ 
+ std::pair<glm::fvec3, glm::fquat> Camera::ResolveGameplayBasePose(const BESeadLookAtCamera& camera) {
+-    if (s_hasGameplayCameraTarget && GetFramesSinceLastUpdate() <= 4) {
++    // the first frames after a screen closes are what a 2-frame world shift would come from: say whether the
++    // view took the hook's cached pose or the game's own camera matrix
++    static bool s_wasScreenShown = false;
++    static int s_logFramesAfterScreen = 0;
++    const Game::Presentation presentation = Game::GetPresentation();
++    const bool screenShown = !presentation.inGame || presentation.pauseMenuOpen || presentation.quickMenuOpen
++        || presentation.flatCamera || presentation.blackBars;
++    if (s_wasScreenShown && !screenShown)
++        s_logFramesAfterScreen = 6;
++    s_wasScreenShown = screenShown;
++
++    const bool cached = s_hasGameplayCameraTarget && GetFramesSinceLastUpdate() <= 4;
++    if (s_logFramesAfterScreen > 0) {
++        --s_logFramesAfterScreen;
++        Log::print<INFO>("[camera] first frame after a screen: source={} (cached target {}, frames since update {}, first person {}, quick menu {})",
++            cached ? "cached" : "game", s_hasGameplayCameraTarget, GetFramesSinceLastUpdate(), GameState::IsFirstPerson(), presentation.quickMenuOpen);
++    }
++
++    if (cached) {
+         return { s_wsCameraPosition, s_wsCameraRotation };
+     }
+ 
+@@ -428,6 +464,9 @@ static void hook_UpdateCameraForGameplay(PPCInterpreter_t* hCPU) {
+     s_wsCameraPosition = oldCameraPosition;
+     s_wsCameraRotation = gameplayRotation;
+ 
++    glm::mat4 firstPersonPlayerMtx = glm::identity<glm::mat4>();
++    bool hasFirstPersonPlayerMtx = false;
++
+     // rebase the rotation to the player position
+     if (firstPerson && Player::GetAddress() != 0) {
+         const PlayerMoveBitFlags moveBits = Player::GetMoveFlags();
+@@ -440,16 +479,21 @@ static void hook_UpdateCameraForGameplay(PPCInterpreter_t* hCPU) {
+         UpdateClimbWallCameraOffset(views, playerPos, gameplayRotation);
+         playerPos += s_climbWallCameraOffset;
+ 
+-        existingGameMtx = glm::inverse(glm::translate(glm::identity<glm::mat4>(), playerPos) * glm::mat4(gameplayRotation));
++        firstPersonPlayerMtx = glm::translate(glm::identity<glm::mat4>(), playerPos) * glm::mat4(gameplayRotation);
++        hasFirstPersonPlayerMtx = true;
++        existingGameMtx = glm::inverse(firstPersonPlayerMtx);
+     }
+ 
+     Camera::UpdateDebugEyeViews(views, s_wsCameraPosition, s_wsCameraRotation);
+ 
+     if (!views.has_value()) {
+         Log::print<ERROR>("hook_UpdateCameraForGameplay: No views available for the middle pose.");
++        if (firstPerson)
++            LogFirstPersonBodySkip("no head views");
+         return;
+     }
+-    glm::mat4 finalPose = glm::inverse(existingGameMtx) * GetAppliedHeadsetPose(views->MiddlePose());
++    const glm::mat4 appliedHeadset = GetAppliedHeadsetPose(views->MiddlePose());
++    glm::mat4 finalPose = glm::inverse(existingGameMtx) * appliedHeadset;
+ 
+     glm::fvec3 camPos = glm::fvec3(finalPose[3]);
+     glm::fvec3 forward = -glm::normalize(glm::fvec3(finalPose[2]));
+@@ -457,11 +501,23 @@ static void hook_UpdateCameraForGameplay(PPCInterpreter_t* hCPU) {
+     glm::fvec3 target = camPos + forward * oldCameraDistance;
+ 
+     if (!TryUpdateGameplayCameraTarget(camPos, target, up)) {
++        if (firstPerson)
++            LogFirstPersonBodySkip("no finite camera target");
+         return;
+     }
+ 
+     Camera::UpdateReferenceMtx(s_wsCameraPosition, s_wsCameraRotation);
+ 
++    if (hasFirstPersonPlayerMtx) {
++        s_firstPersonBodyPose.valid = true;
++        s_firstPersonBodyPose.playerMtx = firstPersonPlayerMtx;
++        s_firstPersonBodyPose.cameraMtx = GetReferenceMtx();
++        s_firstPersonBodyPose.headsetMtx = appliedHeadset;
++    }
++    else if (firstPerson) {
++        LogFirstPersonBodySkip("no player matrix");
++    }
++
+     actCam.finalCamMtx.pos = camPos;
+     actCam.finalCamMtx.target = target;
+     actCam.finalCamMtx.up = up;
+diff --git a/src/game/botw/camera/camera.h b/src/game/botw/camera/camera.h
+index f080d84..599e344 100644
+--- a/src/game/botw/camera/camera.h
++++ b/src/game/botw/camera/camera.h
+@@ -8,6 +8,16 @@ namespace Camera {
+     uint32_t GetFramesSinceLastUpdate();
+     glm::mat4 GetReferenceMtx();
+     void SetReferenceMtx(const glm::mat4& referenceMtx);
++
++    // the head and player pose the camera hook used for the view this frame; the skeleton poses Skl_Root
++    // from it, so the body and the eye cannot disagree about this frame's turn
++    struct FirstPersonBodyPose {
++        bool valid = false;
++        glm::mat4 playerMtx = glm::identity<glm::mat4>();
++        glm::mat4 cameraMtx = glm::identity<glm::mat4>();
++        glm::mat4 headsetMtx = glm::identity<glm::mat4>();
++    };
++    bool GetFirstPersonBodyPose(FirstPersonBodyPose& pose);
+     // the reference matrix is still from the previous frame during the actor calc jobs
+     // that also reads the live player matrix has to re-resolve it or it mixes two simulation steps
+     glm::mat4 GetFreshReferenceMtx();
+diff --git a/src/game/botw/input/controls.cpp b/src/game/botw/input/controls.cpp
+index 8a47788..d1cd333 100644
+--- a/src/game/botw/input/controls.cpp
++++ b/src/game/botw/input/controls.cpp
+@@ -1129,7 +1129,7 @@ static void SetGuide(const Game::Guide& guide, GuideContext context, XrTime show
+     s_guide.shownAt = shownAt;
+ }
+ 
+-static Game::Guide BuildGuide(GuideContext context) {
++[[maybe_unused]] static Game::Guide BuildGuide(GuideContext context) {
+     const float leftSide = -1.0f;
+ 
+     auto place = [&](float sideways, float up, float ahead) {
+@@ -1170,12 +1170,22 @@ static void UpdateGuide(const OpenXR::InputState& inputs, bool menuOpen) {
+         SetGuide({}, GuideContext::None, 0);
+         visible = false;
+     }
+-    if (context == GuideContext::None || s_modMenuButton.lastEvent != ButtonState::Event::ShortPress)
++    if (context == GuideContext::None)
++        return;
++#if defined(__PROSPERO__)
++    // a short press is the game's pause on the PS5 (ProcessOptionsButton); it opens no help card over the
++    // game, whichever controller sent it. A hold still opens BetterVR's own menu.
++    if (s_modMenuButton.lastEvent == ButtonState::Event::ShortPress)
++        Log::print<INFO>("[guide] short press ignored on the PS5, no help popup");
++    return;
++#else
++    if (s_modMenuButton.lastEvent != ButtonState::Event::ShortPress)
+         return;
+     if (visible)
+         SetGuide({}, GuideContext::None, 0);
+     else
+         SetGuide(BuildGuide(context), context, now);
++#endif
+ }
+ 
+ Game::Guide Controls::GetGuide() {
+diff --git a/src/game/botw/player/bow.cpp b/src/game/botw/player/bow.cpp
+index ec690b5..0279ff2 100644
+--- a/src/game/botw/player/bow.cpp
++++ b/src/game/botw/player/bow.cpp
+@@ -239,6 +239,8 @@ static constexpr float kPreviewAimDistance = 100.0f;
+ static constexpr float kLaunchTargetDistance = 100.0f;
+ static constexpr float kMinimumArrowSpeed = 0.01f;
+ static constexpr float kMinimumBowDrawAmount = 0.001f;
++// in third person the game shows no aim aid, so a resting bow's tiny draw must not put the preview there
++static constexpr float kThirdPersonMinimumBowDrawAmount = 0.05f;
+ static constexpr uint64_t kActiveSnapshotLifetimeMs = 1500;
+ static constexpr uint64_t kPendingShotOverrideLifetimeMs = 250;
+ static constexpr uint32_t kPresetDefaultMaxFrames = 48;
+@@ -1347,6 +1349,11 @@ void Bow::QueueAimingArcPreview(long frameIdx) {
+         return;
+     }
+ 
++    if (GameState::IsThirdPerson() && Bow::GetDrawAmount() <= kThirdPersonMinimumBowDrawAmount) {
++        s_aimingArcCache = {};
++        return;
++    }
++
+     BowVisualizationState launchState = {};
+     if (!TryBuildBowVisualizationState(launchState, frameIdx) || launchState.drawAmount <= kMinimumBowDrawAmount) {
+         s_aimingArcCache = {};
+@@ -1373,6 +1380,15 @@ void Bow::QueueAimingArcPreview(long frameIdx) {
+     }
+ 
+     if (s_aimingArcCache.valid) {
++        if (GameState::IsThirdPerson()) {
++            static std::chrono::steady_clock::time_point s_lastThirdPersonLog{};
++            const auto now = std::chrono::steady_clock::now();
++            if (now - s_lastThirdPersonLog >= std::chrono::seconds(1)) {
++                s_lastThirdPersonLog = now;
++                Log::print<INFO>("[bow] bow aim arc drawn in third person (draw={:.3f}, engaged={})",
++                    Bow::GetDrawAmount(), Skeleton::IsBowDrawEngaged());
++            }
++        }
+         DrawAimingArc(s_aimingArcCache);
+     }
+ }
+diff --git a/src/game/botw/player/skeleton.cpp b/src/game/botw/player/skeleton.cpp
+index 248a0c0..e4d0581 100644
+--- a/src/game/botw/player/skeleton.cpp
++++ b/src/game/botw/player/skeleton.cpp
+@@ -470,6 +470,78 @@ static bool IsThirdPersonForPose(bool rootBone) {
+     return thirdPerson;
+ }
+ 
++// What the last first-person frame put in Skl_Root. The view was built from the camera hook's pose, so a frame
++// whose actor, model or hand pose is skipped must still draw that root, not the game's stale anim pose.
++struct LatchedBodyRoot {
++    bool valid = false;
++    glm::vec3 position = glm::vec3(0.0f);
++    glm::fquat yaw = glm::identity<glm::fquat>();
++    float bodyViewYawDelta = 0.0f;
++};
++static LatchedBodyRoot s_latchedBodyRoot;
++static std::chrono::steady_clock::time_point s_bodyRootLastLog{};
++static uint32_t s_bodyRootSkips = 0;
++static const char* s_bodyRootFirstSkip = nullptr;
++static const char* s_bodyRootLastSkip = nullptr;
++
++static float YawDeltaDegrees(const glm::fquat& bodyYaw, const glm::fquat& viewYaw) {
++    const glm::fquat delta = bodyYaw * glm::inverse(viewYaw);
++    float degrees = glm::degrees(2.0f * std::atan2(delta.y, delta.w));
++    while (degrees > 180.0f)
++        degrees -= 360.0f;
++    while (degrees < -180.0f)
++        degrees += 360.0f;
++    return degrees;
++}
++
++static void LogBodyRootSkip(const char* reason, bool wroteLast) {
++    ++s_bodyRootSkips;
++    if (s_bodyRootFirstSkip == nullptr)
++        s_bodyRootFirstSkip = reason;
++    s_bodyRootLastSkip = reason;
++
++    const auto now = std::chrono::steady_clock::now();
++    if (now - s_bodyRootLastLog < std::chrono::seconds(1))
++        return;
++    s_bodyRootLastLog = now;
++
++    if (s_bodyRootFirstSkip == s_bodyRootLastSkip)
++        Log::print<INFO>("[pose] first-person body root {} ({} x {}); body-view yaw delta {:.1f} deg",
++            wroteLast ? "kept the last good frame" : "not latched yet", s_bodyRootSkips, reason, s_latchedBodyRoot.bodyViewYawDelta);
++    else
++        Log::print<INFO>("[pose] first-person body root {} ({} x {}, {} to {}); body-view yaw delta {:.1f} deg",
++            wroteLast ? "kept the last good frame" : "not latched yet", s_bodyRootSkips, s_bodyRootFirstSkip, s_bodyRootFirstSkip, s_bodyRootLastSkip,
++            s_latchedBodyRoot.bodyViewYawDelta);
++    s_bodyRootSkips = 0;
++    s_bodyRootFirstSkip = nullptr;
++}
++
++static void LogBodyRootDelta(float yawDelta) {
++    // a pending skip says more than the delta, and its line carries the last latched delta too
++    if (s_bodyRootSkips > 0)
++        return;
++    const auto now = std::chrono::steady_clock::now();
++    if (now - s_bodyRootLastLog < std::chrono::seconds(1))
++        return;
++    s_bodyRootLastLog = now;
++    Log::print<INFO>("[pose] first-person body-view yaw delta {:.1f} deg", yawDelta);
++}
++
++static void WriteLatchedBodyRoot(const std::string& boneName, uint32_t matrixPtr, uint32_t scalePtr, const char* reason) {
++    if (boneName != "Skl_Root" || IsThirdPersonForPose(true))
++        return;
++    if (!s_latchedBodyRoot.valid) {
++        LogBodyRootSkip(reason, false);
++        return;
++    }
++
++    const glm::fvec3 scale = Guest::Get<BEVec3>(scalePtr).getLE();
++    BEMatrix34 m{ s_latchedBodyRoot.position, s_latchedBodyRoot.yaw };
++    Guest::Set(matrixPtr, m);
++    Guest::Set(scalePtr, scale);
++    LogBodyRootSkip(reason, true);
++}
++
+ static void hook_ModifyBoneMatrix(PPCInterpreter_t* hCPU) {
+     hCPU->instructionPointer = hCPU->sprNew.LR;
+     const uint32_t modelUnitPtr = hCPU->gpr[7];
+@@ -496,10 +568,13 @@ static void hook_ModifyBoneMatrix(PPCInterpreter_t* hCPU) {
+         if (boneName == "Skl_Root")
+             HeadVisibility::OnSkeletonRoot();
+         HeadVisibility::SubmitNextMaterial(hCPU, !IsThirdPersonForPose(boneName == "Skl_Root"), gsysModelPtr);
++        WriteLatchedBodyRoot(boneName, matrixPtr, scalePtr, "actor missing");
+         return;
+     }
+-    if (Guest::Get<uint32_t>(playerActor + 0x330).getLE() != gsysModelPtr)
++    if (Guest::Get<uint32_t>(playerActor + 0x330).getLE() != gsysModelPtr) {
++        WriteLatchedBodyRoot(boneName, matrixPtr, scalePtr, "model mismatch");
+         return;
++    }
+ 
+     const bool isLeft = boneName.ends_with("_L");
+     const OpenXR::EyeSide side = isLeft ? OpenXR::EyeSide::LEFT : OpenXR::EyeSide::RIGHT;
+@@ -553,29 +628,48 @@ static void hook_ModifyBoneMatrix(PPCInterpreter_t* hCPU) {
+     }
+ 
+     glm::fvec3 boneScale = Guest::Get<BEVec3>(scalePtr).getLE();
+-    const glm::fmat4 playerMtx4 = glm::fmat4(Guest::Get<BEMatrix34>(Player::GetMtxAddress()).getLEMatrix());
+-    const glm::mat4 cameraMtx = Camera::GetFreshReferenceMtx();
++
++    // the camera hook's own head and player sample, so Skl_Root and the view turn together this frame
++    Camera::FirstPersonBodyPose bodyPose;
++    const bool hasBodyPose = Camera::GetFirstPersonBodyPose(bodyPose);
++    glm::fmat4 playerMtx4;
++    glm::mat4 cameraMtx;
++    if (hasBodyPose) {
++        playerMtx4 = glm::fmat4(bodyPose.playerMtx);
++        cameraMtx = bodyPose.cameraMtx;
++    }
++    else {
++        playerMtx4 = glm::fmat4(Guest::Get<BEMatrix34>(Player::GetMtxAddress()).getLEMatrix());
++        cameraMtx = Camera::GetFreshReferenceMtx();
++    }
+ 
+     const OpenXR::InputState& inputs = s_skeletonPassInputs;
+     if (!inputs.shared.pose[side].isActive) {
+-        if (boneName == "Skl_Root")
++        if (boneName == "Skl_Root") {
+             s_lastAppliedRightWristRotValid = false;
++            WriteLatchedBodyRoot(boneName, matrixPtr, scalePtr, "hand pose inactive");
++        }
+         return;
+     }
+ 
+     EnsureSkeletonInitialized();
+ 
+     int boneIndex = s_skeleton.GetBoneIndex(boneName);
+-    if (boneIndex == -1)
++    if (boneIndex == -1) {
++        WriteLatchedBodyRoot(boneName, matrixPtr, scalePtr, "bone missing");
+         return;
++    }
+ 
+     const BoneFrameContext ctx{ inputs, playerMtx4, FirstPersonStageToWorld(cameraMtx) };
+ 
+     glm::mat4 calculatedLocalMat = s_skeleton.GetBone(boneIndex)->localMatrix;
+ 
+     if (boneName == "Skl_Root") {
+-        auto headsetPose = Tracking::HeadPose();
+-        glm::mat4 headsetMtx = headsetPose.value_or(ToMat4(glm::fvec3(0)));
++        glm::mat4 headsetMtx;
++        if (hasBodyPose)
++            headsetMtx = bodyPose.headsetMtx;
++        else
++            headsetMtx = Tracking::HeadPose().value_or(ToMat4(glm::fvec3(0)));
+ 
+         // headset in model space
+         glm::mat4 headsetModel = glm::inverse(playerMtx4) * cameraMtx * headsetMtx;
+@@ -752,6 +846,13 @@ static void hook_ModifyBoneMatrix(PPCInterpreter_t* hCPU) {
+         s_lastAppliedRightWristRot = s_twoHandGrip.engaged ? s_twoHandGrip.rightGripRotWorld : rightHandRotWorld;
+         s_lastAppliedRightWristRotValid = !s_passAnimatedHands;
+ 
++        s_latchedBodyRoot.valid = true;
++        s_latchedBodyRoot.position = targetPos;
++        s_latchedBodyRoot.yaw = yawRot;
++        s_latchedBodyRoot.bodyViewYawDelta = YawDeltaDegrees(yawRot, ExtractPlayerBodyYaw(cameraMtx));
++        if (std::abs(s_latchedBodyRoot.bodyViewYawDelta) >= 0.5f)
++            LogBodyRootDelta(s_latchedBodyRoot.bodyViewYawDelta);
++
+         writeBoneQuat(targetPos, yawRot, boneScale);
+         return;
+     }
+diff --git a/src/rendering/vulkan_imgui.cpp b/src/rendering/vulkan_imgui.cpp
+index 55ceea8..3ba086b 100644
+--- a/src/rendering/vulkan_imgui.cpp
++++ b/src/rendering/vulkan_imgui.cpp
+@@ -539,7 +539,10 @@ void RND_Renderer::ImGuiOverlay::Render(long frameIdx, bool renderBackground, bo
+             hudSize = ImVec2(framebufferUiRegion.z / fbScale.x, framebufferUiRegion.w / fbScale.y);
+         }
+ 
++        // the game's HUD is premultiplied (rgb*a, a); the normal ImGui pipeline would write rgb*a²
++        backgroundDrawList->AddCallback(ImGui_ImplVulkan_PremultipliedBlendCallback, nullptr);
+         backgroundDrawList->AddImage((ImTextureID)(withAlpha ? frame.hudFramebufferDS : frame.hudWithoutAlphaFramebufferDS), hudPos, ImVec2(hudPos.x + hudSize.x, hudPos.y + hudSize.y));
++        backgroundDrawList->AddCallback(ImDrawCallback_ResetRenderState, nullptr);
+     };
+ 
+     auto renderMainBackground = [&]() {
+diff --git a/src/rendering/world_guide.cpp b/src/rendering/world_guide.cpp
+index 50d83f2..8e7eccd 100644
+--- a/src/rendering/world_guide.cpp
++++ b/src/rendering/world_guide.cpp
+@@ -2,6 +2,7 @@
+ 
+ #include "world_guide.h"
+ #include "instance.h"
++#include "game/botw/game_state.h"
+ #include "shaders_spirv.h"
+ #include "font_roboto.h"
+ #include "font_material_symbols.h"
+@@ -615,6 +616,14 @@ bool WorldGuide::Prepare(const std::array<XrView, 2>& views) {
+     if (m_vertices.empty())
+         return false;
+ 
++    if (GameState::IsThirdPerson()) {
++        static std::chrono::steady_clock::time_point s_lastThirdPersonLog{};
++        if (now - s_lastThirdPersonLog >= std::chrono::seconds(1)) {
++            s_lastThirdPersonLog = now;
++            Log::print<INFO>("[guide] world guide ribbon drawn in third person ({} cards, {} vertices)", m_guide.count, m_vertices.size());
++        }
++    }
++
+     const uint32_t frameContextIndex = m_backend->GetFrameContextIndex();
+     RND_VkBackend::HostBuffer& vertexBuffer = m_vertexBuffers[frameContextIndex];
+     const uint32_t requiredBytes = (uint32_t)(m_vertices.size() * sizeof(Vertex));

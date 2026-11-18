@@ -29,12 +29,15 @@ player looks. New patches: bettervr 0007-0010, cemu 0055. Details: `UPDATE-1.0.m
   N ms`, `long press -> open`/`closed`, `release after the threshold -> hold`, `short press -> pause`, `short press
   ignored, game input is blocked`).
 - (b) Strafe flash. Strafe left and right with the left stick near grass and say whether Link's body still flashes for
-  a frame. Send the `[pose] a short camera stall kept first person (N frames)` lines (at most one a second) and say
-  whether the frame rate held.
+  a frame. Send the `[pose] a short camera stall kept first person (N frames)` lines (at most one a second), the new
+  `[pose] first-person body-view yaw delta N deg` lines, and every `[pose] first-person body root ...` line (they
+  name the skip: actor missing, model mismatch, hand pose inactive, bone missing); say whether the frame rate held.
 - (c) Weapon wheel and HUD. Open the weapon wheel: the left and right arrows must be visible on the black buttons, and
   the minimap and clock must not look faded or black. Turn your head slowly while looking at the HUD and at menu text,
   menu open and closed: say whether the edges still crawl or shimmer, and whether the TV mirror differs. Send the
-  `[frame]` and `[perf]` lines from two minutes in the overworld at 1x.
+  `[frame]` and `[perf]` lines from two minutes in the overworld at 1x, every `[capture] held the first 2D capture
+  after a screen change ...` line, and the `[camera] first frame after a screen: source=...` lines from opening and
+  closing the wheel; say whether the bright first wheel frame and the 2-frame world shift on closing are still there.
 - (d) Vibration page. Hold Options and open the new **Vibration** page between Controls and Display; say whether it
   draws (master switch, headset cap, three test buttons, nine category rows with On / Strength / Hands / Headset /
   DualSense). **Press Headset first, alone, before taking any damage**: that is the first call to the motor's
@@ -81,6 +84,11 @@ player looks. New patches: bettervr 0007-0010, cemu 0055. Details: `UPDATE-1.0.m
   Crementif's BetterVR (under the GNU GPL and MIT respectively) and the Wii U's own paths, and the pages must show no
   other system's games, sides or settings. Send a photo of About and say whether any page still reads as a multi-game
   launcher.
+- (k) Blue needle in third person. Set third person in Settings > VR; on foot, tap Options once on the right Sense and
+  once on the DualSense (each is only the game's pause) and look at the screen centre while Link stands still. Say
+  whether the thin blue needle still appears, and whether it appears while drawing the bow in third person (it should
+  only then). Send every `[guide] short press ignored on the PS5 ...` line, `[guide] world guide ribbon drawn in third
+  person ...` if one appears, and `[bow] bow aim arc drawn in third person (draw=..., engaged=...)`.
 
 ## 2026-11-18: console run 4 (37c6028, 13.60)
 
