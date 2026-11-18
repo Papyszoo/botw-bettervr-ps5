@@ -567,13 +567,20 @@ extern "C" float BetterVR_PS5_Setting(const char* name, float fallback)
 	std::fclose(file);
 	rapidjson::Document json;
 	json.Parse(text.c_str());
-	if (json.HasParseError() || !json.IsObject() || !json.HasMember(name) || !json[name].IsNumber())
+	if (json.HasParseError() || !json.IsObject() || !json.HasMember(name))
 		return fallback;
-	return json[name].GetFloat();
+	if (json[name].IsNumber())
+		return json[name].GetFloat();
+	// "senseTriggers": true reads as 1, so a switch can be written as a boolean
+	if (json[name].IsBool())
+		return json[name].GetBool() ? 1.0f : 0.0f;
+	return fallback;
 }
 
 // port/bettervr/xr/runtime.cpp, in the BetterVR module's library
 extern "C" void BetterVR_PS5_Stop();
+// the same module: the adaptive triggers off before the game is replaced
+extern "C" void BetterVR_PS5_TriggersOff();
 
 // app/emulator.cpp, before every LoadExec: the headset off, whichever mode had it
 void PS5Cemu_VrStop()
@@ -590,6 +597,7 @@ void PS5Cemu_VrStop()
 // reason is hmd2's failed step when there is one, else the session's error.
 extern "C" void BetterVR_PS5_VrFailed(const char* what)
 {
+	BetterVR_PS5_TriggersOff();
 	const hmd2::Error error = hmd2::error();
 	std::string reason = error.step && error.step[0] ? fmt::format("{}, {:#010x}", error.step, (uint32_t)error.rc) : std::string(what);
 	ps5vr::Log("VR did not start (" + reason + "): back to the library");

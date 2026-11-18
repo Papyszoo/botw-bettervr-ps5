@@ -1,0 +1,141 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Patryk Kowalczyk <papyszoo@gmail.com>
+Date: Wed, 18 Nov 2026 17:02:58 +0100
+Subject: [PATCH] PS5: adaptive triggers follow the bow's draw on R2 and the
+ shield on L2
+
+---
+ src/game/botw/input/controls.cpp | 20 +++++++++++++++++++-
+ src/game/botw/player/bow.cpp     | 12 ++++++++++++
+ src/game/botw/player/bow.h       |  2 ++
+ src/rendering/imgui_menus.cpp    | 14 ++++++++++++++
+ src/utils/mod_settings.h         |  4 ++++
+ 5 files changed, 51 insertions(+), 1 deletion(-)
+
+diff --git a/src/game/botw/input/controls.cpp b/src/game/botw/input/controls.cpp
+index 06f73cf..c576d4b 100644
+--- a/src/game/botw/input/controls.cpp
++++ b/src/game/botw/input/controls.cpp
+@@ -8,6 +8,7 @@
+ #include "game/botw/player/player.h"
+ #include "game/botw/player/skeleton.h"
+ #include "game/botw/player/weapon.h"
++#include "game/botw/player/bow.h"
+ #include "instance.h"
+ #include "rendering/renderer.h"
+ #include "rendering/haptics.h"
+@@ -15,6 +16,11 @@
+ #include "rendering/tracking.h"
+ #include "font_material_symbols.h"
+ 
++#if defined(__PROSPERO__)
++// port/bettervr/xr/runtime.cpp: the bow's draw on R2 and the shield on L2, through libScePad's trigger effects
++extern "C" void BetterVR_PS5_AdaptiveTriggers(float bowDraw, int shieldGuarding, int interactive, int enabled, float strength);
++#endif
++
+ static ButtonState s_inventoryMapButton;
+ static ButtonState s_modMenuButton;
+ static ButtonState s_crouchScopeButton;
+@@ -1426,8 +1432,12 @@ static void hook_InjectXRInput(PPCInterpreter_t* hCPU) {
+ 
+     // take the hands and head once so the gestures below all use the same sample
+     OpenXR::InputState inputs = Tracking::SampleHands(GameState::IsShowingMenu());
+-    if (inputs.shared.inputTime <= 0)
++    if (inputs.shared.inputTime <= 0) {
++#if defined(__PROSPERO__)
++        BetterVR_PS5_AdaptiveTriggers(0.0f, 0, 0, GetSettings().adaptiveTriggers ? 1 : 0, GetSettings().adaptiveTriggerStrength);
++#endif
+         return;
++    }
+     const std::optional<glm::fmat4> headsetPose = Tracking::HeadPose();
+     UpdateControlButtons(inputs, ImGuiMenus::g_isOpen.load());
+ 
+@@ -1488,6 +1498,14 @@ static void hook_InjectXRInput(PPCInterpreter_t* hCPU) {
+ 
+     Haptics::Update();
+ 
++#if defined(__PROSPERO__)
++    // The adaptive triggers: the bow's live draw on R2, the shield's guard on L2. Off in a menu, on the pause and
++    // inventory screens and outside the game; BetterVR_PS5_AdaptiveTriggers sends the first off and every change.
++    BetterVR_PS5_AdaptiveTriggers(Bow::GetDrawAmount(), state.isShieldGuarding ? 1 : 0,
++        state.inGame && !isMenuOpen && !GameState::IsShowingMenu() ? 1 : 0,
++        GetSettings().adaptiveTriggers ? 1 : 0, GetSettings().adaptiveTriggerStrength);
++#endif
++
+     const bool disableRightStickHorizontalRotation = ShouldOverrideFirstPersonTurning(state.inGame) && !ImGuiMenus::g_isOpen && Camera::AppliesFirstPersonTurning();
+     VPADButtons newXRStickHold = VPAD_BUTTON_NONE;
+     ProcessJoystickInput(state.previousStickHold, newXRStickHold, vpadStatus, leftStickSource, rightStickSource, disableRightStickHorizontalRotation);
+diff --git a/src/game/botw/player/bow.cpp b/src/game/botw/player/bow.cpp
+index f71ea19..ec690b5 100644
+--- a/src/game/botw/player/bow.cpp
++++ b/src/game/botw/player/bow.cpp
+@@ -385,6 +385,18 @@ static uint32_t GetHeldLeftBowWeaponPtr() {
+     return weapon.type.getLE() == WeaponType::Bow ? weaponPtr : 0;
+ }
+ 
++// The live draw is the game's own field (the one TryReadLiveBowState reads), so the PS5's adaptive trigger follows
++// the bowstring rather than the input: 0.94C on the held weapon, clamped as the game's power shot does (1.5).
++float Bow::GetDrawAmount() {
++    const uint32_t weaponPtr = GetHeldLeftBowWeaponPtr();
++    if (weaponPtr == 0) {
++        return 0.0f;
++    }
++    float drawAmount = 0.0f;
++    Guest::ReadBE(weaponPtr + kWeaponDrawAmountOffset, &drawAmount);
++    return std::isfinite(drawAmount) ? glm::clamp(drawAmount, 0.0f, 1.5f) : 0.0f;
++}
++
+ static bool TryReadNativeWeaponAttackOrigin(uint32_t weaponPtr, glm::vec3& outOrigin) {
+     outOrigin = glm::vec3(0.0f);
+     if (weaponPtr == 0) {
+diff --git a/src/game/botw/player/bow.h b/src/game/botw/player/bow.h
+index ebe19e9..4c9543d 100644
+--- a/src/game/botw/player/bow.h
++++ b/src/game/botw/player/bow.h
+@@ -4,4 +4,6 @@ namespace Bow {
+     void RegisterHooks();
+     void OnGameFrame();
+     void QueueAimingArcPreview(long frameIdx = -1);
++    // The held bow's live draw (the game's +0x94C, 0 when no bow is held), for the PS5's adaptive R2 trigger.
++    float GetDrawAmount();
+ }
+diff --git a/src/rendering/imgui_menus.cpp b/src/rendering/imgui_menus.cpp
+index 3fc94d9..26aa560 100644
+--- a/src/rendering/imgui_menus.cpp
++++ b/src/rendering/imgui_menus.cpp
+@@ -1290,6 +1290,20 @@ void RND_Renderer::ImGuiOverlay::DrawSystemPage(bool* changed) {
+         EndCard();
+     }
+ 
++#if defined(__PROSPERO__)
++    if (BeginCard("##AdaptiveTriggers", "Adaptive Triggers")) {
++        DrawSetting(ICON_MS_STADIA_CONTROLLER, "Adaptive Triggers", "R2 firms up as the bow is drawn, L2 clicks while the shield is up.", [&]() {
++            DrawToggle(settings.adaptiveTriggers, changed);
++        });
++        if (settings.adaptiveTriggers) {
++            DrawSetting(ICON_MS_SPORTS, "Strength", [&]() {
++                DrawFloatSlider(settings.adaptiveTriggerStrength, 0.0f, 1.0f, [](float value) { return fmt::format("{:.0f}%", value * 100.0f); }, changed);
++            });
++        }
++        EndCard();
++    }
++#endif
++
+     if (BeginCard("##Reset")) {
+         DrawSetting(ICON_MS_RESTART_ALT, "Reset All Settings", [&]() {
+             ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.55f, 0.18f, 0.18f, 1.0f));
+diff --git a/src/utils/mod_settings.h b/src/utils/mod_settings.h
+index 50684ec..0528fda 100644
+--- a/src/utils/mod_settings.h
++++ b/src/utils/mod_settings.h
+@@ -618,6 +618,10 @@ struct ModSettings {
+     EnumSetting<TurnMode> turnMode{ "TurnMode", TurnMode::SMOOTH_NORMAL };
+     EnumSetting<SwingSensitivity> swingSensitivity{ "SwingSensitivity", SwingSensitivity::SWING_NORMAL };
+     BoolSetting oneHitPerSwing{ "OneHitPerSwing", true };
++#if defined(__PROSPERO__) // the PS5's adaptive triggers (port/bettervr/xr/runtime.cpp): the bow on R2, the shield on L2
++    BoolSetting adaptiveTriggers{ "AdaptiveTriggers", true };
++    FloatSetting adaptiveTriggerStrength{ "AdaptiveTriggerStrength", 1.0f, 0.0f, 1.0f };
++#endif
+ 
+     static std::span<ModSettingBase* const> GetOptions() {
+         return SettingRegistry();

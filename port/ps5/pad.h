@@ -89,6 +89,8 @@ namespace ps5pad
 	// The launcher's vibration setting: when off, SetVibration stops the motors instead.
 	void SetVibrationEnabled(bool enabled);
 	void SetLightBar(int player, uint8_t r, uint8_t g, uint8_t b);
+	// A player's open DualSense handle (-1: none), for the BetterVR module's trigger effects.
+	int32_t Handle(int player);
 
 	// The port's shortcuts, the same from every controller: the touchpad clicked, then
 	//   Options: the in-game menu (app/ingame.h)
@@ -141,3 +143,6 @@ namespace ps5pad
 	// DS game runs, off otherwise (the Wii U's games keep the buttons)
 	void SetStateShortcuts(bool on);
 }
+
+// A player's open DualSense handle, for the BetterVR module's adaptive triggers (-1: none).
+extern "C" int32_t PS5Cemu_PadHandle(int player);

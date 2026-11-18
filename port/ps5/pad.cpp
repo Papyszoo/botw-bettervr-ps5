@@ -268,6 +268,12 @@ namespace ps5pad
 		scePadSetLightBar(s_slots[player].handle, &color);
 	}
 
+	int32_t Handle(int player)
+	{
+		std::lock_guard lock(s_mutex);
+		return player >= 0 && player < kMaxPlayers ? s_slots[player].handle : -1;
+	}
+
 	Filtered FilterShortcuts(int player, uint32_t buttons)
 	{
 		constexpr uint64_t kTouchDelayUs = 150000; // a shortcut's button within this is no touch
@@ -401,4 +407,9 @@ namespace ps5pad
 		const bool up = (sceKernelGetProcessTime() / kBeatUs) & 1;
 		return up ? buttons & ~turbo : buttons;
 	}
+}
+
+extern "C" int32_t PS5Cemu_PadHandle(int player)
+{
+	return ps5pad::Handle(player);
 }
