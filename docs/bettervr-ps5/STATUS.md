@@ -3,6 +3,23 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-18: v0.5.1, Sense vibration off where libScePad's table does not fit (built, untested on console)
+
+Hotfix for the crash at Play in VR on a console other than 13.60 (a 12.40 console, reported as
+13.09). hmd2 looks libScePad's Sense vibration exports up by name, then at the 13.60 offsets of its
+table. On 12.40 the table's anchor string sat 0x4050 lower, and hmd2 moved the 13.60 code offsets by
+that delta: the first `scePadVrControllerSetVibrationMode` call aborted (signal 6). libScePad's
+offsets are now used only when the anchor sits exactly where the 13.60 table has it; on any other
+firmware the two exports stay unbound, one line says so, and VR, tracking and the game keep running
+without Sense vibration. 13.60 is unchanged. Nothing else changed; version 0.5.1.
+
+**What to look for in boot.log (Play in VR, then start the game):** on 13.60,
+`hmd2: libScePad.sprx: firmware table 13.60, base ...` and `hmd2: Sense vibration exports bound
+(mode ..., intensity ...)`, and the Sense vibrates. On any other firmware,
+`hmd2: libScePad.sprx: no export table for this firmware` followed by
+`hmd2: Sense vibration off on this firmware (no verified libScePad table)`, no `Sense vibration
+exports bound` line, `VR start 4/5` and `5/5`, the game running, and no `[crash]`.
+
 ## 2026-11-18: console run 4 (37c6028, 13.60)
 
 Reported from the console: the community graphic packs are listed again; opening and closing the inventory no longer

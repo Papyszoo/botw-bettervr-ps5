@@ -532,9 +532,11 @@ const export_table_t *module_table_scan(const ModuleInfo *info, const char *file
     return nullptr;
 }
 
-// The table of the firmware whose anchor sits in this library, or nullptr.
+// The table of the firmware whose anchor sits in this library, or nullptr. `scan` allows the
+// anchor string to have moved: the offsets then move with it. Off for a library whose code
+// offsets are only right where its own table has the anchor.
 const export_table_t *module_table(int handle, const char *file, const export_table_t *tables,
-                                size_t tables_n, uintptr_t *base) {
+                                size_t tables_n, uintptr_t *base, bool scan = true) {
     ModuleInfo info;
     *base = module_base(handle, file, &info);
     if (*base == 0) {
@@ -550,9 +552,9 @@ const export_table_t *module_table(int handle, const char *file, const export_ta
     }
     logf("hmd2: %s: no export table for this firmware (base %p)", file,
          reinterpret_cast<void *>(*base));
-    // Only a library with a single known build is scanned: with several tables a shifted match
-    // could pick the wrong firmware's offsets.
-    return tables_n == 1 ? module_table_scan(&info, file, tables, tables_n, base) : nullptr;
+    // Only a library with a single known build is scanned, and only when its caller allows it:
+    // with several tables a shifted match could pick the wrong firmware's offsets.
+    return scan && tables_n == 1 ? module_table_scan(&info, file, tables, tables_n, base) : nullptr;
 }
 
 // sceKernelDlsym first; at the export offsets of the firmware's table when the
@@ -561,7 +563,7 @@ const export_table_t *module_table(int handle, const char *file, const export_ta
 // one per missing export.
 bool resolve_module(int handle, const char *file, const Slot *slots, size_t n,
                     const export_table_t *tables, size_t tables_n, const char **failed_name,
-                    bool required = true) {
+                    bool required = true, bool scan = true) {
     uintptr_t base = 0;
     const export_table_t *table = nullptr;
     bool tried_table = false;
@@ -570,7 +572,7 @@ bool resolve_module(int handle, const char *file, const Slot *slots, size_t n,
         if (sceKernelDlsym(handle, slots[i].name, slots[i].slot) == 0 && *slots[i].slot != nullptr)
             continue;
         if (!tried_table) {
-            table = module_table(handle, file, tables, tables_n, &base);
+            table = module_table(handle, file, tables, tables_n, &base, scan);
             tried_table = true;
             if (table != nullptr && s.fw == 0)
                 s.fw = table->fw;
@@ -612,6 +614,10 @@ void bind_vrhand() {
 // (0x80920003); the Sense has exports of its own that take the scePadVrControllerReadState handle.
 // Their names (NIDs Wf6-PNCyY20 and DGCwN1Lmmys), the 13.60 offsets and the anchor string are
 // Ghost-VR's firmware facts (GPL-3.0, psvr2.c); no code is taken from it.
+// These offsets are verified on 13.60 only, and the anchor moving does not move them correctly:
+// a 12.40 console had the anchor 0x4050 lower, and the first call at the moved mode offset aborted
+// (signal 6, issue #2). So libScePad is never scanned: the exports bind by name, or at the table's
+// offsets when the anchor sits exactly where it says, and every other firmware leaves them off.
 int (*scePadVrControllerSetVibrationMode)(int handle, int mode) = nullptr;
 int (*scePadVrControllerSetVibration)(int handle, uint8_t intensity) = nullptr;
 const Slot kSenseVibrationSlots[] = {
@@ -637,7 +643,7 @@ bool bind_sense_vibration() {
     if (handle >= 0 &&
         resolve_module(handle, "libScePad.sprx", kSenseVibrationSlots, kSlots(kSenseVibrationSlots),
                        kTables_libScePad, sizeof kTables_libScePad / sizeof *kTables_libScePad,
-                       nullptr, false)) {
+                       nullptr, false /* optional */, false /* never scan */)) {
         g_sense_vibration = 1;
         logf("hmd2: Sense vibration exports bound (mode %p, intensity %p)",
              reinterpret_cast<void *>(scePadVrControllerSetVibrationMode),
@@ -645,7 +651,7 @@ bool bind_sense_vibration() {
     } else {
         scePadVrControllerSetVibrationMode = nullptr;
         scePadVrControllerSetVibration = nullptr;
-        logf("hmd2: Sense vibration exports not found on this firmware, Sense vibration stays off");
+        logf("hmd2: Sense vibration off on this firmware (no verified libScePad table)");
     }
     return g_sense_vibration > 0;
 }

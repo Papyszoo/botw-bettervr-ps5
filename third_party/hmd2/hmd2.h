@@ -228,8 +228,9 @@ bool controller_pose(int tracker_handle, float pos[3], float quat[4]);
 
 // A Sense controller's vibration, through libScePad's own Sense exports (the DualSense setters
 // refuse a Sense handle with 0x80920003). `handle` is the scePadVrControllerReadState handle.
-// Resolved on first use by name, else at Ghost-VR's 13.60 offsets after an anchor check; other
-// firmware returns kSenseVibrationUnavailable and logs it once. Intensity 0 stops it.
+// Resolved on first use by name, else at Ghost-VR's 13.60 offsets only when the anchor sits exactly
+// where that table has it (never shifted); any other firmware returns kSenseVibrationUnavailable
+// and logs it once. Intensity 0 stops it.
 // UNVERIFIED on hardware.
 constexpr int kSenseVibrationUnavailable = (int)0x80000001;
 int sense_set_vibration_mode(int handle, int mode);
