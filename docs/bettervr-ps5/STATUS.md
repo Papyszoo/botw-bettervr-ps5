@@ -24,6 +24,13 @@ right with the left stick near grass and say whether Link's body still flashes f
 one a second) count the stalls the tolerance kept first person. (f) Open the weapon wheel: the left and right arrows
 must be visible on the black buttons, and the minimap and clock must not look faded or black.
 
+**Test request 53 (v0.6 combined).** With the Sense controllers off and third person set in Settings > VR, play with
+the DualSense. (a) Tap Options: the game's pause screen opens once, with no BetterVR menu behind it. (b) Hold Options
+for about a second: BetterVR's menu opens while the button is held, and the game's pause screen does not open; hold it
+again: the menu closes. (c) In BetterVR's menu, move with the DualSense's left and right stick: the cursor and rows
+move. (d) Say whether anything (a help card, a popup) still appears over the game at start. (e) Send the logs zip and
+the `[menu]` lines.
+
 ## 2026-11-18: console run 4 (37c6028, 13.60)
 
 Reported from the console: the community graphic packs are listed again; opening and closing the inventory no longer

@@ -748,7 +748,15 @@ game start was unwanted.
   keyboard block (`ImGuiMenus::BlocksGameInput`), or during `state.preventInputs` (the 400 ms after a menu change), the
   release is logged and nothing is sent, so no pause screen opens behind the overlay. A hold sends nothing (no pause),
   a tap opens no menu, and the "+" stays on the right stick click; the stick click still picks `VPAD_BUTTON_MINUS` in
-  the map through `state.mapOpen`. The gamepad's own + and upstream's 500 ms hold on it are untouched.
+  the map through `state.mapOpen`.
+- **The pad's Options is the same button.** The DualSense's Options is VPAD channel 0's +, and it now feeds the same
+  `ProcessOptionsButton`: held for 700 ms it opens or closes BetterVR's menu at that moment and the release then does
+  nothing, a shorter release sends the game one + tap, and + is removed from the game's hold while the button is down,
+  so no pause opens behind the menu; upstream's 500 ms `ToggleModMenuOnLongStartPress` no longer runs on the PS5, and
+  the port's own touchpad+Options overlay is unchanged. Built, untested on console.
+- **The pad moves the menu cursor.** When no Sense controller is connected, the VPAD's left and right stick are added
+  to the mod menu's navigation, so a DualSense-only player can move through the pages and rows with either stick; the
+  Sense path is unchanged (upstream issue #117). Built, untested on console.
 - **No popup at start.** `DrawTutorialPromptAndControllerVerification` returns at once on the PS5, so the first-time
   setup card over the game is gone; the PS5 prompt text that patch 0004 added to `GetControllerModMenuPrompt` goes with
   it, as nothing draws it now.

@@ -4,25 +4,30 @@ Date: Wed, 18 Nov 2026 10:54:38 +0100
 Subject: [PATCH] PS5: Options held for 700 ms opens the menu, a short press is
  the game's pause
 
-- ProcessOptionsButton takes Options (BetterVR_PS5_OptionsDown, the runtime's) down, held and up edges: held for
-  700 ms it opens or closes the menu at that moment and the release then does nothing; a release that no game frame
-  saw cross the threshold still counts as a hold from the measured time and toggles the menu. Released earlier it
-  sends the game's + (the pause screen), one tap, always VPAD_BUTTON_PLUS, as a short press of the right stick click
-  sends it, and clears state.mapOpen so the flag cannot steer a later tap to the minus. The tap is dropped while the
-  menu's overlay blocks the game or state.preventInputs is set. [menu] lines log each step. The Touch profile gives
-  that button no action, and the left X (Square) long press stays.
+- ProcessOptionsButton takes Options (BetterVR_PS5_OptionsDown, the runtime's) or the pad's + on VPAD channel 0 (the
+  DualSense) down, held and up edges: held for 700 ms it opens or closes the menu at that moment and the release then
+  does nothing; a release that no game frame saw cross the threshold still counts as a hold from the measured time and
+  toggles the menu. Released earlier it sends the game's + (the pause screen), one tap, always VPAD_BUTTON_PLUS, as a
+  short press of the right stick click sends it, and clears state.mapOpen so the flag cannot steer a later tap to the
+  minus. The pad's + is removed from the game's hold while the button is down, so no pause opens behind the menu, and
+  ToggleModMenuOnLongStartPress no longer runs on the PS5. The tap is dropped while the menu's overlay blocks the game
+  or state.preventInputs is set. [menu] lines log each step. The Touch profile gives the Sense's button no action, and
+  the left X (Square) long press stays.
+- When no Sense controller is connected, the VPAD's left and right sticks are added to the mod menu's navigation, so a
+  pad-only player can move the cursor (upstream issue #117).
 - The first-run prompt is not drawn on the PS5.
-- PlayPosition defaults to Seated on the PS5 (the tracker's origin is not known to be the floor), and the first
-  in-game frame requests the calibration when the loading screen passed before the session existed.
+- PlayPosition defaults to Seated on the PS5 (the tracker's origin is not known to be the floor), and the first in-game
+  frame requests the calibration when the loading screen passed before the session existed.
 ---
- src/game/botw/input/controls.cpp | 67 ++++++++++++++++++++++++++++++++
+ src/game/botw/input/controls.cpp | 78 +++++++++++++++++++++++++++++++-
  src/rendering/imgui_menus.cpp    |  6 +++
- src/rendering/openxr.cpp         | 11 ++++++
+ src/rendering/openxr.cpp         | 11 +++++
+ src/rendering/vulkan_imgui.cpp   |  6 +++
  src/utils/mod_settings.h         |  4 ++
- 4 files changed, 88 insertions(+)
+ 5 files changed, 104 insertions(+), 1 deletion(-)
 
 diff --git a/src/game/botw/input/controls.cpp b/src/game/botw/input/controls.cpp
-index 195735a..f32664a 100644
+index 195735a..50b5291 100644
 --- a/src/game/botw/input/controls.cpp
 +++ b/src/game/botw/input/controls.cpp
 @@ -8,6 +8,8 @@
@@ -34,7 +39,7 @@ index 195735a..f32664a 100644
  #include "rendering/haptics.h"
  #include "rendering/imgui_menus.h"
  #include "rendering/tracking.h"
-@@ -964,6 +966,68 @@ static void ProcessInputPrevention(ControlState& state, std::chrono::steady_cloc
+@@ -964,6 +966,70 @@ static void ProcessInputPrevention(ControlState& state, std::chrono::steady_cloc
          state.preventGrabInputs = false;
  }
  
@@ -42,10 +47,10 @@ index 195735a..f32664a 100644
 +// the runtime's: whether Options on the right Sense controller is down (port/bettervr/xr/runtime.cpp)
 +extern "C" bool BetterVR_PS5_OptionsDown();
 +
-+// Options on the right Sense controller: held for 700 ms it opens or closes the menu at that moment, and its release
-+// then does nothing; released earlier it is the game's + (the pause screen), sent as one tap, as a short press of the
-+// right stick click sends it. The Touch profile gives that button no action, so it is read from the runtime. The
-+// left X (Square) long press below still works.
++// Options on the right Sense controller, or the + on the pad (VPAD channel 0, the DualSense): held for 700 ms it opens
++// or closes the menu at that moment, and its release then does nothing; released earlier it is the game's + (the pause
++// screen), sent as one tap, as a short press of the right stick click sends it. The Touch profile gives the Sense's
++// button no action, so that one is read from the runtime. The left X (Square) long press below still works.
 +static void ToggleOptionsMenu(std::atomic_bool& isMenuOpen) {
 +    RND_Renderer* renderer = VRManager::instance().XR->GetRenderer();
 +    if (renderer == nullptr || !renderer->m_imguiOverlay) {
@@ -56,12 +61,14 @@ index 195735a..f32664a 100644
 +    Log::print<INFO>("[menu] long press -> {}", isMenuOpen.load() ? "open" : "closed");
 +}
 +
-+static void ProcessOptionsButton(std::atomic_bool& isMenuOpen, uint32_t& buttonHold, ControlState& state) {
++static void ProcessOptionsButton(std::atomic_bool& isMenuOpen, uint32_t& buttonHold, ControlState& state, VPADStatus& vpadInputs, uint32_t physicalHold) {
 +    constexpr auto kLongPress = std::chrono::milliseconds(700);
 +    static bool s_wasDown = false;
 +    static bool s_longPressDone = false;
 +    static std::chrono::steady_clock::time_point s_downAt;
-+    const bool down = BetterVR_PS5_OptionsDown();
++    // the pad's + is the same Options press: the game never sees it while it is held, so no pause opens behind the menu
++    vpadInputs.hold = vpadInputs.hold.getLE() & ~static_cast<uint32_t>(VPAD_BUTTON_PLUS);
++    const bool down = BetterVR_PS5_OptionsDown() || (physicalHold & VPAD_BUTTON_PLUS) != 0;
 +    const auto now = std::chrono::steady_clock::now();
 +    if (down && !s_wasDown) {
 +        s_wasDown = true;
@@ -103,12 +110,43 @@ index 195735a..f32664a 100644
  static void ProcessModMenuInput(std::atomic_bool& isMenuOpen, OpenXR::InputState& inputs, VPADStatus& vpadInputs, XrActionStateVector2f& leftStickSource, XrActionStateVector2f& rightStickSource)
  {
      if (s_modMenuButton.lastEvent == ButtonState::Event::LongPress) {
-@@ -1414,6 +1478,9 @@ static void hook_InjectXRInput(PPCInterpreter_t* hCPU) {
+@@ -1203,7 +1269,8 @@ static void TraceControlChanges(const ControlState& state, uint32_t buttonHold)
+     }
+ }
+ 
+-// for players without their VR controllers in reach
++#if !defined(__PROSPERO__)
++// for players without their VR controllers in reach; on the PS5 ProcessOptionsButton handles the pad's + too
+ static void ToggleModMenuOnLongStartPress(uint32_t physicalHold) {
+     static auto startBtnLastTime = std::chrono::steady_clock::now();
+     static bool startBtnWasDown = false;
+@@ -1224,6 +1291,7 @@ static void ToggleModMenuOnLongStartPress(uint32_t physicalHold) {
+         startBtnWasDown = false;
+     }
+ }
++#endif
+ 
+ static float ControllerWalkYaw(const glm::fquat& controllerQuat) {
+     static float s_lastYaw = 0.0f;
+@@ -1375,7 +1443,12 @@ static void hook_InjectXRInput(PPCInterpreter_t* hCPU) {
+     if (physicalSampleCount > 0)
+         Guest::Read(vpadStatusOffset, &vpadStatus);
+ 
++#if defined(__PROSPERO__)
++    // read before ProcessModMenuInput zeroes the pad's sample while the menu is open, so a held + can close it again
++    const uint32_t physicalHold = vpadStatus.hold.getLE();
++#else
+     ToggleModMenuOnLongStartPress(vpadStatus.hold.getLE());
++#endif
+ 
+     // take the hands and head once so the gestures below all use the same sample
+     OpenXR::InputState inputs = Tracking::SampleHands(GameState::IsShowingMenu());
+@@ -1414,6 +1487,9 @@ static void hook_InjectXRInput(PPCInterpreter_t* hCPU) {
  
      auto& isMenuOpen = ImGuiMenus::g_isOpen;
      ProcessModMenuInput(isMenuOpen, inputs, vpadStatus, leftStickSource, rightStickSource);
 +#if defined(__PROSPERO__)
-+    ProcessOptionsButton(isMenuOpen, newXRBtnHold, state);
++    ProcessOptionsButton(isMenuOpen, newXRBtnHold, state, vpadStatus, physicalHold);
 +#endif
      UpdateGuide(inputs, isMenuOpen);
      HandGestureState leftGesture = {};
@@ -166,6 +204,23 @@ index 433b28a..c5a8b4b 100644
      if (playMode != PlayMode::SEATED) {
          m_seatedHeightCalibrationRequested.store(false, std::memory_order_relaxed);
          if (m_stageFloorOffset != 0.0f) {
+diff --git a/src/rendering/vulkan_imgui.cpp b/src/rendering/vulkan_imgui.cpp
+index 6908e66..26525b2 100644
+--- a/src/rendering/vulkan_imgui.cpp
++++ b/src/rendering/vulkan_imgui.cpp
+@@ -611,6 +611,12 @@ void RND_Renderer::ImGuiOverlay::ProcessInputs(OpenXR::InputState& inputs, const
+         pageRight = inputs.inMenu.rightTrigger.currentState && inputs.inMenu.rightTrigger.changedSinceLastSync;
+     }
+ 
++    // no Sense controller connected: the pad's own left or right stick moves the menu cursor too (upstream #117)
++    if (!inputs.shared.pose[0].isActive && !inputs.shared.pose[1].isActive) {
++        stick.currentState.x = std::clamp(stick.currentState.x + vpadStatus.leftStick.x.getLE() + vpadStatus.rightStick.x.getLE(), -1.0f, 1.0f);
++        stick.currentState.y = std::clamp(stick.currentState.y + vpadStatus.leftStick.y.getLE() + vpadStatus.rightStick.y.getLE(), -1.0f, 1.0f);
++    }
++
+     uint32_t hold = vpadStatus.hold.getLE();
+     backDown |= (hold & VPAD_BUTTON_B) != 0;
+     confirmDown |= (hold & VPAD_BUTTON_A) != 0;
 diff --git a/src/utils/mod_settings.h b/src/utils/mod_settings.h
 index a0017ac..50684ec 100644
 --- a/src/utils/mod_settings.h
