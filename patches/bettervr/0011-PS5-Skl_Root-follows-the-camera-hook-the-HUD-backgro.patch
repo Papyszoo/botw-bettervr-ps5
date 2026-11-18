@@ -13,10 +13,10 @@ The first-person body root is latched from the player and head pose hook_UpdateC
  src/game/botw/camera/camera.h      |  10 +++
  src/game/botw/input/controls.cpp   |  14 +++-
  src/game/botw/player/bow.cpp       |  16 ++++
- src/game/botw/player/skeleton.cpp  | 119 +++++++++++++++++++++++++++--
+ src/game/botw/player/skeleton.cpp  | 120 +++++++++++++++++++++++++++--
  src/rendering/vulkan_imgui.cpp     |   3 +
  src/rendering/world_guide.cpp      |   9 +++
- 10 files changed, 260 insertions(+), 16 deletions(-)
+ 10 files changed, 261 insertions(+), 16 deletions(-)
 
 diff --git a/dependencies/imgui_impl_vulkan.cpp b/dependencies/imgui_impl_vulkan.cpp
 index e88820f..f2c5498 100644
@@ -380,10 +380,10 @@ index ec690b5..0279ff2 100644
      }
  }
 diff --git a/src/game/botw/player/skeleton.cpp b/src/game/botw/player/skeleton.cpp
-index 248a0c0..8c3aaf2 100644
+index 248a0c0..0fff98a 100644
 --- a/src/game/botw/player/skeleton.cpp
 +++ b/src/game/botw/player/skeleton.cpp
-@@ -470,6 +470,81 @@ static bool IsThirdPersonForPose(bool rootBone) {
+@@ -470,6 +470,82 @@ static bool IsThirdPersonForPose(bool rootBone) {
      return thirdPerson;
  }
  
@@ -397,7 +397,8 @@ index 248a0c0..8c3aaf2 100644
 +    float bodyViewYawDelta = 0.0f;
 +};
 +static LatchedBodyRoot s_latchedBodyRoot;
-+static std::chrono::steady_clock::time_point s_bodyRootLastLog{};
++static std::chrono::steady_clock::time_point s_bodyRootLastDeltaLog{};
++static std::chrono::steady_clock::time_point s_bodyRootLastSkipLog{};
 +static uint32_t s_bodyRootSkips = 0;
 +static const char* s_bodyRootFirstSkip = nullptr;
 +static const char* s_bodyRootLastSkip = nullptr;
@@ -419,9 +420,9 @@ index 248a0c0..8c3aaf2 100644
 +    s_bodyRootLastSkip = reason;
 +
 +    const auto now = std::chrono::steady_clock::now();
-+    if (now - s_bodyRootLastLog < std::chrono::seconds(1))
++    if (now - s_bodyRootLastSkipLog < std::chrono::seconds(1))
 +        return;
-+    s_bodyRootLastLog = now;
++    s_bodyRootLastSkipLog = now;
 +
 +    if (s_bodyRootFirstSkip == s_bodyRootLastSkip)
 +        Log::print<INFO>("[pose] first-person body root {} ({} x {}); game body-view yaw delta {:.1f} deg (latched {:.1f} deg)",
@@ -439,9 +440,9 @@ index 248a0c0..8c3aaf2 100644
 +    if (s_bodyRootSkips > 0)
 +        return;
 +    const auto now = std::chrono::steady_clock::now();
-+    if (now - s_bodyRootLastLog < std::chrono::seconds(1))
++    if (now - s_bodyRootLastDeltaLog < std::chrono::seconds(1))
 +        return;
-+    s_bodyRootLastLog = now;
++    s_bodyRootLastDeltaLog = now;
 +    Log::print<INFO>("[pose] first-person body-view yaw delta {:.1f} deg", yawDelta);
 +}
 +
@@ -465,7 +466,7 @@ index 248a0c0..8c3aaf2 100644
  static void hook_ModifyBoneMatrix(PPCInterpreter_t* hCPU) {
      hCPU->instructionPointer = hCPU->sprNew.LR;
      const uint32_t modelUnitPtr = hCPU->gpr[7];
-@@ -496,10 +571,13 @@ static void hook_ModifyBoneMatrix(PPCInterpreter_t* hCPU) {
+@@ -496,10 +572,13 @@ static void hook_ModifyBoneMatrix(PPCInterpreter_t* hCPU) {
          if (boneName == "Skl_Root")
              HeadVisibility::OnSkeletonRoot();
          HeadVisibility::SubmitNextMaterial(hCPU, !IsThirdPersonForPose(boneName == "Skl_Root"), gsysModelPtr);
@@ -480,7 +481,7 @@ index 248a0c0..8c3aaf2 100644
  
      const bool isLeft = boneName.ends_with("_L");
      const OpenXR::EyeSide side = isLeft ? OpenXR::EyeSide::LEFT : OpenXR::EyeSide::RIGHT;
-@@ -553,29 +631,48 @@ static void hook_ModifyBoneMatrix(PPCInterpreter_t* hCPU) {
+@@ -553,29 +632,48 @@ static void hook_ModifyBoneMatrix(PPCInterpreter_t* hCPU) {
      }
  
      glm::fvec3 boneScale = Guest::Get<BEVec3>(scalePtr).getLE();
@@ -535,7 +536,7 @@ index 248a0c0..8c3aaf2 100644
  
          // headset in model space
          glm::mat4 headsetModel = glm::inverse(playerMtx4) * cameraMtx * headsetMtx;
-@@ -752,6 +849,14 @@ static void hook_ModifyBoneMatrix(PPCInterpreter_t* hCPU) {
+@@ -752,6 +850,14 @@ static void hook_ModifyBoneMatrix(PPCInterpreter_t* hCPU) {
          s_lastAppliedRightWristRot = s_twoHandGrip.engaged ? s_twoHandGrip.rightGripRotWorld : rightHandRotWorld;
          s_lastAppliedRightWristRotValid = !s_passAnimatedHands;
  
