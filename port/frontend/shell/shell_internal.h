@@ -419,7 +419,6 @@ namespace ps5shell
 		void SetRowIndex(ps5settings::Launcher& settings, const std::string& id, int index);
 		void ChooseIndex(const Row& row, int index); // a dropdown's choice
 		void DrawRemoteScreen(Canvas& canvas, const Box& card); // the remote touch screen's card
-		void DrawSupport(Canvas& canvas, const Box& card);		 // About's: the developer's PayPal.me, as a QR code
 		void SettingsChanged(const std::string& id); // the side's settings changed: saved, and what they change at once
 		void KeepGameSetting(const std::string& setting, const ps5settings::Launcher& view);
 		// game settings (6.5): the same pages, scoped to one game

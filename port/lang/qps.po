@@ -2818,6 +2818,16 @@ msgstr "⟦Åzàhàr stöppéd pàrt-wàÿ thröûgh; ~~~~~~~~~~~~~{0}/àzàhàr
 msgid "it is not a CIA Azahar can install"
 msgstr "⟦ît îs ñöt à ÇÎÅ Åzàhàr çàñ îñstàll~~~~~~~~~~~~~⟧"
 
+#. {0} is why the headset did not start, from the log ("load libSceHmd2, 0x80020002"); {1} is the button "Play on TV"
+#: port/bettervr/VrPS5.cpp:625
+msgid "VR did not start ({0}). Back in the library: {1} starts the game without the headset. The log has more."
+msgstr "⟦VR dîd ñöt stàrt (~~~~~~~{0}). Bàçk îñ thé lîbràrÿ: ~~~~~~~~~{1} stàrts thé gàmé wîthöût thé héàdsét. Thé lög hàs möré.~~~~~~~~~~~~~~~~~~~~~~⟧"
+
+#. Breath of the Wild's page in BotW VR: start the game on the TV, without the headset
+#: port/bettervr/VrPS5.cpp:626 port/frontend/shell/home.cpp:194 port/frontend/shell/hub.cpp:257
+msgid "Play on TV"
+msgstr "⟦Plàÿ öñ TV~~~~⟧"
+
 #: port/cemu/MemMapperPS5.cpp:139
 msgid "The PS5 has no memory left for this Wii U game, so it has to stop. The boot log has the details."
 msgstr "⟦Thé PS5 hàs ñö mémörÿ léft för thîs Wîî Ü gàmé, sö ît hàs tö stöp. Thé bööt lög hàs thé détàîls.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~⟧"
@@ -3393,11 +3403,6 @@ msgstr "⟦Plàÿ îñ VR~~~~⟧"
 #: port/frontend/shell/home.cpp:191
 msgid "In the PS VR2 headset, with the Sense controllers"
 msgstr "⟦Îñ thé PS VR2 héàdsét, wîth thé Séñsé çöñtröllérs~~~~~~~~~~~~~~~~~~~⟧"
-
-#. Breath of the Wild's page in BotW VR: start the game on the TV, without the headset
-#: port/frontend/shell/home.cpp:194 port/frontend/shell/hub.cpp:257
-msgid "Play on TV"
-msgstr "⟦Plàÿ öñ TV~~~~⟧"
 
 #. BotW VR's home, under Play on TV
 #: port/frontend/shell/home.cpp:196
@@ -5421,8 +5426,8 @@ msgid "The DualSense's rumble, in games and in the launcher."
 msgstr "⟦Thé DûàlSéñsé's rûmblé, îñ gàmés àñd îñ thé làûñçhér.~~~~~~~~~~~~~~~~~~~~~⟧"
 
 #: port/frontend/shell/settings.cpp:838
-msgid "Off, the DualSense never rumbles, in games or in the launcher. The same on every side."
-msgstr "⟦Öff, thé DûàlSéñsé ñévér rûmblés, îñ gàmés ör îñ thé làûñçhér. Thé sàmé öñ évérÿ sîdé.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~⟧"
+msgid "Off, the DualSense never rumbles, in games or in the launcher. The same everywhere."
+msgstr "⟦Öff, thé DûàlSéñsé ñévér rûmblés, îñ gàmés ör îñ thé làûñçhér. Thé sàmé évérÿwhéré.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~⟧"
 
 #: port/frontend/shell/settings.cpp:840 port/frontend/shell/settings.cpp:894
 msgid "How far a stick moves before it counts."
@@ -6053,12 +6058,12 @@ msgid "Last: {0} · {1}"
 msgstr "⟦Làst: ~~{0} · ~{1}⟧"
 
 #: port/frontend/shell/settings.cpp:1260
-msgid "Every side's saves, save states and Wii U accounts."
-msgstr "⟦Évérÿ sîdé's sàvés, sàvé stàtés àñd Wîî Ü àççöûñts.~~~~~~~~~~~~~~~~~~~~⟧"
+msgid "The Wii U's saves, save states and accounts."
+msgstr "⟦Thé Wîî Ü's sàvés, sàvé stàtés àñd àççöûñts.~~~~~~~~~~~~~~~~~⟧"
 
 #: port/frontend/shell/settings.cpp:1261
-msgid "Copies the Wii U's saves (every account's, with the accounts), the 3DS's saves, extra data and save states, the DS's saves and save states, and the Switch's saves with its user profiles to PS5CEMU-HAR-saves on the first USB drive plugged in, in a folder named by the date and time. Never the games, so a backup stays small. The settings go with them: the launcher's, each game's own and the controllers'."
-msgstr "⟦Çöpîés thé Wîî Ü's sàvés (évérÿ àççöûñt's, wîth thé àççöûñts), thé 3DS's sàvés, éxtrà dàtà àñd sàvé stàtés, thé DS's sàvés àñd sàvé stàtés, àñd thé Swîtçh's sàvés wîth îts ûsér pröfîlés tö PS5ÇÉMÜ-HÅR-sàvés öñ thé fîrst ÜSB drîvé plûggéd îñ, îñ à földér ñàméd bÿ thé dàté àñd tîmé. Ñévér thé gàmés, sö à bàçkûp stàÿs smàll. Thé séttîñgs gö wîth thém: thé làûñçhér's, éàçh gàmé's öwñ àñd thé çöñtröllérs'.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~⟧"
+msgid "Copies the Wii U's saves (every account's, with the accounts) and its save states to PS5CEMU-HAR-saves on the first USB drive plugged in, in a folder named by the date and time. Never the game, so a backup stays small. The settings go with them: the launcher's, its game settings and its controller settings."
+msgstr "⟦Çöpîés thé Wîî Ü's sàvés (évérÿ àççöûñt's, wîth thé àççöûñts) àñd îts sàvé stàtés tö PS5ÇÉMÜ-HÅR-sàvés öñ thé fîrst ÜSB drîvé plûggéd îñ, îñ à földér ñàméd bÿ thé dàté àñd tîmé. Ñévér thé gàmé, sö à bàçkûp stàÿs smàll. Thé séttîñgs gö wîth thém: thé làûñçhér's, îts gàmé séttîñgs àñd îts çöñtröllér séttîñgs.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~⟧"
 
 #: port/frontend/shell/settings.cpp:1270 port/frontend/shell/settings.cpp:1863
 msgid "No backups found"
@@ -6111,9 +6116,9 @@ msgstr "⟦Böx àrt~~⟧"
 msgid "Covers for the library, from GameTDB."
 msgstr "⟦Çövérs för thé lîbràrÿ, fröm GàméTDB.~~~~~~~~~~~~~~⟧"
 
-#: port/frontend/shell/settings.cpp:1298
-msgid "Whether covers are downloaded from GameTDB (art.gametdb.com), and the missing ones or every one downloaded again. On the Switch side, also whether a game shows its box art or its own icon."
-msgstr "⟦Whéthér çövérs àré döwñlöàdéd fröm GàméTDB (àrt.gàmétdb.çöm), àñd thé mîssîñg öñés ör évérÿ öñé döwñlöàdéd àgàîñ. Öñ thé Swîtçh sîdé, àlsö whéthér à gàmé shöws îts böx àrt ör îts öwñ îçöñ.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~⟧"
+#: port/frontend/shell/settings.cpp:1297
+msgid "Whether the cover is downloaded from GameTDB (art.gametdb.com), and downloaded again when it is missing or wrong."
+msgstr "⟦Whéthér thé çövér îs döwñlöàdéd fröm GàméTDB (àrt.gàmétdb.çöm), àñd döwñlöàdéd àgàîñ whéñ ît îs mîssîñg ör wröñg.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~⟧"
 
 #: port/frontend/shell/settings.cpp:1301
 msgid "Box art from GameTDB"
@@ -6704,15 +6709,15 @@ msgstr "⟦För LÉGÖ Dîméñsîöñs.~~~~~~~~⟧"
 msgid "Cemu's emulated portal, plugged in as a game starts. In the game, the menu's USB devices category puts figures on it: dumps in {0}. A real portal plugged into the PS5 is not supported."
 msgstr "⟦Çémû's émûlàtéd pörtàl, plûggéd îñ às à gàmé stàrts. Îñ thé gàmé, thé méñû's ÜSB dévîçés çàtégörÿ pûts fîgûrés öñ ît: dûmps îñ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~{0}. Å réàl pörtàl plûggéd îñtö thé PS5 îs ñöt sûppörtéd.~~~~~~~~~~~~~~~~~~~~~⟧"
 
-#: port/frontend/shell/settings.cpp:1612
+#: port/frontend/shell/settings.cpp:1610
 msgid ""
 "{0} in any browser on the PS5's network, a phone's, a tablet's or a computer's, with nothing to install, and its touches sent back to the game. Scan the code shown here, or open the address. The DualSense stays the buttons, and the sound stays on the PS5.\n"
 "While a browser shows it, the PS5 copies that screen up to 30 times a second, so a game can run a little slower; with no browser, it costs nothing. Any device on your network can open the page, so turn it off on a network you share.\n"
-"One switch for every side (the GamePad's screen is player 1's), also in a game's menu (touchpad click + Options). From dolphin78's idea and prototype (#38)."
+"One switch (the GamePad's screen is player 1's), also in a game's menu (touchpad click + Options). From dolphin78's idea and prototype (#38)."
 msgstr ""
 "⟦{0} îñ àñÿ bröwsér öñ thé PS5's ñétwörk, à phöñé's, à tàblét's ör à çömpûtér's, wîth ñöthîñg tö îñstàll, àñd îts töûçhés séñt bàçk tö thé gàmé. Sçàñ thé çödé shöwñ héré, ör öpéñ thé àddréss. Thé DûàlSéñsé stàÿs thé bûttöñs, àñd thé söûñd stàÿs öñ thé PS5.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n"
 "Whîlé à bröwsér shöws ît, thé PS5 çöpîés thàt sçrééñ ûp tö 30 tîmés à séçöñd, sö à gàmé çàñ rûñ à lîttlé slöwér; wîth ñö bröwsér, ît çösts ñöthîñg. Åñÿ dévîçé öñ ÿöûr ñétwörk çàñ öpéñ thé pàgé, sö tûrñ ît öff öñ à ñétwörk ÿöû shàré.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n"
-"Öñé swîtçh för évérÿ sîdé (thé GàméPàd's sçrééñ îs plàÿér 1's), àlsö îñ à gàmé's méñû (töûçhpàd çlîçk + Öptîöñs). Fröm dölphîñ78's îdéà àñd prötötÿpé (#38).~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~⟧"
+"Öñé swîtçh (thé GàméPàd's sçrééñ îs plàÿér 1's), àlsö îñ à gàmé's méñû (töûçhpàd çlîçk + Öptîöñs). Fröm dölphîñ78's îdéà àñd prötötÿpé (#38).~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~⟧"
 
 #. a row that opens the remote touch screen's page: the game's second screen in a phone's browser, and its code to scan
 #: port/frontend/shell/settings.cpp:1620 port/frontend/shell/settings.cpp:1622
@@ -6887,39 +6892,19 @@ msgstr "⟦Öñ, à QR çödé héré öpéñs thé gàmé's séçöñd sçréé
 msgid "Figure dumps go in {0}/figures: skylanders, infinity and dimensions. Switch a portal on here, start the game, then put figures on it from the in-game menu (touchpad click + Options > USB devices)."
 msgstr "⟦Fîgûré dûmps gö îñ ~~~~~~~{0}/fîgûrés: skÿlàñdérs, îñfîñîtÿ àñd dîméñsîöñs. Swîtçh à pörtàl öñ héré, stàrt thé gàmé, théñ pût fîgûrés öñ ît fröm thé îñ-gàmé méñû (töûçhpàd çlîçk + Öptîöñs > ÜSB dévîçés).~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~⟧"
 
-#. premohq and JMUtechnologies are GitHub names: keep them as they are
-#: port/frontend/shell/settings.cpp:1990
-msgid "BotW VR is made by its co-founders, premohq and JMUtechnologies."
-msgstr "⟦BötW VR îs màdé bÿ îts çö-föûñdérs, prémöhq àñd JMÜtéçhñölögîés.~~~~~~~~~~~~~~~~~~~~~~~~~⟧"
+#. About's credits and licence: Cemu and PS5-ECAM under the GPL, Crementif's BetterVR under the MIT licence
+#: port/frontend/shell/settings.cpp:1988
+msgid "The Legend of Zelda: Breath of the Wild in VR: Crementif's BetterVR mod, run by Cemu in PS5-ECAM. Cemu and PS5-ECAM are free software under the GNU GPL v3 or later, Crementif's BetterVR is MIT-licensed, and the source of this build is at github.com/Papyszoo/botw-bettervr-ps5. An unofficial build, not affiliated with Nintendo or Sony."
+msgstr "⟦Thé Légéñd öf Zéldà: Bréàth öf thé Wîld îñ VR: Çréméñtîf's BéttérVR möd, rûñ bÿ Çémû îñ PS5-ÉÇÅM. Çémû àñd PS5-ÉÇÅM àré fréé söftwàré ûñdér thé GÑÜ GPL v3 ör làtér, Çréméñtîf's BéttérVR îs MÎT-lîçéñséd, àñd thé söûrçé öf thîs bûîld îs àt gîthûb.çöm/Pàpÿszöö/bötw-béttérvr-ps5. Åñ ûñöffîçîàl bûîld, ñöt àffîlîàtéd wîth Ñîñtéñdö ör Söñÿ.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~⟧"
 
-#. {0} is the app's version; {1} its data folder: /data/ps5cemu, or the PS5CEMU-HAR-data folder on the drive the app is installed on; {2} Eden's game files folder; {3} Cemu's selected data folder; {4} its default games folder; {5} Azahar's selected folder; {6} melonDS's selected folder
-#: port/frontend/shell/settings.cpp:1992
+#. {0} is the app's version; {1} is Cemu's data folder; {2} Cemu's games folder
+#: port/frontend/shell/settings.cpp:1993
 msgid ""
-"Cemu, the Wii U emulator, by the Cemu team and its contributors; RADV on the PS5 by Mihawk-99 and mpereiraesaa; the community graphic packs' authors.\n"
-"Azahar, the 3DS emulator, by the Azahar team and the Citra contributors before them; Mihawk-99's PS5 port of it and dynarmic.\n"
-"melonDS, the DS emulator, by Arisotura and the melonDS team.\n"
-"Eden, the Switch emulator, by the Eden team; ProsperoEden, its PS5 port and launcher, by Sword, BlackBearReloaded, bawsdeep, Rockiu0 and its contributors.\n"
-"Box art and game information: GameTDB. The font: Lexend. The remote touch screen: dolphin78's idea and prototype.\n"
-"An unofficial port, not affiliated with the Cemu, Azahar, melonDS or Eden teams, Nintendo or Sony.\n"
-"\n"
-"Wii U games: {4}, storage and saves: {3}/mlc01, keys: {3}/keys.txt\n"
-"3DS games: {5}/games, storage: {5}/sdmc\n"
-"DS games: {6}/games, saves: {6}/saves\n"
-"Switch games: {2}/roms, keys: {2}/keys, firmware: {2}/firmware\n"
+"Wii U games: {2}, storage and saves: {1}/mlc01, keys: {1}/keys.txt\n"
 "\n"
 "Version {0}"
 msgstr ""
-"⟦Çémû, thé Wîî Ü émûlàtör, bÿ thé Çémû téàm àñd îts çöñtrîbûtörs; RÅDV öñ thé PS5 bÿ Mîhàwk-99 àñd mpéréîràésàà; thé çömmûñîtÿ gràphîç pàçks' àûthörs.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n"
-"Åzàhàr, thé 3DS émûlàtör, bÿ thé Åzàhàr téàm àñd thé Çîtrà çöñtrîbûtörs béföré thém; Mîhàwk-99's PS5 pört öf ît àñd dÿñàrmîç.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n"
-"mélöñDS, thé DS émûlàtör, bÿ Årîsötûrà àñd thé mélöñDS téàm.~~~~~~~~~~~~~~~~~~~~~~~~\n"
-"Édéñ, thé Swîtçh émûlàtör, bÿ thé Édéñ téàm; PröspéröÉdéñ, îts PS5 pört àñd làûñçhér, bÿ Swörd, BlàçkBéàrRélöàdéd, bàwsdéép, Röçkîû0 àñd îts çöñtrîbûtörs.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n"
-"Böx àrt àñd gàmé îñförmàtîöñ: GàméTDB. Thé föñt: Léxéñd. Thé rémöté töûçh sçrééñ: dölphîñ78's îdéà àñd prötötÿpé.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n"
-"Åñ ûñöffîçîàl pört, ñöt àffîlîàtéd wîth thé Çémû, Åzàhàr, mélöñDS ör Édéñ téàms, Ñîñtéñdö ör Söñÿ.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n"
-"\n"
-"Wîî Ü gàmés: ~~~~~{4}, störàgé àñd sàvés: ~~~~~~~~{3}/mlç01, kéÿs: ~~~~~{3}/kéÿs.txt~~~\n"
-"3DS gàmés: ~~~~{5}/gàmés, störàgé: ~~~~~~{5}/sdmç~~\n"
-"DS gàmés: ~~~~{6}/gàmés, sàvés: ~~~~~~{6}/sàvés~~\n"
-"Swîtçh gàmés: ~~~~~{2}/röms, kéÿs: ~~~~~{2}/kéÿs, fîrmwàré: ~~~~~~{2}/fîrmwàré~~~\n"
+"⟦Wîî Ü gàmés: ~~~~~{2}, störàgé àñd sàvés: ~~~~~~~~{1}/mlç01, kéÿs: ~~~~~{1}/kéÿs.txt~~~\n"
 "\n"
 "Vérsîöñ ~~~{0}⟧"
 
@@ -7106,14 +7091,6 @@ msgstr "⟦Sçàñ ît, ör öpéñ~~~~~~⟧"
 msgid "Same network as the PS5. Nothing to install: the browser is enough. Sound stays on the PS5. Any browser on the network can see it and touch."
 msgstr "⟦Sàmé ñétwörk às thé PS5. Ñöthîñg tö îñstàll: thé bröwsér îs éñöûgh. Söûñd stàÿs öñ thé PS5. Åñÿ bröwsér öñ thé ñétwörk çàñ séé ît àñd töûçh.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~⟧"
 
-#: port/frontend/shell/settings.cpp:3207
-msgid "Support BotW VR"
-msgstr "⟦Sûppört BötW VR~~~~~~⟧"
-
-#: port/frontend/shell/settings.cpp:3218
-msgid "BotW VR is free. If it brings your games back, you can support its work here."
-msgstr "⟦BötW VR îs fréé. Îf ît brîñgs ÿöûr gàmés bàçk, ÿöû çàñ sûppört îts wörk héré.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~⟧"
-
 #. above Settings' pages: whose settings they are ({0}: Wii U, Nintendo 3DS or Nintendo DS)
 #: port/frontend/shell/settings.cpp:3258
 msgid "{0} settings"
@@ -7174,8 +7151,8 @@ msgid "Executable memory: games run at full speed, no HEN grant needed"
 msgstr "⟦Éxéçûtàblé mémörÿ: gàmés rûñ àt fûll spééd, ñö HÉÑ gràñt ñéédéd~~~~~~~~~~~~~~~~~~~~~~~~~⟧"
 
 #: port/frontend/shell/setup.cpp:154
-msgid "Cemu's and Azahar's recompilers turn the games' code into the PS5's as they run. They need memory they can write code into and run it from: your HEN's JIT memory, or executable memory BotW VR makes itself."
-msgstr "⟦Çémû's àñd Åzàhàr's réçömpîlérs tûrñ thé gàmés' çödé îñtö thé PS5's às théÿ rûñ. Théÿ ñééd mémörÿ théÿ çàñ wrîté çödé îñtö àñd rûñ ît fröm: ÿöûr HÉÑ's JÎT mémörÿ, ör éxéçûtàblé mémörÿ BötW VR màkés îtsélf.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~⟧"
+msgid "Cemu's recompiler turns the game's code into the PS5's as it runs. It needs memory it can write code into and run it from: your HEN's JIT memory, or executable memory BotW VR makes itself."
+msgstr "⟦Çémû's réçömpîlér tûrñs thé gàmé's çödé îñtö thé PS5's às ît rûñs. Ît ñééds mémörÿ ît çàñ wrîté çödé îñtö àñd rûñ ît fröm: ÿöûr HÉÑ's JÎT mémörÿ, ör éxéçûtàblé mémörÿ BötW VR màkés îtsélf.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~⟧"
 
 #: port/frontend/shell/setup.cpp:160
 msgid "No JIT or executable memory: Wii U games run on the much slower interpreter"

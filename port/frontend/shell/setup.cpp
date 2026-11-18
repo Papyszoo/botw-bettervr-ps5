@@ -151,7 +151,7 @@ namespace ps5shell
 			recompilers.state = 0;
 			recompilers.detail = privileges.jit ? Tr("JIT memory from your HEN: games run at full speed") :
 												  Tr("Executable memory: games run at full speed, no HEN grant needed");
-			recompilers.about = Tr("Cemu's and Azahar's recompilers turn the games' code into the PS5's as they run. They need memory they "
+			recompilers.about = Tr("Cemu's recompiler turns the game's code into the PS5's as it runs. It needs memory it "
 								   "can write code into and run it from: your HEN's JIT memory, or executable memory BotW VR makes itself.");
 		}
 		else

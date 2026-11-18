@@ -274,16 +274,6 @@ msgstr "Supprime les copies des jeux décompressés de leurs archives, gardées 
 msgid "The launcher's own music, one of yours, or none. To use your own, put MP3 or WAV files in {0}; they appear here. Every side plays the same."
 msgstr "La musique du lanceur, l’une des vôtres ou aucune. Pour la vôtre, placez des fichiers MP3 ou WAV dans {0}; ils apparaissent ici. Tous les côtés jouent la même."
 
-#: port/frontend/shell/settings.cpp:1612
-msgid ""
-"{0} in any browser on the PS5's network, a phone's, a tablet's or a computer's, with nothing to install, and its touches sent back to the game. Scan the code shown here, or open the address. The DualSense stays the buttons, and the sound stays on the PS5.\n"
-"While a browser shows it, the PS5 copies that screen up to 30 times a second, so a game can run a little slower; with no browser, it costs nothing. Any device on your network can open the page, so turn it off on a network you share.\n"
-"One switch for every side (the GamePad's screen is player 1's), also in a game's menu (touchpad click + Options). From dolphin78's idea and prototype (#38)."
-msgstr ""
-"{0} dans n’importe quel navigateur du réseau de la PS5, celui d’un téléphone, d’une tablette ou d’un ordinateur, sans rien installer, ses touchers étant renvoyés au jeu. Scannez le code affiché ici, ou ouvrez l’adresse. La DualSense garde les touches, et le son reste sur la PS5.\n"
-"Tant qu’un navigateur l’affiche, la PS5 copie cet écran jusqu’à 30 fois par seconde, ce qui peut ralentir un peu un jeu; sans navigateur, cela ne coûte rien. Tout appareil de votre réseau peut ouvrir la page : désactivez-le sur un réseau partagé.\n"
-"Un seul interrupteur pour tous les côtés (l’écran du GamePad est celui du joueur 1), aussi dans le menu d’un jeu (clic du pavé tactile + OPTIONS). D’après l’idée et le prototype de dolphin78 (#38)."
-
 #: port/frontend/shell/settings.cpp:1981
 msgid "On, a QR code here opens the game's second screen in a phone's browser. Nothing to install; the phone must be on the PS5's network."
 msgstr "Activé, un QR code ici ouvre le second écran du jeu dans le navigateur d’un téléphone. Rien à installer; le téléphone doit être sur le réseau de la PS5."

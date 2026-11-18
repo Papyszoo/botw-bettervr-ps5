@@ -5426,8 +5426,8 @@ msgid "The DualSense's rumble, in games and in the launcher."
 msgstr "A DualSense rezgése, a játékokban és az indítóban."
 
 #: port/frontend/shell/settings.cpp:838
-msgid "Off, the DualSense never rumbles, in games or in the launcher. The same on every side."
-msgstr "Kikapcsolva a DualSense soha nem rezeg, sem játékban, sem az indítóban. Minden oldalon ugyanígy."
+msgid "Off, the DualSense never rumbles, in games or in the launcher. The same everywhere."
+msgstr "Kikapcsolva a DualSense soha nem rezeg, sem játékban, sem az indítóban. Mindenhol ugyanígy."
 
 #: port/frontend/shell/settings.cpp:840 port/frontend/shell/settings.cpp:894
 msgid "How far a stick moves before it counts."
@@ -6058,12 +6058,12 @@ msgid "Last: {0} · {1}"
 msgstr "Utolsó: {0} · {1}"
 
 #: port/frontend/shell/settings.cpp:1260
-msgid "Every side's saves, save states and Wii U accounts."
-msgstr "Minden oldal mentései, mentett állapotai és Wii U-fiókjai."
+msgid "The Wii U's saves, save states and accounts."
+msgstr "A Wii U mentései, állapotmentései és fiókjai."
 
 #: port/frontend/shell/settings.cpp:1261
-msgid "Copies the Wii U's saves (every account's, with the accounts), the 3DS's saves, extra data and save states, the DS's saves and save states, and the Switch's saves with its user profiles to PS5CEMU-HAR-saves on the first USB drive plugged in, in a folder named by the date and time. Never the games, so a backup stays small. The settings go with them: the launcher's, each game's own and the controllers'."
-msgstr "Átmásolja a Wii U mentéseit (minden fiókét, a fiókokkal együtt), a 3DS mentéseit, extra adatait és mentett állapotait, a DS mentéseit és mentett állapotait, valamint a Switch mentéseit a felhasználói profiljaival együtt az első csatlakoztatott USB-meghajtó PS5CEMU-HAR-saves mappájába, egy dátummal és idővel elnevezett mappába. A játékokat soha, így a biztonsági mentés kicsi marad. A beállítások is velük mennek: az indítóé, az egyes játékok sajátjai és a kontrollereké."
+msgid "Copies the Wii U's saves (every account's, with the accounts) and its save states to PS5CEMU-HAR-saves on the first USB drive plugged in, in a folder named by the date and time. Never the game, so a backup stays small. The settings go with them: the launcher's, its game settings and its controller settings."
+msgstr "A Wii U mentéseit (minden fiókét, a fiókokkal) és állapotmentéseit a PS5CEMU-HAR-saves mappába másolja az első csatlakoztatott USB-meghajtón, dátum és idő szerint elnevezett mappába. Soha nem a játékot, így a biztonsági mentés kicsi marad. A beállítások is vele mennek: a launcheré, a játéké és a vezérlőké."
 
 #: port/frontend/shell/settings.cpp:1270 port/frontend/shell/settings.cpp:1863
 msgid "No backups found"
@@ -6116,9 +6116,9 @@ msgstr "Borítók"
 msgid "Covers for the library, from GameTDB."
 msgstr "Borítók a könyvtárhoz a GameTDB-ről."
 
-#: port/frontend/shell/settings.cpp:1298
-msgid "Whether covers are downloaded from GameTDB (art.gametdb.com), and the missing ones or every one downloaded again. On the Switch side, also whether a game shows its box art or its own icon."
-msgstr "Letöltődjenek-e a borítók a GameTDB-ről (art.gametdb.com), és a hiányzók vagy mind újbóli letöltése. A Switch oldalon az is, hogy egy játék a borítóját vagy a saját ikonját mutatja."
+#: port/frontend/shell/settings.cpp:1297
+msgid "Whether the cover is downloaded from GameTDB (art.gametdb.com), and downloaded again when it is missing or wrong."
+msgstr "Letölti-e a borítót a GameTDB-ről (art.gametdb.com), és újra, ha hiányzik vagy rossz."
 
 #: port/frontend/shell/settings.cpp:1301
 msgid "Box art from GameTDB"
@@ -6709,15 +6709,15 @@ msgstr "A LEGO Dimensionshöz."
 msgid "Cemu's emulated portal, plugged in as a game starts. In the game, the menu's USB devices category puts figures on it: dumps in {0}. A real portal plugged into the PS5 is not supported."
 msgstr "A Cemu emulált portálja, amely a játék indulásakor csatlakozik. Játék közben a menü USB-eszközök kategóriája helyez rá figurákat: a dumpok helye {0}. A PS5-höz csatlakoztatott valódi portál nem támogatott."
 
-#: port/frontend/shell/settings.cpp:1612
+#: port/frontend/shell/settings.cpp:1610
 msgid ""
 "{0} in any browser on the PS5's network, a phone's, a tablet's or a computer's, with nothing to install, and its touches sent back to the game. Scan the code shown here, or open the address. The DualSense stays the buttons, and the sound stays on the PS5.\n"
 "While a browser shows it, the PS5 copies that screen up to 30 times a second, so a game can run a little slower; with no browser, it costs nothing. Any device on your network can open the page, so turn it off on a network you share.\n"
-"One switch for every side (the GamePad's screen is player 1's), also in a game's menu (touchpad click + Options). From dolphin78's idea and prototype (#38)."
+"One switch (the GamePad's screen is player 1's), also in a game's menu (touchpad click + Options). From dolphin78's idea and prototype (#38)."
 msgstr ""
 "{0} bármely böngészőben a PS5 hálózatán – telefonon, táblagépen vagy számítógépen –, telepítés nélkül, az érintések pedig visszajutnak a játékba. Olvasd be az itt látható kódot, vagy nyisd meg a címet. A gombok a DualSense-en maradnak, a hang a PS5-ön.\n"
 "Amíg egy böngésző mutatja, a PS5 másodpercenként legfeljebb 30-szor másolja azt a képernyőt, így a játék kicsit lassabban futhat; böngésző nélkül semmibe sem kerül. A hálózatodon bármely eszköz megnyithatja az oldalt, ezért megosztott hálózaton kapcsold ki.\n"
-"Egy kapcsoló minden oldalhoz (a GamePad képernyője az 1. játékosé), a játék menüjében is (érintőpanel-kattintás + OPTIONS). dolphin78 ötlete és prototípusa alapján (#38)."
+"Egy kapcsoló (a GamePad képernyője az 1. játékosé), a játék menüjében is (érintőpanel-kattintás + OPTIONS). dolphin78 ötlete és prototípusa alapján (#38)."
 
 #. a row that opens the remote touch screen's page: the game's second screen in a phone's browser, and its code to scan
 #: port/frontend/shell/settings.cpp:1620 port/frontend/shell/settings.cpp:1622
@@ -6892,41 +6892,21 @@ msgstr "Bekapcsolva egy itteni QR-kód megnyitja a játék második képernyőj�
 msgid "Figure dumps go in {0}/figures: skylanders, infinity and dimensions. Switch a portal on here, start the game, then put figures on it from the in-game menu (touchpad click + Options > USB devices)."
 msgstr "A figuradumpok helye {0}/figures: skylanders, infinity és dimensions. Kapcsolj be itt egy portált, indítsd el a játékot, majd helyezz rá figurákat a játék menüjéből (érintőpanel-kattintás + OPTIONS > USB-eszközök)."
 
-#. premohq and JMUtechnologies are GitHub names: keep them as they are
-#: port/frontend/shell/settings.cpp:1990
-msgid "BotW VR is made by its co-founders, premohq and JMUtechnologies."
-msgstr "A BotW VR-et társalapítói, premohq és JMUtechnologies készítik."
+#. About's credits and licence: Cemu and PS5-ECAM under the GPL, Crementif's BetterVR under the MIT licence
+#: port/frontend/shell/settings.cpp:1988
+msgid "The Legend of Zelda: Breath of the Wild in VR: Crementif's BetterVR mod, run by Cemu in PS5-ECAM. Cemu and PS5-ECAM are free software under the GNU GPL v3 or later, Crementif's BetterVR is MIT-licensed, and the source of this build is at github.com/Papyszoo/botw-bettervr-ps5. An unofficial build, not affiliated with Nintendo or Sony."
+msgstr "The Legend of Zelda: Breath of the Wild VR-ban: Crementif BetterVR modja, Cemuval, PS5-ECAM alatt futtatva. A Cemu és a PS5-ECAM szabad szoftver a GNU GPL v3 vagy újabb alatt, a Crementif BetterVR-je MIT-licencű, és ennek a buildnek a forráskódja a github.com/Papyszoo/botw-bettervr-ps5 oldalon van. Nem hivatalos build, nem áll kapcsolatban a Nintendóval vagy a Sonyval."
 
-#. {0} is the app's version; {1} its data folder: /data/ps5cemu, or the PS5CEMU-HAR-data folder on the drive the app is installed on; {2} Eden's game files folder; {3} Cemu's selected data folder; {4} its default games folder; {5} Azahar's selected folder; {6} melonDS's selected folder
-#: port/frontend/shell/settings.cpp:1992
+#. {0} is the app's version; {1} is Cemu's data folder; {2} Cemu's games folder
+#: port/frontend/shell/settings.cpp:1993
 msgid ""
-"Cemu, the Wii U emulator, by the Cemu team and its contributors; RADV on the PS5 by Mihawk-99 and mpereiraesaa; the community graphic packs' authors.\n"
-"Azahar, the 3DS emulator, by the Azahar team and the Citra contributors before them; Mihawk-99's PS5 port of it and dynarmic.\n"
-"melonDS, the DS emulator, by Arisotura and the melonDS team.\n"
-"Eden, the Switch emulator, by the Eden team; ProsperoEden, its PS5 port and launcher, by Sword, BlackBearReloaded, bawsdeep, Rockiu0 and its contributors.\n"
-"Box art and game information: GameTDB. The font: Lexend. The remote touch screen: dolphin78's idea and prototype.\n"
-"An unofficial port, not affiliated with the Cemu, Azahar, melonDS or Eden teams, Nintendo or Sony.\n"
-"\n"
-"Wii U games: {4}, storage and saves: {3}/mlc01, keys: {3}/keys.txt\n"
-"3DS games: {5}/games, storage: {5}/sdmc\n"
-"DS games: {6}/games, saves: {6}/saves\n"
-"Switch games: {2}/roms, keys: {2}/keys, firmware: {2}/firmware\n"
+"Wii U games: {2}, storage and saves: {1}/mlc01, keys: {1}/keys.txt\n"
 "\n"
 "Version {0}"
 msgstr ""
-"Cemu, a Wii U-emulátor, a Cemu csapatától és közreműködőitől; RADV a PS5-ön Mihawk-99-tól és mpereiraesaa-tól; a közösségi grafikus csomagok szerzői.\n"
-"Azahar, a 3DS-emulátor, az Azahar csapatától és előttük a Citra közreműködőitől; PS5-portja és a dynarmic portja Mihawk-99-tól.\n"
-"melonDS, a DS-emulátor, Arisoturától és a melonDS csapatától.\n"
-"Az Eden, a Switch-emulátor, az Eden csapatától; a ProsperoEden, a PS5-portja és indítója, Swordtól, BlackBearReloadedtől, bawsdeeptől, Rockiu0-tól és a közreműködőktől.\n"
-"Borítók és játékinformációk: GameTDB. A betűtípus: Lexend. A távoli érintőképernyő: dolphin78 ötlete és prototípusa.\n"
-"Nem hivatalos port, nem kapcsolódik a Cemu, az Azahar, a melonDS vagy az Eden csapatához, sem a Nintendóhoz vagy a Sonyhoz.\n"
+"Wii U-s játékok: {2}, tároló és mentések: {1}/mlc01, kulcsok: {1}/keys.txt\n"
 "\n"
-"Wii U-játékok: {4}, tárhely és mentések: {3}/mlc01, kulcsok: {3}/keys.txt\n"
-"3DS-játékok: {5}/games, tárhely: {5}/sdmc\n"
-"DS-játékok: {6}/games, mentések: {6}/saves\n"
-"Switch-játékok: {2}/roms, kulcsok: {2}/keys, firmware: {2}/firmware\n"
-"\n"
-"Verzió: {0}"
+"Verzió {0}"
 
 #. the first choice in the language list: the PS5's own ({0}, in its own words)
 #: port/frontend/shell/settings.cpp:2010
@@ -7111,14 +7091,6 @@ msgstr "Olvasd be, vagy nyisd meg"
 msgid "Same network as the PS5. Nothing to install: the browser is enough. Sound stays on the PS5. Any browser on the network can see it and touch."
 msgstr "Ugyanaz a hálózat, mint a PS5-é. Nem kell semmit telepíteni: elég a böngésző. A hang a PS5-ön marad. A hálózat bármely böngészője láthatja és megérintheti."
 
-#: port/frontend/shell/settings.cpp:3207
-msgid "Support BotW VR"
-msgstr "A BotW VR támogatása"
-
-#: port/frontend/shell/settings.cpp:3218
-msgid "BotW VR is free. If it brings your games back, you can support its work here."
-msgstr "A BotW VR ingyenes. Ha visszahozta a játékaidat, itt támogathatod a munkát."
-
 #. above Settings' pages: whose settings they are ({0}: Wii U, Nintendo 3DS or Nintendo DS)
 #: port/frontend/shell/settings.cpp:3258
 msgid "{0} settings"
@@ -7179,8 +7151,8 @@ msgid "Executable memory: games run at full speed, no HEN grant needed"
 msgstr "Végrehajtható memória: a játékok teljes sebességgel futnak, HEN-engedély nélkül"
 
 #: port/frontend/shell/setup.cpp:154
-msgid "Cemu's and Azahar's recompilers turn the games' code into the PS5's as they run. They need memory they can write code into and run it from: your HEN's JIT memory, or executable memory BotW VR makes itself."
-msgstr "A Cemu és az Azahar újrafordítói futás közben a PS5 kódjára alakítják a játékok kódját. Olyan memória kell nekik, amelybe kódot írhatnak és onnan futtathatják: a HEN-ed JIT-memóriája, vagy a BotW VR által létrehozott végrehajtható memória."
+msgid "Cemu's recompiler turns the game's code into the PS5's as it runs. It needs memory it can write code into and run it from: your HEN's JIT memory, or executable memory BotW VR makes itself."
+msgstr "A Cemu újrafordítója futás közben fordítja a játék kódját a PS5 kódjára. Olyan memória kell neki, ahová kódot írhat és ahonnan futtathatja: a HEN-ed JIT-memóriája, vagy futtatható memória, amit a BotW VR maga hoz létre."
 
 #: port/frontend/shell/setup.cpp:160
 msgid "No JIT or executable memory: Wii U games run on the much slower interpreter"

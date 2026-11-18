@@ -5406,8 +5406,8 @@ msgid "The DualSense's rumble, in games and in the launcher."
 msgstr "Getaran DualSense, di game dan di peluncur."
 
 #: port/frontend/shell/settings.cpp:838
-msgid "Off, the DualSense never rumbles, in games or in the launcher. The same on every side."
-msgstr "Saat nonaktif, DualSense tidak pernah bergetar, baik di game maupun di peluncur. Sama untuk semua sisi."
+msgid "Off, the DualSense never rumbles, in games or in the launcher. The same everywhere."
+msgstr "Saat nonaktif, DualSense tidak pernah bergetar, baik di game maupun di peluncur. Sama di semua tempat."
 
 #: port/frontend/shell/settings.cpp:840 port/frontend/shell/settings.cpp:894
 msgid "How far a stick moves before it counts."
@@ -6035,12 +6035,12 @@ msgid "Last: {0} · {1}"
 msgstr "Terakhir: {0} · {1}"
 
 #: port/frontend/shell/settings.cpp:1260
-msgid "Every side's saves, save states and Wii U accounts."
-msgstr "Data simpanan, status tersimpan, dan akun Wii U semua sisi."
+msgid "The Wii U's saves, save states and accounts."
+msgstr "Save, save state, dan akun Wii U."
 
 #: port/frontend/shell/settings.cpp:1261
-msgid "Copies the Wii U's saves (every account's, with the accounts), the 3DS's saves, extra data and save states, the DS's saves and save states, and the Switch's saves with its user profiles to PS5CEMU-HAR-saves on the first USB drive plugged in, in a folder named by the date and time. Never the games, so a backup stays small. The settings go with them: the launcher's, each game's own and the controllers'."
-msgstr "Menyalin data simpanan Wii U (milik setiap akun, beserta akunnya), data simpanan, data tambahan, dan status tersimpan 3DS, data simpanan dan status tersimpan DS, serta data simpanan Switch beserta profil penggunanya ke PS5CEMU-HAR-saves di drive USB pertama yang tercolok, dalam folder yang dinamai tanggal dan waktu. Game tidak pernah ikut, jadi cadangan tetap kecil. Pengaturan ikut disalin: milik peluncur, milik tiap game, dan milik kontroler."
+msgid "Copies the Wii U's saves (every account's, with the accounts) and its save states to PS5CEMU-HAR-saves on the first USB drive plugged in, in a folder named by the date and time. Never the game, so a backup stays small. The settings go with them: the launcher's, its game settings and its controller settings."
+msgstr "Menyalin save Wii U (milik setiap akun, beserta akunnya) dan save state-nya ke PS5CEMU-HAR-saves di drive USB pertama yang dicolokkan, dalam folder bernama tanggal dan waktu. Tidak pernah gamenya, agar cadangan tetap kecil. Pengaturannya ikut: milik peluncur, game, dan pengontrol."
 
 #: port/frontend/shell/settings.cpp:1270 port/frontend/shell/settings.cpp:1863
 msgid "No backups found"
@@ -6091,9 +6091,9 @@ msgstr "Sampul"
 msgid "Covers for the library, from GameTDB."
 msgstr "Sampul untuk pustaka, dari GameTDB."
 
-#: port/frontend/shell/settings.cpp:1298
-msgid "Whether covers are downloaded from GameTDB (art.gametdb.com), and the missing ones or every one downloaded again. On the Switch side, also whether a game shows its box art or its own icon."
-msgstr "Apakah sampul diunduh dari GameTDB (art.gametdb.com), dan mengunduh ulang yang hilang atau semuanya. Di sisi Switch, juga apakah game menampilkan sampulnya atau ikonnya sendiri."
+#: port/frontend/shell/settings.cpp:1297
+msgid "Whether the cover is downloaded from GameTDB (art.gametdb.com), and downloaded again when it is missing or wrong."
+msgstr "Apakah sampul diunduh dari GameTDB (art.gametdb.com), dan diunduh ulang jika hilang atau salah."
 
 #: port/frontend/shell/settings.cpp:1301
 msgid "Box art from GameTDB"
@@ -6682,15 +6682,15 @@ msgstr "Untuk LEGO Dimensions."
 msgid "Cemu's emulated portal, plugged in as a game starts. In the game, the menu's USB devices category puts figures on it: dumps in {0}. A real portal plugged into the PS5 is not supported."
 msgstr "Portal emulasi Cemu, tercolok saat game dimulai. Di dalam game, kategori Perangkat USB di menu menaruh figur di atasnya: dump di {0}. Portal asli yang dicolok ke PS5 tidak didukung."
 
-#: port/frontend/shell/settings.cpp:1612
+#: port/frontend/shell/settings.cpp:1610
 msgid ""
 "{0} in any browser on the PS5's network, a phone's, a tablet's or a computer's, with nothing to install, and its touches sent back to the game. Scan the code shown here, or open the address. The DualSense stays the buttons, and the sound stays on the PS5.\n"
 "While a browser shows it, the PS5 copies that screen up to 30 times a second, so a game can run a little slower; with no browser, it costs nothing. Any device on your network can open the page, so turn it off on a network you share.\n"
-"One switch for every side (the GamePad's screen is player 1's), also in a game's menu (touchpad click + Options). From dolphin78's idea and prototype (#38)."
+"One switch (the GamePad's screen is player 1's), also in a game's menu (touchpad click + Options). From dolphin78's idea and prototype (#38)."
 msgstr ""
 "{0} di browser mana pun di jaringan PS5, di ponsel, tablet, atau komputer, tanpa memasang apa pun, dan sentuhannya dikirim balik ke game. Pindai kode yang ditampilkan di sini, atau buka alamatnya. Tombol tetap di DualSense, dan suara tetap di PS5.\n"
 "Selama browser menampilkannya, PS5 menyalin layar itu hingga 30 kali per detik, jadi game bisa sedikit melambat; tanpa browser, tidak ada biayanya. Perangkat apa pun di jaringanmu bisa membuka halamannya, jadi matikan di jaringan bersama.\n"
-"Satu sakelar untuk semua sisi (layar GamePad milik pemain 1), juga di menu game (klik panel sentuh + OPTIONS). Dari ide dan prototipe dolphin78 (#38)."
+"Satu sakelar (layar GamePad milik pemain 1), juga di menu game (klik panel sentuh + OPTIONS). Dari ide dan prototipe dolphin78 (#38)."
 
 #. a row that opens the remote touch screen's page: the game's second screen in a phone's browser, and its code to scan
 #: port/frontend/shell/settings.cpp:1620 port/frontend/shell/settings.cpp:1622
@@ -6863,39 +6863,19 @@ msgstr "Saat aktif, kode QR di sini membuka layar kedua game di browser ponsel. 
 msgid "Figure dumps go in {0}/figures: skylanders, infinity and dimensions. Switch a portal on here, start the game, then put figures on it from the in-game menu (touchpad click + Options > USB devices)."
 msgstr "Dump figur ditaruh di {0}/figures: skylanders, infinity, dan dimensions. Aktifkan portal di sini, mulai game, lalu taruh figur di atasnya dari menu dalam game (klik panel sentuh + OPTIONS > Perangkat USB)."
 
-#. premohq and JMUtechnologies are GitHub names: keep them as they are
-#: port/frontend/shell/settings.cpp:1990
-msgid "BotW VR is made by its co-founders, premohq and JMUtechnologies."
-msgstr "BotW VR dibuat oleh para pendiri bersamanya, premohq dan JMUtechnologies."
+#. About's credits and licence: Cemu and PS5-ECAM under the GPL, Crementif's BetterVR under the MIT licence
+#: port/frontend/shell/settings.cpp:1988
+msgid "The Legend of Zelda: Breath of the Wild in VR: Crementif's BetterVR mod, run by Cemu in PS5-ECAM. Cemu and PS5-ECAM are free software under the GNU GPL v3 or later, Crementif's BetterVR is MIT-licensed, and the source of this build is at github.com/Papyszoo/botw-bettervr-ps5. An unofficial build, not affiliated with Nintendo or Sony."
+msgstr "The Legend of Zelda: Breath of the Wild dalam VR: mod BetterVR karya Crementif, dijalankan Cemu di PS5-ECAM. Cemu dan PS5-ECAM adalah perangkat lunak bebas di bawah GNU GPL v3 atau lebih baru, BetterVR karya Crementif berlisensi MIT, dan kode sumber build ini ada di github.com/Papyszoo/botw-bettervr-ps5. Build tidak resmi, tidak berafiliasi dengan Nintendo atau Sony."
 
-#. {0} is the app's version; {1} its data folder: /data/ps5cemu, or the PS5CEMU-HAR-data folder on the drive the app is installed on; {2} Eden's game files folder; {3} Cemu's selected data folder; {4} its default games folder; {5} Azahar's selected folder; {6} melonDS's selected folder
-#: port/frontend/shell/settings.cpp:1992
+#. {0} is the app's version; {1} is Cemu's data folder; {2} Cemu's games folder
+#: port/frontend/shell/settings.cpp:1993
 msgid ""
-"Cemu, the Wii U emulator, by the Cemu team and its contributors; RADV on the PS5 by Mihawk-99 and mpereiraesaa; the community graphic packs' authors.\n"
-"Azahar, the 3DS emulator, by the Azahar team and the Citra contributors before them; Mihawk-99's PS5 port of it and dynarmic.\n"
-"melonDS, the DS emulator, by Arisotura and the melonDS team.\n"
-"Eden, the Switch emulator, by the Eden team; ProsperoEden, its PS5 port and launcher, by Sword, BlackBearReloaded, bawsdeep, Rockiu0 and its contributors.\n"
-"Box art and game information: GameTDB. The font: Lexend. The remote touch screen: dolphin78's idea and prototype.\n"
-"An unofficial port, not affiliated with the Cemu, Azahar, melonDS or Eden teams, Nintendo or Sony.\n"
-"\n"
-"Wii U games: {4}, storage and saves: {3}/mlc01, keys: {3}/keys.txt\n"
-"3DS games: {5}/games, storage: {5}/sdmc\n"
-"DS games: {6}/games, saves: {6}/saves\n"
-"Switch games: {2}/roms, keys: {2}/keys, firmware: {2}/firmware\n"
+"Wii U games: {2}, storage and saves: {1}/mlc01, keys: {1}/keys.txt\n"
 "\n"
 "Version {0}"
 msgstr ""
-"Cemu, emulator Wii U, oleh tim Cemu dan para kontributornya; RADV di PS5 oleh Mihawk-99 dan mpereiraesaa; para pembuat paket grafis komunitas.\n"
-"Azahar, emulator 3DS, oleh tim Azahar dan sebelumnya para kontributor Citra; port PS5-nya dan port dynarmic oleh Mihawk-99.\n"
-"melonDS, emulator DS, oleh Arisotura dan tim melonDS.\n"
-"Eden, emulator Switch, oleh tim Eden; ProsperoEden, port PS5 dan peluncurnya, oleh Sword, BlackBearReloaded, bawsdeep, Rockiu0, dan para kontributornya.\n"
-"Sampul dan info game: GameTDB. Fon: Lexend. Layar sentuh jarak jauh: ide dan prototipe dolphin78.\n"
-"Port tidak resmi, tidak terkait dengan tim Cemu, Azahar, melonDS, atau Eden, maupun Nintendo atau Sony.\n"
-"\n"
-"Game Wii U: {4}, penyimpanan dan data simpanan: {3}/mlc01, kunci: {3}/keys.txt\n"
-"Game 3DS: {5}/games, penyimpanan: {5}/sdmc\n"
-"Game DS: {6}/games, data simpanan: {6}/saves\n"
-"Game Switch: {2}/roms, kunci: {2}/keys, firmware: {2}/firmware\n"
+"Game Wii U: {2}, penyimpanan dan save: {1}/mlc01, kunci: {1}/keys.txt\n"
 "\n"
 "Versi {0}"
 
@@ -7081,14 +7061,6 @@ msgstr "Pindai, atau buka"
 msgid "Same network as the PS5. Nothing to install: the browser is enough. Sound stays on the PS5. Any browser on the network can see it and touch."
 msgstr "Jaringan yang sama dengan PS5. Tidak perlu memasang apa pun: browser saja cukup. Suara tetap di PS5. Browser mana pun di jaringan bisa melihat dan menyentuhnya."
 
-#: port/frontend/shell/settings.cpp:3207
-msgid "Support BotW VR"
-msgstr "Dukung BotW VR"
-
-#: port/frontend/shell/settings.cpp:3218
-msgid "BotW VR is free. If it brings your games back, you can support its work here."
-msgstr "BotW VR gratis. Jika aplikasi ini mengembalikan game-mu, kamu bisa mendukung pengembangannya di sini."
-
 #. above Settings' pages: whose settings they are ({0}: Wii U, Nintendo 3DS or Nintendo DS)
 #: port/frontend/shell/settings.cpp:3258
 msgid "{0} settings"
@@ -7149,8 +7121,8 @@ msgid "Executable memory: games run at full speed, no HEN grant needed"
 msgstr "Memori yang dapat dijalankan: game berjalan dengan kecepatan penuh, tanpa izin HEN"
 
 #: port/frontend/shell/setup.cpp:154
-msgid "Cemu's and Azahar's recompilers turn the games' code into the PS5's as they run. They need memory they can write code into and run it from: your HEN's JIT memory, or executable memory BotW VR makes itself."
-msgstr "Rekompiler Cemu dan Azahar mengubah kode game menjadi kode PS5 saat game berjalan. Keduanya butuh memori untuk menulis kode lalu menjalankannya: memori JIT HEN-mu, atau memori yang dapat dijalankan yang dibuat BotW VR sendiri."
+msgid "Cemu's recompiler turns the game's code into the PS5's as it runs. It needs memory it can write code into and run it from: your HEN's JIT memory, or executable memory BotW VR makes itself."
+msgstr "Kompilator ulang Cemu menerjemahkan kode game ke kode PS5 saat berjalan. Ia butuh memori untuk menulis kode dan menjalankannya: memori JIT HEN Anda, atau memori yang dapat dieksekusi yang dibuat BotW VR sendiri."
 
 #: port/frontend/shell/setup.cpp:160
 msgid "No JIT or executable memory: Wii U games run on the much slower interpreter"

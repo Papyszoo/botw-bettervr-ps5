@@ -5426,8 +5426,8 @@ msgid "The DualSense's rumble, in games and in the launcher."
 msgstr "Les vibrations de la DualSense, en jeu et dans le lanceur."
 
 #: port/frontend/shell/settings.cpp:838
-msgid "Off, the DualSense never rumbles, in games or in the launcher. The same on every side."
-msgstr "Désactivé, la DualSense ne vibre jamais, ni en jeu ni dans le lanceur. Pareil pour tous les côtés."
+msgid "Off, the DualSense never rumbles, in games or in the launcher. The same everywhere."
+msgstr "Désactivé, la DualSense ne vibre jamais, ni en jeu ni dans le lanceur. Partout pareil."
 
 #: port/frontend/shell/settings.cpp:840 port/frontend/shell/settings.cpp:894
 msgid "How far a stick moves before it counts."
@@ -6058,12 +6058,12 @@ msgid "Last: {0} · {1}"
 msgstr "Dernière : {0} · {1}"
 
 #: port/frontend/shell/settings.cpp:1260
-msgid "Every side's saves, save states and Wii U accounts."
-msgstr "Les sauvegardes, sauvegardes d’état et comptes Wii U de tous les côtés."
+msgid "The Wii U's saves, save states and accounts."
+msgstr "Les sauvegardes, états de sauvegarde et comptes de la Wii U."
 
 #: port/frontend/shell/settings.cpp:1261
-msgid "Copies the Wii U's saves (every account's, with the accounts), the 3DS's saves, extra data and save states, the DS's saves and save states, and the Switch's saves with its user profiles to PS5CEMU-HAR-saves on the first USB drive plugged in, in a folder named by the date and time. Never the games, so a backup stays small. The settings go with them: the launcher's, each game's own and the controllers'."
-msgstr "Copie les sauvegardes de la Wii U (celles de chaque compte, avec les comptes), les sauvegardes, données additionnelles et sauvegardes d’état de la 3DS, les sauvegardes et sauvegardes d’état de la DS, et les sauvegardes de la Switch avec ses profils d’utilisateur dans PS5CEMU-HAR-saves sur la première clé USB branchée, dans un dossier nommé d’après la date et l’heure. Jamais les jeux, pour qu’une copie reste petite. Les paramètres les accompagnent : ceux du lanceur, ceux propres à chaque jeu et ceux des manettes."
+msgid "Copies the Wii U's saves (every account's, with the accounts) and its save states to PS5CEMU-HAR-saves on the first USB drive plugged in, in a folder named by the date and time. Never the game, so a backup stays small. The settings go with them: the launcher's, its game settings and its controller settings."
+msgstr "Copie les sauvegardes de la Wii U (celles de chaque compte, avec les comptes) et ses états de sauvegarde dans PS5CEMU-HAR-saves sur la première clé USB branchée, dans un dossier nommé d'après la date et l'heure. Jamais le jeu, pour qu'une sauvegarde reste petite. Les réglages suivent : ceux du lanceur, ses réglages de jeu et ceux des manettes."
 
 #: port/frontend/shell/settings.cpp:1270 port/frontend/shell/settings.cpp:1863
 msgid "No backups found"
@@ -6116,9 +6116,9 @@ msgstr "Jaquettes"
 msgid "Covers for the library, from GameTDB."
 msgstr "Les jaquettes de la bibliothèque, depuis GameTDB."
 
-#: port/frontend/shell/settings.cpp:1298
-msgid "Whether covers are downloaded from GameTDB (art.gametdb.com), and the missing ones or every one downloaded again. On the Switch side, also whether a game shows its box art or its own icon."
-msgstr "Si les jaquettes sont téléchargées depuis GameTDB (art.gametdb.com), et les manquantes ou toutes téléchargées à nouveau. Côté Switch, aussi si un jeu affiche sa jaquette ou sa propre icône."
+#: port/frontend/shell/settings.cpp:1297
+msgid "Whether the cover is downloaded from GameTDB (art.gametdb.com), and downloaded again when it is missing or wrong."
+msgstr "Si la jaquette est téléchargée depuis GameTDB (art.gametdb.com), et retéléchargée si elle manque ou est fausse."
 
 #: port/frontend/shell/settings.cpp:1301
 msgid "Box art from GameTDB"
@@ -6709,15 +6709,15 @@ msgstr "Pour LEGO Dimensions."
 msgid "Cemu's emulated portal, plugged in as a game starts. In the game, the menu's USB devices category puts figures on it: dumps in {0}. A real portal plugged into the PS5 is not supported."
 msgstr "Le portail émulé de Cemu, branché au démarrage d’un jeu. En jeu, la catégorie Périphériques USB du menu y pose des figurines : dumps dans {0}. Un vrai portail branché sur la PS5 n’est pas pris en charge."
 
-#: port/frontend/shell/settings.cpp:1612
+#: port/frontend/shell/settings.cpp:1610
 msgid ""
 "{0} in any browser on the PS5's network, a phone's, a tablet's or a computer's, with nothing to install, and its touches sent back to the game. Scan the code shown here, or open the address. The DualSense stays the buttons, and the sound stays on the PS5.\n"
 "While a browser shows it, the PS5 copies that screen up to 30 times a second, so a game can run a little slower; with no browser, it costs nothing. Any device on your network can open the page, so turn it off on a network you share.\n"
-"One switch for every side (the GamePad's screen is player 1's), also in a game's menu (touchpad click + Options). From dolphin78's idea and prototype (#38)."
+"One switch (the GamePad's screen is player 1's), also in a game's menu (touchpad click + Options). From dolphin78's idea and prototype (#38)."
 msgstr ""
 "{0} dans n’importe quel navigateur du réseau de la PS5, celui d’un téléphone, d’une tablette ou d’un ordinateur, sans rien installer, ses touchers étant renvoyés au jeu. Scannez le code affiché ici, ou ouvrez l’adresse. La DualSense garde les touches, et le son reste sur la PS5.\n"
 "Tant qu’un navigateur l’affiche, la PS5 copie cet écran jusqu’à 30 fois par seconde, ce qui peut ralentir un peu un jeu ; sans navigateur, cela ne coûte rien. Tout appareil de votre réseau peut ouvrir la page : désactivez-le sur un réseau partagé.\n"
-"Un seul interrupteur pour tous les côtés (l’écran du GamePad est celui du joueur 1), aussi dans le menu d’un jeu (clic du pavé tactile + OPTIONS). D’après l’idée et le prototype de dolphin78 (#38)."
+"Un seul interrupteur (l’écran du GamePad est celui du joueur 1), aussi dans le menu d’un jeu (clic du pavé tactile + OPTIONS). D’après l’idée et le prototype de dolphin78 (#38)."
 
 #. a row that opens the remote touch screen's page: the game's second screen in a phone's browser, and its code to scan
 #: port/frontend/shell/settings.cpp:1620 port/frontend/shell/settings.cpp:1622
@@ -6892,39 +6892,19 @@ msgstr "Activé, un QR code ici ouvre le second écran du jeu dans le navigateur
 msgid "Figure dumps go in {0}/figures: skylanders, infinity and dimensions. Switch a portal on here, start the game, then put figures on it from the in-game menu (touchpad click + Options > USB devices)."
 msgstr "Les dumps de figurines vont dans {0}/figures : skylanders, infinity et dimensions. Activez un portail ici, lancez le jeu, puis posez-y des figurines depuis le menu en jeu (clic du pavé tactile + OPTIONS > Périphériques USB)."
 
-#. premohq and JMUtechnologies are GitHub names: keep them as they are
-#: port/frontend/shell/settings.cpp:1990
-msgid "BotW VR is made by its co-founders, premohq and JMUtechnologies."
-msgstr "BotW VR est fait par ses cofondateurs, premohq et JMUtechnologies."
+#. About's credits and licence: Cemu and PS5-ECAM under the GPL, Crementif's BetterVR under the MIT licence
+#: port/frontend/shell/settings.cpp:1988
+msgid "The Legend of Zelda: Breath of the Wild in VR: Crementif's BetterVR mod, run by Cemu in PS5-ECAM. Cemu and PS5-ECAM are free software under the GNU GPL v3 or later, Crementif's BetterVR is MIT-licensed, and the source of this build is at github.com/Papyszoo/botw-bettervr-ps5. An unofficial build, not affiliated with Nintendo or Sony."
+msgstr "The Legend of Zelda: Breath of the Wild en VR : le mod BetterVR de Crementif, exécuté par Cemu dans PS5-ECAM. Cemu et PS5-ECAM sont des logiciels libres sous la GNU GPL v3 ou ultérieure, le BetterVR de Crementif est sous licence MIT, et le code source de cette version est sur github.com/Papyszoo/botw-bettervr-ps5. Une version non officielle, sans lien avec Nintendo ni Sony."
 
-#. {0} is the app's version; {1} its data folder: /data/ps5cemu, or the PS5CEMU-HAR-data folder on the drive the app is installed on; {2} Eden's game files folder; {3} Cemu's selected data folder; {4} its default games folder; {5} Azahar's selected folder; {6} melonDS's selected folder
-#: port/frontend/shell/settings.cpp:1992
+#. {0} is the app's version; {1} is Cemu's data folder; {2} Cemu's games folder
+#: port/frontend/shell/settings.cpp:1993
 msgid ""
-"Cemu, the Wii U emulator, by the Cemu team and its contributors; RADV on the PS5 by Mihawk-99 and mpereiraesaa; the community graphic packs' authors.\n"
-"Azahar, the 3DS emulator, by the Azahar team and the Citra contributors before them; Mihawk-99's PS5 port of it and dynarmic.\n"
-"melonDS, the DS emulator, by Arisotura and the melonDS team.\n"
-"Eden, the Switch emulator, by the Eden team; ProsperoEden, its PS5 port and launcher, by Sword, BlackBearReloaded, bawsdeep, Rockiu0 and its contributors.\n"
-"Box art and game information: GameTDB. The font: Lexend. The remote touch screen: dolphin78's idea and prototype.\n"
-"An unofficial port, not affiliated with the Cemu, Azahar, melonDS or Eden teams, Nintendo or Sony.\n"
-"\n"
-"Wii U games: {4}, storage and saves: {3}/mlc01, keys: {3}/keys.txt\n"
-"3DS games: {5}/games, storage: {5}/sdmc\n"
-"DS games: {6}/games, saves: {6}/saves\n"
-"Switch games: {2}/roms, keys: {2}/keys, firmware: {2}/firmware\n"
+"Wii U games: {2}, storage and saves: {1}/mlc01, keys: {1}/keys.txt\n"
 "\n"
 "Version {0}"
 msgstr ""
-"Cemu, l’émulateur Wii U, par l’équipe de Cemu et ses contributeurs ; RADV sur PS5 par Mihawk-99 et mpereiraesaa ; les auteurs des packs graphiques de la communauté.\n"
-"Azahar, l’émulateur 3DS, par l’équipe d’Azahar et les contributeurs de Citra avant elle ; son portage PS5 et celui de dynarmic par Mihawk-99.\n"
-"melonDS, l’émulateur DS, par Arisotura et l’équipe de melonDS.\n"
-"Eden, l’émulateur Switch, par l’équipe d’Eden ; ProsperoEden, son portage PS5 et son lanceur, par Sword, BlackBearReloaded, bawsdeep, Rockiu0 et ses contributeurs.\n"
-"Jaquettes et informations sur les jeux : GameTDB. La police : Lexend. L’écran tactile à distance : l’idée et le prototype de dolphin78.\n"
-"Un portage non officiel, sans lien avec les équipes de Cemu, Azahar, melonDS ou Eden, ni avec Nintendo ou Sony.\n"
-"\n"
-"Jeux Wii U : {4}, stockage et sauvegardes : {3}/mlc01, clés : {3}/keys.txt\n"
-"Jeux 3DS : {5}/games, stockage : {5}/sdmc\n"
-"Jeux DS : {6}/games, sauvegardes : {6}/saves\n"
-"Jeux Switch : {2}/roms, clés : {2}/keys, firmware : {2}/firmware\n"
+"Jeux Wii U : {2}, stockage et sauvegardes : {1}/mlc01, clés : {1}/keys.txt\n"
 "\n"
 "Version {0}"
 
@@ -7111,14 +7091,6 @@ msgstr "Scannez-le, ou ouvrez"
 msgid "Same network as the PS5. Nothing to install: the browser is enough. Sound stays on the PS5. Any browser on the network can see it and touch."
 msgstr "Même réseau que la PS5. Rien à installer : le navigateur suffit. Le son reste sur la PS5. Tout navigateur du réseau peut le voir et le toucher."
 
-#: port/frontend/shell/settings.cpp:3207
-msgid "Support BotW VR"
-msgstr "Soutenir BotW VR"
-
-#: port/frontend/shell/settings.cpp:3218
-msgid "BotW VR is free. If it brings your games back, you can support its work here."
-msgstr "BotW VR est gratuit. S’il vous rend vos jeux, vous pouvez soutenir son travail ici."
-
 #. above Settings' pages: whose settings they are ({0}: Wii U, Nintendo 3DS or Nintendo DS)
 #: port/frontend/shell/settings.cpp:3258
 msgid "{0} settings"
@@ -7179,8 +7151,8 @@ msgid "Executable memory: games run at full speed, no HEN grant needed"
 msgstr "Mémoire exécutable : les jeux tournent à pleine vitesse, sans autorisation du HEN"
 
 #: port/frontend/shell/setup.cpp:154
-msgid "Cemu's and Azahar's recompilers turn the games' code into the PS5's as they run. They need memory they can write code into and run it from: your HEN's JIT memory, or executable memory BotW VR makes itself."
-msgstr "Les recompilateurs de Cemu et d’Azahar traduisent le code des jeux en celui de la PS5 pendant qu’ils tournent. Ils ont besoin d’une mémoire où écrire du code et l’exécuter : la mémoire JIT de votre HEN, ou une mémoire exécutable que BotW VR crée lui-même."
+msgid "Cemu's recompiler turns the game's code into the PS5's as it runs. It needs memory it can write code into and run it from: your HEN's JIT memory, or executable memory BotW VR makes itself."
+msgstr "Le recompilateur de Cemu traduit le code du jeu en celui de la PS5 à l'exécution. Il lui faut de la mémoire où écrire du code et l'exécuter : la mémoire JIT de votre HEN, ou de la mémoire exécutable que BotW VR crée lui-même."
 
 #: port/frontend/shell/setup.cpp:160
 msgid "No JIT or executable memory: Wii U games run on the much slower interpreter"

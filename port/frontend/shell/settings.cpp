@@ -835,7 +835,7 @@ namespace ps5shell
 		else if (page == "controls")
 		{
 			toggle("rumble", Tr("Vibration"), settings.rumble, Tr("The DualSense's rumble, in games and in the launcher."),
-				Tr("Off, the DualSense never rumbles, in games or in the launcher. The same on every side."));
+				Tr("Off, the DualSense never rumbles, in games or in the launcher. The same everywhere."));
 			if (IsSwitch())
 				slider("nx-deadzone", Tr("Stick deadzone"), hand.nxDeadzone, 30, Tr("How far a stick moves before it counts."),
 					Tr("How far a stick moves before the game sees it, for both sticks. Raise it if a character or the camera drifts when you "
@@ -1257,11 +1257,10 @@ namespace ps5shell
 			else if (backupValue.empty() && !m_backups.empty())
 				// tr: the newest backup of the saves: when, and on which drive
 				backupValue = TrF("Last: {0} · {1}", m_backups.front().when, DriveName(m_backups.front().drive));
-			action(Kind::Action, "backup", Tr("Back up to USB"), backupValue, Tr("Every side's saves, save states and Wii U accounts."),
-				Tr("Copies the Wii U's saves (every account's, with the accounts), the 3DS's saves, extra data and save states, the DS's saves "
-				   "and save states, and the Switch's saves with its user profiles to PS5CEMU-HAR-saves on the first USB drive plugged in, in a "
-				   "folder named by the date and time. Never the games, so a backup stays small. The settings go with them: the launcher's, each "
-				   "game's own and the controllers'."));
+			action(Kind::Action, "backup", Tr("Back up to USB"), backupValue, Tr("The Wii U's saves, save states and accounts."),
+				Tr("Copies the Wii U's saves (every account's, with the accounts) and its save states to PS5CEMU-HAR-saves on the first USB "
+				   "drive plugged in, in a folder named by the date and time. Never the game, so a backup stays small. The settings go with "
+				   "them: the launcher's, its game settings and its controller settings."));
 			std::vector<std::string> backups;
 			for (const auto& backup : m_backups)
 				backups.push_back(backup.when + " · " + DriveName(backup.drive));
@@ -1295,8 +1294,7 @@ namespace ps5shell
 										 std::string(Tr("Every game has box art"));
 			// tr: Settings > Online: a row that opens the box art's settings (GameTDB on or off, downloading the covers again)
 			sub("boxart", Tr("Box art"), settings.boxArt || pending ? status : std::string(Tr("Off")), Tr("Covers for the library, from GameTDB."),
-				Tr("Whether covers are downloaded from GameTDB (art.gametdb.com), and the missing ones or every one downloaded again. On the "
-				   "Switch side, also whether a game shows its box art or its own icon."));
+				Tr("Whether the cover is downloaded from GameTDB (art.gametdb.com), and downloaded again when it is missing or wrong."));
 			// (a Switch game's ID is the game GameTDB has by its name: port/eden/library.h)
 			toggle("boxart", Tr("Box art from GameTDB"), settings.boxArt, Tr("Covers for the library, downloaded once."),
 				Tr("The first time a game shows up, its cover is downloaded from GameTDB (art.gametdb.com) by the ID on its box. Off: nothing "
@@ -1613,7 +1611,7 @@ namespace ps5shell
 										  "touches sent back to the game. Scan the code shown here, or open the address. The DualSense stays the buttons, "
 										  "and the sound stays on the PS5.\nWhile a browser shows it, the PS5 copies that screen up to 30 times a second, so "
 										  "a game can run a little slower; with no browser, it costs nothing. Any device on your network can open the page, "
-										  "so turn it off on a network you share.\nOne switch for every side (the GamePad's screen is player 1's), also in "
+										  "so turn it off on a network you share.\nOne switch (the GamePad's screen is player 1's), also in "
 										  "a game's menu (touchpad click + Options). From dolphin78's idea and prototype (#38).",
 				screen);
 			// tr: a row that opens the remote touch screen's page: the game's second screen in a phone's browser, and its code to scan
@@ -1986,19 +1984,14 @@ namespace ps5shell
 					   "put figures on it from the in-game menu (touchpad click + Options > USB devices).",
 				ps5paths::Root());
 		if (page == "about")
-			// tr: premohq and JMUtechnologies are GitHub names: keep them as they are
-			return std::string(Tr("BotW VR is made by its co-founders, premohq and JMUtechnologies.")) + "\n" +
-				   // tr: {0} is the app's version; {1} its data folder: /data/ps5cemu, or the PS5CEMU-HAR-data folder on the drive the app is installed on; {2} Eden's game files folder; {3} Cemu's selected data folder; {4} its default games folder; {5} Azahar's selected folder; {6} melonDS's selected folder
-				   TrF("Cemu, the Wii U emulator, by the Cemu team and its contributors; RADV on the PS5 by Mihawk-99 and mpereiraesaa; the "
-				   "community graphic packs' authors.\nAzahar, the 3DS emulator, by the Azahar team and the Citra contributors before them; "
-				   "Mihawk-99's PS5 port of it and dynarmic.\nmelonDS, the DS emulator, by Arisotura and the melonDS team.\nEden, the Switch "
-				   "emulator, by the Eden team; ProsperoEden, its PS5 port and launcher, by Sword, BlackBearReloaded, bawsdeep, Rockiu0 and its "
-				   "contributors.\nBox art and game information: GameTDB. The font: Lexend. The remote touch screen: dolphin78's idea and "
-				   "prototype.\nAn unofficial port, not affiliated with the Cemu, Azahar, melonDS or Eden teams, Nintendo or Sony.\n\nWii U "
-				   "games: {4}, storage and saves: {3}/mlc01, keys: {3}/keys.txt\n3DS games: {5}/games, storage: "
-				   "{5}/sdmc\nDS games: {6}/games, saves: {6}/saves\nSwitch games: {2}/roms, keys: {2}/keys, firmware: "
-				   "{2}/firmware\n\nVersion {0}",
-				ps5update::Readable(PS5CEMU_VERSION), ps5paths::Root(), ps5eden::GameFilesFolder(), ps5paths::CemuRoot(), ps5paths::Games(), ps5paths::Azahar(), ps5paths::MelonDs());
+			// tr: About's credits and licence: Cemu and PS5-ECAM under the GPL, Crementif's BetterVR under the MIT licence
+			return std::string(Tr("The Legend of Zelda: Breath of the Wild in VR: Crementif's BetterVR mod, run by Cemu in PS5-ECAM. Cemu "
+							   "and PS5-ECAM are free software under the GNU GPL v3 or later, Crementif's BetterVR is MIT-licensed, and the "
+							   "source of this build is at github.com/Papyszoo/botw-bettervr-ps5. An unofficial build, not affiliated with "
+							   "Nintendo or Sony.")) + "\n\n" +
+				   // tr: {0} is the app's version; {1} is Cemu's data folder; {2} Cemu's games folder
+				   TrF("Wii U games: {2}, storage and saves: {1}/mlc01, keys: {1}/keys.txt\n\nVersion {0}",
+					   ps5update::Readable(PS5CEMU_VERSION), ps5paths::CemuRoot(), ps5paths::Games());
 		return {};
 	}
 
@@ -3195,30 +3188,6 @@ namespace ps5shell
 		canvas.Text(note, tx, y, Secondary());
 	}
 
-	// About's card (6.5): the developer's PayPal.me as a QR code on white, the address under it in words,
-	// one line saying what it is; never shown anywhere else
-	void Shell::DrawSupport(Canvas& canvas, const Box& card)
-	{
-		static constexpr const char* kSupport = "https://www.paypal.com/paypalme/empthe";
-		canvas.Rect(card, kRadiusCard, Surface());
-		canvas.Ring(card, kRadiusCard, 1.5f, kGlassEdge);
-		const float pad = 32, qr = std::min(card.w - 2 * pad, 260.0f);
-		float y = card.y + pad;
-		canvas.Text(Style(kOverlineStyle), card.x + pad, y, Tr("Support BotW VR"), Accent(), card.w - 2 * pad, 1);
-		y += 40;
-		auto code = m_qrCodes.find(kSupport);
-		if (code == m_qrCodes.end())
-			code = m_qrCodes.emplace(kSupport, ui::QrCode(kSupport)).first;
-		ui::DrawQr(canvas, code->second, {card.CentreX() - qr * 0.5f, y, qr, qr}, 16);
-		y += qr + 20;
-		const ui::TextBlock address = canvas.Text(Style({26, ui::Weight::SemiBold, 1.1f}), card.x + pad, y, "paypal.me/empthe", kText, card.w - 2 * pad, 1,
-			ui::Align::Centre);
-		y += address.height + 14;
-		canvas.Text(Style({20, ui::Weight::Regular, 1.45f}), card.x + pad, y,
-			Tr("BotW VR is free. If it brings your games back, you can support its work here."), Secondary(), card.w - 2 * pad, 4,
-			ui::Align::Centre);
-	}
-
 	void Shell::SettingsDraw(Canvas& canvas)
 	{
 		// a dialog over the screen it was opened from, on every side and in every theme (6.5): that screen as
@@ -3317,21 +3286,14 @@ namespace ps5shell
 		else
 		{
 			// what the page (or the › page: the Wii U's USB devices, the remote touch screen) says under its rows,
-			// in as many lines as the dialog has room for; About's beside its support card
+			// in as many lines as the dialog has room for
 			const std::string panel = PanelText(shown);
-			float textW = pw;
-			if (m_page == "about")
-			{
-				const float cardW = 380;
-				DrawSupport(canvas, {px + pw - cardW, under, cardW, std::min(560.0f, dialog.Bottom() - 28 - under)});
-				textW = pw - cardW - 40;
-			}
 			if (!panel.empty())
 			{
-				const ui::TextStyle style = Style({m_page == "about" ? 20.0f : 22.0f, ui::Weight::Regular, 1.45f});
+				const ui::TextStyle style = Style({22, ui::Weight::Regular, 1.45f});
 				const float top = under + (rows.empty() ? 0 : 8);
 				const int lines = std::max(1, (int)((dialog.Bottom() - 28 - top) / (style.size * style.lineHeight)));
-				canvas.Text(style, px, top, panel, Secondary(), textW, lines);
+				canvas.Text(style, px, top, panel, Secondary(), pw, lines);
 			}
 		}
 		canvas.PopClip();

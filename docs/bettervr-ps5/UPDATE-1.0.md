@@ -940,6 +940,10 @@ Cemu patch added. `VERSION` stays 0.5.0.
   cursor, and touchpad + Options is still only the port's menu. An older `ps5cemu.json`'s 0 (the old automatic default)
   becomes 2 once (a marker, `touchpadClickMigrated`, keeps a later choice of Automatic); 1 and 2 are kept.
 
+### Settings and About
+
+- **Settings are BotW VR's alone.** The PayPal card is gone from About, which now has one licence line (Cemu and PS5-ECAM under the GPL, Crementif's BetterVR under MIT) and only the Wii U's paths; the backup, box art, recompiler and remote-screen texts no longer name other systems, and what is left is marked "ask" in the track's settings audit.
+
 ### Open
 
 Nothing here has run on a console. The mip chain's cost and the skipped passes need the `[frame]` line; the HUD

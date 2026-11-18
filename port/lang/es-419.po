@@ -206,16 +206,6 @@ msgstr "Juegos en una computadora o un NAS, por SMB o NFS."
 msgid "A folder shared by a Windows, macOS or Linux computer or a NAS, read where it is: add it here, then choose a games folder on it with the folder browser, where each share is a tab. Nothing is ever written to it; saves and installs stay on the PS5. A cable does better than Wi-Fi for Wii U games."
 msgstr "Una carpeta compartida por una computadora con Windows, macOS o Linux o por un NAS, leída donde está: agrégala aquí y elige después una carpeta de juegos en ella con el explorador de carpetas, donde cada recurso compartido es una pestaña. Nunca se escribe nada en ella; las partidas guardadas y las instalaciones se quedan en la PS5. Para los juegos de Wii U, un cable funciona mejor que el wifi."
 
-#: port/frontend/shell/settings.cpp:1612
-msgid ""
-"{0} in any browser on the PS5's network, a phone's, a tablet's or a computer's, with nothing to install, and its touches sent back to the game. Scan the code shown here, or open the address. The DualSense stays the buttons, and the sound stays on the PS5.\n"
-"While a browser shows it, the PS5 copies that screen up to 30 times a second, so a game can run a little slower; with no browser, it costs nothing. Any device on your network can open the page, so turn it off on a network you share.\n"
-"One switch for every side (the GamePad's screen is player 1's), also in a game's menu (touchpad click + Options). From dolphin78's idea and prototype (#38)."
-msgstr ""
-"{0} en cualquier navegador de la red de la PS5, ya sea de un celular, una tableta o una computadora, sin instalar nada, y sus toques se envían al juego. Escanea el código que aparece aquí o abre la dirección. Los botones siguen en el DualSense y el sonido se queda en la PS5.\n"
-"Mientras un navegador la muestra, la PS5 copia esa pantalla hasta 30 veces por segundo, así que un juego puede ir algo más lento; sin navegador, no cuesta nada. Cualquier dispositivo de tu red puede abrir la página, así que desactívala en una red compartida.\n"
-"Un solo interruptor para todos los lados (la pantalla del GamePad es la del jugador 1), también en el menú de cada juego (clic en el panel táctil + OPTIONS). A partir de la idea y el prototipo de dolphin78 (#38)."
-
 #. a row that opens the remote touch screen's page: the game's second screen in a phone's browser, and its code to scan
 #: port/frontend/shell/settings.cpp:1620 port/frontend/shell/settings.cpp:1622
 msgid "{0} in a phone's or tablet's browser, with touch."

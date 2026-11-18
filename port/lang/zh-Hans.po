@@ -5406,8 +5406,8 @@ msgid "The DualSense's rumble, in games and in the launcher."
 msgstr "游戏中和启动器中DualSense的振动。"
 
 #: port/frontend/shell/settings.cpp:838
-msgid "Off, the DualSense never rumbles, in games or in the launcher. The same on every side."
-msgstr "关闭后，DualSense在游戏和启动器中都不会振动。所有平台相同。"
+msgid "Off, the DualSense never rumbles, in games or in the launcher. The same everywhere."
+msgstr "关闭后，DualSense在游戏和启动器中都不会振动。各处相同。"
 
 #: port/frontend/shell/settings.cpp:840 port/frontend/shell/settings.cpp:894
 msgid "How far a stick moves before it counts."
@@ -6035,12 +6035,12 @@ msgid "Last: {0} · {1}"
 msgstr "最近：{0} · {1}"
 
 #: port/frontend/shell/settings.cpp:1260
-msgid "Every side's saves, save states and Wii U accounts."
-msgstr "所有平台的存档、即时存档和Wii U账户。"
+msgid "The Wii U's saves, save states and accounts."
+msgstr "Wii U 的存档、即时存档和账户。"
 
 #: port/frontend/shell/settings.cpp:1261
-msgid "Copies the Wii U's saves (every account's, with the accounts), the 3DS's saves, extra data and save states, the DS's saves and save states, and the Switch's saves with its user profiles to PS5CEMU-HAR-saves on the first USB drive plugged in, in a folder named by the date and time. Never the games, so a backup stays small. The settings go with them: the launcher's, each game's own and the controllers'."
-msgstr "将Wii U的存档（所有账户的存档及账户本身）、3DS的存档、追加数据和即时存档、DS的存档和即时存档，以及Switch的存档及其用户资料，复制到第一个插入的USB存储设备上的PS5CEMU-HAR-saves中，放在以日期和时间命名的文件夹里。不包括游戏，因此备份很小。设置也会一并复制：启动器的设置、每个游戏自己的设置和手柄的设置。"
+msgid "Copies the Wii U's saves (every account's, with the accounts) and its save states to PS5CEMU-HAR-saves on the first USB drive plugged in, in a folder named by the date and time. Never the game, so a backup stays small. The settings go with them: the launcher's, its game settings and its controller settings."
+msgstr "将 Wii U 的存档（每个账户的，连同账户）和即时存档复制到已连接的第一个 USB 驱动器上的 PS5CEMU-HAR-saves，放在以日期和时间命名的文件夹中。绝不复制游戏，因此备份保持很小。设置也会一同复制：启动器、游戏和手柄的设置。"
 
 #: port/frontend/shell/settings.cpp:1270 port/frontend/shell/settings.cpp:1863
 msgid "No backups found"
@@ -6091,9 +6091,9 @@ msgstr "封面"
 msgid "Covers for the library, from GameTDB."
 msgstr "来自GameTDB的游戏库封面。"
 
-#: port/frontend/shell/settings.cpp:1298
-msgid "Whether covers are downloaded from GameTDB (art.gametdb.com), and the missing ones or every one downloaded again. On the Switch side, also whether a game shows its box art or its own icon."
-msgstr "是否从GameTDB（art.gametdb.com）下载封面，以及重新下载缺失的或全部封面。在Switch平台上，还可选择游戏显示封面还是自身图标。"
+#: port/frontend/shell/settings.cpp:1297
+msgid "Whether the cover is downloaded from GameTDB (art.gametdb.com), and downloaded again when it is missing or wrong."
+msgstr "是否从 GameTDB（art.gametdb.com）下载封面，以及在缺失或错误时重新下载。"
 
 #: port/frontend/shell/settings.cpp:1301
 msgid "Box art from GameTDB"
@@ -6682,15 +6682,15 @@ msgstr "用于LEGO Dimensions。"
 msgid "Cemu's emulated portal, plugged in as a game starts. In the game, the menu's USB devices category puts figures on it: dumps in {0}. A real portal plugged into the PS5 is not supported."
 msgstr "Cemu模拟的传送门，在游戏启动时接入。在游戏中，菜单的USB设备类别可将手办放上：转储文件放在{0}。不支持接入PS5的实体传送门。"
 
-#: port/frontend/shell/settings.cpp:1612
+#: port/frontend/shell/settings.cpp:1610
 msgid ""
 "{0} in any browser on the PS5's network, a phone's, a tablet's or a computer's, with nothing to install, and its touches sent back to the game. Scan the code shown here, or open the address. The DualSense stays the buttons, and the sound stays on the PS5.\n"
 "While a browser shows it, the PS5 copies that screen up to 30 times a second, so a game can run a little slower; with no browser, it costs nothing. Any device on your network can open the page, so turn it off on a network you share.\n"
-"One switch for every side (the GamePad's screen is player 1's), also in a game's menu (touchpad click + Options). From dolphin78's idea and prototype (#38)."
+"One switch (the GamePad's screen is player 1's), also in a game's menu (touchpad click + Options). From dolphin78's idea and prototype (#38)."
 msgstr ""
 "在PS5所在网络中的任何浏览器（手机、平板电脑或电脑）上显示{0}，无需安装任何东西，触控操作会发送回游戏。扫描此处显示的二维码，或打开该地址。DualSense仍用作按键，声音仍从PS5输出。\n"
 "浏览器显示时，PS5每秒最多复制该屏幕30次，因此游戏可能会稍慢；没有浏览器时不会产生任何开销。网络中的任何设备都能打开该页面，因此在共享网络中应将其关闭。\n"
-"所有平台共用一个开关（GamePad的屏幕属于玩家1），也可在游戏菜单中设置（按下触摸板键+选项键）。源自dolphin78的创意和原型（#38）。"
+"共用一个开关（GamePad的屏幕属于玩家1），也可在游戏菜单中设置（按下触摸板键+选项键）。源自dolphin78的创意和原型（#38）。"
 
 #. a row that opens the remote touch screen's page: the game's second screen in a phone's browser, and its code to scan
 #: port/frontend/shell/settings.cpp:1620 port/frontend/shell/settings.cpp:1622
@@ -6863,41 +6863,21 @@ msgstr "开启后，此处的二维码可在手机浏览器中打开游戏的第
 msgid "Figure dumps go in {0}/figures: skylanders, infinity and dimensions. Switch a portal on here, start the game, then put figures on it from the in-game menu (touchpad click + Options > USB devices)."
 msgstr "手办转储文件放在{0}/figures：skylanders、infinity和dimensions。在此开启传送门，启动游戏，然后从游戏内菜单将手办放上（按下触摸板键+选项键 > USB设备）。"
 
-#. premohq and JMUtechnologies are GitHub names: keep them as they are
-#: port/frontend/shell/settings.cpp:1990
-msgid "BotW VR is made by its co-founders, premohq and JMUtechnologies."
-msgstr "BotW VR由联合创始人premohq和JMUtechnologies制作。"
+#. About's credits and licence: Cemu and PS5-ECAM under the GPL, Crementif's BetterVR under the MIT licence
+#: port/frontend/shell/settings.cpp:1988
+msgid "The Legend of Zelda: Breath of the Wild in VR: Crementif's BetterVR mod, run by Cemu in PS5-ECAM. Cemu and PS5-ECAM are free software under the GNU GPL v3 or later, Crementif's BetterVR is MIT-licensed, and the source of this build is at github.com/Papyszoo/botw-bettervr-ps5. An unofficial build, not affiliated with Nintendo or Sony."
+msgstr "《The Legend of Zelda: Breath of the Wild》VR：由 Cemu 在 PS5-ECAM 中运行 Crementif 的 BetterVR 模组。Cemu 和 PS5-ECAM 是 GNU GPL v3 或更高版本的自由软件，Crementif 的 BetterVR 使用 MIT 许可，此构建的源代码位于 github.com/Papyszoo/botw-bettervr-ps5。非官方构建，与 Nintendo 和 Sony 无关。"
 
-#. {0} is the app's version; {1} its data folder: /data/ps5cemu, or the PS5CEMU-HAR-data folder on the drive the app is installed on; {2} Eden's game files folder; {3} Cemu's selected data folder; {4} its default games folder; {5} Azahar's selected folder; {6} melonDS's selected folder
-#: port/frontend/shell/settings.cpp:1992
+#. {0} is the app's version; {1} is Cemu's data folder; {2} Cemu's games folder
+#: port/frontend/shell/settings.cpp:1993
 msgid ""
-"Cemu, the Wii U emulator, by the Cemu team and its contributors; RADV on the PS5 by Mihawk-99 and mpereiraesaa; the community graphic packs' authors.\n"
-"Azahar, the 3DS emulator, by the Azahar team and the Citra contributors before them; Mihawk-99's PS5 port of it and dynarmic.\n"
-"melonDS, the DS emulator, by Arisotura and the melonDS team.\n"
-"Eden, the Switch emulator, by the Eden team; ProsperoEden, its PS5 port and launcher, by Sword, BlackBearReloaded, bawsdeep, Rockiu0 and its contributors.\n"
-"Box art and game information: GameTDB. The font: Lexend. The remote touch screen: dolphin78's idea and prototype.\n"
-"An unofficial port, not affiliated with the Cemu, Azahar, melonDS or Eden teams, Nintendo or Sony.\n"
-"\n"
-"Wii U games: {4}, storage and saves: {3}/mlc01, keys: {3}/keys.txt\n"
-"3DS games: {5}/games, storage: {5}/sdmc\n"
-"DS games: {6}/games, saves: {6}/saves\n"
-"Switch games: {2}/roms, keys: {2}/keys, firmware: {2}/firmware\n"
+"Wii U games: {2}, storage and saves: {1}/mlc01, keys: {1}/keys.txt\n"
 "\n"
 "Version {0}"
 msgstr ""
-"Cemu（Wii U模拟器）：Cemu团队及其贡献者；PS5上的RADV：Mihawk-99和mpereiraesaa；社区图形包的作者们。\n"
-"Azahar（3DS模拟器）：Azahar团队及此前的Citra贡献者；Mihawk-99的PS5移植版和dynarmic。\n"
-"melonDS（DS模拟器）：Arisotura和melonDS团队。\n"
-"Eden（Switch模拟器）由Eden团队开发；ProsperoEden（其PS5移植版和启动器）由Sword、BlackBearReloaded、bawsdeep、Rockiu0及其贡献者开发。\n"
-"封面和游戏信息：GameTDB。字体：Lexend。 远程触摸屏：dolphin78的创意和原型。\n"
-"非官方移植，与Cemu、Azahar、melonDS或Eden团队、任天堂或索尼无关。\n"
+"Wii U 游戏：{2}，存储与存档：{1}/mlc01，密钥：{1}/keys.txt\n"
 "\n"
-"Wii U游戏：{4}，存储空间和存档：{3}/mlc01，密钥：{3}/keys.txt\n"
-"3DS游戏：{5}/games，存储空间：{5}/sdmc\n"
-"DS游戏：{6}/games，存档：{6}/saves\n"
-"Switch游戏：{2}/roms，密钥：{2}/keys，固件：{2}/firmware\n"
-"\n"
-"版本{0}"
+"版本 {0}"
 
 #. the first choice in the language list: the PS5's own ({0}, in its own words)
 #: port/frontend/shell/settings.cpp:2010
@@ -7081,14 +7061,6 @@ msgstr "扫描，或打开"
 msgid "Same network as the PS5. Nothing to install: the browser is enough. Sound stays on the PS5. Any browser on the network can see it and touch."
 msgstr "与PS5处于同一网络。无需安装：浏览器即可。声音仍从PS5输出。网络中的任何浏览器都能看到并触控。"
 
-#: port/frontend/shell/settings.cpp:3207
-msgid "Support BotW VR"
-msgstr "支持BotW VR"
-
-#: port/frontend/shell/settings.cpp:3218
-msgid "BotW VR is free. If it brings your games back, you can support its work here."
-msgstr "BotW VR是免费的。如果它让您重新玩上了自己的游戏，可以在这里支持它的开发。"
-
 #. above Settings' pages: whose settings they are ({0}: Wii U, Nintendo 3DS or Nintendo DS)
 #: port/frontend/shell/settings.cpp:3258
 msgid "{0} settings"
@@ -7149,8 +7121,8 @@ msgid "Executable memory: games run at full speed, no HEN grant needed"
 msgstr "可执行内存：游戏全速运行，无需HEN授权"
 
 #: port/frontend/shell/setup.cpp:154
-msgid "Cemu's and Azahar's recompilers turn the games' code into the PS5's as they run. They need memory they can write code into and run it from: your HEN's JIT memory, or executable memory BotW VR makes itself."
-msgstr "Cemu和Azahar的重编译器会在运行时将游戏代码转换为PS5的代码。它们需要可写入代码并从中运行的内存：HEN的JIT内存，或BotW VR自行创建的可执行内存。"
+msgid "Cemu's recompiler turns the game's code into the PS5's as it runs. It needs memory it can write code into and run it from: your HEN's JIT memory, or executable memory BotW VR makes itself."
+msgstr "Cemu 的重新编译器在运行时把游戏的代码转成 PS5 的代码。它需要能写入并执行代码的内存：你 HEN 的 JIT 内存，或 BotW VR 自己创建的可执行内存。"
 
 #: port/frontend/shell/setup.cpp:160
 msgid "No JIT or executable memory: Wii U games run on the much slower interpreter"

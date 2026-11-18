@@ -5446,8 +5446,8 @@ msgid "The DualSense's rumble, in games and in the launcher."
 msgstr "Vibrace DualSense, ve hrách i ve spouštěči."
 
 #: port/frontend/shell/settings.cpp:838
-msgid "Off, the DualSense never rumbles, in games or in the launcher. The same on every side."
-msgstr "Vypnuto: DualSense nikdy nevibruje, ve hrách ani ve spouštěči. Na každé straně stejně."
+msgid "Off, the DualSense never rumbles, in games or in the launcher. The same everywhere."
+msgstr "Vypnuto: DualSense nikdy nevibruje, ve hrách ani ve spouštěči. Všude stejně."
 
 #: port/frontend/shell/settings.cpp:840 port/frontend/shell/settings.cpp:894
 msgid "How far a stick moves before it counts."
@@ -6081,12 +6081,12 @@ msgid "Last: {0} · {1}"
 msgstr "Poslední: {0} · {1}"
 
 #: port/frontend/shell/settings.cpp:1260
-msgid "Every side's saves, save states and Wii U accounts."
-msgstr "Uložené pozice, uložené stavy a účty Wii U všech stran."
+msgid "The Wii U's saves, save states and accounts."
+msgstr "Uložené pozice, stavy a účty Wii U."
 
 #: port/frontend/shell/settings.cpp:1261
-msgid "Copies the Wii U's saves (every account's, with the accounts), the 3DS's saves, extra data and save states, the DS's saves and save states, and the Switch's saves with its user profiles to PS5CEMU-HAR-saves on the first USB drive plugged in, in a folder named by the date and time. Never the games, so a backup stays small. The settings go with them: the launcher's, each game's own and the controllers'."
-msgstr "Zkopíruje uložené pozice Wii U (všech účtů, i s účty), uložené pozice, extra data a uložené stavy 3DS, uložené pozice a uložené stavy DS a uložené pozice Switche i s jeho uživatelskými profily do PS5CEMU-HAR-saves na prvním připojeném disku USB, do složky pojmenované datem a časem. Nikdy hry, takže záloha zůstane malá. Spolu s nimi jde i nastavení: spouštěče, jednotlivých her a ovladačů."
+msgid "Copies the Wii U's saves (every account's, with the accounts) and its save states to PS5CEMU-HAR-saves on the first USB drive plugged in, in a folder named by the date and time. Never the game, so a backup stays small. The settings go with them: the launcher's, its game settings and its controller settings."
+msgstr "Kopíruje uložené pozice Wii U (každého účtu, včetně účtů) a jejich stavy do PS5CEMU-HAR-saves na první připojený disk USB, do složky pojmenované datem a časem. Nikdy hru, aby záloha zůstala malá. Nastavení jdou s nimi: launcheru, hry a ovladačů."
 
 #: port/frontend/shell/settings.cpp:1270 port/frontend/shell/settings.cpp:1863
 msgid "No backups found"
@@ -6141,9 +6141,9 @@ msgstr "Obaly"
 msgid "Covers for the library, from GameTDB."
 msgstr "Obaly pro knihovnu z GameTDB."
 
-#: port/frontend/shell/settings.cpp:1298
-msgid "Whether covers are downloaded from GameTDB (art.gametdb.com), and the missing ones or every one downloaded again. On the Switch side, also whether a game shows its box art or its own icon."
-msgstr "Zda se obaly stahují z GameTDB (art.gametdb.com), a znovu stáhnout chybějící nebo všechny. Na straně Switch také, zda hra ukazuje obal nebo svou vlastní ikonu."
+#: port/frontend/shell/settings.cpp:1297
+msgid "Whether the cover is downloaded from GameTDB (art.gametdb.com), and downloaded again when it is missing or wrong."
+msgstr "Zda se obal stahuje z GameTDB (art.gametdb.com), a znovu, když chybí nebo je špatný."
 
 #: port/frontend/shell/settings.cpp:1301
 msgid "Box art from GameTDB"
@@ -6736,15 +6736,15 @@ msgstr "Pro LEGO Dimensions."
 msgid "Cemu's emulated portal, plugged in as a game starts. In the game, the menu's USB devices category puts figures on it: dumps in {0}. A real portal plugged into the PS5 is not supported."
 msgstr "Emulovaný portál Cemu, připojený při spuštění hry. Ve hře na něj kategorie Zařízení USB v nabídce pokládá figurky: dumpy v {0}. Skutečný portál připojený k PS5 není podporován."
 
-#: port/frontend/shell/settings.cpp:1612
+#: port/frontend/shell/settings.cpp:1610
 msgid ""
 "{0} in any browser on the PS5's network, a phone's, a tablet's or a computer's, with nothing to install, and its touches sent back to the game. Scan the code shown here, or open the address. The DualSense stays the buttons, and the sound stays on the PS5.\n"
 "While a browser shows it, the PS5 copies that screen up to 30 times a second, so a game can run a little slower; with no browser, it costs nothing. Any device on your network can open the page, so turn it off on a network you share.\n"
-"One switch for every side (the GamePad's screen is player 1's), also in a game's menu (touchpad click + Options). From dolphin78's idea and prototype (#38)."
+"One switch (the GamePad's screen is player 1's), also in a game's menu (touchpad click + Options). From dolphin78's idea and prototype (#38)."
 msgstr ""
 "{0} v jakémkoli prohlížeči v síti PS5, na telefonu, tabletu nebo počítači, bez instalace, a dotyky jdou zpět do hry. Naskenujte zde zobrazený kód, nebo otevřete adresu. Tlačítka zůstávají na DualSense a zvuk na PS5.\n"
 "Zatímco ji prohlížeč zobrazuje, PS5 kopíruje tuto obrazovku až 30krát za sekundu, takže hra může běžet o něco pomaleji; bez prohlížeče to nic nestojí. Stránku může otevřít jakékoli zařízení ve vaší síti, proto ji ve sdílené síti vypněte.\n"
-"Jeden přepínač pro všechny strany (obrazovka GamePadu je obrazovka hráče 1), také v nabídce hry (kliknutí na dotykovou plochu + OPTIONS). Podle nápadu a prototypu od dolphin78 (#38)."
+"Jeden přepínač (obrazovka GamePadu je obrazovka hráče 1), také v nabídce hry (kliknutí na dotykovou plochu + OPTIONS). Podle nápadu a prototypu od dolphin78 (#38)."
 
 #. a row that opens the remote touch screen's page: the game's second screen in a phone's browser, and its code to scan
 #: port/frontend/shell/settings.cpp:1620 port/frontend/shell/settings.cpp:1622
@@ -6921,39 +6921,19 @@ msgstr "Když je zapnuto, kód QR zde otevře druhou obrazovku hry v prohlíže�
 msgid "Figure dumps go in {0}/figures: skylanders, infinity and dimensions. Switch a portal on here, start the game, then put figures on it from the in-game menu (touchpad click + Options > USB devices)."
 msgstr "Dumpy figurek patří do {0}/figures: skylanders, infinity a dimensions. Zapněte tady portál, spusťte hru a pak na něj stavte figurky z herní nabídky (kliknutí na dotykovou plochu + OPTIONS > Zařízení USB)."
 
-#. premohq and JMUtechnologies are GitHub names: keep them as they are
-#: port/frontend/shell/settings.cpp:1990
-msgid "BotW VR is made by its co-founders, premohq and JMUtechnologies."
-msgstr "BotW VR tvoří jeho spoluzakladatelé, premohq a JMUtechnologies."
+#. About's credits and licence: Cemu and PS5-ECAM under the GPL, Crementif's BetterVR under the MIT licence
+#: port/frontend/shell/settings.cpp:1988
+msgid "The Legend of Zelda: Breath of the Wild in VR: Crementif's BetterVR mod, run by Cemu in PS5-ECAM. Cemu and PS5-ECAM are free software under the GNU GPL v3 or later, Crementif's BetterVR is MIT-licensed, and the source of this build is at github.com/Papyszoo/botw-bettervr-ps5. An unofficial build, not affiliated with Nintendo or Sony."
+msgstr "The Legend of Zelda: Breath of the Wild ve VR: mod BetterVR od Crementifa, spouštěný Cemu v PS5-ECAM. Cemu a PS5-ECAM jsou svobodný software pod GNU GPL v3 nebo novější, BetterVR od Crementifa je pod licencí MIT a zdrojový kód této sestavy je na github.com/Papyszoo/botw-bettervr-ps5. Neoficiální sestava, nespojená s Nintendo ani Sony."
 
-#. {0} is the app's version; {1} its data folder: /data/ps5cemu, or the PS5CEMU-HAR-data folder on the drive the app is installed on; {2} Eden's game files folder; {3} Cemu's selected data folder; {4} its default games folder; {5} Azahar's selected folder; {6} melonDS's selected folder
-#: port/frontend/shell/settings.cpp:1992
+#. {0} is the app's version; {1} is Cemu's data folder; {2} Cemu's games folder
+#: port/frontend/shell/settings.cpp:1993
 msgid ""
-"Cemu, the Wii U emulator, by the Cemu team and its contributors; RADV on the PS5 by Mihawk-99 and mpereiraesaa; the community graphic packs' authors.\n"
-"Azahar, the 3DS emulator, by the Azahar team and the Citra contributors before them; Mihawk-99's PS5 port of it and dynarmic.\n"
-"melonDS, the DS emulator, by Arisotura and the melonDS team.\n"
-"Eden, the Switch emulator, by the Eden team; ProsperoEden, its PS5 port and launcher, by Sword, BlackBearReloaded, bawsdeep, Rockiu0 and its contributors.\n"
-"Box art and game information: GameTDB. The font: Lexend. The remote touch screen: dolphin78's idea and prototype.\n"
-"An unofficial port, not affiliated with the Cemu, Azahar, melonDS or Eden teams, Nintendo or Sony.\n"
-"\n"
-"Wii U games: {4}, storage and saves: {3}/mlc01, keys: {3}/keys.txt\n"
-"3DS games: {5}/games, storage: {5}/sdmc\n"
-"DS games: {6}/games, saves: {6}/saves\n"
-"Switch games: {2}/roms, keys: {2}/keys, firmware: {2}/firmware\n"
+"Wii U games: {2}, storage and saves: {1}/mlc01, keys: {1}/keys.txt\n"
 "\n"
 "Version {0}"
 msgstr ""
-"Cemu, emulátor Wii U, od týmu Cemu a jeho přispěvatelů; RADV na PS5 od Mihawk-99 a mpereiraesaa; autoři komunitních grafických balíčků.\n"
-"Azahar, emulátor 3DS, od týmu Azahar a předtím přispěvatelů Citry; jeho port na PS5 a port dynarmic od Mihawk-99.\n"
-"melonDS, emulátor DS, od Arisotury a týmu melonDS.\n"
-"Eden, emulátor Switche, od týmu Eden; ProsperoEden, jeho port pro PS5 a launcher, od Sworda, BlackBearReloaded, bawsdeepa, Rockiu0 a dalších přispěvatelů.\n"
-"Obaly a informace o hrách: GameTDB. Písmo: Lexend. Vzdálená dotyková obrazovka: nápad a prototyp od dolphin78.\n"
-"Neoficiální port, bez vazby na týmy Cemu, Azahar, melonDS či Eden, ani na Nintendo či Sony.\n"
-"\n"
-"Hry Wii U: {4}, úložiště a uložené pozice: {3}/mlc01, klíče: {3}/keys.txt\n"
-"Hry 3DS: {5}/games, úložiště: {5}/sdmc\n"
-"Hry DS: {6}/games, uložené pozice: {6}/saves\n"
-"Hry pro Switch: {2}/roms, klíče: {2}/keys, firmware: {2}/firmware\n"
+"Hry Wii U: {2}, úložiště a uložené pozice: {1}/mlc01, klíče: {1}/keys.txt\n"
 "\n"
 "Verze {0}"
 
@@ -7141,14 +7121,6 @@ msgstr "Naskenujte, nebo otevřete"
 msgid "Same network as the PS5. Nothing to install: the browser is enough. Sound stays on the PS5. Any browser on the network can see it and touch."
 msgstr "Stejná síť jako PS5. Nic se neinstaluje: stačí prohlížeč. Zvuk zůstává na PS5. Jakýkoli prohlížeč v síti ji může vidět a dotýkat se jí."
 
-#: port/frontend/shell/settings.cpp:3207
-msgid "Support BotW VR"
-msgstr "Podpořit BotW VR"
-
-#: port/frontend/shell/settings.cpp:3218
-msgid "BotW VR is free. If it brings your games back, you can support its work here."
-msgstr "BotW VR je zdarma. Pokud vám vrátil vaše hry, můžete tu podpořit práci na něm."
-
 #. above Settings' pages: whose settings they are ({0}: Wii U, Nintendo 3DS or Nintendo DS)
 #: port/frontend/shell/settings.cpp:3258
 msgid "{0} settings"
@@ -7209,8 +7181,8 @@ msgid "Executable memory: games run at full speed, no HEN grant needed"
 msgstr "Spustitelná paměť: hry běží plnou rychlostí, bez povolení od HEN"
 
 #: port/frontend/shell/setup.cpp:154
-msgid "Cemu's and Azahar's recompilers turn the games' code into the PS5's as they run. They need memory they can write code into and run it from: your HEN's JIT memory, or executable memory BotW VR makes itself."
-msgstr "Rekompilátory Cemu a Azaharu za běhu překládají kód her do kódu PS5. Potřebují paměť, do které mohou zapsat kód a spustit ho: paměť JIT vašeho HEN, nebo spustitelnou paměť, kterou si BotW VR vytvoří sám."
+msgid "Cemu's recompiler turns the game's code into the PS5's as it runs. It needs memory it can write code into and run it from: your HEN's JIT memory, or executable memory BotW VR makes itself."
+msgstr "Rekompilátor Cemu překládá kód hry do kódu PS5 za běhu. Potřebuje paměť, do které může psát kód a spouštět ho: JIT paměť tvého HEN, nebo spustitelnou paměť, kterou BotW VR sám vytvoří."
 
 #: port/frontend/shell/setup.cpp:160
 msgid "No JIT or executable memory: Wii U games run on the much slower interpreter"

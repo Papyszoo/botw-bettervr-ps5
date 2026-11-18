@@ -76,6 +76,11 @@ player looks. New patches: bettervr 0007-0010, cemu 0055. Details: `UPDATE-1.0.m
   `touchpadClickMigrated`): `touchpadClick` must read `[2, 2, 2, 2]` afterwards. Set player 1's Touchpad click to
   Automatic in Settings, restart, and say it is still Automatic. Send the `[controls]` lines that name each player's
   mappings.
+- (j) Settings and About. On the Wii U side open Settings and go through the ten pages, then About: there must be no
+  PayPal or QR support card and no other donation link, About must have the one licence line naming Cemu, PS5-ECAM and
+  Crementif's BetterVR (under the GNU GPL and MIT respectively) and the Wii U's own paths, and the pages must show no
+  other system's games, sides or settings. Send a photo of About and say whether any page still reads as a multi-game
+  launcher.
 
 ## 2026-11-18: console run 4 (37c6028, 13.60)
 

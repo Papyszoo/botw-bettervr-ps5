@@ -5406,8 +5406,8 @@ msgid "The DualSense's rumble, in games and in the launcher."
 msgstr "게임과 런처에서의 DualSense 진동입니다."
 
 #: port/frontend/shell/settings.cpp:838
-msgid "Off, the DualSense never rumbles, in games or in the launcher. The same on every side."
-msgstr "끄면 게임에서도 런처에서도 DualSense가 진동하지 않습니다. 모든 모드에 똑같이 적용됩니다."
+msgid "Off, the DualSense never rumbles, in games or in the launcher. The same everywhere."
+msgstr "끄면 게임에서도 런처에서도 DualSense가 진동하지 않습니다. 어디서나 똑같습니다."
 
 #: port/frontend/shell/settings.cpp:840 port/frontend/shell/settings.cpp:894
 msgid "How far a stick moves before it counts."
@@ -6035,12 +6035,12 @@ msgid "Last: {0} · {1}"
 msgstr "최근: {0} · {1}"
 
 #: port/frontend/shell/settings.cpp:1260
-msgid "Every side's saves, save states and Wii U accounts."
-msgstr "모든 모드의 세이브 데이터, 상태 저장, Wii U 계정입니다."
+msgid "The Wii U's saves, save states and accounts."
+msgstr "Wii U의 세이브, 세이브 스테이트, 계정."
 
 #: port/frontend/shell/settings.cpp:1261
-msgid "Copies the Wii U's saves (every account's, with the accounts), the 3DS's saves, extra data and save states, the DS's saves and save states, and the Switch's saves with its user profiles to PS5CEMU-HAR-saves on the first USB drive plugged in, in a folder named by the date and time. Never the games, so a backup stays small. The settings go with them: the launcher's, each game's own and the controllers'."
-msgstr "Wii U 세이브 데이터(모든 계정의 것과 계정 정보), 3DS 세이브 데이터, 추가 데이터, 상태 저장, DS 세이브 데이터와 상태 저장, Switch 세이브 데이터(사용자 프로필 포함)를 처음 연결한 USB 드라이브의 PS5CEMU-HAR-saves에 날짜와 시간 이름의 폴더로 복사합니다. 게임은 포함하지 않으므로 백업 크기가 작습니다. 설정도 함께 복사됩니다: 런처 설정, 게임별 설정, 컨트롤러 설정."
+msgid "Copies the Wii U's saves (every account's, with the accounts) and its save states to PS5CEMU-HAR-saves on the first USB drive plugged in, in a folder named by the date and time. Never the game, so a backup stays small. The settings go with them: the launcher's, its game settings and its controller settings."
+msgstr "Wii U의 세이브(각 계정의, 계정과 함께)와 세이브 스테이트를 연결된 첫 USB 드라이브의 PS5CEMU-HAR-saves에 날짜와 시간으로 이름 붙인 폴더로 복사합니다. 게임은 복사하지 않아 백업이 작게 유지됩니다. 설정도 함께 갑니다: 런처, 게임, 컨트롤러 설정."
 
 #: port/frontend/shell/settings.cpp:1270 port/frontend/shell/settings.cpp:1863
 msgid "No backups found"
@@ -6091,9 +6091,9 @@ msgstr "표지"
 msgid "Covers for the library, from GameTDB."
 msgstr "GameTDB에서 받는 라이브러리 표지."
 
-#: port/frontend/shell/settings.cpp:1298
-msgid "Whether covers are downloaded from GameTDB (art.gametdb.com), and the missing ones or every one downloaded again. On the Switch side, also whether a game shows its box art or its own icon."
-msgstr "GameTDB(art.gametdb.com)에서 표지를 내려받을지, 그리고 없는 표지나 모든 표지를 다시 내려받기. Switch 모드에서는 게임이 표지를 보여 줄지 자체 아이콘을 보여 줄지도 정합니다."
+#: port/frontend/shell/settings.cpp:1297
+msgid "Whether the cover is downloaded from GameTDB (art.gametdb.com), and downloaded again when it is missing or wrong."
+msgstr "표지를 GameTDB(art.gametdb.com)에서 내려받을지, 없거나 잘못되면 다시 내려받을지."
 
 #: port/frontend/shell/settings.cpp:1301
 msgid "Box art from GameTDB"
@@ -6682,15 +6682,15 @@ msgstr "LEGO Dimensions용입니다."
 msgid "Cemu's emulated portal, plugged in as a game starts. In the game, the menu's USB devices category puts figures on it: dumps in {0}. A real portal plugged into the PS5 is not supported."
 msgstr "게임이 실행될 때 연결되는 Cemu의 에뮬레이트된 포털입니다. 게임 중에는 메뉴의 USB 장치에서 피규어를 올립니다. 덤프는 {0}에 넣습니다. PS5에 연결한 실제 포털은 지원하지 않습니다."
 
-#: port/frontend/shell/settings.cpp:1612
+#: port/frontend/shell/settings.cpp:1610
 msgid ""
 "{0} in any browser on the PS5's network, a phone's, a tablet's or a computer's, with nothing to install, and its touches sent back to the game. Scan the code shown here, or open the address. The DualSense stays the buttons, and the sound stays on the PS5.\n"
 "While a browser shows it, the PS5 copies that screen up to 30 times a second, so a game can run a little slower; with no browser, it costs nothing. Any device on your network can open the page, so turn it off on a network you share.\n"
-"One switch for every side (the GamePad's screen is player 1's), also in a game's menu (touchpad click + Options). From dolphin78's idea and prototype (#38)."
+"One switch (the GamePad's screen is player 1's), also in a game's menu (touchpad click + Options). From dolphin78's idea and prototype (#38)."
 msgstr ""
 "{0}: PS5와 같은 네트워크에 있는 휴대폰, 태블릿, 컴퓨터의 어떤 브라우저에서든 아무것도 설치하지 않고 표시되며, 터치는 게임으로 전달됩니다. 여기 표시된 코드를 스캔하거나 주소를 여세요. 버튼은 DualSense 그대로이며, 소리는 PS5에서 나옵니다.\n"
 "브라우저에 표시하는 동안 PS5는 그 화면을 1초에 최대 30번 복사하므로 게임이 조금 느려질 수 있습니다. 브라우저가 없으면 부담이 없습니다. 네트워크의 어떤 기기든 페이지를 열 수 있으니, 공유 네트워크에서는 끄세요.\n"
-"모든 모드에 하나의 스위치이며(GamePad 화면은 플레이어 1의 것), 게임 메뉴(터치패드 버튼 + 옵션 버튼)에도 있습니다. dolphin78의 아이디어와 프로토타입에서 출발했습니다(#38)."
+"하나의 스위치이며(GamePad 화면은 플레이어 1의 것), 게임 메뉴(터치패드 버튼 + 옵션 버튼)에도 있습니다. dolphin78의 아이디어와 프로토타입에서 출발했습니다(#38)."
 
 #. a row that opens the remote touch screen's page: the game's second screen in a phone's browser, and its code to scan
 #: port/frontend/shell/settings.cpp:1620 port/frontend/shell/settings.cpp:1622
@@ -6863,39 +6863,19 @@ msgstr "켜면 여기 표시되는 QR 코드로 휴대폰 브라우저에서 게
 msgid "Figure dumps go in {0}/figures: skylanders, infinity and dimensions. Switch a portal on here, start the game, then put figures on it from the in-game menu (touchpad click + Options > USB devices)."
 msgstr "피규어 덤프는 {0}/figures의 skylanders, infinity, dimensions에 넣습니다. 여기서 포털을 켜고 게임을 실행한 다음, 게임 내 메뉴(터치패드 버튼 + 옵션 버튼 > USB 장치)에서 피규어를 올립니다."
 
-#. premohq and JMUtechnologies are GitHub names: keep them as they are
-#: port/frontend/shell/settings.cpp:1990
-msgid "BotW VR is made by its co-founders, premohq and JMUtechnologies."
-msgstr "BotW VR은 공동 창업자 premohq와 JMUtechnologies가 만듭니다."
+#. About's credits and licence: Cemu and PS5-ECAM under the GPL, Crementif's BetterVR under the MIT licence
+#: port/frontend/shell/settings.cpp:1988
+msgid "The Legend of Zelda: Breath of the Wild in VR: Crementif's BetterVR mod, run by Cemu in PS5-ECAM. Cemu and PS5-ECAM are free software under the GNU GPL v3 or later, Crementif's BetterVR is MIT-licensed, and the source of this build is at github.com/Papyszoo/botw-bettervr-ps5. An unofficial build, not affiliated with Nintendo or Sony."
+msgstr "The Legend of Zelda: Breath of the Wild VR: Crementif의 BetterVR 모드, Cemu가 PS5-ECAM에서 실행합니다. Cemu와 PS5-ECAM은 GNU GPL v3 이상의 자유 소프트웨어이고, Crementif의 BetterVR은 MIT 라이선스이며, 이 빌드의 소스 코드는 github.com/Papyszoo/botw-bettervr-ps5에 있습니다. Nintendo나 Sony와 무관한 비공식 빌드입니다."
 
-#. {0} is the app's version; {1} its data folder: /data/ps5cemu, or the PS5CEMU-HAR-data folder on the drive the app is installed on; {2} Eden's game files folder; {3} Cemu's selected data folder; {4} its default games folder; {5} Azahar's selected folder; {6} melonDS's selected folder
-#: port/frontend/shell/settings.cpp:1992
+#. {0} is the app's version; {1} is Cemu's data folder; {2} Cemu's games folder
+#: port/frontend/shell/settings.cpp:1993
 msgid ""
-"Cemu, the Wii U emulator, by the Cemu team and its contributors; RADV on the PS5 by Mihawk-99 and mpereiraesaa; the community graphic packs' authors.\n"
-"Azahar, the 3DS emulator, by the Azahar team and the Citra contributors before them; Mihawk-99's PS5 port of it and dynarmic.\n"
-"melonDS, the DS emulator, by Arisotura and the melonDS team.\n"
-"Eden, the Switch emulator, by the Eden team; ProsperoEden, its PS5 port and launcher, by Sword, BlackBearReloaded, bawsdeep, Rockiu0 and its contributors.\n"
-"Box art and game information: GameTDB. The font: Lexend. The remote touch screen: dolphin78's idea and prototype.\n"
-"An unofficial port, not affiliated with the Cemu, Azahar, melonDS or Eden teams, Nintendo or Sony.\n"
-"\n"
-"Wii U games: {4}, storage and saves: {3}/mlc01, keys: {3}/keys.txt\n"
-"3DS games: {5}/games, storage: {5}/sdmc\n"
-"DS games: {6}/games, saves: {6}/saves\n"
-"Switch games: {2}/roms, keys: {2}/keys, firmware: {2}/firmware\n"
+"Wii U games: {2}, storage and saves: {1}/mlc01, keys: {1}/keys.txt\n"
 "\n"
 "Version {0}"
 msgstr ""
-"Cemu(Wii U 에뮬레이터): Cemu 팀과 기여자. PS5의 RADV: Mihawk-99, mpereiraesaa. 커뮤니티 그래픽 팩 제작자들.\n"
-"Azahar(3DS 에뮬레이터): Azahar 팀과 그 이전의 Citra 기여자. Mihawk-99의 PS5 이식과 dynarmic.\n"
-"melonDS(DS 에뮬레이터): Arisotura와 melonDS 팀.\n"
-"Eden(Switch 에뮬레이터)은 Eden 팀, 그 PS5 이식판이자 런처인 ProsperoEden은 Sword, BlackBearReloaded, bawsdeep, Rockiu0와 기여자들이 만들었습니다.\n"
-"표지와 게임 정보: GameTDB. 글꼴: Lexend. 원격 터치스크린: dolphin78의 아이디어와 프로토타입.\n"
-"비공식 이식판이며, Cemu, Azahar, melonDS, Eden 팀이나 닌텐도, 소니와는 관계가 없습니다.\n"
-"\n"
-"Wii U 게임: {4}, 저장 공간 및 세이브 데이터: {3}/mlc01, 키: {3}/keys.txt\n"
-"3DS 게임: {5}/games, 저장 공간: {5}/sdmc\n"
-"DS 게임: {6}/games, 세이브 데이터: {6}/saves\n"
-"Switch 게임: {2}/roms, 키: {2}/keys, 펌웨어: {2}/firmware\n"
+"Wii U 게임: {2}, 저장 공간 및 세이브: {1}/mlc01, 키: {1}/keys.txt\n"
 "\n"
 "버전 {0}"
 
@@ -7081,14 +7061,6 @@ msgstr "스캔하거나 열기"
 msgid "Same network as the PS5. Nothing to install: the browser is enough. Sound stays on the PS5. Any browser on the network can see it and touch."
 msgstr "PS5와 같은 네트워크에서 씁니다. 설치할 것은 없고 브라우저만 있으면 됩니다. 소리는 PS5에서 나옵니다. 네트워크의 어떤 브라우저든 보고 터치할 수 있습니다."
 
-#: port/frontend/shell/settings.cpp:3207
-msgid "Support BotW VR"
-msgstr "BotW VR 후원"
-
-#: port/frontend/shell/settings.cpp:3218
-msgid "BotW VR is free. If it brings your games back, you can support its work here."
-msgstr "BotW VR는 무료입니다. 게임을 다시 즐길 수 있게 되었다면 여기서 개발을 후원할 수 있습니다."
-
 #. above Settings' pages: whose settings they are ({0}: Wii U, Nintendo 3DS or Nintendo DS)
 #: port/frontend/shell/settings.cpp:3258
 msgid "{0} settings"
@@ -7149,8 +7121,8 @@ msgid "Executable memory: games run at full speed, no HEN grant needed"
 msgstr "실행 가능 메모리: 게임이 정상 속도로 실행되며 HEN의 허가가 필요 없습니다"
 
 #: port/frontend/shell/setup.cpp:154
-msgid "Cemu's and Azahar's recompilers turn the games' code into the PS5's as they run. They need memory they can write code into and run it from: your HEN's JIT memory, or executable memory BotW VR makes itself."
-msgstr "Cemu와 Azahar의 리컴파일러는 게임 코드를 실행하면서 PS5의 코드로 바꿉니다. 그러려면 코드를 쓰고 실행할 수 있는 메모리가 필요합니다. HEN의 JIT 메모리, 또는 BotW VR가 직접 만드는 실행 가능 메모리입니다."
+msgid "Cemu's recompiler turns the game's code into the PS5's as it runs. It needs memory it can write code into and run it from: your HEN's JIT memory, or executable memory BotW VR makes itself."
+msgstr "Cemu의 재컴파일러는 실행 중에 게임 코드를 PS5 코드로 바꿉니다. 코드를 쓰고 실행할 수 있는 메모리가 필요합니다: HEN의 JIT 메모리 또는 BotW VR이 직접 만드는 실행 가능 메모리."
 
 #: port/frontend/shell/setup.cpp:160
 msgid "No JIT or executable memory: Wii U games run on the much slower interpreter"
