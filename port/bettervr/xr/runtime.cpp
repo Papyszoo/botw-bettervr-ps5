@@ -193,6 +193,23 @@ namespace
 		const float half = degrees * 3.14159265f / 360.0f, s = std::sin(half);
 		return {x * s, y * s, z * s, std::cos(half)};
 	}
+	// The shortest rotation that turns `from` into `to` (both directions, not necessarily unit).
+	Quat FromTo(const Vec3& from, const Vec3& to)
+	{
+		const float d = from.x * to.x + from.y * to.y + from.z * to.z;
+		Vec3 axis{from.y * to.z - from.z * to.y, from.z * to.x - from.x * to.z, from.x * to.y - from.y * to.x};
+		if (d < -0.999999f)
+		{
+			// 180 degrees: any axis perpendicular to `from` will do
+			Vec3 any = std::fabs(from.x) < 0.9f ? Vec3{1, 0, 0} : Vec3{0, 1, 0};
+			axis = {from.y * any.z - from.z * any.y, from.z * any.x - from.x * any.z, from.x * any.y - from.y * any.x};
+			const float length = std::sqrt(axis.x * axis.x + axis.y * axis.y + axis.z * axis.z);
+			return length > 0.0f ? Quat{axis.x / length, axis.y / length, axis.z / length, 0.0f} : Quat{};
+		}
+		const Quat q{axis.x, axis.y, axis.z, 1.0f + d};
+		const float length = std::sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
+		return length > 0.0f ? Quat{q.x / length, q.y / length, q.z / length, q.w / length} : Quat{};
+	}
 	Pose FromHmd(const hmd2::Pose& h)
 	{
 		return {{h.quat[0], h.quat[1], h.quat[2], h.quat[3]}, {h.pos[0], h.pos[1], h.pos[2]}};
@@ -207,6 +224,7 @@ namespace
 struct XrInstance_T
 {
 	bool depth = false;
+	bool gaze = false;
 };
 struct XrActionSet_T
 {
@@ -219,7 +237,7 @@ namespace
 	// The Touch profile's inputs BetterVR binds, and the Sense controller's part for each
 	enum class Component
 	{
-		X, Y, A, B, Menu, Squeeze, Trigger, Thumbstick, ThumbstickX, ThumbstickY, ThumbstickClick, GripPose, AimPose, Haptic
+		X, Y, A, B, Menu, Squeeze, Trigger, Thumbstick, ThumbstickX, ThumbstickY, ThumbstickClick, GripPose, AimPose, GazePose, Haptic
 	};
 	struct Binding
 	{
@@ -255,6 +273,7 @@ struct XrSpace_T
 {
 	XrReferenceSpaceType type = XR_REFERENCE_SPACE_TYPE_STAGE;
 	bool action = false; // an action space: a hand's grip or aim pose
+	bool gaze = false;   // an action space for XR_EXT_eye_gaze_interaction's gaze pose
 	Pose offset;
 	XrAction_T* poseAction = nullptr;
 	int hand = -1; // the subaction path's hand, -1 for either
@@ -363,8 +382,10 @@ namespace
 		std::deque<XrEventDataBuffer> events;
 		// -- input (M4) --
 		XrPath touchProfile = XR_NULL_PATH;
+		XrPath gazeProfile = XR_NULL_PATH; // XR_EXT_eye_gaze_interaction's profile, when suggested
 		Pose handLocated[2]; // the hand spaces' last located poses, in their base space, for the frame log
 		bool touchSuggested = false, attached = false;
+		bool gazeSuggested = false;
 		std::vector<XrAction_T*> actions;
 		struct Hand
 		{
@@ -670,7 +691,15 @@ namespace
 
 	bool IsPose(Component c)
 	{
-		return c == Component::GripPose || c == Component::AimPose;
+		return c == Component::GripPose || c == Component::AimPose || c == Component::GazePose;
+	}
+
+	bool IsGazeAction(const XrAction_T* action)
+	{
+		for (const Binding& binding : action->bindings)
+			if (binding.component == Component::GazePose)
+				return true;
+		return false;
 	}
 
 	// An action's value for a hand (-1 both): [0] for a button or float, [0],[1] for a stick.
@@ -685,6 +714,8 @@ namespace
 		{
 			if (which >= 0 && binding.hand != which)
 				continue;
+			if (binding.hand < 0 || binding.hand >= 2)
+				continue; // the eye-gaze pose has no hand value
 			const auto& hand = s.hands[binding.hand];
 			if (!hand.connected)
 				continue;
@@ -717,6 +748,8 @@ namespace
 				return 0;
 			if (name == "/user/hand/right")
 				return 1;
+			if (name == "/user/eyes_ext")
+				return -1; // gaze: not a hand, and its pose is the eye-gaze action
 		}
 		return -2;
 	}
@@ -1265,11 +1298,13 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEnumerateInstanceExtensionProperties(const char
 	// XR_KHR_composition_layer_depth is not offered, as 7fbceeb allows: BetterVR then keeps its depth in a local attachment, and no
 	// depth swapchain (three 16 MB images for each eye) is made for a compositor that ignores depth. xrCreateInstance still
 	// accepts the name, for an application that asks without having looked.
-	*count = 1;
-	if (capacity == 0)
-		return XR_SUCCESS;
+	*count = 2;
+	if (capacity < 2)
+		return capacity == 0 ? XR_SUCCESS : XR_ERROR_SIZE_INSUFFICIENT;
 	std::snprintf(props[0].extensionName, XR_MAX_EXTENSION_NAME_SIZE, "%s", XR_KHR_VULKAN_ENABLE_EXTENSION_NAME);
 	props[0].extensionVersion = XR_KHR_vulkan_enable_SPEC_VERSION;
+	std::snprintf(props[1].extensionName, XR_MAX_EXTENSION_NAME_SIZE, "%s", XR_EXT_EYE_GAZE_INTERACTION_EXTENSION_NAME);
+	props[1].extensionVersion = XR_EXT_eye_gaze_interaction_SPEC_VERSION;
 	return XR_SUCCESS;
 }
 
@@ -1283,7 +1318,8 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateInstance(const XrInstanceCreateInfo* info
 	for (uint32_t i = 0; i < info->enabledExtensionCount; i++)
 	{
 		const char* name = info->enabledExtensionNames[i];
-		if (std::strcmp(name, XR_KHR_VULKAN_ENABLE_EXTENSION_NAME) != 0 && std::strcmp(name, XR_KHR_COMPOSITION_LAYER_DEPTH_EXTENSION_NAME) != 0)
+		if (std::strcmp(name, XR_KHR_VULKAN_ENABLE_EXTENSION_NAME) != 0 && std::strcmp(name, XR_KHR_COMPOSITION_LAYER_DEPTH_EXTENSION_NAME) != 0 &&
+			std::strcmp(name, XR_EXT_EYE_GAZE_INTERACTION_EXTENSION_NAME) != 0)
 		{
 			Log("xrCreateInstance: extension %s is not offered", name);
 			return XR_ERROR_EXTENSION_NOT_PRESENT;
@@ -1291,11 +1327,16 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateInstance(const XrInstanceCreateInfo* info
 	}
 	s.instance = new XrInstance_T{};
 	for (uint32_t i = 0; i < info->enabledExtensionCount; i++)
+	{
 		if (std::strcmp(info->enabledExtensionNames[i], XR_KHR_COMPOSITION_LAYER_DEPTH_EXTENSION_NAME) == 0)
 			s.instance->depth = true;
+		if (std::strcmp(info->enabledExtensionNames[i], XR_EXT_EYE_GAZE_INTERACTION_EXTENSION_NAME) == 0)
+			s.instance->gaze = true;
+	}
 	*instance = s.instance;
-	Log("VR start 1/5: OpenXR instance for %s (%s), runtime \"PlayStation VR2\" over hmd2, extensions %s%s", info->applicationInfo.applicationName,
-		info->applicationInfo.engineName, XR_KHR_VULKAN_ENABLE_EXTENSION_NAME, s.instance->depth ? " and composition layer depth" : "");
+	Log("VR start 1/5: OpenXR instance for %s (%s), runtime \"PlayStation VR2\" over hmd2, extensions %s%s%s", info->applicationInfo.applicationName,
+		info->applicationInfo.engineName, XR_KHR_VULKAN_ENABLE_EXTENSION_NAME, s.instance->depth ? ", composition layer depth" : "",
+		s.instance->gaze ? ", eye gaze interaction" : "");
 	return XR_SUCCESS;
 }
 
@@ -1353,6 +1394,21 @@ XRAPI_ATTR XrResult XRAPI_CALL xrGetSystemProperties(XrInstance, XrSystemId, XrS
 	std::snprintf(props->systemName, XR_MAX_SYSTEM_NAME_SIZE, "PlayStation VR2");
 	props->graphicsProperties = {kEyeWidth, kEyeHeight, 1};
 	props->trackingProperties = {XR_TRUE, XR_TRUE};
+	// The eye-gaze profile is offered optimistically: xrGetSystemProperties runs before xrCreateSession,
+	// and only the session's hmd2::init can ask the headset whether eye tracking is on and calibrated.
+	// xrLocateSpace then reports a pose only while the probe has a valid sample, and reports the space
+	// untracked otherwise, so BetterVR's gaze falls back to straight ahead as it does without a profile.
+	bool chained = false;
+	for (auto* next = static_cast<XrBaseOutStructure*>(props->next); next; next = next->next)
+		if (next->type == XR_TYPE_SYSTEM_EYE_GAZE_INTERACTION_PROPERTIES_EXT)
+		{
+			reinterpret_cast<XrSystemEyeGazeInteractionPropertiesEXT*>(next)->supportsEyeGazeInteraction = XR_TRUE;
+			chained = true;
+		}
+	static bool logged = false;
+	if (!std::exchange(logged, true))
+		Log("gaze: XR_EXT_eye_gaze_interaction offered%s; a pose is reported only while the headset's calibrated eye tracking is on",
+			chained ? "" : " (the application did not chain the system property)");
 	return XR_SUCCESS;
 }
 
@@ -1573,7 +1629,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateReferenceSpace(XrSession, const XrReferen
 	if (info->referenceSpaceType != XR_REFERENCE_SPACE_TYPE_VIEW && info->referenceSpaceType != XR_REFERENCE_SPACE_TYPE_LOCAL &&
 		info->referenceSpaceType != XR_REFERENCE_SPACE_TYPE_STAGE)
 		return XR_ERROR_REFERENCE_SPACE_UNSUPPORTED;
-	*space = new XrSpace_T{info->referenceSpaceType, false, FromXr(info->poseInReferenceSpace)};
+	*space = new XrSpace_T{info->referenceSpaceType, false, false, FromXr(info->poseInReferenceSpace)};
 	return XR_SUCCESS;
 }
 
@@ -1586,9 +1642,10 @@ XRAPI_ATTR XrResult XRAPI_CALL xrGetReferenceSpaceBoundsRect(XrSession, XrRefere
 XRAPI_ATTR XrResult XRAPI_CALL xrCreateActionSpace(XrSession, const XrActionSpaceCreateInfo* info, XrSpace* space)
 {
 	std::lock_guard lock(s.lock);
-	auto* created = new XrSpace_T{XR_REFERENCE_SPACE_TYPE_STAGE, true, FromXr(info->poseInActionSpace)};
+	auto* created = new XrSpace_T{XR_REFERENCE_SPACE_TYPE_STAGE, true, false, FromXr(info->poseInActionSpace)};
 	created->poseAction = info->action;
 	created->hand = HandOf(info->subactionPath);
+	created->gaze = info->action != nullptr && IsGazeAction(info->action);
 	*space = created;
 	return XR_SUCCESS;
 }
@@ -1611,6 +1668,24 @@ XRAPI_ATTR XrResult XRAPI_CALL xrLocateSpace(XrSpace space, XrSpace base, XrTime
 	{
 		location->locationFlags = 0;
 		location->pose = {{0, 0, 0, 1}, {0, 0, 0}};
+		return XR_SUCCESS;
+	}
+	if (space->gaze)
+	{
+		const hmd2::Gaze sample = hmd2::gaze();
+		if (!sample.valid)
+		{
+			location->locationFlags = 0;
+			location->pose = {{0, 0, 0, 1}, {0, 0, 0}};
+			return XR_SUCCESS;
+		}
+		// hmd2 hands the firmware's headset-frame direction (+z forward, as PSVR2Toolkit's
+		// {-x, y, -z} conversion implies); OpenXR's eyes look down -z, and the pose is in stage space.
+		const Vec3 raw{-sample.direction[0], sample.direction[1], -sample.direction[2]};
+		const Vec3 direction = Rotate(HeadAt(time).q, raw);
+		const Quat orientation = Mul(Conj(SpacePose(base, time).q), FromTo({0, 0, -1}, direction));
+		location->pose = ToXr(Pose{orientation, {0, 0, 0}});
+		location->locationFlags = XR_SPACE_LOCATION_ORIENTATION_VALID_BIT | XR_SPACE_LOCATION_ORIENTATION_TRACKED_BIT;
 		return XR_SUCCESS;
 	}
 	Pose spacePose;
@@ -2261,14 +2336,38 @@ XRAPI_ATTR XrResult XRAPI_CALL xrDestroyAction(XrAction action)
 	return XR_SUCCESS;
 }
 
-// The Oculus Touch profile's bindings are kept (the Sense controllers stand in for it); every other
-// profile's are accepted and not used
+// The Oculus Touch profile's bindings are kept (the Sense controllers stand in for it) and the eye-gaze
+// profile's one pose is the gaze space; every other profile's bindings are accepted and not used
 XRAPI_ATTR XrResult XRAPI_CALL xrSuggestInteractionProfileBindings(XrInstance, const XrInteractionProfileSuggestedBinding* suggested)
 {
 	std::lock_guard lock(s.lock);
 	if (suggested->interactionProfile == XR_NULL_PATH || suggested->interactionProfile > s.paths.size())
 		return XR_ERROR_PATH_INVALID;
-	if (s.paths[suggested->interactionProfile - 1] != "/interaction_profiles/oculus/touch_controller")
+	const std::string& profile = s.paths[suggested->interactionProfile - 1];
+	if (profile == "/interaction_profiles/ext/eye_gaze_interaction")
+	{
+		s.gazeProfile = suggested->interactionProfile;
+		s.gazeSuggested = true;
+		int kept = 0, unknown = 0;
+		for (uint32_t i = 0; i < suggested->countSuggestedBindings; i++)
+		{
+			const XrActionSuggestedBinding& suggestion = suggested->suggestedBindings[i];
+			Binding binding{};
+			if (suggestion.binding == XR_NULL_PATH || suggestion.binding > s.paths.size() ||
+				s.paths[suggestion.binding - 1] != "/user/eyes_ext/input/gaze_ext/pose")
+			{
+				unknown++;
+				continue;
+			}
+			binding.hand = -1; // the eyes, not a hand
+			binding.component = Component::GazePose;
+			suggestion.action->bindings.push_back(binding);
+			kept++;
+		}
+		Log("Eye gaze profile: %d bindings onto the gaze space, %d not mapped", kept, unknown);
+		return XR_SUCCESS;
+	}
+	if (profile != "/interaction_profiles/oculus/touch_controller")
 		return XR_SUCCESS;
 	s.touchProfile = suggested->interactionProfile;
 	s.touchSuggested = true;
@@ -2299,8 +2398,14 @@ XRAPI_ATTR XrResult XRAPI_CALL xrAttachSessionActionSets(XrSession, const XrSess
 XRAPI_ATTR XrResult XRAPI_CALL xrGetCurrentInteractionProfile(XrSession, XrPath topLevel, XrInteractionProfileState* state)
 {
 	std::lock_guard lock(s.lock);
-	const int hand = HandOf(topLevel);
 	state->interactionProfile = XR_NULL_PATH;
+	if (topLevel != XR_NULL_PATH && topLevel <= s.paths.size() && s.paths[topLevel - 1] == "/user/eyes_ext")
+	{
+		if (s.gazeSuggested)
+			state->interactionProfile = s.gazeProfile;
+		return XR_SUCCESS;
+	}
+	const int hand = HandOf(topLevel);
 	if (hand >= 0 && s.touchSuggested && s.hands[hand].handle >= 0)
 		state->interactionProfile = s.touchProfile;
 	return XR_SUCCESS;
@@ -2408,9 +2513,17 @@ XRAPI_ATTR XrResult XRAPI_CALL xrGetActionStatePose(XrSession, const XrActionSta
 	if (which == -2 || !action->set || !action->set->active)
 		return XR_SUCCESS;
 	for (const Binding& binding : action->bindings)
-		if (IsPose(binding.component) && (which < 0 || binding.hand == which) && s.hands[binding.hand].connected &&
+	{
+		if (binding.component == Component::GazePose)
+		{
+			if (hmd2::gaze().valid)
+				state->isActive = XR_TRUE;
+			continue;
+		}
+		if (binding.hand >= 0 && IsPose(binding.component) && (which < 0 || binding.hand == which) && s.hands[binding.hand].connected &&
 			s.hands[binding.hand].registered)
 			state->isActive = XR_TRUE;
+	}
 	return XR_SUCCESS;
 }
 

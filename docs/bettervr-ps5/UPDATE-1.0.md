@@ -765,3 +765,45 @@ game start was unwanted.
   `port/bettervr/xr/shaders.h` is regenerated with `tools/render-shaders.sh` and committed. Built, untested on console.
 - Unchanged: the left Square long press still opens the menu, with its own 250 ms threshold.
 - Test request 52 in `STATUS.md`.
+
+## v0.6 eye tracking (gaze probe and throw assist)
+
+Branch `bettervr-1.0/v06-eye`, from `1.0.0`'s `ce1ee2c`. Built only on CI; every result here is "built, untested on
+console".
+
+- **Gaze probe in hmd2.** `sceHmd2GazeGetResult`, `...ForFoveatedRendering`, `ActivateGazeTracking`,
+  `GetDeviceStatus` and `GetUserCalibrationStatus` are optional slots resolved with `sceKernelDlsym` only. No gaze
+  offset is added to `hmd2_exports.h`; a library that does not export a name logs which one and leaves eye tracking
+  off. After `sceHmd2Open` the probe calls `ActivateGazeTracking(1)`, then logs the device status and the user
+  calibration status. Status 0 means detected/calibrated (the meaning in AnyPS5's reverse-engineered libSceHmd2); any
+  other value is logged raw. A device status other than 0 says in the log that eye tracking is off in the PS5 settings
+  (Settings > Accessories > PS VR2 > Eye Tracking) or that the headset does not see the eyes; a calibration status
+  other than 0 says the user is not calibrated and names Adjust Eye Tracking. The status is re-checked every 2 s, so
+  putting the headset on or changing the setting after VR starts is seen.
+- **The first 10 s.** At most once a second, the probe logs the full `0x38` result and the `0x18` foveated result as
+  hex, then the parsed raw direction and both status fields. Every later status change is logged once (at most 20
+  lines). A sample is exposed only when the device and calibration checks pass, both calls returned 0, the foveated
+  (or, failing that, the full) result's status is 0 and its direction is finite and non-zero.
+- **OpenXR exposure.** The runtime now offers `XR_EXT_eye_gaze_interaction`, accepts it in `xrCreateInstance`, fills
+  `XrSystemEyeGazeInteractionPropertiesEXT` when the application chains it, keeps the
+  `/interaction_profiles/ext/eye_gaze_interaction` profile's `/user/eyes_ext/input/gaze_ext/pose` binding, and marks
+  that action's space as the gaze space. `xrLocateSpace` returns an orientation-only pose (valid + tracked) while the
+  probe has a valid sample, and an untracked pose otherwise; `xrGetActionStatePose` reports the action active only
+  then. `xrGetSystemProperties` runs before `xrCreateSession`, so the property is advertised optimistically: only the
+  session's `hmd2::init` can ask the headset, and the pose is what is gated.
+- **Direction frame.** The firmware gives the foveated direction headset-relative with +z forward; the runtime applies
+  PSVR2Toolkit's `{-x, y, -z}` conversion and rotates it by the frame's head pose into stage space. The first console
+  run's hex and raw direction are what confirm the sign.
+- **Throw assist (eye.md 7b).** Patch bettervr 0007. When the new setting is on, a released throw takes the point
+  10 m along the gaze ray from the middle of the eyes (head forward when no gaze sample exists), and bends the hand's
+  world velocity toward the line from the hand to that point by at most 15 degrees; the speed is unchanged, and the
+  game's own 1.2x cap still applies. The setting is `Gaze Throw Assist` in Controls > Motion Controls, default off.
+  Log line: `[Throw] gaze assist bent N degrees toward the gaze` (or `head`). With eye tracking off or uncalibrated
+  the fallback is the head direction, so the setting still behaves predictably.
+- **Backlog, not this track:** item highlight (eye.md 7a) and bow aim assist (eye.md 7c). Both need the same gaze
+  plumbing that is now in place.
+- **Open.** The first console run must show whether the five names resolve, whether status 0 really means
+  detected/calibrated on 13.60, and whether the direction's sign is right (looking left must bend a throw left). Test
+  request 53 in `STATUS.md`.
+- **Exact next step.** Run the 13.60 console with eye tracking enabled and calibrated, send the `[gaze]` lines, then
+  turn on Gaze Throw Assist and throw while looking left and right of the head direction.

@@ -14,6 +14,11 @@ lacks its left and right arrows. A camera stall of five presented frames now kee
 streaming hitch no longer shows the body for one frame (patch bettervr 0006), and the runtime compositor blends the
 premultiplied HUD correctly, so the dimmed arrows, minimap and clock keep their alpha. Details: `UPDATE-1.0.md`, "v0.6".
 
+From the parallel eye-tracking branch (`bettervr-1.0/v06-eye`): the optional PS VR2 gaze exports are probed at VR
+start, exposed to BetterVR as `XR_EXT_eye_gaze_interaction`, and a new default-off `Gaze Throw Assist` setting bends a
+throw up to 15 degrees toward where the player looks (head direction when gaze is unavailable). Built, untested on
+console; details in `UPDATE-1.0.md`, "v0.6 eye tracking".
+
 **Test request 52 (the build of this commit, 13.60 console).** Play in VR. (a) Tap Options on the right controller once:
 the game's pause screen (the inventory) opens; tap it again: the screen closes. (b) Hold Options for about a second:
 BetterVR's menu opens while the button is still held, and the game's pause screen does not open; hold it about a second
@@ -23,6 +28,17 @@ press -> pause`. Say whether the "+" on the right stick click still opens the sa
 right with the left stick near grass and say whether Link's body still flashes for a frame; the `[pose]` lines (at most
 one a second) count the stalls the tolerance kept first person. (f) Open the weapon wheel: the left and right arrows
 must be visible on the black buttons, and the minimap and clock must not look faded or black.
+
+**Test request 53 (v0.6 combined).** Eye tracking, from the branch `bettervr-1.0/v06-eye`: in the PS5 settings, turn
+on Settings > Accessories > PS VR2 > Eye Tracking and run Adjust Eye Tracking, then play in VR and send the logs zip.
+(a) Send every `[gaze]` line: `five exports bound by name`, `ActivateGazeTracking(1)`, `device detected` or the device
+status line, `calibrated` or the calibration status line, and the first-10-s lines `result 0x38`, `foveated 0x18`,
+`raw direction ... status full N foveated N`. They say whether the five names resolve and whether status 0 means
+detected/calibrated on 13.60. If the log says eye tracking is off or not calibrated while the PS5 settings say
+otherwise, send those lines as they are. (b) In BetterVR's menu open Controls > Motion Controls, turn on Gaze Throw
+Assist, then throw something while looking left of the head direction and again while looking right. Say which way
+each throw went (left/right of where the hand threw) and send the `[Throw] gaze assist bent N degrees toward the gaze`
+lines (or `toward the head` if the gaze lines were not valid). With the setting off, the same throw must not bend.
 
 ## 2026-11-18: console run 4 (37c6028, 13.60)
 
