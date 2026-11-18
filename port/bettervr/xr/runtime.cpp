@@ -29,8 +29,11 @@
 //                      for Hmd2's user), posed by VrTracker2 (hmd2::register_controller /
 //                      controller_pose) with velocities from successive poses; haptics through
 //                      hmd2::sense_set_vibration (libScePad's Sense exports). The DualSense stays the game's GamePad (Cemu's), which
-//                      BetterVR merges with these. Layout from photo-splat-vr's pad_input.h and
-//                      HLA-PSVR2's psvr2.c (third_party/hmd2/reference); none of it seen on a console.
+//                      BetterVR merges with these. The adaptive triggers are here too: the bow's draw on R2 and the
+//                      shield's guard on L2, through libScePad's scePadSetTriggerEffect (the DualSense) and its
+//                      Sense trigger exports (the experiment behind bettervr.json's senseTriggers). Layout from
+//                      photo-splat-vr's pad_input.h and HLA-PSVR2's psvr2.c (third_party/hmd2/reference); none of it
+//                      seen on a console.
 //
 // The PS5 has one graphics queue, which Cemu's GPU thread, BetterVR's submit thread and this
 // compositor share: every submission to it holds ps5xr::QueueMutex() (patches/bettervr 0002 for
@@ -49,6 +52,7 @@
 
 #include "hmd2.h"
 #include "shaders.h"
+#include "triggers.h"
 
 extern "C" {
 // libScePad (the app's pad.cpp has called scePadInit)
@@ -56,6 +60,8 @@ int scePadOpen(int user, int type, int index, const void* parameters);
 int scePadGetHandle(int user, int type, int index);
 int scePadClose(int handle);
 int scePadVrControllerReadState(int handle, void* state);
+// port/ps5/pad.cpp: player 1's open DualSense handle, for the adaptive triggers (-1: none)
+int32_t PS5Cemu_PadHandle(int player);
 // port/bettervr/VrPS5.cpp: a number from bettervr.json, or fallback
 float BetterVR_PS5_Setting(const char* name, float fallback);
 // port/bettervr/VrPS5.cpp: bettervr.json's "profile" (true/false or 1/0), read once
@@ -456,6 +462,11 @@ namespace
 		uint64_t profileFenceNs = 0, profileSubmitNs = 0;
 		uint64_t profileFrames = 0;
 		uint64_t profileGpuAt = 0; // g_ps5GpuBusyNs at the last line
+		// adaptive triggers: the Sense controllers' experiment (bettervr.json's "senseTriggers"), and which payload
+		// to use (its "senseTriggerLayout": 0 tries the DualSense 0x78 layout first, 1 forces it, 2 forces one 0x38
+		// command a hand)
+		bool senseTriggers = false;
+		int triggerLayoutSetting = 0;
 		// the VR start's milestones (the log lines "VR start n/5"): when the session began, the swapchains made, and
 		// whether the first submitted frame and the first one with a stereo picture are logged
 		uint64_t sessionStartedAt = 0; // sceKernelGetProcessTime, us
@@ -827,6 +838,151 @@ namespace
 			hand.vibrationsLogged++;
 		}
 		hand.vibrating = level != 0;
+	}
+
+	// -- adaptive triggers ------------------------------------------------------------------------------------
+	// The bridge is BetterVR_PS5_AdaptiveTriggers below (patches/bettervr's controls.cpp, once an input frame): the
+	// bow's live draw on R2 and the shield's guard on L2. The DualSense's effect is public and defaults on; the
+	// Sense controllers' payload is unpublished, so it is the experiment behind bettervr.json's "senseTriggers".
+	struct TriggerSent
+	{
+		bool valid = false; // this device's triggers were set since the session started
+		ps5trig::Param param{};
+		uint64_t at = 0; // sceKernelGetProcessTime, us
+	};
+	TriggerSent s_triggerSent[2]; // 0 the DualSense, 1 the two Sense controllers
+	int s_triggerLayout = 0;	  // the Sense payload: 0 not tried, 1 both hands 0x78, 2 one hand 0x38, -1 none accepted
+	constexpr uint64_t kTriggerIntervalUs = 50000; // firmware effect updates are slow: at most 20 a second
+
+	void DescribeTrigger(const ps5trig::Command& command, char* out, size_t size)
+	{
+		switch (command.mode)
+		{
+		case ps5trig::kFeedback: std::snprintf(out, size, "feedback %u %u", (unsigned)command.data[0], (unsigned)command.data[1]); break;
+		case ps5trig::kWeapon: std::snprintf(out, size, "weapon %u-%u %u", (unsigned)command.data[0], (unsigned)command.data[1], (unsigned)command.data[2]); break;
+		case ps5trig::kSlope: std::snprintf(out, size, "slope %u-%u %u-%u", (unsigned)command.data[0], (unsigned)command.data[1], (unsigned)command.data[2], (unsigned)command.data[3]); break;
+		case ps5trig::kVibration: std::snprintf(out, size, "vibration %u %u %u", (unsigned)command.data[0], (unsigned)command.data[1], (unsigned)command.data[2]); break;
+		case ps5trig::kMultiFeedback: std::snprintf(out, size, "multi feedback"); break;
+		case ps5trig::kMultiVibration: std::snprintf(out, size, "multi vibration"); break;
+		default: std::snprintf(out, size, "off"); break;
+		}
+	}
+
+	bool TriggerDue(const TriggerSent& sent, const ps5trig::Param& param, uint64_t now)
+	{
+		if (sent.valid && ps5trig::Same(sent.param, param))
+			return false;
+		if (ps5trig::IsOff(param) && !sent.valid)
+			return true; // the first call clears anything a game that crashed left on the trigger
+		// an off pair always goes out at once; an effect at most 20 times a second, the newest value next frame
+		return ps5trig::IsOff(param) || now - sent.at >= kTriggerIntervalUs;
+	}
+
+	void SendDualSenseTriggers(const ps5trig::Param& param, uint64_t now)
+	{
+		TriggerSent& sent = s_triggerSent[0];
+		if (!TriggerDue(sent, param, now))
+			return;
+		const int handle = PS5Cemu_PadHandle(0);
+		if (handle < 0)
+			return;
+		const int result = hmd2::pad_set_trigger_effect(handle, &param);
+		char l2[48], r2[48];
+		DescribeTrigger(param.l2, l2, sizeof l2);
+		DescribeTrigger(param.r2, r2, sizeof r2);
+		Log("[trig] DualSense (handle %d) L2 %s, R2 %s -> 0x%08x", handle, l2, r2, (unsigned)result);
+		sent.param = param;
+		sent.valid = true;
+		sent.at = now;
+	}
+
+	void SendSenseTriggers(const ps5trig::Param& param, uint64_t now)
+	{
+		if (!s.senseTriggers || s.hands[0].handle < 0 || s.hands[1].handle < 0)
+			return;
+		TriggerSent& sent = s_triggerSent[1];
+		if (!TriggerDue(sent, param, now) || s_triggerLayout < 0)
+			return;
+		const int left = s.hands[0].handle, right = s.hands[1].handle;
+		char l2[48], r2[48];
+		DescribeTrigger(param.l2, l2, sizeof l2);
+		DescribeTrigger(param.r2, r2, sizeof r2);
+		if (s_triggerLayout == 0)
+		{
+			// the first run's experiment: the DualSense's 0x78 layout on the both-hands setter, then one 0x38
+			// command a hand. Whichever is accepted is used from then on; the console run says whether it is felt.
+			const int both = hmd2::sense_set_trigger_effects(left, right, &param);
+			Log("[trig] Sense both hands (0x78, %zu bytes) L2 %s, R2 %s -> 0x%08x", sizeof param, l2, r2, (unsigned)both);
+			if (both == 0)
+				s_triggerLayout = 1;
+			else
+			{
+				const int oneLeft = hmd2::sense_set_trigger_effect(left, &param.l2);
+				const int oneRight = hmd2::sense_set_trigger_effect(right, &param.r2);
+				Log("[trig] Sense one hand (0x38, %zu bytes) L2 %s -> 0x%08x, R2 %s -> 0x%08x", sizeof(ps5trig::Command), l2,
+					(unsigned)oneLeft, r2, (unsigned)oneRight);
+				s_triggerLayout = oneLeft == 0 && oneRight == 0 ? 2 : -1;
+			}
+			if (s_triggerLayout > 0)
+				Log("[trig] Sense payload: %s accepted; the other layout is tried only if this one is not felt",
+					s_triggerLayout == 1 ? "both hands 0x78" : "one hand 0x38");
+			else
+				Log("[trig] Sense payload: neither layout was accepted, Sense trigger effects are left alone");
+		}
+		else if (s_triggerLayout == 1)
+		{
+			const int result = hmd2::sense_set_trigger_effects(left, right, &param);
+			Log("[trig] Sense both hands (0x78) L2 %s, R2 %s -> 0x%08x", l2, r2, (unsigned)result);
+			if (result != 0)
+			{
+				// the accepted layout is no guarantee for the next payload: try the one-hand form once more
+				const int oneLeft = hmd2::sense_set_trigger_effect(left, &param.l2);
+				const int oneRight = hmd2::sense_set_trigger_effect(right, &param.r2);
+				Log("[trig] Sense one hand (0x38) L2 %s -> 0x%08x, R2 %s -> 0x%08x", l2, (unsigned)oneLeft, r2, (unsigned)oneRight);
+				if (oneLeft == 0 && oneRight == 0)
+					s_triggerLayout = 2;
+			}
+		}
+		else
+		{
+			const int oneLeft = hmd2::sense_set_trigger_effect(left, &param.l2);
+			const int oneRight = hmd2::sense_set_trigger_effect(right, &param.r2);
+			Log("[trig] Sense left L2 %s -> 0x%08x, right R2 %s -> 0x%08x", l2, (unsigned)oneLeft, r2, (unsigned)oneRight);
+		}
+		sent.param = param;
+		sent.valid = true;
+		sent.at = now;
+	}
+
+	// Always send off: the effect lives in the controller's firmware and outlives the game. s.lock is held.
+	void ResetTriggersLocked(const char* why)
+	{
+		const ps5trig::Param off = ps5trig::Both(ps5trig::Off(), ps5trig::Off());
+		const int dualSense = PS5Cemu_PadHandle(0);
+		if (dualSense >= 0 && s_triggerSent[0].valid)
+		{
+			const int result = hmd2::pad_set_trigger_effect(dualSense, &off);
+			Log("[trig] DualSense off (%s) -> 0x%08x", why, (unsigned)result);
+		}
+		if (s.senseTriggers && s_triggerSent[1].valid && s.hands[0].handle >= 0 && s.hands[1].handle >= 0)
+		{
+			const int left = s.hands[0].handle, right = s.hands[1].handle;
+			// the layout that was in use, then the other one if it fails: off must reach whichever call applied it
+			int result = -1;
+			if (s_triggerLayout != 2)
+				result = hmd2::sense_set_trigger_effects(left, right, &off);
+			if (result != 0 || s_triggerLayout == 2)
+			{
+				const int oneLeft = hmd2::sense_set_trigger_effect(left, &off.l2);
+				const int oneRight = hmd2::sense_set_trigger_effect(right, &off.r2);
+				Log("[trig] Sense off (%s), one hand -> 0x%08x / 0x%08x", why, (unsigned)oneLeft, (unsigned)oneRight);
+			}
+			else
+				Log("[trig] Sense off (%s), both hands -> 0x%08x", why, (unsigned)result);
+		}
+		s_triggerSent[0] = {};
+		s_triggerSent[1] = {};
+		s_triggerLayout = s.triggerLayoutSetting;
 	}
 
 	// the head in tracker space at a time, with hmd2's prediction; the last one when it has none
@@ -1726,6 +1882,19 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateSession(XrInstance, const XrSessionCreate
 		s.profileGpuAt = g_ps5GpuBusyNs.load(std::memory_order_relaxed);
 #endif
 	}
+	// the Sense controllers' trigger experiment. The DualSense's triggers need no switch: its effects are the
+	// setting in BetterVR's own menu (patches/bettervr 0007). 0 tries the DualSense payload first.
+	s.senseTriggers = BetterVR_PS5_Setting("senseTriggers", 0.0f) != 0.0f;
+	const int triggerLayout = (int)BetterVR_PS5_Setting("senseTriggerLayout", 0.0f);
+	s.triggerLayoutSetting = triggerLayout == 1 || triggerLayout == 2 ? triggerLayout : 0;
+	s_triggerSent[0] = {};
+	s_triggerSent[1] = {};
+	s_triggerLayout = s.triggerLayoutSetting;
+	if (s.senseTriggers)
+		Log("Sense trigger effects on (bettervr.json's senseTriggers), %s", s.triggerLayoutSetting == 0 ? "the DualSense layout tried first" :
+			s.triggerLayoutSetting == 1 ? "the both-hands 0x78 layout" : "the one-hand 0x38 layout");
+	else
+		Log("Sense trigger effects off (bettervr.json's senseTriggers); the DualSense's triggers are unaffected");
 	Log("reprojection of the game's frames: %s (bettervr.json's reproject); HUD quad drawn as its plane, a mono picture across each eye, "
 		"a re-shown pair keeps its render pose", s.reproject ? "on" : "off");
 	Log("frame profile: %s (bettervr.json's profile), %s", s.profile ? "one [frame] line every 10 s" : "off",
@@ -1754,6 +1923,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrDestroySession(XrSession session)
 		std::lock_guard queue(ps5xr::QueueMutex());
 		vk.vkDeviceWaitIdle(session->device);
 	}
+	ResetTriggersLocked("the session ended");
 	CloseHands();
 	s.attached = false;
 	if (s.padTakenOver)
@@ -2911,6 +3081,7 @@ void BetterVR_PS5_Stop()
 	std::lock_guard lock(s.lock);
 	if (s.stopped.exchange(true))
 		return;
+	ResetTriggersLocked("the app leaves VR");
 	for (int i = 0; i < 2; i++)
 		if (s.hands[i].vibrating)
 			SetVibration(i, 0.0f);
@@ -2933,7 +3104,30 @@ void BetterVR_PS5_Stop()
 	}
 }
 
+// app/emulator.cpp's VR-failed path (port/bettervr/VrPS5.cpp), before the app starts over: the effects live in the
+// controllers' firmware, so they must go off even when the game is replaced without a session teardown.
+void BetterVR_PS5_TriggersOff()
+{
+	std::lock_guard lock(s.lock);
+	ResetTriggersLocked("VR failed");
+}
+
 } // extern "C"
+
+// BetterVR's controls.cpp (patches/bettervr 0007), once an input frame: the bow's live draw (0-1.5), the shield's
+// guard, whether the player is in gameplay (not a menu or the pause screen), BetterVR's setting and its strength.
+extern "C" void BetterVR_PS5_AdaptiveTriggers(float bowDraw, int shieldGuarding, int interactive, int enabled, float strength)
+{
+	std::lock_guard lock(s.lock);
+	if (s.stopped || s.session == XR_NULL_HANDLE)
+		return;
+	const bool active = interactive != 0 && enabled != 0;
+	const ps5trig::Param param = ps5trig::Both(active && shieldGuarding != 0 ? ps5trig::Shield(strength) : ps5trig::Off(),
+		active ? ps5trig::Bow(bowDraw, strength) : ps5trig::Off());
+	const uint64_t now = sceKernelGetProcessTime();
+	SendDualSenseTriggers(param, now);
+	SendSenseTriggers(param, now);
+}
 
 // BetterVR's mod menu (patches/bettervr): Options on the right Sense controller, as of the last xrSyncActions
 extern "C" bool BetterVR_PS5_OptionsDown()

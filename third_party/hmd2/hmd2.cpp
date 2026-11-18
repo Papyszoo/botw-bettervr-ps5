@@ -650,6 +650,89 @@ bool bind_sense_vibration() {
     return g_sense_vibration > 0;
 }
 
+// -- adaptive triggers --------------------------------------------------------
+// The DualSense's setter is a public export of libScePad and is looked up by name only. The Sense controllers' own
+// setters are not published (NIDs 6Cdc9bbjrRY and v8P+9PRqg10): by name when the library exports them, else at
+// HLA-PSVR2's 13.60 offset after the same anchor check the vibration above uses. The VR payload is unpublished.
+int (*scePadSetTriggerEffect)(int handle, const void *param) = nullptr;
+int (*scePadVrControllerSetTriggerEffect)(int handle, const void *param) = nullptr;
+int (*scePadVrControllerSetTriggerEffects)(int left_handle, int right_handle, const void *param) = nullptr;
+int g_pad_trigger = 0;   // 0 not tried, 1 bound, -1 unavailable
+int g_sense_trigger = 0; // the same
+
+const Slot kSenseTriggerSlots[] = {
+    {"scePadVrControllerSetTriggerEffect", reinterpret_cast<void **>(&scePadVrControllerSetTriggerEffect)},
+    {"scePadVrControllerSetTriggerEffects", reinterpret_cast<void **>(&scePadVrControllerSetTriggerEffects)},
+};
+const export_sig_t kExports_libScePadTriggers_1360[] = {
+    {"scePadVrControllerSetTriggerEffects", 0xa730u},
+};
+const export_table_t kTables_libScePadTriggers[] = {
+    {1360, kExports_libScePadTriggers_1360, 1, &kAnchor_libScePad_1360},
+};
+
+bool bind_pad_trigger() {
+    if (g_pad_trigger != 0)
+        return g_pad_trigger > 0;
+    g_pad_trigger = -1;
+    const int handle = load_sysmodule(0, "libScePad");
+    if (handle >= 0) {
+        void *address = nullptr;
+        if (sceKernelDlsym(handle, "scePadSetTriggerEffect", &address) == 0 && address != nullptr) {
+            scePadSetTriggerEffect = reinterpret_cast<decltype(scePadSetTriggerEffect)>(address);
+            g_pad_trigger = 1;
+            logf("hmd2: DualSense trigger effects bound (%p)", address);
+        }
+    }
+    if (g_pad_trigger < 0)
+        logf("hmd2: scePadSetTriggerEffect not found on this firmware, DualSense trigger effects stay off");
+    return g_pad_trigger > 0;
+}
+
+bool bind_sense_triggers() {
+    if (g_sense_trigger != 0)
+        return g_sense_trigger > 0;
+    g_sense_trigger = -1;
+    const int handle = load_sysmodule(0, "libScePad");
+    if (handle < 0) {
+        logf("hmd2: Sense trigger effects: libScePad unavailable (handle 0x%x)", handle);
+        return false;
+    }
+    // each name on its own: one missing export must not cost the other (the singular one has no table offset)
+    bool need_table = false;
+    for (const Slot &slot : kSenseTriggerSlots) {
+        *slot.slot = nullptr;
+        if (sceKernelDlsym(handle, slot.name, slot.slot) != 0 || *slot.slot == nullptr)
+            need_table = true;
+    }
+    if (need_table) {
+        uintptr_t base = 0;
+        const export_table_t *table = module_table(handle, "libScePad.sprx", kTables_libScePadTriggers,
+                                                   sizeof kTables_libScePadTriggers / sizeof *kTables_libScePadTriggers,
+                                                   &base);
+        if (table != nullptr) {
+            if (s.fw == 0)
+                s.fw = table->fw;
+            for (const Slot &slot : kSenseTriggerSlots) {
+                if (*slot.slot != nullptr)
+                    continue;
+                for (size_t i = 0; i < table->count; i++)
+                    if (std::strcmp(table->exports[i].name, slot.name) == 0)
+                        *slot.slot = reinterpret_cast<void *>(base + table->exports[i].offset);
+            }
+        }
+    }
+    if (scePadVrControllerSetTriggerEffect != nullptr || scePadVrControllerSetTriggerEffects != nullptr) {
+        g_sense_trigger = 1;
+        logf("hmd2: Sense trigger effects bound (one hand %p, both hands %p)",
+             reinterpret_cast<void *>(scePadVrControllerSetTriggerEffect),
+             reinterpret_cast<void *>(scePadVrControllerSetTriggerEffects));
+    } else {
+        logf("hmd2: Sense trigger effect exports not found on this firmware, Sense triggers stay off");
+    }
+    return g_sense_trigger > 0;
+}
+
 // -- textures ---------------------------------------------------------------
 // GFX10 texture-descriptor codes, as PS5VR's eng_agc_writer.c names them.
 constexpr uint32_t kFormat8_8_8_8Unorm = 56;
@@ -1642,6 +1725,22 @@ int set_vibration(int level) {
         g_headset_vibration_logged++;
     }
     return rc;
+int pad_set_trigger_effect(int handle, const void *param) {
+    if (!bind_pad_trigger())
+        return kPadTriggerUnavailable;
+    return scePadSetTriggerEffect(handle, param);
+}
+
+int sense_set_trigger_effect(int handle, const void *param) {
+    if (!bind_sense_triggers() || scePadVrControllerSetTriggerEffect == nullptr)
+        return kPadTriggerUnavailable;
+    return scePadVrControllerSetTriggerEffect(handle, param);
+}
+
+int sense_set_trigger_effects(int left_handle, int right_handle, const void *param) {
+    if (!bind_sense_triggers() || scePadVrControllerSetTriggerEffects == nullptr)
+        return kPadTriggerUnavailable;
+    return scePadVrControllerSetTriggerEffects(left_handle, right_handle, param);
 }
 
 bool controller_pose(int tracker_handle, float pos[3], float quat[4]) {

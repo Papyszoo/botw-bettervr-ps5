@@ -3,6 +3,7 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+<<<<<<< HEAD
 ## 2026-11-18: v0.6 performance and menu/HUD shimmer, built, untested on console
 
 Branch `bettervr-1.0/v06-perf`, from v0.5.0. The HUD image gets a mip chain each frame and the compose samples it
@@ -28,6 +29,34 @@ Multiplier` lines: the eye size must be smaller; restart after 1x and it must be
 `bettervr.json` `"accurateBarriers": true`, restart, and send the `Accurate barriers: on` and `[perf] ... accurate
 barriers on` lines (then remove the key). Send the logs zip and say whether the menu, HUD alpha and gameplay still look
 right.
+=======
+## 2026-11-18: v0.6 adaptive triggers (DualSense; Sense behind a json switch), built, untested on console
+
+Branch `bettervr-1.0/v06-triggers`, from `ce1ee2c` (v0.6's menu work). The bow's live draw now firms R2 and the
+shield's guard clicks L2: on the DualSense by default, on the Sense controllers only with
+`"senseTriggers": true` in `bettervr.json` (default off). Both are off in BetterVR's menu, on the pause and
+inventory screens and outside the game, and the off pair is always sent on exit and on a VR failure. BetterVR's
+System page gains an "Adaptive Triggers" toggle and strength, saved in `BetterVR_settings.ini` like its other
+rows. The Sense payload is unpublished: the first effect tries the DualSense 0x78 layout on the both-hands call,
+then one 0x38-byte command a hand, and logs both answers; `"senseTriggerLayout": 1` or `2` forces one next run.
+Patch bettervr 0007; details: `UPDATE-1.0.md`, "v0.6 adaptive triggers".
+
+**Test request 53 (v0.6 combined).** In VR, with the DualSense connected and the default settings:
+(a) Equip the bow, hold R2 and draw: R2 must get firmer as the draw grows, and let go on release or when the arrow
+flies. Say whether it is felt, and whether it is too weak or too strong.
+(b) Hold the shield at the chest with the left hand (guard): L2 must have a firm click around a third of its pull
+while guarding, and none after lowering the shield. Say whether it is felt.
+(c) Open BetterVR's menu with Options, and open the game's pause screen/inventory: both triggers must go soft at
+once. Quit to the library: no trigger may stay firm.
+(d) In BetterVR's menu, System page: change "Adaptive Triggers" off and on, and the strength; say whether the
+change is felt live and whether it is still there after a restart.
+(e) With `"senseTriggers": true` added to `/data/botwvr/launcher/bettervr.json`, repeat (a) and (b) on the Sense
+controllers: say whether either trigger is felt at all.
+Send the logs zip and every `[trig]` line: the `DualSense` lines with their `0x...` answer, the `Sense trigger
+effects on` line, the `Sense both hands (0x78 ...)` and/or `Sense one hand (0x38 ...)` results, `Sense payload ...
+accepted`, and the `off` lines. If the Sense triggers are not felt although a layout was accepted, add
+`"senseTriggerLayout": 2` (or 1) and repeat (e) with the new `[trig]` lines.
+>>>>>>> origin/bettervr-1.0/v06-triggers
 
 ## 2026-11-18: v0.6, Options holds for the menu and taps for pause, no popup at start, no one-frame body flash, HUD alpha, built, untested on console
 

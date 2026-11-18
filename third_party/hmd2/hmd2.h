@@ -243,6 +243,19 @@ int sense_set_vibration(int handle, uint8_t intensity);
 constexpr int kHmd2VibrationUnavailable = (int)0x80000001;
 int set_vibration(int level);
 
+// A DualSense's adaptive triggers, through libScePad's scePadSetTriggerEffect (a public export, resolved on first
+// use). `param` is the 0x78-byte ScePadTriggerEffectParam (port/bettervr/xr/triggers.h); `handle` is the pad's own
+// scePadOpen handle. Other firmware returns kPadTriggerUnavailable and logs it once. UNVERIFIED on hardware.
+constexpr int kPadTriggerUnavailable = (int)0x80000001;
+int pad_set_trigger_effect(int handle, const void* param);
+
+// A Sense controller's adaptive triggers, through libScePad's own Sense exports (the DualSense setter refuses a
+// Sense handle). `param` is 0x78 bytes when `_effects` takes both hands, a 0x38-byte command when `_effect` takes
+// one; the VR payload's layout is unpublished. Resolved by name, else at the 13.60 table's offsets after the
+// anchor check; other firmware returns kPadTriggerUnavailable and logs it once. UNVERIFIED on hardware.
+int sense_set_trigger_effect(int handle, const void* param);
+int sense_set_trigger_effects(int left_handle, int right_handle, const void* param);
+
 int eye_size();     // per-eye width
 int eye_height();   // per-eye height (PSVR2: 1984 wide by 2048 high)
 int buffer_count();

@@ -786,6 +786,7 @@ game start was unwanted.
 - Unchanged: the left Square long press still opens the menu, with its own 250 ms threshold.
 - Test request 52 in `STATUS.md`.
 
+<<<<<<< HEAD
 ## v0.6 performance and menu/HUD shimmer
 
 Branch `bettervr-1.0/v06-perf`, from v0.5.0. Built only on CI; every result is "built, untested on console".
@@ -889,3 +890,45 @@ built only on CI, **untested on console**.
 - **Open**: one console run for the page, the tests, damage and the pattern log; then split the game's rumble by the
   logged callers; explosions (above); whether 60 % is the right headset cap.
 - **Next step**: build this branch on CI, then test request 53 in `STATUS.md`.
+=======
+## v0.6 adaptive triggers
+
+Branch `bettervr-1.0/v06-triggers`, from `ce1ee2c` (v0.6's menu work merged). Built only on CI; every result is
+"built, untested on console". Patch bettervr **0007** is new; 0001-0006 are untouched.
+
+- **What the effects are.** R2 (the bow) uses slope mode 5: from zone 0 at strength 1 to zone 9 at a strength that
+  grows with the game's own `drawAmount` (weapon `+0x94C`, the field `TryReadLiveBowState` already reads, 0-1.5
+  clamped to 1), 1-8 across the strength setting. A held trigger therefore firms up as the bowstring comes back, and
+  the effect stays at the end strength above zone 9. Off below 2 % draw. L2 (the shield) is feedback mode 1, position 2,
+  strength 3-5 across the setting, while `state.isShieldGuarding`; off otherwise. Both are off when BetterVR's menu
+  is open, on the pause and inventory screens (`GameState::IsShowingMenu()`), and outside the game. The effect is
+  sent on change, at most 20 times a second; an off pair goes out at once.
+- **BetterVR's side** (patch 0007): `Bow::GetDrawAmount()` (bow.cpp/bow.h); one call each input frame in
+  `hook_InjectXRInput` (controls.cpp), and an off call when the input sample is not ready; the PS5-only
+  `ModSettings` rows `AdaptiveTriggers` (default true) and `AdaptiveTriggerStrength` (0-1, default 1), which save to
+  `BetterVR_settings.ini` like every other row; and a System > **Adaptive Triggers** card with the toggle and the
+  strength slider, shown while the toggle is on. No new launcher row and no new user-facing port string.
+- **The DualSense** (default on): `scePadSetTriggerEffect`, NID `2JgFB2n9oUM`, looked up by name in libScePad (the
+  way hmd2 binds its pad exports) and called on the handle the app's pad service holds for player 1
+  (`PS5Cemu_PadHandle`). The parameter is the 0x78-byte `ScePadTriggerEffectParam`: mask 0x3 (L2 and R2), the L2
+  command at +0x08, R2 at +0x40, each a u32 mode, four padding bytes and 0x30 data bytes. The layout and the
+  builders are `port/bettervr/xr/triggers.h`, with a host test (`tools/tests/test-bettervr-triggers.sh`).
+- **The Sense controllers** (the experiment, `bettervr.json` `"senseTriggers": true`, default off):
+  `scePadVrControllerSetTriggerEffect(s)`, NIDs `6Cdc9bbjrRY`/`v8P+9PRqg10`, bound by name first and otherwise at
+  the 13.60 table's `0xa730` (both hands) behind the existing libScePad anchor. The VR payload is unpublished, so the
+  first effect tries the DualSense 0x78 layout on the both-hands call, and if that call fails one 0x38-byte command a
+  hand; the accepted one is used from then on. `"senseTriggerLayout": 1` or `2` forces one of the two for the next
+  run. `BetterVR_PS5_Setting` now also reads a JSON boolean, so `true` works.
+- **Always off on the way out:** `xrDestroySession`, `BetterVR_PS5_Stop` (every LoadExec away from a game) and
+  `BetterVR_PS5_VrFailed` all send the off pair before the pad handles go; the effect lives in the controller's
+  firmware and would otherwise outlive the game. A failed VR start that never set an effect sends nothing.
+- **Logs** (the boot log, each line starts `[trig]`): `Sense trigger effects on/off ...`, the binding lines from
+  hmd2 (`DualSense trigger effects bound`, `Sense trigger effects bound`), one line per effect call with both
+  commands and libScePad's answer (`DualSense (handle N) L2 feedback 2 5, R2 slope 0-9 1-6 -> 0x00000000`), the
+  Sense layout experiment's results and the chosen payload, and `DualSense off (...)` / `Sense off (...)`.
+- **Open:** the Sense payload and its return code semantics are unverified; a call returning 0 may still not move
+  the trigger. The DualSense's handle is opened in libScePad's vibration mode 2 (the app's choice for rumble), and
+  whether the trigger setter works in that mode is unverified. Neither has run on a console.
+- **Exact next step:** the CI build is green; the next console run is Test request 53 in `STATUS.md`. Read the
+  `[trig]` lines to learn which Sense layout the firmware accepted and whether the DualSense setter answers 0.
+>>>>>>> origin/bettervr-1.0/v06-triggers
