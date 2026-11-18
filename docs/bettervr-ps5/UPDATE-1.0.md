@@ -730,9 +730,15 @@ and for the eye.
 
 ## v0.6
 
-Branch `bettervr-1.0/v06`, from v0.5.0. Built only on CI; every result is "built, untested on console". Reported from
-the console on v0.5.0: the short press of Options was too easy to hit when the player meant to pause, and the popup at
-game start was unwanted.
+Branch `bettervr-1.0/v06-all`, from v0.5.0, combining the v0.6 tracks (`bettervr-1.0/v06`, `v06-perf`, `v06-vibration`,
+`v06-triggers`, `v06-eye`). Built only on CI; every result is "built, untested on console". Reported from the console
+on v0.5.0: the short press of Options was too easy to hit when the player meant to pause, the popup at game start was
+unwanted, Link flashed while strafing near grass, and the weapon wheel lacked its left and right arrows. New patch
+files: bettervr 0007 (performance), 0008 (vibration), 0009 (adaptive triggers), 0010 (eye tracking), and cemu 0055
+(the GPU thread's swap and VR frame end for the profile). Bettervr 0001-0006 are v06's, unchanged; 0055 is the only
+Cemu patch added. `VERSION` stays 0.5.0.
+
+### Options on the Sense and the DualSense, and the start popup
 
 - **The menu takes a hold.** Options on the right Sense held for 700 ms opens BetterVR's menu when the threshold is
   reached, not on the release; holding it again for 700 ms closes it, and the release that ends either hold does
@@ -753,10 +759,10 @@ game start was unwanted.
   `ProcessOptionsButton`: held for 700 ms it opens or closes BetterVR's menu at that moment and the release then does
   nothing, a shorter release sends the game one + tap, and + is removed from the game's hold while the button is down,
   so no pause opens behind the menu; upstream's 500 ms `ToggleModMenuOnLongStartPress` no longer runs on the PS5, and
-  the port's own touchpad+Options overlay is unchanged. Built, untested on console.
+  the port's own touchpad+Options overlay is unchanged.
 - **The pad moves the menu cursor.** When no Sense controller is connected, the VPAD's left and right stick are added
   to the mod menu's navigation, so a DualSense-only player can move through the pages and rows with either stick; the
-  Sense path is unchanged (upstream issue #117). Built, untested on console.
+  Sense path is unchanged (upstream issue #117).
 - **No popup at start.** `DrawTutorialPromptAndControllerVerification` returns at once on the PS5, so the first-time
   setup card over the game is gone; the PS5 prompt text that patch 0004 added to `GetControllerModMenuPrompt` goes with
   it, as nothing draws it now.
@@ -765,83 +771,70 @@ game start was unwanted.
   `[menu] release after the threshold -> hold` when the release itself ends a hold, `[menu] short press -> pause`, and
   `[menu] short press ignored, game input is blocked` for a tap the overlay or `state.preventInputs` keeps from the
   game.
+
+### First person through a camera stall
+
 - **The one-frame body flash is gone.** `IsInGame()` is false while the gameplay camera has not updated for five
   presented frames, a texture-streaming hitch at 50-60 fps, and the pose switched to the third-person path for that
   frame: Link's head materials were shown and the controller arm pose was skipped. `skeleton.cpp` now tolerates a camera
   stall shorter than 250 ms and keeps the first-person pose; the pause menu, a cutscene's event setting and the
-  third-person camera setting still switch at once. The same frame the investigation also found is guarded differently:
-  if the actor list misses the player for a frame, the head is still hidden by the last decision, and the root bone
-  starts the frame's material list so it keeps or drops the last one. The list is kept for the 250 ms stall window
-  only, and only while the units still belong to the live player: the actor at the remembered address must still name
-  itself `GameROMPlayer`, still hold the model the units were collected from, and the game must still be animating that
-  model. Otherwise the list is dropped, so a load, a teleport or the player's death cannot hand a freed model unit to
-  `setMaterialVisible`; every unit that is used is also checked live. Log line (at most once a second):
-  `[pose] a short camera stall kept first person (N frames)`, N the frames the tolerance kept since the run started.
-  Patch bettervr 0006; built, untested on console.
+  third-person camera setting still switch at once. If the actor list misses the player for a frame, the head is still
+  hidden by the last decision, and the root bone starts the frame's material list so it keeps or drops the last one.
+  The list is kept for the 250 ms stall window only, and only while the units still belong to the live player: the
+  actor at the remembered address must still name itself `GameROMPlayer`, still hold the model the units were
+  collected from, and the game must still be animating that model. Otherwise the list is dropped, so a load, a
+  teleport or the player's death cannot hand a freed model unit to `setMaterialVisible`; every unit that is used is
+  also checked live. Log line (at most once a second): `[pose] a short camera stall kept first person (N frames)`, N
+  the frames the tolerance kept since the run started. Patch bettervr 0006.
+
+### HUD alpha, shimmer and the compose
+
 - **The HUD alpha is no longer squared.** The runtime compositor blended the premultiplied HUD (ImGui writes `rgb*a,
   a`) as straight alpha at `compose.comp:59`, so semi-transparent UI became `rgb*a²`: the weapon wheel's dimmed white
   arrows vanished on the black buttons, and the minimap and clock looked faded. The compositor has one blend for the
   HUD and the menu quad, and it now blends premultiplied, `color.rgb = c.rgb + color.rgb * (1.0 - c.a)`;
-  `port/bettervr/xr/shaders.h` is regenerated with `tools/render-shaders.sh` and committed. Built, untested on console.
-- Unchanged: the left Square long press still opens the menu, with its own 250 ms threshold.
-- Test request 52 in `STATUS.md`.
-
-## v0.6 performance and menu/HUD shimmer
-
-Branch `bettervr-1.0/v06-perf`, from v0.5.0. Built only on CI; every result is "built, untested on console".
-The starting point is the v0.5 research: the GPU is the limit at 1x (~20.4 ms a frame), the HUD is a 2000x2040
-image on a ~836x487 eye quad sampled once bilinearly at level 0, and the frame end runs on Cemu's GPU thread.
-
-- **HUD mip chain and LOD-aware sampling (`port/bettervr/xr/runtime.cpp`, `compose.comp`).** Each frame the HUD
-  image is copied into a full mip chain (about 5.4 Mpx of copy and linear blits) and the compose samples it with
-  `textureGrad`, the gradients taken analytically from the quad's homography. The ~2.4x minification now picks a
-  level instead of one bilinear tap at level 0. The sampler is mipmap-linear; the eye images still use LOD 0. When
-  the HUD format has no linear blit the old single tap stays and the log says `HUD mip chain ...` only when it was made.
+  `port/bettervr/xr/shaders.h` is regenerated with `tools/render-shaders.sh` and committed.
+- **HUD mip chain and LOD-aware sampling** (`port/bettervr/xr/runtime.cpp`, `compose.comp`). Each frame the HUD image
+  is copied into a full mip chain (about 5.4 Mpx of copy and linear blits) and the compose samples it with
+  `textureGrad`, the gradients taken analytically from the quad's homography. The ~2.4x minification now picks a level
+  instead of one bilinear tap at level 0. The sampler is mipmap-linear; the eye images still use LOD 0. When the HUD
+  format has no linear blit the old single tap stays; the log says `HUD mip chain ...` only when the chain was made.
 - **Compose without the eye pow chain.** The eye swapchain images get a UNORM view on the same image
   (`VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT`), so the compose reads the bytes as written; only the pixels under the HUD
   decode and encode again, to blend it in linear light. `toSrgb` no longer runs for all 8.13 Mpx.
-- **The ImGui round trip is skipped when it is only the HUD.** With the menu, prompts, performance overlay and
-  weapon debugger all absent and a 3D picture behind it, the HUD image is already the 2D layer: no copy into
+- **The ImGui round trip is skipped when it is only the HUD.** With the menu, prompts, performance overlay and weapon
+  debugger all absent and a 3D picture behind it, the HUD image is already the 2D layer: no copy into
   `hudFramebuffer`, no clear/draw/copy back. The desktop ImGui pass (Cemu's window) is not run on the PS5 at all;
-  Hmd2's social screen is the TV. `hudWithoutAlphaFramebuffer` is now a second view of the same HUD image with
-  alpha forced to one, so the HUD is copied once, not twice.
+  Hmd2's social screen is the TV. `hudWithoutAlphaFramebuffer` is now a second view of the same HUD image with alpha
+  forced to one, so the HUD is copied once, not twice.
 - **The depth copy is skipped.** The runtime does not offer `XR_KHR_composition_layer_depth`, so Hmd2 never reads a
   depth image; `Capture::On3DDepth` still accepts the depth capture (the frame must count as complete) but makes no
-  `CopyDepthToLayer`. The present pass still writes `gl_FragDepth` into its local attachment, which nothing reads;
-  removing that needs a fade shader without depth (open, low).
+  `CopyDepthToLayer`. The present pass still writes `gl_FragDepth` into its local attachment, which nothing reads.
+
+### Performance: packets, profile and VR Resolution
+
 - **Accurate barriers off by default, as on a PC VR run.** The app's `StartBetterVR` (`port/app/emulator.cpp`) sets
-  Cemu's `vk_accurate_barriers` false for the run (the PS5 app keeps Cemu's settings itself, so
-  `CemuSettings::Enforce` does not run). `bettervr.json` `"accurateBarriers": true` (or `1`) puts them back for a
-  comparison; the boot log has `[bettervr] Accurate barriers: off/on`, and the app's `[perf]` line keeps saying
-  `accurate barriers off/on`.
+  Cemu's `vk_accurate_barriers` false for the run (the PS5 app keeps Cemu's settings itself, so `CemuSettings::Enforce`
+  does not run). `bettervr.json` `"accurateBarriers": true` (or `1`) puts them back for a comparison; the boot log has
+  `[bettervr] Accurate barriers: off/on`, and the app's `[perf]` line keeps saying `accurate barriers off/on`.
 - **Frame profile.** `bettervr.json` `"profile": true` turns on Cemu's GPU timestamps and one `[frame]` line every
   10 s: `swap X ms | VR end Y ms | compose fence Z ms | hmd2 submit W ms | fps | GPU busy N%`. `swap` and `VR end`
-  come from a new Cemu patch (`patches/cemu` 0055, ticks around `SwapBuffers` and `NotifyFrameSubmitted`); the fence
-  and hmd2 submit are timed in `xrEndFrame`. Off by default: one bool test a frame, nothing else. After Cemu loads
-  the packs, `BetterVR_PS5_LogPresets` logs one `Graphics pack presets:` line with the active VR resolution, quality,
-  AA, recording and shadow presets (their names carry the width and height).
-- **VR Resolution in BetterVR's menu.** On the PS5 the System page's "Graphic Packs: Open On Desktop" row (there is
-  no window) is replaced by `VR Resolution`: 0.5x, 0.75x, 1x, 1.25x, 1.5x from the pack's "VR Resolution Multiplier"
+  come from Cemu patch 0055 (ticks around `SwapBuffers` and `NotifyFrameSubmitted`); the fence and hmd2 submit are
+  timed in `xrEndFrame`. Off by default: one bool test a frame, nothing else. After Cemu loads the packs,
+  `BetterVR_PS5_LogPresets` logs one `Graphics pack presets:` line with the active VR resolution, quality, AA,
+  recording and shadow presets (their names carry the width and height).
+- **VR Resolution in BetterVR's menu.** On the PS5 the System page's "Graphic Packs: Open On Desktop" row (there is no
+  window) is replaced by `VR Resolution`: 0.5x, 0.75x, 1x, 1.25x, 1.5x from the pack's "VR Resolution Multiplier"
   presets. It saves through Cemu's preset API and logs `VR resolution preset: ...`; the pack has texture rules, so
-  `GraphicPack2::RequiresRestart` is true and the existing restart notice says it applies at the next start. The
-  pack's default stays 1x.
+  `GraphicPack2::RequiresRestart` is true and the existing restart notice says it applies at the next start. The pack's
+  default stays 1x.
 - **CI zlib.** `tools/deps.json` now puts zlib 1.3.2's archive where the boilerplate's setup expects it, from the
-  GitHub release (same SHA-256 as zlib.net's); `tools/deps.py` verifies file items by hash instead of their name,
-  so a short or corrupt download is fetched again instead of used.
-- **New patch files:** bettervr 0007; cemu 0055. Existing numbered patches are untouched; the deps branches were
-  exported for the new commits only.
+  GitHub release (same SHA-256 as zlib.net's); `tools/deps.py` verifies file items by hash instead of their name, so a
+  short or corrupt download is fetched again instead of used.
 
-Open: nothing here has run on a console. The mip chain's cost and the skipped passes need the `[frame]` line; the
-HUD quads' edges need a headset. The optional FSR/upscale for presets below 1x (task 6) is not done; the compose
-still samples BetterVR's already-upscaled eye image. The depth write in the present shader is not removed.
-Next step: push `bettervr-1.0/v06-perf`, wait for `BetterVR build`, then Test request 53 in `STATUS.md`.
+### Vibration: one page and one mixer
 
-## v0.6 vibration
-
-Branch `bettervr-1.0/v06-vibration`, from v0.5.0. Console facts stay the ones STATUS.md reports; everything here is
-built only on CI, **untested on console**.
-
-- **One Vibration page, nine categories.** BetterVR's own menu (Hold Options) has a page between Controls and Display
+- **One Vibration page, nine categories.** BetterVR's own menu has a page between Controls and Display
   (`rendering/imgui_menus.cpp`, `VIBRATION_PAGE`), with a master switch, a headset cap, a test button for each device
   and a row per category: Weapon Swings, Bow, Shield & Guard, Gear & Inventory, Attacks/Items/Throws, Runes, Game
   Rumble, Damage Taken, Explosions. Each row has on/off, strength 0-100 % and a tick per device (Sense controllers,
@@ -849,12 +842,12 @@ built only on CI, **untested on console**.
 - **Defaults reproduce v0.5.0**: every existing category on at 100 % on the Sense controllers, the game's pattern on
   both hands at full strength. Damage Taken and Explosions are new, so they start on at 100 % on the hands and the
   headset. Keys: `Haptics`, `HapticsHeadsetLimit` (60), `HapticsLogPatterns` (true), and per category
-  `Haptics{Category}`, `Haptics{Category}Strength`, `Haptics{Category}Devices` (bits: Sense 1, headset 2, pad 4).
-  Old settings files get the defaults; an older build ignores the new keys, so a downgrade is safe.
+  `Haptics{Category}`, `Haptics{Category}Strength`, `Haptics{Category}Devices` (bits: Sense 1, headset 2, pad 4). Old
+  settings files get the defaults; an older build ignores the new keys, so a downgrade is safe.
 - **A 60 Hz mixer in `RumbleManager`** (`rendering/rumble.h`) replaces the two independent XR calls. The game's pattern
   is a level per tick, each input rumble an enveloped level on its hand, and every device takes the louder of the
-  categories switched on for it. The game's pattern no longer cuts an input rumble and an input rumble no longer hides
-  the pattern: they now add by maximum. A game pause stops the input envelopes (100 ms), so nothing stays on.
+  categories switched on for it. The game's pattern and an input rumble no longer cut each other: they add by
+  maximum. A game pause stops the input envelopes (100 ms), so nothing stays on.
 - **The PS VR2 headset's motor** is bound in `third_party/hmd2` as an optional export: `sceHmd2SetVibration(handle,
   level)`, 0-25, one motor. `sceKernelDlsym` first; otherwise the 13.60 table's `+0x2ae00` only behind libSceHmd2's
   anchor check. Other firmware leaves it unbound (one `hmd2:` line) and VR continues. The runtime sends on change, caps
@@ -868,86 +861,61 @@ built only on CI, **untested on console**.
   at `xrBeginSession` and off at `xrDestroySession` and `BetterVR_PS5_Stop`; one `[pad] rumble:` line says which side
   drives the pad. No Cemu patch was needed.
 - **Damage taken** uses the existing `PlayerNormal` damage-state hook (`player.cpp`): one falling rumble on both hands,
-  once per state change (300 ms apart at most), plus `[vib] damage state '...'` for the first six, which also names the
-  three states the first-person block hides today.
+  once per state change (300 ms apart at most), plus `[vib] damage state '...'` for the first six.
 - **The game's rumble stays one category for now, with a learning log.** At the `VPADControlMotor`/`StopMotor` hooks
   (`controls.cpp`, at most 40 lines 150 ms apart, `HapticsLogPatterns` turns it off) it prints the caller LR, the
   playing state, the VPAD pattern bytes, and either the sead `PatternRumbleAddon`'s string at `+0x14` and its repeat
-  count at `+0x1C` when the addon is in a callee-saved register or on the stack, or `pattern="?"`. That one run is what
-  decides how to split "game rumble" (Route A/B in the research).
-- **Not done: explosions.** They are a category with their settings, but no event source yet: the cheap route is an
-  actor-walk list of bomb/barrel names (the Wii U names still need the Entity Debugger), the precise one hooks the Wii U
-  `Explode::enter_`. Backlog line: "Explosions: actor list of Bomb/BombArrow/Barrel with last positions, checked on the
-  damage frame; or the Wii U Explode::enter_ hook".
-- **Headset offset unverified.** `+0x2ae00` is from public PS VR2 tables, not our own dump; the anchor check pins the
-  build, and the first 16 bytes were not logged because the code segment may be execute-only. `tools/export-tables/
-  tables.json` is not in this repo: whoever regenerates `hmd2_exports.h` must add `sceHmd2SetVibration` to the 13.60
-  libSceHmd2 entry, or the next regeneration drops it (the binder has its own small table as well, so the build keeps
-  working).
-- Patch bettervr 0007; port files `port/bettervr/xr/runtime.cpp`, `port/cemu/PS5PadController.cpp` and
-  `third_party/hmd2/` (edited directly).
-- **Open**: one console run for the page, the tests, damage and the pattern log; then split the game's rumble by the
-  logged callers; explosions (above); whether 60 % is the right headset cap.
-- **Next step**: build this branch on CI, then test request 53 in `STATUS.md`.
-## v0.6 adaptive triggers
+  count at `+0x1C` when the addon is in a callee-saved register or on the stack, or `pattern="?"`.
+- **Not done: explosions.** They are a category with their settings, but no event source yet.
 
-Branch `bettervr-1.0/v06-triggers`, from `ce1ee2c` (v0.6's menu work merged). Built only on CI; every result is
-"built, untested on console". Patch bettervr **0007** is new; 0001-0006 are untouched.
+### Adaptive triggers
 
 - **What the effects are.** R2 (the bow) uses slope mode 5: from zone 0 at strength 1 to zone 9 at a strength that
-  grows with the game's own `drawAmount` (weapon `+0x94C`, the field `TryReadLiveBowState` already reads, 0-1.5
-  clamped to 1), 1-8 across the strength setting. A held trigger therefore firms up as the bowstring comes back, and
-  the effect stays at the end strength above zone 9. Off below 2 % draw. L2 (the shield) is feedback mode 1, position 2,
-  strength 3-5 across the setting, while `state.isShieldGuarding`; off otherwise. Both are off when BetterVR's menu
-  is open, on the pause and inventory screens (`GameState::IsShowingMenu()`), and outside the game. The effect is
-  sent on change, at most 20 times a second; an off pair goes out at once.
-- **BetterVR's side** (patch 0007): `Bow::GetDrawAmount()` (bow.cpp/bow.h); one call each input frame in
-  `hook_InjectXRInput` (controls.cpp), and an off call when the input sample is not ready; the PS5-only
-  `ModSettings` rows `AdaptiveTriggers` (default true) and `AdaptiveTriggerStrength` (0-1, default 1), which save to
+  grows with the game's own `drawAmount` (weapon `+0x94C`, 0-1.5 clamped to 1), 1-8 across the strength setting. A held
+  trigger therefore firms up as the bowstring comes back, and the effect stays at the end strength above zone 9. Off
+  below 2 % draw. L2 (the shield) is feedback mode 1, position 2, strength 3-5 across the setting, while
+  `state.isShieldGuarding`; off otherwise. Both are off when BetterVR's menu is open, on the pause and inventory
+  screens (`GameState::IsShowingMenu()`), and outside the game. The effect is sent on change, at most 20 times a
+  second; an off pair goes out at once.
+- **BetterVR's side** (patch bettervr 0009): `Bow::GetDrawAmount()` (bow.cpp/bow.h); one call each input frame in
+  `hook_InjectXRInput` (controls.cpp), and an off call when the input sample is not ready; the PS5-only `ModSettings`
+  rows `AdaptiveTriggers` (default true) and `AdaptiveTriggerStrength` (0-1, default 1), which save to
   `BetterVR_settings.ini` like every other row; and a System > **Adaptive Triggers** card with the toggle and the
-  strength slider, shown while the toggle is on. No new launcher row and no new user-facing port string.
-- **The DualSense** (default on): `scePadSetTriggerEffect`, NID `2JgFB2n9oUM`, looked up by name in libScePad (the
-  way hmd2 binds its pad exports) and called on the handle the app's pad service holds for player 1
-  (`PS5Cemu_PadHandle`). The parameter is the 0x78-byte `ScePadTriggerEffectParam`: mask 0x3 (L2 and R2), the L2
-  command at +0x08, R2 at +0x40, each a u32 mode, four padding bytes and 0x30 data bytes. The layout and the
-  builders are `port/bettervr/xr/triggers.h`, with a host test (`tools/tests/test-bettervr-triggers.sh`).
+  strength slider, shown while the toggle is on.
+- **The DualSense** (default on): `scePadSetTriggerEffect`, NID `2JgFB2n9oUM`, looked up by name in libScePad and
+  called on the handle the app's pad service holds for player 1 (`PS5Cemu_PadHandle`). The parameter is the 0x78-byte
+  `ScePadTriggerEffectParam`: mask 0x3 (L2 and R2), the L2 command at +0x08, R2 at +0x40, each a u32 mode, four
+  padding bytes and 0x30 data bytes. The layout and the builders are `port/bettervr/xr/triggers.h`, with a host test
+  (`tools/tests/test-bettervr-triggers.sh`, run by the Tests workflow).
 - **The Sense controllers** (the experiment, `bettervr.json` `"senseTriggers": true`, default off):
   `scePadVrControllerSetTriggerEffect(s)`, NIDs `6Cdc9bbjrRY`/`v8P+9PRqg10`, bound by name first and otherwise at
   the 13.60 table's `0xa730` (both hands) behind the existing libScePad anchor. The VR payload is unpublished, so the
   first effect tries the DualSense 0x78 layout on the both-hands call, and if that call fails one 0x38-byte command a
   hand; the accepted one is used from then on. `"senseTriggerLayout": 1` or `2` forces one of the two for the next
   run. `BetterVR_PS5_Setting` now also reads a JSON boolean, so `true` works.
-- **Always off on the way out:** `xrDestroySession`, `BetterVR_PS5_Stop` (every LoadExec away from a game) and
-  `BetterVR_PS5_VrFailed` all send the off pair before the pad handles go; the effect lives in the controller's
-  firmware and would otherwise outlive the game. A failed VR start that never set an effect sends nothing.
+- **Always off on the way out:** `xrDestroySession`, `BetterVR_PS5_Stop` and the failed-start path all send the off
+  pair before the pad handles go; the effect lives in the controller's firmware and would otherwise outlive the game.
 - **Logs** (the boot log, each line starts `[trig]`): `Sense trigger effects on/off ...`, the binding lines from
   hmd2 (`DualSense trigger effects bound`, `Sense trigger effects bound`), one line per effect call with both
   commands and libScePad's answer (`DualSense (handle N) L2 feedback 2 5, R2 slope 0-9 1-6 -> 0x00000000`), the
   Sense layout experiment's results and the chosen payload, and `DualSense off (...)` / `Sense off (...)`.
-- **Open:** the Sense payload and its return code semantics are unverified; a call returning 0 may still not move
-  the trigger. The DualSense's handle is opened in libScePad's vibration mode 2 (the app's choice for rumble), and
-  whether the trigger setter works in that mode is unverified. Neither has run on a console.
-- **Exact next step:** the CI build is green; the next console run is Test request 53 in `STATUS.md`. Read the
-  `[trig]` lines to learn which Sense layout the firmware accepted and whether the DualSense setter answers 0.
-## v0.6 eye tracking (gaze probe and throw assist)
 
-Branch `bettervr-1.0/v06-eye`, from `1.0.0`'s `ce1ee2c`. Built only on CI; every result here is "built, untested on
-console".
+### Eye tracking and the throw assist
 
 - **Gaze probe in hmd2.** `sceHmd2GazeGetResult`, `...ForFoveatedRendering`, `ActivateGazeTracking`,
   `GetDeviceStatus` and `GetUserCalibrationStatus` are optional slots resolved with `sceKernelDlsym` only. No gaze
   offset is added to `hmd2_exports.h`; a library that does not export a name logs which one and leaves eye tracking
   off. After `sceHmd2Open` the probe calls `ActivateGazeTracking(1)`, then logs the device status and the user
-  calibration status. Status 0 means detected/calibrated (the meaning in AnyPS5's reverse-engineered libSceHmd2); any
-  other value is logged raw. A device status other than 0 says in the log that eye tracking is off in the PS5 settings
-  (Settings > Accessories > PS VR2 > Eye Tracking) or that the headset does not see the eyes; a calibration status
-  other than 0 says the user is not calibrated and names Adjust Eye Tracking. The status is re-checked every 2 s, so
-  putting the headset on or changing the setting after VR starts is seen.
+  calibration status. Status 0 means detected/calibrated; any other value is logged raw. A device status other than 0
+  says in the log that eye tracking is off in the PS5 settings (Settings > Accessories > PS VR2 > Eye Tracking) or
+  that the headset does not see the eyes; a calibration status other than 0 says the user is not calibrated and names
+  Adjust Eye Tracking. The status is re-checked every 2 s, so putting the headset on or changing the setting after VR
+  starts is seen.
 - **The first 10 s.** At most once a second, the probe logs the full `0x38` result and the `0x18` foveated result as
   hex, then the parsed raw direction and both status fields. Every later status change is logged once (at most 20
   lines). A sample is exposed only when the device and calibration checks pass, both calls returned 0, the foveated
   (or, failing that, the full) result's status is 0 and its direction is finite and non-zero.
-- **OpenXR exposure.** The runtime now offers `XR_EXT_eye_gaze_interaction`, accepts it in `xrCreateInstance`, fills
+- **OpenXR exposure.** The runtime offers `XR_EXT_eye_gaze_interaction`, accepts it in `xrCreateInstance`, fills
   `XrSystemEyeGazeInteractionPropertiesEXT` when the application chains it, keeps the
   `/interaction_profiles/ext/eye_gaze_interaction` profile's `/user/eyes_ext/input/gaze_ext/pose` binding, and marks
   that action's space as the gaze space. `xrLocateSpace` returns an orientation-only pose (valid + tracked) while the
@@ -957,16 +925,21 @@ console".
 - **Direction frame.** The firmware gives the foveated direction headset-relative with +z forward; the runtime applies
   PSVR2Toolkit's `{-x, y, -z}` conversion and rotates it by the frame's head pose into stage space. The first console
   run's hex and raw direction are what confirm the sign.
-- **Throw assist (eye.md 7b).** Patch bettervr 0007. When the new setting is on, a released throw takes the point
-  10 m along the gaze ray from the middle of the eyes (head forward when no gaze sample exists), and bends the hand's
-  world velocity toward the line from the hand to that point by at most 15 degrees; the speed is unchanged, and the
-  game's own 1.2x cap still applies. The setting is `Gaze Throw Assist` in Controls > Motion Controls, default off.
-  Log line: `[Throw] gaze assist bent N degrees toward the gaze` (or `head`). With eye tracking off or uncalibrated
-  the fallback is the head direction, so the setting still behaves predictably.
-- **Backlog, not this track:** item highlight (eye.md 7a) and bow aim assist (eye.md 7c). Both need the same gaze
-  plumbing that is now in place.
-- **Open.** The first console run must show whether the five names resolve, whether status 0 really means
-  detected/calibrated on 13.60, and whether the direction's sign is right (looking left must bend a throw left). Test
-  request 53 in `STATUS.md`.
-- **Exact next step.** Run the 13.60 console with eye tracking enabled and calibrated, send the `[gaze]` lines, then
-  turn on Gaze Throw Assist and throw while looking left and right of the head direction.
+- **Throw assist.** Patch bettervr 0010. When the new setting is on, a released throw takes the point 10 m along the
+  gaze ray from the middle of the eyes (head forward when no gaze sample exists), and bends the hand's world velocity
+  toward the line from the hand to that point by at most 15 degrees; the speed is unchanged, and the game's own 1.2x
+  cap still applies. The setting is `Gaze Throw Assist` in Controls > Motion Controls, default off. Log line:
+  `[Throw] gaze assist bent N degrees toward the gaze` (or `head`). With eye tracking off or uncalibrated the
+  fallback is the head direction, so the setting still behaves predictably.
+- **Backlog, not this build:** item highlight and bow aim assist.
+
+### Open
+
+Nothing here has run on a console. The mip chain's cost and the skipped passes need the `[frame]` line; the HUD
+quads' edges need a headset. The optional FSR/upscale for presets below 1x is not done; the compose still samples
+BetterVR's already-upscaled eye image. The depth write in the present shader is not removed. The Sense trigger payload
+and its return-code meaning are unverified, and the DualSense's pad handle is opened in vibration mode 2. The headset's
+`+0x2ae00` is from public tables, not our own dump; its test button is the proof. Explosions have settings but no
+event source. The five gaze names, the meaning of status 0 and the direction's sign wait for the console.
+
+Test request 53 in `STATUS.md`.

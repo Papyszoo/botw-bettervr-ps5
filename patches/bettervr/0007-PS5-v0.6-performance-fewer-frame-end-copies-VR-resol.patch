@@ -1,6 +1,6 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
-From: Patryk Kowalczyk <papyszoo@gmail.com>
-Date: Wed, 18 Nov 2026 17:14:28 +0100
+From: ps5cemu <ps5cemu@localhost>
+Date: Wed, 18 Nov 2026 18:37:23 +0100
 Subject: [PATCH] PS5: v0.6 performance: fewer frame-end copies, VR resolution,
  preset log
 
@@ -395,7 +395,7 @@ index 475a83c..4ba9280 100644
  
      std::unique_ptr<Layer3D> m_layer3D;
 diff --git a/src/rendering/vulkan_imgui.cpp b/src/rendering/vulkan_imgui.cpp
-index 6908e66..bd25ca2 100644
+index 26525b2..55ceea8 100644
 --- a/src/rendering/vulkan_imgui.cpp
 +++ b/src/rendering/vulkan_imgui.cpp
 @@ -2,6 +2,7 @@
@@ -477,7 +477,7 @@ index 6908e66..bd25ca2 100644
  }
  
  bool ImGuiMenus::ProcessInputs(OpenXR::InputState& inputs, const VPADStatus& vpadStatus) {
-@@ -725,8 +740,8 @@ void RND_Renderer::ImGuiOverlay::Draw3DLayerAsBackground(VkCommandBuffer cb, VkI
+@@ -731,8 +746,8 @@ void RND_Renderer::ImGuiOverlay::Draw3DLayerAsBackground(VkCommandBuffer cb, VkI
  void RND_Renderer::ImGuiOverlay::DrawHUDLayerAsBackground(VkCommandBuffer cb, VkImage srcImage, long frameIdx) {
      auto& frame = VRManager::instance().XR->GetRenderer()->GetFrame(frameIdx);
  
@@ -487,7 +487,7 @@ index 6908e66..bd25ca2 100644
  }
  
  void RND_Renderer::ImGuiOverlay::DrawAndCopyToImage(VkCommandBuffer cb, VkImage destImage, long frameIdx, bool isDesktopView) {
-@@ -785,3 +800,10 @@ void RND_Renderer::ImGuiOverlay::DrawAndCopyToImage(VkCommandBuffer cb, VkImage
+@@ -791,3 +806,10 @@ void RND_Renderer::ImGuiOverlay::DrawAndCopyToImage(VkCommandBuffer cb, VkImage
  
      BeginImGuiFrame();
  }

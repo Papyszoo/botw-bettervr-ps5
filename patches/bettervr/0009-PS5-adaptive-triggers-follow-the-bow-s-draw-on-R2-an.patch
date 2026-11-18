@@ -1,6 +1,6 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
-From: Patryk Kowalczyk <papyszoo@gmail.com>
-Date: Wed, 18 Nov 2026 17:02:58 +0100
+From: ps5cemu <ps5cemu@localhost>
+Date: Wed, 18 Nov 2026 18:37:23 +0100
 Subject: [PATCH] PS5: adaptive triggers follow the bow's draw on R2 and the
  shield on L2
 
@@ -13,7 +13,7 @@ Subject: [PATCH] PS5: adaptive triggers follow the bow's draw on R2 and the
  5 files changed, 51 insertions(+), 1 deletion(-)
 
 diff --git a/src/game/botw/input/controls.cpp b/src/game/botw/input/controls.cpp
-index 06f73cf..c576d4b 100644
+index 888895d..d8580b6 100644
 --- a/src/game/botw/input/controls.cpp
 +++ b/src/game/botw/input/controls.cpp
 @@ -8,6 +8,7 @@
@@ -36,7 +36,7 @@ index 06f73cf..c576d4b 100644
  static ButtonState s_inventoryMapButton;
  static ButtonState s_modMenuButton;
  static ButtonState s_crouchScopeButton;
-@@ -1426,8 +1432,12 @@ static void hook_InjectXRInput(PPCInterpreter_t* hCPU) {
+@@ -1452,8 +1458,12 @@ static void hook_InjectXRInput(PPCInterpreter_t* hCPU) {
  
      // take the hands and head once so the gestures below all use the same sample
      OpenXR::InputState inputs = Tracking::SampleHands(GameState::IsShowingMenu());
@@ -50,7 +50,7 @@ index 06f73cf..c576d4b 100644
      const std::optional<glm::fmat4> headsetPose = Tracking::HeadPose();
      UpdateControlButtons(inputs, ImGuiMenus::g_isOpen.load());
  
-@@ -1488,6 +1498,14 @@ static void hook_InjectXRInput(PPCInterpreter_t* hCPU) {
+@@ -1514,6 +1524,14 @@ static void hook_InjectXRInput(PPCInterpreter_t* hCPU) {
  
      Haptics::Update();
  
@@ -100,10 +100,10 @@ index ebe19e9..4c9543d 100644
 +    float GetDrawAmount();
  }
 diff --git a/src/rendering/imgui_menus.cpp b/src/rendering/imgui_menus.cpp
-index 3fc94d9..26aa560 100644
+index 143572b..3dff90a 100644
 --- a/src/rendering/imgui_menus.cpp
 +++ b/src/rendering/imgui_menus.cpp
-@@ -1290,6 +1290,20 @@ void RND_Renderer::ImGuiOverlay::DrawSystemPage(bool* changed) {
+@@ -1478,6 +1478,20 @@ void RND_Renderer::ImGuiOverlay::DrawSystemPage(bool* changed) {
          EndCard();
      }
  
@@ -125,10 +125,10 @@ index 3fc94d9..26aa560 100644
          DrawSetting(ICON_MS_RESTART_ALT, "Reset All Settings", [&]() {
              ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.55f, 0.18f, 0.18f, 1.0f));
 diff --git a/src/utils/mod_settings.h b/src/utils/mod_settings.h
-index 50684ec..0528fda 100644
+index 0f57532..cf553da 100644
 --- a/src/utils/mod_settings.h
 +++ b/src/utils/mod_settings.h
-@@ -618,6 +618,10 @@ struct ModSettings {
+@@ -620,6 +620,10 @@ struct ModSettings {
      EnumSetting<TurnMode> turnMode{ "TurnMode", TurnMode::SMOOTH_NORMAL };
      EnumSetting<SwingSensitivity> swingSensitivity{ "SwingSensitivity", SwingSensitivity::SWING_NORMAL };
      BoolSetting oneHitPerSwing{ "OneHitPerSwing", true };
@@ -137,5 +137,5 @@ index 50684ec..0528fda 100644
 +    FloatSetting adaptiveTriggerStrength{ "AdaptiveTriggerStrength", 1.0f, 0.0f, 1.0f };
 +#endif
  
-     static std::span<ModSettingBase* const> GetOptions() {
-         return SettingRegistry();
+     // Vibration (the Vibration page, rendering/imgui_menus.cpp): one on/off, strength and set of devices per
+     // situation, and the headset motor's own cap. The defaults are what v0.5.0 did: BetterVR's rumbles and the

@@ -1,6 +1,6 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
-From: Patryk Kowalczyk <papyszoo@gmail.com>
-Date: Wed, 18 Nov 2026 17:12:53 +0100
+From: ps5cemu <ps5cemu@localhost>
+Date: Wed, 18 Nov 2026 18:37:23 +0100
 Subject: [PATCH] PS5: BetterVR's rumbles and the game's are one Vibration
  page, one mixer
 
@@ -30,13 +30,13 @@ situations make which pattern.
  src/rendering/haptic_types.h     |  26 ++++
  src/rendering/haptics.cpp        |  33 ++++-
  src/rendering/haptics.h          |  12 +-
- src/rendering/imgui_menus.cpp    | 146 ++++++++++++++++++++
+ src/rendering/imgui_menus.cpp    | 144 ++++++++++++++++++++
  src/rendering/imgui_menus.h      |  19 +--
  src/rendering/renderer.h         |   1 +
  src/rendering/rumble.h           | 222 +++++++++++++++++++------------
  src/utils/mod_settings.cpp       |  60 +++++++++
  src/utils/mod_settings.h         |  46 +++++++
- 14 files changed, 608 insertions(+), 124 deletions(-)
+ 14 files changed, 606 insertions(+), 124 deletions(-)
  create mode 100644 src/rendering/haptic_types.h
 
 diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
@@ -72,7 +72,7 @@ index 319d750..0d50ed7 100644
  
  struct Weapon : WeaponBase {
 diff --git a/src/game/botw/input/controls.cpp b/src/game/botw/input/controls.cpp
-index 06f73cf..ac2d9d8 100644
+index 50b5291..888895d 100644
 --- a/src/game/botw/input/controls.cpp
 +++ b/src/game/botw/input/controls.cpp
 @@ -552,7 +552,7 @@ static void ProcessLeftHandInGameInput(
@@ -280,7 +280,7 @@ index 06f73cf..ac2d9d8 100644
          }
      }
  }
-@@ -1386,7 +1386,7 @@ static void ProcessGameplayInput(uint32_t& buttonHold, OpenXR::InputState& input
+@@ -1407,7 +1407,7 @@ static void ProcessGameplayInput(uint32_t& buttonHold, OpenXR::InputState& input
  
      if (IsHandOverMouthSlot(leftGesture) && IsHandOverMouthSlot(rightGesture)) {
          if (s_grabButtons[0].IsDown() && s_grabButtons[1].IsDown()) {
@@ -289,7 +289,7 @@ index 06f73cf..ac2d9d8 100644
              buttonHold |= VPAD_BUTTON_DOWN;
          }
      }
-@@ -1515,17 +1515,91 @@ static void hook_InjectXRInput(PPCInterpreter_t* hCPU) {
+@@ -1541,17 +1541,91 @@ static void hook_InjectXRInput(PPCInterpreter_t* hCPU) {
  }
  
  
@@ -563,7 +563,7 @@ index 8333739..ae71dc1 100644
 +    void TestPad();
  }
 diff --git a/src/rendering/imgui_menus.cpp b/src/rendering/imgui_menus.cpp
-index 3fc94d9..9eda25e 100644
+index c1f896d..143572b 100644
 --- a/src/rendering/imgui_menus.cpp
 +++ b/src/rendering/imgui_menus.cpp
 @@ -8,6 +8,7 @@
@@ -605,10 +605,10 @@ index 3fc94d9..9eda25e 100644
      { ImGuiMenus::DISPLAY_PAGE, ICON_MS_DESKTOP_WINDOWS "  Display" },
      { ImGuiMenus::SYSTEM_PAGE, ICON_MS_SETTINGS "  System" },
  };
-@@ -1220,6 +1238,133 @@ static void DrawRecordingModeSetting() {
+@@ -1257,6 +1275,131 @@ static void DrawVRResolutionSetting() {
+         }
+         Log::print<WARNING>("VR resolution: no preset for {} in {}", kVRResolutionLabels[selected], kResolutionMultiplierCategory);
      });
- }
- 
 +// the categories the Vibration page lists, in its order
 +struct HapticCategoryRow {
 +    HapticCategory category;
@@ -734,12 +734,10 @@ index 3fc94d9..9eda25e 100644
 +    window->StateStorage.SetFloat(cardId, bottom - cardMin.y);
 +
 +    DrawPageNote("Game Rumble is whatever the game asks for itself: damage, hits, explosions and cutscenes all arrive on it today, so turning it down turns all of them down. Damage Taken is the hit that starts one of the game's damage reactions; it is felt on top of Game Rumble unless that row is off. The launcher's Vibration row under Settings > VR stays the DualSense's outer switch.");
-+}
-+
- void RND_Renderer::ImGuiOverlay::DrawDisplayPage(bool* changed) {
-     auto& settings = GetSettings();
+ }
  
-@@ -1808,6 +1953,7 @@ void RND_Renderer::ImGuiOverlay::DrawHelpMenu() {
+ void RND_Renderer::ImGuiOverlay::DrawDisplayPage(bool* changed) {
+@@ -1862,6 +2005,7 @@ bool RND_Renderer::ImGuiOverlay::DrawHelpMenu() {
                  case ImGuiMenus::PLAYSTYLE_PAGE: DrawPlaystylePage(&changed); break;
                  case ImGuiMenus::COMFORT_PAGE: DrawComfortPage(&changed); break;
                  case ImGuiMenus::CONTROLS_PAGE: DrawControlsPage(&changed); break;
@@ -778,10 +776,10 @@ index 0011c54..fae71af 100644
      inline std::atomic_bool g_isOpen = false;
      inline std::atomic_uint8_t g_currentPage = PLAYSTYLE_PAGE;
 diff --git a/src/rendering/renderer.h b/src/rendering/renderer.h
-index 475a83c..ff7c908 100644
+index 4ba9280..d2928bf 100644
 --- a/src/rendering/renderer.h
 +++ b/src/rendering/renderer.h
-@@ -283,6 +283,7 @@ public:
+@@ -288,6 +288,7 @@ public:
          void DrawPlaystylePage(bool* changed);
          void DrawComfortPage(bool* changed);
          void DrawControlsPage(bool* changed);

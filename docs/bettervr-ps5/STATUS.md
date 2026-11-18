@@ -3,121 +3,73 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
-## 2026-11-18: v0.6 performance and menu/HUD shimmer, built, untested on console
+## 2026-11-18: v0.6 combined (Options hold, stall tolerance, performance, Vibration, triggers, eye tracking), built, untested on console
 
-Branch `bettervr-1.0/v06-perf`, from v0.5.0. The HUD image gets a mip chain each frame and the compose samples it
-with `textureGrad`, so the ~2.4x minification no longer takes one bilinear tap at level 0. The compose reads the eye
-images as UNORM (no sRGB pow for 8.13 Mpx), skips the ImGui round trip when only the HUD is drawn, copies the HUD
-once instead of twice, skips the depth copy the headset never reads, and does not run the desktop ImGui pass on the
-PS5. Accurate barriers are off by default like a PC VR run, with `bettervr.json` `"accurateBarriers": true` to put
-them back. `bettervr.json` `"profile": true` logs GPU busy and a `[frame]` line every 10 s (swap, VR end, compose
-fence, hmd2 submit), plus a line with the active pack presets. BetterVR's menu System page has a VR Resolution
-selector (0.5x to 1.5x) instead of "Graphic Packs: Open On Desktop". CI fetches zlib 1.3.2's source from its GitHub
-release instead of zlib.net. Details: `UPDATE-1.0.md`, "v0.6 performance and menu/HUD shimmer". New patches: bettervr
-0007, cemu 0055.
+Branch `bettervr-1.0/v06-all`, from v0.5.0, combining the v0.6 tracks. Options on the right Sense and on the
+DualSense now opens BetterVR's menu on a 700 ms hold and is the game's "+" (pause) on a shorter press; the start popup
+is gone. A camera stall shorter than 250 ms keeps first person, so strafing near grass no longer flashes Link's body,
+and the compositor blends the HUD premultiplied, so the weapon wheel's arrows, the minimap and the clock keep their
+alpha and the HUD stops shimmering (mip chain, `textureGrad`). The frame end does fewer copies, accurate barriers are
+off by default like a PC VR run, `bettervr.json` `"profile": true` prints a `[frame]` line every 10 s, and BetterVR's
+System page has a VR Resolution selector (0.5x to 1.5x). BetterVR's menu has a Vibration page (nine categories, a
+master switch, a headset cap and a test button for each device) over one 60 Hz mixer that also reaches the PS VR2
+headset's motor and the DualSense. The bow's draw firms R2 and the shield's guard clicks L2 on the DualSense (the
+Sense controllers behind `"senseTriggers": true`). The PS VR2 gaze exports are probed, exposed as
+`XR_EXT_eye_gaze_interaction`, and an optional `Gaze Throw Assist` bends a throw up to 15 degrees toward where the
+player looks. New patches: bettervr 0007-0010, cemu 0055. Details: `UPDATE-1.0.md`, "v0.6".
 
-**Test request 53 (v0.6 combined).** One console run of this build (13.60) with `bettervr.json` `"profile": true`.
-(a) Play in VR at 1x for two minutes in the overworld and send every `[frame]` and `[perf]` line. `[frame]` must appear
-every 10 s with `swap`, `VR end`, `compose fence`, `hmd2 submit` and `GPU busy`; `[perf]` must carry `GPU busy N%` and
-`accurate barriers off`. Say whether the fps lines are better than v0.5.0's 48-53 at 1x. (b) Turn your head slowly while
-looking at the HUD (minimap, clock) and at menu text, with the menu open and closed: say whether the edges still crawl or
-shimmer, and whether the TV mirror and the headset differ. (c) Open BetterVR's menu > System > VR Resolution: choose
-0.5x, then 1x, then 1.25x. Each choice must log `VR resolution preset: ...` and show the restart notice. Restart after
-0.5x and send the `view configuration`, `Found rendering resolution`, `Graphics pack presets` and `VR Resolution
-Multiplier` lines: the eye size must be smaller; restart after 1x and it must be back to 2000x2040. (d) Set
-`bettervr.json` `"accurateBarriers": true`, restart, and send the `Accurate barriers: on` and `[perf] ... accurate
-barriers on` lines (then remove the key). Send the logs zip and say whether the menu, HUD alpha and gameplay still look
-right.
-## 2026-11-18: v0.6 adaptive triggers (DualSense; Sense behind a json switch), built, untested on console
+**Test request 53 (v0.6 combined).** One console run of this build (13.60), in VR, with `bettervr.json`
+`"profile": true` and the Sense controllers charged; send the logs zip and the lines named under each letter.
 
-Branch `bettervr-1.0/v06-triggers`, from `ce1ee2c` (v0.6's menu work). The bow's live draw now firms R2 and the
-shield's guard clicks L2: on the DualSense by default, on the Sense controllers only with
-`"senseTriggers": true` in `bettervr.json` (default off). Both are off in BetterVR's menu, on the pause and
-inventory screens and outside the game, and the off pair is always sent on exit and on a VR failure. BetterVR's
-System page gains an "Adaptive Triggers" toggle and strength, saved in `BetterVR_settings.ini` like its other
-rows. The Sense payload is unpublished: the first effect tries the DualSense 0x78 layout on the both-hands call,
-then one 0x38-byte command a hand, and logs both answers; `"senseTriggerLayout": 1` or `2` forces one next run.
-Patch bettervr 0007; details: `UPDATE-1.0.md`, "v0.6 adaptive triggers".
-
-**Test request 53 (v0.6 combined).** In VR, with the DualSense connected and the default settings:
-(a) Equip the bow, hold R2 and draw: R2 must get firmer as the draw grows, and let go on release or when the arrow
-flies. Say whether it is felt, and whether it is too weak or too strong.
-(b) Hold the shield at the chest with the left hand (guard): L2 must have a firm click around a third of its pull
-while guarding, and none after lowering the shield. Say whether it is felt.
-(c) Open BetterVR's menu with Options, and open the game's pause screen/inventory: both triggers must go soft at
-once. Quit to the library: no trigger may stay firm.
-(d) In BetterVR's menu, System page: change "Adaptive Triggers" off and on, and the strength; say whether the
-change is felt live and whether it is still there after a restart.
-(e) With `"senseTriggers": true` added to `/data/botwvr/launcher/bettervr.json`, repeat (a) and (b) on the Sense
-controllers: say whether either trigger is felt at all.
-Send the logs zip and every `[trig]` line: the `DualSense` lines with their `0x...` answer, the `Sense trigger
-effects on` line, the `Sense both hands (0x78 ...)` and/or `Sense one hand (0x38 ...)` results, `Sense payload ...
-accepted`, and the `off` lines. If the Sense triggers are not felt although a layout was accepted, add
-`"senseTriggerLayout": 2` (or 1) and repeat (e) with the new `[trig]` lines.
-
-## 2026-11-18: v0.6, Options holds for the menu and taps for pause, no popup at start, no one-frame body flash, HUD alpha, built, untested on console
-
-Branch `bettervr-1.0/v06`, from v0.5.0. Requested from the console (v0.5.0): the short press of Options was too easy to
-hit when the player meant to pause, and the popup at game start that tells the player how the menu opens was unwanted.
-Hold Options on the right Sense for 700 ms and BetterVR's menu opens at that moment (hold again 700 ms: it closes);
-release it earlier and the press is the game's "+", the pause screen, sent as one tap. The popup is no longer drawn on
-the PS5. Reported from run 4: Link flashes (jumps) while strafing with the left stick near grass, and the weapon wheel
-lacks its left and right arrows. A camera stall of five presented frames now keeps first person for up to 250 ms, so a
-streaming hitch no longer shows the body for one frame (patch bettervr 0006), and the runtime compositor blends the
-premultiplied HUD correctly, so the dimmed arrows, minimap and clock keep their alpha. Details: `UPDATE-1.0.md`, "v0.6".
-
-From the parallel eye-tracking branch (`bettervr-1.0/v06-eye`): the optional PS VR2 gaze exports are probed at VR
-start, exposed to BetterVR as `XR_EXT_eye_gaze_interaction`, and a new default-off `Gaze Throw Assist` setting bends a
-throw up to 15 degrees toward where the player looks (head direction when gaze is unavailable). Built, untested on
-console; details in `UPDATE-1.0.md`, "v0.6 eye tracking".
-
-**Test request 52 (the build of this commit, 13.60 console).** Play in VR. (a) Tap Options on the right controller once:
-the game's pause screen (the inventory) opens; tap it again: the screen closes. (b) Hold Options for about a second:
-BetterVR's menu opens while the button is still held, and the game's pause screen does not open; hold it about a second
-again: the menu closes. (c) Say whether anything (a help card, a popup) still appears over the game at start. (d) Send
-the logs zip and the `[menu]` lines: `Options down`, `Options up after N ms`, `long press -> open` / `closed`, `short
-press -> pause`. Say whether the "+" on the right stick click still opens the same pause screen. (e) Strafe left and
-right with the left stick near grass and say whether Link's body still flashes for a frame; the `[pose]` lines (at most
-one a second) count the stalls the tolerance kept first person. (f) Open the weapon wheel: the left and right arrows
-must be visible on the black buttons, and the minimap and clock must not look faded or black.
-
-**Test request 53 (v0.6 combined).** With the Sense controllers off and third person set in Settings > VR, play with
-the DualSense. (a) Tap Options: the game's pause screen opens once, with no BetterVR menu behind it. (b) Hold Options
-for about a second: BetterVR's menu opens while the button is held, and the game's pause screen does not open; hold it
-again: the menu closes. (c) In BetterVR's menu, move with the DualSense's left and right stick: the cursor and rows
-move. (d) Say whether anything (a help card, a popup) still appears over the game at start. (e) Send the logs zip and
-the `[menu]` lines.
-
-**Test request 53 (v0.6 combined).** The vibration track's checks, under the shared heading (append other tracks'
-here at merge time). Play in VR, then:
-- (a) Hold Options: a **Vibration** page sits between Controls and Display. Open it and say whether it draws (the
-  master switch, the headset cap, three test buttons and nine category rows with On / Strength / Hands / Headset /
-  DualSense).
-- (b) Press **Sense Controllers**, **Headset**, **DualSense**. Say which buzzed. Press **Headset first, before taking
-  any damage**: that is the first call to the motor's unverified offset, and the design keeps it from being called at
-  VR start. Send the `[vib] test hands`, `[vib] test headset` and `[vib] test pad` lines, and the `hmd2: headset
-  vibration bound` line (or `not found on this firmware`).
-- (c) Each category's toggle and strength: at 0 % (or Off) a sword swing, a weapon/gear equip, a bow draw, a shield
-  raise and the slate's hum are each silent on their own; turning Game Rumble to 0 % silences the game's own rumble
-  while BetterVR's rows still work. Strength 30 % is clearly weaker than 100 %.
-- (d) Damage: get hit (Bokoblin, fall, fire) at Damage Taken 100 %: both hands give one rumble; at 0 %, the same hit
-  gives none. Send the `[vib] damage state '...'` lines (up to 6).
-- (e) DualSense without doubles: with a category set to DualSense, one event is felt once, not twice, and the boot log
-  has one `[pad] rumble: BetterVR's vibration mixer drives the DualSense` line at VR start. Say whether the pad still
-  works normally (no rumble) when VR is not running.
-- (f) Send every `[vib] game rumble ...` line (at most 40, 150 ms apart): play a few minutes with a hit, damage, a
-  remote bomb, a cutscene and a shrine. Each has `caller=`, `state=`, the VPAD `bytes=` and, when it was found, the
-  sead `pattern="..." repeat=`. Say whether the run crashed or stuttered around them.
-**Test request 53 (v0.6 combined).** Eye tracking, from the branch `bettervr-1.0/v06-eye`: in the PS5 settings, turn
-on Settings > Accessories > PS VR2 > Eye Tracking and run Adjust Eye Tracking, then play in VR and send the logs zip.
-(a) Send every `[gaze]` line: `five exports bound by name`, `ActivateGazeTracking(1)`, `device detected` or the device
-status line, `calibrated` or the calibration status line, and the first-10-s lines `result 0x38`, `foveated 0x18`,
-`raw direction ... status full N foveated N`. They say whether the five names resolve and whether status 0 means
-detected/calibrated on 13.60. If the log says eye tracking is off or not calibrated while the PS5 settings say
-otherwise, send those lines as they are. (b) In BetterVR's menu open Controls > Motion Controls, turn on Gaze Throw
-Assist, then throw something while looking left of the head direction and again while looking right. Say which way
-each throw went (left/right of where the hand threw) and send the `[Throw] gaze assist bent N degrees toward the gaze`
-lines (or `toward the head` if the gaze lines were not valid). With the setting off, the same throw must not bend.
+- (a) Options, Sense and DualSense. On the right Sense, tap Options once (the game's pause/inventory opens) and tap
+  again (it closes); hold it about a second (BetterVR's menu opens while the button is still held, no pause behind it)
+  and hold again (it closes). Repeat with the DualSense's Options, with the Sense controllers off and third person set
+  in Settings > VR, and move through the pages and rows with the DualSense's left and right stick. Say whether any
+  help card or popup still appears over the game at start. Send every `[menu]` line (`Options down`, `Options up after
+  N ms`, `long press -> open`/`closed`, `release after the threshold -> hold`, `short press -> pause`, `short press
+  ignored, game input is blocked`).
+- (b) Strafe flash. Strafe left and right with the left stick near grass and say whether Link's body still flashes for
+  a frame. Send the `[pose] a short camera stall kept first person (N frames)` lines (at most one a second) and say
+  whether the frame rate held.
+- (c) Weapon wheel and HUD. Open the weapon wheel: the left and right arrows must be visible on the black buttons, and
+  the minimap and clock must not look faded or black. Turn your head slowly while looking at the HUD and at menu text,
+  menu open and closed: say whether the edges still crawl or shimmer, and whether the TV mirror differs. Send the
+  `[frame]` and `[perf]` lines from two minutes in the overworld at 1x.
+- (d) Vibration page. Hold Options and open the new **Vibration** page between Controls and Display; say whether it
+  draws (master switch, headset cap, three test buttons, nine category rows with On / Strength / Hands / Headset /
+  DualSense). **Press Headset first, alone, before taking any damage**: that is the first call to the motor's
+  unverified offset and the design keeps it from being called at VR start. Then press Sense Controllers and DualSense
+  and say which buzzed. Send `[vib] test headset: level 25 -> 0x...`, `[vib] test hands`, `[vib] test pad`, and the
+  `hmd2: headset vibration bound ...` line (or `hmd2: sceHmd2SetVibration not found on this firmware, the headset
+  stays still`).
+- (e) Vibration categories. At 0 % (or Off) a sword swing, a weapon/gear equip, a bow draw, a shield raise and the
+  slate's hum are each silent on their own; Game Rumble at 0 % silences the game's own rumble while BetterVR's rows
+  still work; 30 % is clearly weaker than 100 %. Get hit (Bokoblin, fall, fire) at Damage Taken 100 %: both hands give
+  one rumble; at 0 %, none. With a category set to DualSense, one event is felt once, not twice, and the pad still
+  works normally (no rumble) when VR is not running. Send every `[vib] damage state '...'` line (up to 6), every
+  `[vib] game rumble ...` line (at most 40, 150 ms apart; each has `caller=`, `state=`, the VPAD `bytes=` and the sead
+  `pattern="..." repeat=` when found), and the one `[pad] rumble: BetterVR's vibration mixer drives the DualSense`
+  line at VR start. Say whether the run crashed or stuttered around them.
+- (f) Triggers. With the DualSense, equip the bow, hold R2 and draw: R2 must firm up as the draw grows and release when
+  the arrow flies. Guard with the shield on the left hand: L2 must click around a third of its pull while guarding,
+  none after lowering it. Open BetterVR's menu and the game's pause screen: both must go soft at once; quit to the
+  library: nothing may stay firm. In the System page, turn Adaptive Triggers off and on and change Strength: live and
+  kept after a restart. With `"senseTriggers": true` added to `/data/botwvr/launcher/bettervr.json`, repeat on the
+  Sense controllers. Send every `[trig]` line: the `DualSense (handle N) L2 ... R2 ... -> 0x...` calls,
+  `Sense trigger effects on`, the `Sense both hands (0x78 ...)` and/or `Sense one hand (0x38 ...)` results,
+  `Sense payload ... accepted`, and the `DualSense off` / `Sense off` lines. If the Sense triggers are not felt
+  although a layout was accepted, add `"senseTriggerLayout": 2` (or 1), repeat, and send the new `[trig]` lines.
+- (g) VR Resolution. BetterVR's menu > System > VR Resolution: choose 0.5x, then 1x, then 1.25x. Each choice must log
+  `VR resolution preset: ...` and show the restart notice. After 0.5x, restart and send the `view configuration`,
+  `Found rendering resolution`, `Graphics pack presets` and `VR Resolution Multiplier` lines: the eye size must be
+  smaller; after 1x it must be back to 2000x2040.
+- (h) Eye tracking and throw assist. In the PS5 settings turn on Settings > Accessories > PS VR2 > Eye Tracking and run
+  Adjust Eye Tracking, then play in VR. Send every `[gaze]` line: `five exports bound by name`, `ActivateGazeTracking(1)`,
+  `device detected` or the device status line, `calibrated` or the calibration status line, and during the first 10 s
+  `result 0x38`, `foveated 0x18`, `raw direction ... status full N foveated N`. In Controls > Motion Controls turn on
+  Gaze Throw Assist, then throw something while looking left of the head direction and again while looking right; say
+  which way each throw went and send the `[Throw] gaze assist bent N degrees toward the gaze` lines (or `toward the
+  head`). With the setting off, the same throw must not bend.
 
 ## 2026-11-18: console run 4 (37c6028, 13.60)
 

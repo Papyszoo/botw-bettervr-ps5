@@ -1,20 +1,20 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
-From: Patryk Kowalczyk <papyszoo@gmail.com>
-Date: Wed, 18 Nov 2026 17:01:21 +0100
+From: ps5cemu <ps5cemu@localhost>
+Date: Wed, 18 Nov 2026 18:37:23 +0100
 Subject: [PATCH] PS5: a gaze throw assist bends a throw toward where the
  player looks
 
 ---
  src/game/botw/input/controls.cpp | 53 +++++++++++++++++++++++++++++++-
  src/rendering/imgui_menus.cpp    |  3 ++
- src/utils/mod_settings.h         |  1 +
- 3 files changed, 56 insertions(+), 1 deletion(-)
+ src/utils/mod_settings.h         |  3 ++
+ 3 files changed, 58 insertions(+), 1 deletion(-)
 
 diff --git a/src/game/botw/input/controls.cpp b/src/game/botw/input/controls.cpp
-index 06f73cf..1e76f66 100644
+index d8580b6..8a47788 100644
 --- a/src/game/botw/input/controls.cpp
 +++ b/src/game/botw/input/controls.cpp
-@@ -791,6 +791,54 @@ static void ProcessLeftTriggerBindings(
+@@ -797,6 +797,54 @@ static void ProcessLeftTriggerBindings(
      }    
  }
  
@@ -69,7 +69,7 @@ index 06f73cf..1e76f66 100644
  // the trigger or grip throws, but one that was already held when picking something up (like a bomb) has to be pressed again
  static void ProcessHandThrow(uint32_t& buttonHold, const OpenXR::InputState& inputs, ControlState& state) {
      constexpr XrDuration releaseVelocityWindowNs = 100'000'000;
-@@ -847,7 +895,10 @@ static void ProcessHandThrow(uint32_t& buttonHold, const OpenXR::InputState& inp
+@@ -853,7 +901,10 @@ static void ProcessHandThrow(uint32_t& buttonHold, const OpenXR::InputState& inp
      if (releaseVelocity.has_value()) {
          const float handSpeed = glm::length(releaseVelocity.value());
          const float boost = glm::mix(1.0f, maxThrowBoost, glm::smoothstep(boostStartSpeed, boostFullSpeed, handSpeed));
@@ -82,10 +82,10 @@ index 06f73cf..1e76f66 100644
      }
      else {
 diff --git a/src/rendering/imgui_menus.cpp b/src/rendering/imgui_menus.cpp
-index 3fc94d9..a17e0ae 100644
+index 3dff90a..68db424 100644
 --- a/src/rendering/imgui_menus.cpp
 +++ b/src/rendering/imgui_menus.cpp
-@@ -1143,6 +1143,9 @@ void RND_Renderer::ImGuiOverlay::DrawControlsPage(bool* changed) {
+@@ -1161,6 +1161,9 @@ void RND_Renderer::ImGuiOverlay::DrawControlsPage(bool* changed) {
              DrawSetting(ICON_MS_SWORDS, "Sword Swings", [&]() {
                  DrawEnumSegments(settings.swingSensitivity, swingChoices, changed);
              });
@@ -96,14 +96,16 @@ index 3fc94d9..a17e0ae 100644
          }
      }
 diff --git a/src/utils/mod_settings.h b/src/utils/mod_settings.h
-index 50684ec..bce9dbb 100644
+index cf553da..9b3877b 100644
 --- a/src/utils/mod_settings.h
 +++ b/src/utils/mod_settings.h
-@@ -618,6 +618,7 @@ struct ModSettings {
-     EnumSetting<TurnMode> turnMode{ "TurnMode", TurnMode::SMOOTH_NORMAL };
-     EnumSetting<SwingSensitivity> swingSensitivity{ "SwingSensitivity", SwingSensitivity::SWING_NORMAL };
-     BoolSetting oneHitPerSwing{ "OneHitPerSwing", true };
-+    BoolSetting eyeGazeThrowAssist{ "EyeGazeThrowAssist", false };
+@@ -625,6 +625,9 @@ struct ModSettings {
+     FloatSetting adaptiveTriggerStrength{ "AdaptiveTriggerStrength", 1.0f, 0.0f, 1.0f };
+ #endif
  
-     static std::span<ModSettingBase* const> GetOptions() {
-         return SettingRegistry();
++    // Eye tracking (port/bettervr/xr/runtime.cpp): a released throw bends toward the gaze (XR eye gaze)
++    BoolSetting eyeGazeThrowAssist{ "EyeGazeThrowAssist", false };
++
+     // Vibration (the Vibration page, rendering/imgui_menus.cpp): one on/off, strength and set of devices per
+     // situation, and the headset motor's own cap. The defaults are what v0.5.0 did: BetterVR's rumbles and the
+     // game's own pattern on the Sense controllers at full strength, nothing on the headset or the pad. Damage taken
