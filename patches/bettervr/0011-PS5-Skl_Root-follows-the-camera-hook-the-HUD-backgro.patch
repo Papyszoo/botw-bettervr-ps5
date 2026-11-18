@@ -160,7 +160,7 @@ index 84e7ad3..dcb783e 100644
  
  #if !defined(__PROSPERO__)
 diff --git a/src/game/botw/camera/camera.cpp b/src/game/botw/camera/camera.cpp
-index dde1e68..324a8a0 100644
+index dde1e68..8cf776d 100644
 --- a/src/game/botw/camera/camera.cpp
 +++ b/src/game/botw/camera/camera.cpp
 @@ -2,6 +2,7 @@
@@ -270,7 +270,7 @@ index dde1e68..324a8a0 100644
 +    if (hasFirstPersonPlayerMtx) {
 +        s_firstPersonBodyPose.valid = true;
 +        s_firstPersonBodyPose.playerMtx = firstPersonPlayerMtx;
-+        s_firstPersonBodyPose.cameraMtx = GetReferenceMtx();
++        s_firstPersonBodyPose.cameraMtx = Camera::GetReferenceMtx();
 +        s_firstPersonBodyPose.headsetMtx = appliedHeadset;
 +    }
 +    else if (firstPerson) {
