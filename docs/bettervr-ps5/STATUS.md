@@ -70,6 +70,12 @@ player looks. New patches: bettervr 0007-0010, cemu 0055. Details: `UPDATE-1.0.m
   Gaze Throw Assist, then throw something while looking left of the head direction and again while looking right; say
   which way each throw went and send the `[Throw] gaze assist bent N degrees toward the gaze` lines (or `toward the
   head`). With the setting off, the same throw must not bend.
+- (i) Touchpad click. With the DualSense in game, a click of the touchpad opens the Slate (`-`) and Create opens it as
+  well; moving a finger on the touchpad still moves the GamePad's cursor; touchpad + Options opens only the port's
+  in-game menu, not the Slate. Start once with an older `/data/botwvr/launcher/ps5cemu.json` (no
+  `touchpadClickMigrated`): `touchpadClick` must read `[2, 2, 2, 2]` afterwards. Set player 1's Touchpad click to
+  Automatic in Settings, restart, and say it is still Automatic. Send the `[controls]` lines that name each player's
+  mappings.
 
 ## 2026-11-18: console run 4 (37c6028, 13.60)
 

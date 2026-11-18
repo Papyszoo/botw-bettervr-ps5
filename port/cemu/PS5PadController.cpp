@@ -87,7 +87,13 @@ ControllerState PS5PadController::raw_state()
 	};
 	for (const auto& [mask, id] : kButtons)
 		result.buttons.SetButtonState((uint32)id, (buttons & mask) != 0);
-	result.buttons.SetButtonState((uint32)kTouchPadClick, filtered.touchClick);
+	// The touchpad's click and Create are the same press when the click is a button (v0.6, its default):
+	// both press - (Select), so Create keeps its mapping and a player whose - sits on Touchpad click
+	// (ps5emu::ApplyTouchpadClick) still gets it from Create. A shortcut's click presses neither.
+	const bool touchpadButton = ps5pad::TouchpadButton(m_player);
+	const bool create = (buttons & ps5pad::kCreate) != 0;
+	result.buttons.SetButtonState((uint32)kCreate, create || filtered.touchClick);
+	result.buttons.SetButtonState((uint32)kTouchPadClick, filtered.touchClick || (touchpadButton && create));
 
 	result.axis = {StickAxis(data.leftX), StickAxis(data.leftY)};
 	result.rotation = {StickAxis(data.rightX), StickAxis(data.rightY)};

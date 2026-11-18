@@ -249,8 +249,9 @@ namespace ps5emu
 		// (DetachAbsentPlayers), kept to be put back as it comes
 		std::mutex s_detachedMutex;
 		std::array<EmulatedControllerPtr, ps5pad::kMaxPlayers> s_detached;
-		// each player's touchpad click setting (ApplyTouchpadClick), for when their controller changes
-		std::array<int, ps5pad::kMaxPlayers> s_touchpadClick{};
+		// each player's touchpad click setting (ApplyTouchpadClick), for when their controller changes:
+		// a button (- (Select), v0.6) until the launcher's settings say otherwise
+		std::array<int, ps5pad::kMaxPlayers> s_touchpadClick{2, 2, 2, 2};
 	}
 
 	PlayerControls GetPlayerControls(int player)

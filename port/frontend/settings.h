@@ -188,8 +188,9 @@ namespace ps5settings
 		bool rumble = true;
 		std::string turbo;			  // the Wii U's turbo button: a DualSense input that presses again and again while held; empty: none
 		// what each Wii U player's touchpad click is (#37): 0 as their controller suits (it touches the
-		// GamePad's screen, a button on the others), 1 it touches the screen, 2 it presses a button
-		int touchpadClick[4] = {0, 0, 0, 0};
+		// GamePad's screen, a button on the others), 1 it touches the screen, 2 it presses a button (- (Select)
+		// by default: the Slate, v0.6); a file from before v0.6 has 2 there for the players who never chose
+		int touchpadClick[4] = {2, 2, 2, 2};
 		// A and B for every Wii U player, chosen before Cemu was up (Make it yours): 1 on Circle, 2 on Cross,
 		// made the players' as the Wii U side next opens; 0: nothing waiting
 		int wiiuFaceLayout = 0;

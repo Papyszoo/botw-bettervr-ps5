@@ -933,6 +933,13 @@ Cemu patch added. `VERSION` stays 0.5.0.
   fallback is the head direction, so the setting still behaves predictably.
 - **Backlog, not this build:** item highlight and bow aim assist.
 
+### Touchpad click
+
+- **The Slate on a press.** A player's DualSense touchpad click is `- (Select)` by default on the GamePad and the Pro
+  Controller (`touchpadClick` is 2, "Presses a button"); Create presses it too, a finger still moves the GamePad's
+  cursor, and touchpad + Options is still only the port's menu. An older `ps5cemu.json`'s 0 (the old automatic default)
+  becomes 2 once (a marker, `touchpadClickMigrated`, keeps a later choice of Automatic); 1 and 2 are kept.
+
 ### Open
 
 Nothing here has run on a console. The mip chain's cost and the skipped passes need the `[frame]` line; the HUD

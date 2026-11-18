@@ -317,6 +317,13 @@ namespace ps5settings
 			for (rapidjson::SizeType i = 0; i < json["touchpadClick"].Size() && i < 4; i++)
 				if (json["touchpadClick"][i].IsInt())
 					settings.touchpadClick[i] = std::clamp(json["touchpadClick"][i].GetInt(), 0, 2);
+		// v0.6 makes the touchpad's click press - (Select). A file from before it has 0 (the old default,
+		// automatic) wherever the player never chose, so those become 2 once; the marker keeps a player's
+		// own Automatic after that
+		if (!json.HasMember("touchpadClickMigrated"))
+			for (int& click : settings.touchpadClick)
+				if (click == 0)
+					click = 2;
 		ReadInt(json, "wiiuFaceLayout", settings.wiiuFaceLayout, 0, 2);
 		ReadBool(json, "accountPerUser", settings.accountPerUser);
 		if (json.HasMember("accountsByUser") && json["accountsByUser"].IsObject())
@@ -482,6 +489,8 @@ namespace ps5settings
 		for (int click : settings.touchpadClick)
 			writer.Int(click);
 		writer.EndArray();
+		writer.Key("touchpadClickMigrated");
+		writer.Bool(true);
 		writer.Key("wiiuFaceLayout");
 		writer.Int(settings.wiiuFaceLayout);
 		writer.Key("accountPerUser");

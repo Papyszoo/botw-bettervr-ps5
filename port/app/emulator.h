@@ -53,7 +53,7 @@ namespace ps5emu
 		bool asyncShaders = true; // Cemu's async_compile
 		bool gamePadSpeaker = false; // the GamePad's sound on player 1's DualSense speaker (Cemu's pad_device)
 		bool shaderNotices = true;	 // Cemu's "compiled shaders/pipelines" notices (its notification.shader_compiling)
-		int touchpadClick[4] = {0, 0, 0, 0}; // each player's touchpad click (ApplyTouchpadClick)
+		int touchpadClick[4] = {2, 2, 2, 2}; // each player's touchpad click (ApplyTouchpadClick): - (Select)
 		// the games folder (a network share's, #75) not looked through as Cemu starts: the titles of its
 		// last look (title_list_cache.xml) as they are, until Rescan
 		bool keepGameList = false;
