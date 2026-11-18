@@ -453,8 +453,10 @@ Done:
     from it.
   - frame timing: BetterVR's frame pump calls `xrWaitFrame` for the next frame while the game still draws the
     current one. The Hmd2 frame is then still open (one at a time), so the wait returns the open frame's display
-    time plus one period, and the next frame is begun by the wait that follows `xrEndFrame`. A frame whose
-    `xrEndFrame` finds no open Hmd2 frame is dropped and counted (`ends without a frame` in the frame log).
+    time plus one period, and the next frame is begun by the wait that follows `xrEndFrame`. A
+    `xrEndFrame` that finds no open Hmd2 frame (a repeated frame renders nothing, so it follows the begin at once)
+    begins one itself and submits late (`late begins` in the frame log); only when BeginFrame gives none is the
+    picture dropped and counted (`ends without a frame`).
   - the 0.9.23 stand-ins are gone (`BetterVR_PS5_PlayerOnce` and the other ten switches, the three proof counters,
     in `PlatformPS5.cpp`); the runtime composes with fixed behaviour: HUD quad as its plane, a mono picture across
     each eye, a re-shown pair keeps its render pose.
@@ -478,13 +480,26 @@ Done:
 - **Logs** (`[vr-xr]` in the boot log; the module's `[bettervr]` lines before and after): `VR start 1/5` OpenXR
   instance, `2/5` session on Cemu's device, `3/5` headset up (ms after the session), `4/5` swapchain n (size,
   format, images, layers), `5/5` first frame submitted (ms after the session, with or without a stereo picture), and a
-  line for the first frame with a stereo picture. Every 600 submitted frames: the headset's fps over them, hmd2's pacing,
+  line for the first frame with a stereo picture. A GPU timeout of the compositor logs `the compositor's GPU work has
+  not finished` (counted). Every 600 submitted frames: the headset's fps over them, hmd2's pacing,
   waits one frame ahead, ends without a frame, render pose found / not found / kept, head and hand poses. The
   app's `[perf]` fps and GPU-busy lines are unchanged.
 - Test request 48 in `STATUS.md`.
+- **Review fixes** (review of c462dda..49d3744, three findings; built only on CI, untested on console):
+  1. a swapchain or layer failure in BetterVR's lazy `EnsureLayers` (first capture event, Cemu's GPU thread) escaped
+     `OnHostEvent` and would have ended the process: patches/bettervr 0003 catches it there, logs, calls
+     `BetterVR_PS5_VrFailed` and ignores the later events (back to the library with the reason, as the other failures).
+  2. one 2 s fence timeout set `gpuFailed` for good: the compose now has its own command buffer and fence and waits
+     without `s.lock`; a timeout is logged and counted, the frame is retried on the next `xrEndFrame`, and 30 s after the
+     first timeout the run ends through `BetterVR_PS5_VrFailed`.
+  3. a fast `xrEndFrame` with no open Hmd2 frame dropped its picture: it begins the frame itself and submits late; the
+     drop counter stays in the log next to `late begins`.
 
 Open problems and risks (none seen on a console):
-- **One queue.** If the graphics family has one queue, the module's queue is shared with Cemu's (log: `Creating
+- **One queue.** The compositor's own wait no longer holds `s.lock`, which Cemu's GPU thread takes in the swapchain
+  calls (so the wait could not cause its own timeout); a 2 s timeout is logged and counted, the frame stays open and the
+  next `xrEndFrame` looks at the fence again, and 30 s after the first timeout the run ends in the library with the reason
+  (`BetterVR_PS5_VrFailed`). A stall that only Cemu's later submit ends is still possible on the shared queue. If the graphics family has one queue, the module's queue is shared with Cemu's (log: `Creating
   Vulkan device with ... mod queue on family F index I (shared with Cemu)`). The module submits with timeline waits
   on Cemu's work; on one queue a wait that only a later submission satisfies would stall. `ps5xr::QueueMutex` orders
   the submits, not the waits. The first console log shows whether the run gets past the first frames.
@@ -493,7 +508,8 @@ Open problems and risks (none seen on a console):
   `xrBeginFrame` and make the wait only nap).
 - **Memory.** Colour swapchains: 3 x (2 eyes + HUD) at 16 MB for the 1984x2048 size, on top of the three 16 MB eye
   buffers, Cemu's two-view targets at the preset size and the module's layer textures. If the device runs out, the
-  `vkAllocateMemory` failure is in the log and ends in the library with the reason; `kSwapchainImages` can drop to 2.
+  `vkAllocateMemory` failure is in the log and ends in the library with the reason (patches/bettervr 0003 catches it
+  in the first capture event, where the swapchains are made on Cemu's GPU thread); `kSwapchainImages` can drop to 2.
 - The 0.5x preset's rules size and the eye size differ (about 1280x1320 against 1984x2048): BetterVR's present
   pipeline scales to the swapchain, which is the same as on the PC with a preset below 1x.
 - `quadPlane` and `poseKeep` are on and `monoQuad` off in the runtime, as `State` had them as defaults; 0.9.23's mono
@@ -503,8 +519,9 @@ Backlog (outside stage 3): the runtime's pose ring (`located[]`) and kept-pose l
 pair handling; 1.0.0 locates once a frame (`UpdateViews`) and re-submits `m_lastLayer3DViews`, so the ring may reduce to
 "the head the last located views came from". Not simplified without a log of how often `render pose not found` counts.
 
-CI: `BetterVR build` run 44266283541 on a412839 started (state not read before the report; the Tests run's Eden layout
-copy check fails on every branch of this fork). Read it with `gh run view 44266283541`.
-Next step: read `gh run list --branch bettervr-1.0/stage3`; on failure `gh run view <id> --log-failed | tail -80` and
-fix the first error; on green check the ELF for `VR start 5/5` and `Foveated shading is off`, then publish nothing
-and report. Stage 4 (Sense input, the 1.0.0 menu, haptics) follows Test request 47 and 48.
+CI: `BetterVR build` run 44266283541 on 49d3744 is green; the ELF has `VR start 5/5` and `Foveated shading is off`, and
+the zip has `patch_compiled.asm`. The Tests run's Eden layout copy check fails on every branch of this fork. A code
+review of that range found the three problems fixed above; the run for the fixes is read with
+`gh run list --branch bettervr-1.0/stage3 -L 2`.
+Next step: on failure `gh run view <id> --log-failed | tail -80` and fix the first error; on green check the ELF for
+`VR start 5/5`, `Foveated shading is off` and `late begins`, then publish nothing and report. Stage 4 (Sense input, the 1.0.0 menu, haptics) follows Test request 47 and 48.

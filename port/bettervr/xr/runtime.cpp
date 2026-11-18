@@ -79,6 +79,8 @@ void PS5Cemu_LogLine(std::string_view line);
 // RADV's, linked into the app: where the runtime's own Vulkan calls come from (not through BetterVR's layer)
 extern "C" VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vk_icdGetInstanceProcAddr(VkInstance instance, const char* pName);
 extern "C" uint64_t sceKernelGetProcessTime(void);
+// port/bettervr/VrPS5.cpp: the app goes back to the library with the reason
+extern "C" void BetterVR_PS5_VrFailed(const char* what);
 
 namespace ps5xr
 {
@@ -98,6 +100,8 @@ namespace
 	constexpr XrDuration kFramePeriod = 16'666'667; // ns: a frame every two of Hmd2's 120 Hz refreshes
 	constexpr float kHalfIpd = 0.0315f;
 	constexpr uint64_t kGpuTimeoutNs = 2'000'000'000ull;
+	// a compose that has not finished this long after its first 2 s timeout ends the VR run (the VR-failed path)
+	constexpr uint64_t kGpuGiveUpUs = 30'000'000ull;
 
 	void Log(const char* format, ...)
 	{
@@ -284,11 +288,19 @@ struct XrSession_T
 	VkCommandPool commandPool = VK_NULL_HANDLE;
 	VkCommandBuffer commands = VK_NULL_HANDLE;
 	VkFence fence = VK_NULL_HANDLE;
+	// xrEndFrame's own command buffer and fence: its wait runs without s.lock, so no other call's one-time commands may share them
+	VkCommandBuffer composeCommands = VK_NULL_HANDLE;
+	VkFence composeFence = VK_NULL_HANDLE;
+	bool composePending = false; // the compose was submitted and its fence has not been seen signalled
+	bool composeBusy = false;    // an xrEndFrame is waiting on composeFence without s.lock
+	uint64_t gpuStallSince = 0;  // sceKernelGetProcessTime of the first timeout of the stall in progress, 0 when none
+	uint64_t gpuTimeouts = 0, gpuStuckSkips = 0, gpuRecovered = 0;
 
 	uint64_t frames = 0, emptyFrames = 0, skipped = 0;
 	// xrWaitFrame calls that found the previous frame still open (the frame pump runs one ahead), and xrEndFrame
 	// calls that found no frame open (nothing is submitted for them)
 	uint64_t waitsAhead = 0, endsWithoutFrame = 0;
+	uint64_t lateBegins = 0; // xrEndFrame calls that found no open frame and began one themselves
 	uint64_t lastFrameLogAt = 0; // sceKernelGetProcessTime of the last 600-frame line
 	// frames whose render pose was found among the located views, and frames where it was not
 	uint64_t poseFound = 0, poseLost = 0;
@@ -829,6 +841,66 @@ namespace
 		return true;
 	}
 
+	// xrEndFrame's compose: recorded and submitted here, waited for by the caller without s.lock (see xrEndFrame)
+	template<typename Record>
+	bool SubmitCompose(XrSession_T* session, Record&& record)
+	{
+		vk.vkResetCommandBuffer(session->composeCommands, 0);
+		VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+		begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+		vk.vkBeginCommandBuffer(session->composeCommands, &begin);
+		record(session->composeCommands);
+		vk.vkEndCommandBuffer(session->composeCommands);
+		vk.vkResetFences(session->device, 1, &session->composeFence);
+		VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};
+		submit.commandBufferCount = 1;
+		submit.pCommandBuffers = &session->composeCommands;
+		VkResult result;
+		{
+			std::lock_guard queue(ps5xr::QueueMutex());
+			result = vk.vkQueueSubmit(session->queue, 1, &submit, session->composeFence);
+		}
+		if (result != VK_SUCCESS)
+			return Fail("vkQueueSubmit (compose)", result);
+		session->composePending = true;
+		return true;
+	}
+
+	// The compose's fence is signalled, or has timed out again, or failed. Signalled: the stall (if there was one) is over.
+	// Timed out: the frame stays open and xrEndFrame tries again on the next frames, until kGpuGiveUpUs after the first timeout.
+	// Returns false when the run is given up (gpuFailed set; the caller leaves s.lock and takes the VR-failed path).
+	bool ComposeFenceResult(XrSession_T* session, VkResult result)
+	{
+		if (result == VK_SUCCESS)
+		{
+			session->composePending = false;
+			if (session->gpuStallSince)
+			{
+				session->gpuRecovered++;
+				Log("the compositor's GPU work finished again after %llu ms (%llu timeouts so far)",
+					(unsigned long long)((sceKernelGetProcessTime() - session->gpuStallSince) / 1000), (unsigned long long)session->gpuTimeouts);
+				session->gpuStallSince = 0;
+			}
+			return true;
+		}
+		const uint64_t now = sceKernelGetProcessTime();
+		if (result == VK_TIMEOUT)
+		{
+			if (!session->gpuStallSince)
+				session->gpuStallSince = now;
+			if (session->gpuTimeouts++ % 10 == 0)
+				Log("the compositor's GPU work has not finished (vkWaitForFences, %llu timeouts so far, stalled %llu ms); the frame is retried",
+					(unsigned long long)session->gpuTimeouts, (unsigned long long)((now - session->gpuStallSince) / 1000));
+			if (now - session->gpuStallSince < kGpuGiveUpUs)
+				return true;
+			Log("the compositor's GPU work did not finish in %llu s: VR stops here", (unsigned long long)(kGpuGiveUpUs / 1000000));
+		}
+		else
+			Log("vkWaitForFences (compose) -> %d: VR stops here", (int)result);
+		session->gpuFailed = true;
+		return false;
+	}
+
 	void ImageBarrier(VkCommandBuffer commands, VkImage image, VkImageAspectFlags aspect, VkImageLayout from, VkImageLayout to,
 		VkAccessFlags srcAccess, VkAccessFlags dstAccess, VkPipelineStageFlags srcStage, VkPipelineStageFlags dstStage)
 	{
@@ -903,10 +975,16 @@ namespace
 		result = vk.vkAllocateCommandBuffers(session->device, &allocate, &session->commands);
 		if (result != VK_SUCCESS)
 			return Fail("vkAllocateCommandBuffers", result);
+		result = vk.vkAllocateCommandBuffers(session->device, &allocate, &session->composeCommands);
+		if (result != VK_SUCCESS)
+			return Fail("vkAllocateCommandBuffers (compose)", result);
 		VkFenceCreateInfo fenceInfo{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
 		result = vk.vkCreateFence(session->device, &fenceInfo, nullptr, &session->fence);
 		if (result != VK_SUCCESS)
 			return Fail("vkCreateFence", result);
+		result = vk.vkCreateFence(session->device, &fenceInfo, nullptr, &session->composeFence);
+		if (result != VK_SUCCESS)
+			return Fail("vkCreateFence (compose)", result);
 
 		// the eye buffers: host-visible, coherent, device-local where there is such a type, mapped and
 		// 256-byte aligned for Hmd2's descriptor (as port/bettervr/VrPS5.cpp, M2)
@@ -1080,6 +1158,8 @@ namespace
 			vk.vkDestroyDescriptorSetLayout(device, session->setLayout, nullptr);
 		if (session->fence)
 			vk.vkDestroyFence(device, session->fence, nullptr);
+		if (session->composeFence)
+			vk.vkDestroyFence(device, session->composeFence, nullptr);
 		if (session->commandPool)
 			vk.vkDestroyCommandPool(device, session->commandPool, nullptr);
 	}
@@ -1784,14 +1864,38 @@ XRAPI_ATTR XrResult XRAPI_CALL xrBeginFrame(XrSession, const XrFrameBeginInfo*)
 XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInfo* info)
 {
 	s_endFrames++;
-	std::lock_guard lock(s.lock);
+	std::unique_lock lock(s.lock);
 	if (s.stopped)
 		return Lost();
+	// A back-to-back xrEndFrame (a repeated frame renders nothing) comes before the pump's next xrWaitFrame has begun
+	// the Hmd2 frame: begin it here and submit late, instead of dropping the picture (BeginFrame does not nap)
+	if (!session->frameOpen && !session->gpuFailed && session->hmdUp)
+	{
+		session->frameOpen = hmd2::begin_frame();
+		if (session->frameOpen && session->lateBegins++ == 0)
+			Log("xrEndFrame found no open Hmd2 frame and began one (counted in the frame log)");
+	}
 	if (!session->frameOpen || session->gpuFailed)
 	{
 		if (!session->frameOpen && session->endsWithoutFrame++ == 0)
-			Log("xrEndFrame found no open Hmd2 frame: the frame's picture is dropped (counted in the frame log)");
+			Log("xrEndFrame found no open Hmd2 frame and BeginFrame gave none: the frame's picture is dropped (counted in the frame log)");
 		return XR_SUCCESS;
+	}
+	// The last compose is still in flight (its wait timed out): look again, and leave the frame open for the next try
+	if (session->composePending)
+	{
+		if (session->composeBusy)
+			return XR_SUCCESS;
+		session->gpuStuckSkips++;
+		if (!ComposeFenceResult(session, vk.vkWaitForFences(session->device, 1, &session->composeFence, VK_TRUE, 0)) || session->composePending)
+		{
+			if (session->gpuFailed)
+			{
+				lock.unlock();
+				BetterVR_PS5_VrFailed("the compositor's GPU work did not finish");
+			}
+			return XR_SUCCESS;
+		}
 	}
 
 	const XrCompositionLayerProjection* projection = nullptr;
@@ -1989,7 +2093,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
 	VkImage sampled[3] = {eyeImages[0], eyeImages[1], hudImage};
 	if (sampled[1] == sampled[0])
 		sampled[1] = VK_NULL_HANDLE;
-	const bool ok = RunOnce(session, [&](VkCommandBuffer commands) {
+	const bool ok = SubmitCompose(session, [&](VkCommandBuffer commands) {
 		for (VkImage image : sampled)
 			if (image)
 				ImageBarrier(commands, image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
@@ -2017,6 +2121,25 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
 	{
 		Log("the compositor's GPU work failed; the headset stops here and nothing is freed");
 		return XR_ERROR_RUNTIME_FAILURE;
+	}
+	// The wait runs without s.lock: the compose sits on the shared queue behind the module's submit, which can wait on a
+	// timeline value Cemu's GPU thread signals in its next submit, and that thread takes s.lock in xrAcquireSwapchainImage
+	// and the like. Holding the lock here would make the wait cause its own timeout.
+	session->composeBusy = true;
+	lock.unlock();
+	const VkResult waited = vk.vkWaitForFences(session->device, 1, &session->composeFence, VK_TRUE, kGpuTimeoutNs);
+	lock.lock();
+	session->composeBusy = false;
+	if (s.stopped || s.session != session)
+		return Lost();
+	if (!ComposeFenceResult(session, waited) || session->composePending)
+	{
+		if (session->gpuFailed)
+		{
+			lock.unlock();
+			BetterVR_PS5_VrFailed("the compositor's GPU work did not finish");
+		}
+		return XR_SUCCESS; // the frame stays open: the next xrEndFrame looks at the fence again
 	}
 	session->frameOpen = false;
 	const bool submitted = hmd2::submit(ToHmd(renderHead));
@@ -2046,14 +2169,16 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
 		const double seconds = session->lastFrameLogAt ? (double)(now - session->lastFrameLogAt) / 1e6 : 0.0;
 		session->lastFrameLogAt = now;
 		Log("%llu frames, %.1f fps submitted over the last 600: nap %.2f ms, BeginFrame %.2f ms, ahead %.2f ms, step %.2f ms; flip shown %llu pending %d; "
-			"repeated %d, queue full %d, missed %d, errors %d, without layers %llu, skipped %llu, waits one frame ahead %llu, ends without a frame %llu, worn %d; "
+			"repeated %d, queue full %d, missed %d, errors %d, without layers %llu, skipped %llu, waits one frame ahead %llu, ends without a frame %llu, late begins %llu, worn %d; "
+			"GPU timeouts %llu, stuck skips %llu, recovered %llu; "
 			"render pose found %llu, not found %llu, kept %llu; "
 			"head %.2f %.2f %.2f, hand spaces left %.3f %.3f %.3f right %.3f %.3f %.3f, hands posed %d %d; "
 			"plane quads %llu; TV mirror %s, shown %llu skipped %llu",
 			(unsigned long long)session->frames, seconds > 0.0 ? 600.0 / seconds : 0.0, pace.nap_ms, pace.call_ms, pace.ahead_ms, pace.step_ms,
 			(unsigned long long)flip.shown, flip.pending, hmd2::repeated_frames(), hmd2::queue_full_waits(), hmd2::missed_frames(), hmd2::frame_errors(),
 			(unsigned long long)session->emptyFrames, (unsigned long long)session->skipped, (unsigned long long)session->waitsAhead,
-			(unsigned long long)session->endsWithoutFrame, hmd2::worn() ? 1 : 0, (unsigned long long)session->poseFound,
+			(unsigned long long)session->endsWithoutFrame, (unsigned long long)session->lateBegins, (unsigned long long)session->gpuTimeouts,
+			(unsigned long long)session->gpuStuckSkips, (unsigned long long)session->gpuRecovered, hmd2::worn() ? 1 : 0, (unsigned long long)session->poseFound,
 			(unsigned long long)session->poseLost, (unsigned long long)session->poseKept, renderHead.p.x, renderHead.p.y, renderHead.p.z,
 			s.handLocated[0].p.x, s.handLocated[0].p.y, s.handLocated[0].p.z, s.handLocated[1].p.x, s.handLocated[1].p.y, s.handLocated[1].p.z,
 			s.hands[0].poseValid ? 1 : 0, s.hands[1].poseValid ? 1 : 0, (unsigned long long)session->planeQuads, s.tv ? "on" : "off",
