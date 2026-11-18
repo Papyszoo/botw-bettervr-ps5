@@ -4,32 +4,115 @@ Date: Wed, 18 Nov 2026 16:19:52 +0100
 Subject: [PATCH] PS5: a short camera stall keeps first person, and a
  rebuilding actor list keeps Link's head hidden
 
+- IsThirdPersonForPose tolerates a gameplay camera stall shorter than 250 ms (IsInGame() is false for five presented
+  frames) and keeps the first-person pose; the pause menu, a cutscene's event setting and the third-person camera
+  setting still switch at once. A rate-limited [pose] line counts the frames kept since the run started.
+- While the actor list misses the player, the hook still hides the head by that decision, and the root bone starts
+  the frame's head-material list so it keeps or drops the last one. The list is kept for the 250 ms stall window only,
+  and only while the actor at the remembered address still names itself GameROMPlayer, still holds the model the units
+  were collected from, and the game is still animating that model; otherwise it is dropped, so a load, a teleport or
+  the player's death cannot hand a freed model unit to setMaterialVisible.
 ---
- src/game/botw/player/head_visibility.cpp |  5 ++-
- src/game/botw/player/skeleton.cpp        | 55 +++++++++++++++++++++++-
- 2 files changed, 56 insertions(+), 4 deletions(-)
+ src/game/botw/player/head_visibility.cpp | 51 ++++++++++++++++++--
+ src/game/botw/player/head_visibility.h   |  2 +-
+ src/game/botw/player/skeleton.cpp        | 60 ++++++++++++++++++++++--
+ 3 files changed, 105 insertions(+), 8 deletions(-)
 
 diff --git a/src/game/botw/player/head_visibility.cpp b/src/game/botw/player/head_visibility.cpp
-index 5d713cf..4210641 100644
+index 5d713cf..85d543c 100644
 --- a/src/game/botw/player/head_visibility.cpp
 +++ b/src/game/botw/player/head_visibility.cpp
-@@ -104,11 +104,12 @@ static uint32_t ResolveBaseProcLinkActor(uint32_t baseProcLinkAddress) {
+@@ -48,6 +48,16 @@ static uint32_t s_playerHeadMaterialCount = 0;
+ static uint32_t s_playerHeadMaterialCursor = 0;
+ static bool s_playerHeadMaterialsRefreshedThisFrame = false;
+ 
++// The player can be missing from the actor list for a frame while it rebuilds (the short camera stall the pose
++// tolerates, skeleton.cpp). The list is kept for that window only, and only while the actor it came from still names
++// itself the player and still holds the model the units were collected from: after a load, a teleport or the player's
++// death the units are freed, and their memory can still look intact to the checks below.
++static constexpr auto kMissingPlayerTolerance = std::chrono::milliseconds(250);
++static uint32_t s_playerHeadMaterialActor = 0;
++static uint32_t s_playerHeadMaterialModel = 0;
++static bool s_playerHeadMaterialActorMissing = false;
++static std::chrono::steady_clock::time_point s_playerHeadMaterialMissingSince{};
++
+ void HeadVisibility::OnSkeletonRoot() {
+     s_playerHeadMaterialsRefreshedThisFrame = false;
+ }
+@@ -103,13 +113,46 @@ static uint32_t ResolveBaseProcLinkActor(uint32_t baseProcLinkAddress) {
+     return linkData.actor.getLE();
  }
  
- static void RefreshPlayerHeadMaterials() {
--    s_playerHeadMaterialCount = 0;
--
-     const uint32_t playerActorPtr = Player::GetAddress();
-+    // a missing actor for a frame (the list rebuilds) keeps the last materials; each is checked live below
-     if (playerActorPtr == 0) return;
+-static void RefreshPlayerHeadMaterials() {
++static void DropHeadMaterialList() {
+     s_playerHeadMaterialCount = 0;
++    s_playerHeadMaterialActorMissing = false;
++}
  
-+    s_playerHeadMaterialCount = 0;
++// the kept units still belong to the model the game is animating, and that model is still the live player's
++static bool IsSamePlayerActor(uint32_t gsysModelPtr) {
++    if (s_playerHeadMaterialActor == 0 || s_playerHeadMaterialModel != gsysModelPtr)
++        return false;
++    const auto name = Guest::Get<sead::FixedSafeString40>(s_playerHeadMaterialActor + offsetof(ActorWiiU, name));
++    if (name.getLE() != "GameROMPlayer")
++        return false;
++    return Guest::Get<uint32_t>(s_playerHeadMaterialActor + ActorGsysModelOffset).getLE() == s_playerHeadMaterialModel;
++}
 +
++static void RefreshPlayerHeadMaterials(uint32_t gsysModelPtr) {
+     const uint32_t playerActorPtr = Player::GetAddress();
+-    if (playerActorPtr == 0) return;
++    if (playerActorPtr == 0) {
++        // a missing actor for a frame (the list rebuilds) keeps the last materials for the stall window only, and
++        // only while they still belong to the live player and its model; a rebuilt player gets a new list below
++        if (s_playerHeadMaterialCount == 0) {
++            s_playerHeadMaterialActorMissing = false;
++            return;
++        }
++        const auto now = std::chrono::steady_clock::now();
++        if (!s_playerHeadMaterialActorMissing) {
++            s_playerHeadMaterialActorMissing = true;
++            s_playerHeadMaterialMissingSince = now;
++        }
++        if (now - s_playerHeadMaterialMissingSince >= kMissingPlayerTolerance || !IsSamePlayerActor(gsysModelPtr))
++            DropHeadMaterialList();
++        return;
++    }
++
++    s_playerHeadMaterialActorMissing = false;
++    s_playerHeadMaterialCount = 0;
++    s_playerHeadMaterialActor = playerActorPtr;
+ 
      const uint32_t playerModel = Guest::Get<uint32_t>(playerActorPtr + ActorGsysModelOffset).getLE();
++    s_playerHeadMaterialModel = playerModel;
      if (playerModel != 0)
          CollectHeadMaterialsFromModel(playerModel, false);
+ 
+@@ -125,9 +168,9 @@ static bool IsLiveModelUnit(uint32_t unitPtr) {
+     return vtablePtr == ModelUnitVtableAddress;
+ }
+ 
+-void HeadVisibility::SubmitNextMaterial(PPCInterpreter_t* hCPU, bool hideHead) {
++void HeadVisibility::SubmitNextMaterial(PPCInterpreter_t* hCPU, bool hideHead, uint32_t gsysModelPtr) {
+     if (!s_playerHeadMaterialsRefreshedThisFrame) {
+-        RefreshPlayerHeadMaterials();
++        RefreshPlayerHeadMaterials(gsysModelPtr);
+         s_playerHeadMaterialsRefreshedThisFrame = true;
+     }
+     if (s_playerHeadMaterialCount == 0) return;
+diff --git a/src/game/botw/player/head_visibility.h b/src/game/botw/player/head_visibility.h
+index d4948e7..f3347dd 100644
+--- a/src/game/botw/player/head_visibility.h
++++ b/src/game/botw/player/head_visibility.h
+@@ -6,5 +6,5 @@ namespace HeadVisibility {
+     // Link's root bone is the first one of a frame, which is when the material list is rebuilt
+     void OnSkeletonRoot();
+     // returns one material per call through r9-r11 for the patch to show or hide
+-    void SubmitNextMaterial(PPCInterpreter_t* hCPU, bool hideHead);
++    void SubmitNextMaterial(PPCInterpreter_t* hCPU, bool hideHead, uint32_t gsysModelPtr);
+ }
 diff --git a/src/game/botw/player/skeleton.cpp b/src/game/botw/player/skeleton.cpp
-index 3a343f2..b6cd04c 100644
+index 3a343f2..248a0c0 100644
 --- a/src/game/botw/player/skeleton.cpp
 +++ b/src/game/botw/player/skeleton.cpp
 @@ -427,6 +427,49 @@ static glm::mat4 ResolveArmTargetModel(const BoneFrameContext& ctx, OpenXR::EyeS
@@ -82,7 +165,7 @@ index 3a343f2..b6cd04c 100644
  static void hook_ModifyBoneMatrix(PPCInterpreter_t* hCPU) {
      hCPU->instructionPointer = hCPU->sprNew.LR;
      const uint32_t modelUnitPtr = hCPU->gpr[7];
-@@ -442,9 +485,17 @@ static void hook_ModifyBoneMatrix(PPCInterpreter_t* hCPU) {
+@@ -442,9 +485,20 @@ static void hook_ModifyBoneMatrix(PPCInterpreter_t* hCPU) {
  
      std::string boneName(Guest::CString(boneNamePtr));
      const auto modelName = Guest::Get<sead::FixedSafeString100>(gsysModelPtr + 0x128);
@@ -93,15 +176,18 @@ index 3a343f2..b6cd04c 100644
 -    if (modelName.getLE() != "GameROMPlayer" || playerActor == 0 || Guest::Get<uint32_t>(playerActor + 0x330).getLE() != gsysModelPtr)
 +    if (playerActor == 0) {
 +        // the actor list can miss the player for a frame while it rebuilds: keep the head by the pose decision,
-+        // as the game would show it in first person, and leave the arms to the game until the actor is back
-+        HeadVisibility::SubmitNextMaterial(hCPU, !IsThirdPersonForPose(boneName == "Skl_Root"));
++        // as the game would show it in first person, and leave the arms to the game until the actor is back; the
++        // root bone still starts the frame's material list, which keeps or drops the last one as it sees fit
++        if (boneName == "Skl_Root")
++            HeadVisibility::OnSkeletonRoot();
++        HeadVisibility::SubmitNextMaterial(hCPU, !IsThirdPersonForPose(boneName == "Skl_Root"), gsysModelPtr);
 +        return;
 +    }
 +    if (Guest::Get<uint32_t>(playerActor + 0x330).getLE() != gsysModelPtr)
          return;
  
      const bool isLeft = boneName.ends_with("_L");
-@@ -480,7 +531,7 @@ static void hook_ModifyBoneMatrix(PPCInterpreter_t* hCPU) {
+@@ -480,10 +534,10 @@ static void hook_ModifyBoneMatrix(PPCInterpreter_t* hCPU) {
          Guest::Set(scalePtr, scale);
      };
  
@@ -109,4 +195,8 @@ index 3a343f2..b6cd04c 100644
 +    const bool isThirdPerson = IsThirdPersonForPose(boneName == "Skl_Root");
  
      // one material per bone, so a whole head model converges well within a single frame
-     HeadVisibility::SubmitNextMaterial(hCPU, !isThirdPerson);
+-    HeadVisibility::SubmitNextMaterial(hCPU, !isThirdPerson);
++    HeadVisibility::SubmitNextMaterial(hCPU, !isThirdPerson, gsysModelPtr);
+ 
+     if (isThirdPerson) {
+         // wrist is game-animated in third person

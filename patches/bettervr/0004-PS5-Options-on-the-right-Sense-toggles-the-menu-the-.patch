@@ -5,21 +5,24 @@ Subject: [PATCH] PS5: Options held for 700 ms opens the menu, a short press is
  the game's pause
 
 - ProcessOptionsButton takes Options (BetterVR_PS5_OptionsDown, the runtime's) down, held and up edges: held for
-  700 ms it opens or closes the menu at that moment and the release then does nothing; released earlier it sends
-  the game's + (the pause screen), one tap, as a short press of the right stick click sends it. [menu] lines log
-  each step. The Touch profile gives that button no action, and the left X (Square) long press stays.
+  700 ms it opens or closes the menu at that moment and the release then does nothing; a release that no game frame
+  saw cross the threshold still counts as a hold from the measured time and toggles the menu. Released earlier it
+  sends the game's + (the pause screen), one tap, always VPAD_BUTTON_PLUS, as a short press of the right stick click
+  sends it, and clears state.mapOpen so the flag cannot steer a later tap to the minus. The tap is dropped while the
+  menu's overlay blocks the game or state.preventInputs is set. [menu] lines log each step. The Touch profile gives
+  that button no action, and the left X (Square) long press stays.
 - The first-run prompt is not drawn on the PS5.
 - PlayPosition defaults to Seated on the PS5 (the tracker's origin is not known to be the floor), and the first
   in-game frame requests the calibration when the loading screen passed before the session existed.
 ---
- src/game/botw/input/controls.cpp | 50 ++++++++++++++++++++++++++++++++
- src/rendering/imgui_menus.cpp    |  6 ++++
- src/rendering/openxr.cpp         | 11 +++++++
- src/utils/mod_settings.h         |  4 +++
- 4 files changed, 71 insertions(+)
+ src/game/botw/input/controls.cpp | 67 ++++++++++++++++++++++++++++++++
+ src/rendering/imgui_menus.cpp    |  6 +++
+ src/rendering/openxr.cpp         | 11 ++++++
+ src/utils/mod_settings.h         |  4 ++
+ 4 files changed, 88 insertions(+)
 
 diff --git a/src/game/botw/input/controls.cpp b/src/game/botw/input/controls.cpp
-index 195735a..06f73cf 100644
+index 195735a..f32664a 100644
 --- a/src/game/botw/input/controls.cpp
 +++ b/src/game/botw/input/controls.cpp
 @@ -8,6 +8,8 @@
@@ -31,7 +34,7 @@ index 195735a..06f73cf 100644
  #include "rendering/haptics.h"
  #include "rendering/imgui_menus.h"
  #include "rendering/tracking.h"
-@@ -964,6 +966,51 @@ static void ProcessInputPrevention(ControlState& state, std::chrono::steady_cloc
+@@ -964,6 +966,68 @@ static void ProcessInputPrevention(ControlState& state, std::chrono::steady_cloc
          state.preventGrabInputs = false;
  }
  
@@ -43,7 +46,17 @@ index 195735a..06f73cf 100644
 +// then does nothing; released earlier it is the game's + (the pause screen), sent as one tap, as a short press of the
 +// right stick click sends it. The Touch profile gives that button no action, so it is read from the runtime. The
 +// left X (Square) long press below still works.
-+static void ProcessOptionsButton(std::atomic_bool& isMenuOpen, uint32_t& buttonHold, const ControlState& state) {
++static void ToggleOptionsMenu(std::atomic_bool& isMenuOpen) {
++    RND_Renderer* renderer = VRManager::instance().XR->GetRenderer();
++    if (renderer == nullptr || !renderer->m_imguiOverlay) {
++        Log::print<INFO>("[menu] long press ignored, the menu's overlay is not ready");
++        return;
++    }
++    isMenuOpen = !isMenuOpen;
++    Log::print<INFO>("[menu] long press -> {}", isMenuOpen.load() ? "open" : "closed");
++}
++
++static void ProcessOptionsButton(std::atomic_bool& isMenuOpen, uint32_t& buttonHold, ControlState& state) {
 +    constexpr auto kLongPress = std::chrono::milliseconds(700);
 +    static bool s_wasDown = false;
 +    static bool s_longPressDone = false;
@@ -59,13 +72,7 @@ index 195735a..06f73cf 100644
 +    }
 +    if (down && !s_longPressDone && now - s_downAt >= kLongPress) {
 +        s_longPressDone = true;
-+        RND_Renderer* renderer = VRManager::instance().XR->GetRenderer();
-+        if (renderer == nullptr || !renderer->m_imguiOverlay) {
-+            Log::print<INFO>("[menu] long press ignored, the menu's overlay is not ready");
-+            return;
-+        }
-+        isMenuOpen = !isMenuOpen;
-+        Log::print<INFO>("[menu] long press -> {}", isMenuOpen.load() ? "open" : "closed");
++        ToggleOptionsMenu(isMenuOpen);
 +        return;
 +    }
 +    if (down || !s_wasDown)
@@ -75,15 +82,28 @@ index 195735a..06f73cf 100644
 +    Log::print<INFO>("[menu] Options up after {} ms", (long long)heldMs);
 +    if (s_longPressDone)
 +        return;
++    // a stall can hide the threshold from every game frame: the release still decides, with the measured time
++    if (now - s_downAt >= kLongPress) {
++        Log::print<INFO>("[menu] release after the threshold -> hold");
++        ToggleOptionsMenu(isMenuOpen);
++        return;
++    }
++    // the menu's overlay holds the game's input, and so does the frame after a menu change: no pause behind either
++    if (isMenuOpen || ImGuiMenus::BlocksGameInput() || state.preventInputs) {
++        Log::print<INFO>("[menu] short press ignored, game input is blocked");
++        return;
++    }
 +    Log::print<INFO>("[menu] short press -> pause");
-+    buttonHold |= state.mapOpen ? VPAD_BUTTON_MINUS : VPAD_BUTTON_PLUS;
++    // always the game's +: state.mapOpen only steers the stick click in the menus, and it can be stale there
++    state.mapOpen = false;
++    buttonHold |= VPAD_BUTTON_PLUS;
 +}
 +#endif
 +
  static void ProcessModMenuInput(std::atomic_bool& isMenuOpen, OpenXR::InputState& inputs, VPADStatus& vpadInputs, XrActionStateVector2f& leftStickSource, XrActionStateVector2f& rightStickSource)
  {
      if (s_modMenuButton.lastEvent == ButtonState::Event::LongPress) {
-@@ -1414,6 +1461,9 @@ static void hook_InjectXRInput(PPCInterpreter_t* hCPU) {
+@@ -1414,6 +1478,9 @@ static void hook_InjectXRInput(PPCInterpreter_t* hCPU) {
  
      auto& isMenuOpen = ImGuiMenus::g_isOpen;
      ProcessModMenuInput(isMenuOpen, inputs, vpadStatus, leftStickSource, rightStickSource);

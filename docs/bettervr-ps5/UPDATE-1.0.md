@@ -736,26 +736,38 @@ game start was unwanted.
 
 - **The menu takes a hold.** Options on the right Sense held for 700 ms opens BetterVR's menu when the threshold is
   reached, not on the release; holding it again for 700 ms closes it, and the release that ends either hold does
-  nothing. The threshold is one constant (`kLongPress` in `ProcessOptionsButton`, `controls.cpp`, patch bettervr 0004).
+  nothing. If a stall kept every game frame from seeing the threshold, the release compares the measured time itself:
+  700 ms or more toggles the menu and sends nothing, so a hold is not lost to a hitch. The threshold is one constant
+  (`kLongPress` in `ProcessOptionsButton`, `controls.cpp`, patch bettervr 0004).
 - **A short press is the game's pause.** Released before 700 ms, Options is the Wii U "+" that opens the inventory and
-  map screens: one tap on the frame of the release. The route is the one 1.0.0 already uses for the game's "+": the
-  right stick click's short press sends `VPAD_BUTTON_PLUS` (`ProcessGameplayInput`), so the Options tap adds the same
-  `VPAD_BUTTON_PLUS`, and `VPAD_BUTTON_MINUS` while the map is open, as the stick click is read in the menus
-  (`ProcessMenuInput`). A hold sends nothing (no pause), a tap opens no menu, and the "+" stays on the right stick
-  click. The gamepad's own + and upstream's 500 ms hold on it are untouched.
+  pause screens: one tap on the frame of the release, always `VPAD_BUTTON_PLUS`. The earlier build sent
+  `VPAD_BUTTON_MINUS` while `state.mapOpen` said the map was open, as the right stick click is read in the menus, but
+  that flag is only written by the stick click: closing the map with B left it set, so the next Options tap opened the
+  map instead of the inventory. The tap now clears `state.mapOpen` as well, so the flag cannot stay stale from this
+  path. The tap reaches the game only while its input is open: with BetterVR's menu over the game, with the overlay's
+  keyboard block (`ImGuiMenus::BlocksGameInput`), or during `state.preventInputs` (the 400 ms after a menu change), the
+  release is logged and nothing is sent, so no pause screen opens behind the overlay. A hold sends nothing (no pause),
+  a tap opens no menu, and the "+" stays on the right stick click; the stick click still picks `VPAD_BUTTON_MINUS` in
+  the map through `state.mapOpen`. The gamepad's own + and upstream's 500 ms hold on it are untouched.
 - **No popup at start.** `DrawTutorialPromptAndControllerVerification` returns at once on the PS5, so the first-time
   setup card over the game is gone; the PS5 prompt text that patch 0004 added to `GetControllerModMenuPrompt` goes with
   it, as nothing draws it now.
 - **Logs** (BetterVR's, mirrored to the boot log as `[bettervr] ...`): `[menu] Options down`, `[menu] Options up after
-  N ms`, `[menu] long press -> open` or `closed` (or `[menu] long press ignored, the menu's overlay is not ready`), and
-  `[menu] short press -> pause`.
+  N ms`, `[menu] long press -> open` or `closed` (or `[menu] long press ignored, the menu's overlay is not ready`),
+  `[menu] release after the threshold -> hold` when the release itself ends a hold, `[menu] short press -> pause`, and
+  `[menu] short press ignored, game input is blocked` for a tap the overlay or `state.preventInputs` keeps from the
+  game.
 - **The one-frame body flash is gone.** `IsInGame()` is false while the gameplay camera has not updated for five
   presented frames, a texture-streaming hitch at 50-60 fps, and the pose switched to the third-person path for that
   frame: Link's head materials were shown and the controller arm pose was skipped. `skeleton.cpp` now tolerates a camera
   stall shorter than 250 ms and keeps the first-person pose; the pause menu, a cutscene's event setting and the
   third-person camera setting still switch at once. The same frame the investigation also found is guarded differently:
-  if the actor list misses the player for a frame, the head is still hidden by the last decision and the head-material
-  list survives the missing actor (each unit is checked live before it is used). Log line (at most once a second):
+  if the actor list misses the player for a frame, the head is still hidden by the last decision, and the root bone
+  starts the frame's material list so it keeps or drops the last one. The list is kept for the 250 ms stall window
+  only, and only while the units still belong to the live player: the actor at the remembered address must still name
+  itself `GameROMPlayer`, still hold the model the units were collected from, and the game must still be animating that
+  model. Otherwise the list is dropped, so a load, a teleport or the player's death cannot hand a freed model unit to
+  `setMaterialVisible`; every unit that is used is also checked live. Log line (at most once a second):
   `[pose] a short camera stall kept first person (N frames)`, N the frames the tolerance kept since the run started.
   Patch bettervr 0006; built, untested on console.
 - **The HUD alpha is no longer squared.** The runtime compositor blended the premultiplied HUD (ImGui writes `rgb*a,
