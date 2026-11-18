@@ -1,0 +1,45 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Patryk <papyszoo@gmail.com>
+Date: Wed, 18 Nov 2026 12:03:54 +0100
+Subject: [PATCH] PS5: a ProcUI callback the game's allocator has no memory for
+ is left out and logged, not written through a null pointer
+
+The first console run of BetterVR 1.0.0 stopped in AddCallbackInternal (fault address 0x60, the funcPtr field of a null entry): the allocator gave 0. The log line names the allocator, the memory pool, the default heap's free size and where MEM2 ends, which say why.
+---
+ src/Cafe/OS/libs/proc_ui/proc_ui.cpp | 13 +++++++++++++
+ 1 file changed, 13 insertions(+)
+
+diff --git a/src/Cafe/OS/libs/proc_ui/proc_ui.cpp b/src/Cafe/OS/libs/proc_ui/proc_ui.cpp
+index 942b3e2a..aa0d4dfc 100644
+--- a/src/Cafe/OS/libs/proc_ui/proc_ui.cpp
++++ b/src/Cafe/OS/libs/proc_ui/proc_ui.cpp
+@@ -18,6 +18,11 @@
+ 
+ using namespace coreinit;
+ 
++namespace coreinit
++{
++	extern MEMHeapBase* gDefaultHeap;
++}
++
+ namespace proc_ui
+ {
+ 	constinit COSStaticData s_procuiStaticData;
+@@ -400,6 +405,14 @@ namespace proc_ui
+ 			s_memFreePtr = gCoreinitData->MEMFreeToDefaultHeap.GetMPTR();
+ 		}
+ 		ProcUIInternalCallbackEntry* entry = (ProcUIInternalCallbackEntry*)_AllocMem(sizeof(ProcUIInternalCallbackEntry));
++		if (!entry)
++		{
++			// the game's allocator gave nothing: leave the callback out instead of writing through a null pointer
++			uint32 defaultHeapFree = gDefaultHeap ? (uint32)MEMGetAllocatableSizeForExpHeapEx(gDefaultHeap, 4) : 0;
++			cemuLog_log(LogType::Force, "ProcUI: no memory for a callback (allocator 0x{:08x}, memory pool {}, initialized {}, default heap 0x{:08x} free, MEM2 ends at 0x{:08x})",
++				s_memAllocPtr.GetMPTR(), s_memoryPoolHeapPtr ? "yes" : "no", (bool)s_isInitialized, defaultHeapFree, mmuRange_MEM2.getEnd());
++			return;
++		}
+ 		entry->funcPtr = funcPtr;
+ 		entry->userParam = userParam;
+ 		entry->tickDelay = tickDelay;
+-- 
+2.50.1 (Apple Git-155)
+

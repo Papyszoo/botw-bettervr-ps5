@@ -17,6 +17,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "hmd2.h"
 
+#include <algorithm>
 #include <cstdarg>
 #include <cmath>
 #include <cstdio>
@@ -470,10 +471,21 @@ const export_table_t *module_table_scan(const ModuleInfo *info, const char *file
         bool shown = false;
         for (uint32_t i = 0; i < info->nseg && i < 4 && !shown; i++) {
             const uintptr_t lo = info->seg[i].addr;
-            if (want >= lo && want + 16 <= lo + info->seg[i].size && (info->seg[i].prot & 1)) {
+            if (want >= lo && want < lo + info->seg[i].size && (info->seg[i].prot & 1)) {
+                // up to 64 bytes of what sits there, as text (the anchor string is expected) and as hex
+                const size_t n = std::min<size_t>(64, lo + info->seg[i].size - want);
                 const uint8_t *p = reinterpret_cast<const uint8_t *>(want);
-                logf("hmd2: %s: at anchor +0x%x: %02x %02x %02x %02x %02x %02x %02x %02x", file,
-                     (unsigned)anchor->va, p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7]);
+                char text[65], hex[64 * 3 + 1];
+                size_t same = 0;
+                while (same < n && same < len && p[same] == static_cast<uint8_t>(anchor->text[same]))
+                    same++;
+                for (size_t b = 0; b < n; b++) {
+                    text[b] = p[b] >= 0x20 && p[b] < 0x7f ? static_cast<char>(p[b]) : '.';
+                    std::snprintf(hex + b * 3, 4, "%02x ", p[b]);
+                }
+                text[n] = 0;
+                logf("hmd2: %s: at anchor +0x%x: %zu byte(s) match the expected string (%zu with its end): \"%s\" %s",
+                     file, (unsigned)anchor->va, same, len, text, hex);
                 shown = true;
             }
         }

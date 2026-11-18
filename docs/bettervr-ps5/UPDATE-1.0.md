@@ -613,3 +613,53 @@ rumble that 1.0.0 starts with `XR_INFINITE_DURATION` or more than 2 s stops at 2
 Next step: `gh run list --branch bettervr-1.0/stage4`; on failure `gh run view <id> --log-failed | tail -80` and fix the
 first error (likeliest in `controls.cpp`: an include for `VRManager` / `RND_Renderer`); on green check the ELF for
 `[menu] Options down` and `haptic call`, then report.
+
+## Console run 1
+
+Build `3e8c18d` (stage 4), 13.60 console, PS VR2 and both Sense controllers, Play in VR from the launcher. Reported from
+the console: the PS5's own play-area (room) scan ran when VR mode turned on, and "PSVR crashed during room scan". The log
+(`boot.log`, Cemu's `log.txt`) was symbolized with `tools/symbolize-crash.py` against that build's ELF (load offset
+0x400000 from the handler at 0x1c06ac0).
+
+**The crash (proven to the function).** Signal 11, fault address 0x60, error 0x6 (a write), RIP in
+`proc_ui::AddCallbackInternal` (`proc_ui.cpp`), under `ProcUIRegisterCallback` called from the game (PPC IP 0x00e02b1c is
+the HLE stub; r3 0 = AcquireForeground, r4 0x02e25964 the callback). `_AllocMem` returned 0, so `entry` was a null host
+pointer, and `entry->funcPtr` sits at 0x60 (OSAlarm 0x58 and the 8-byte tickDelay before it). Nothing of BetterVR, OpenXR
+or the port is on the stack: it is Cemu's own code answering the game's very first ProcUI call.
+
+**Why the allocator gave 0 (not proven).** The log has no "ProcUI: Trying to register callback before init", so the
+allocator is the default heap or ProcUI's memory pool; the log cannot tell which, nor how full it was. What is new in
+1.0.0 and visible in the log: the bundled "Extended Memory" pack is on by default (`ec3b787`), `Using modified RAM
+mapping 10000000-a0000000 (+1310720KiB)`, and its code patch group `BotW_ExtendedMemory_V208` is applied (main game
+heap enlarged to 0x8B600000 from 0x3B600000, plus other heap sizes). Likely, not proven: the game's heaps of that pack
+leave the default heap (about 2.2 GiB after the MEM2 extension) too little for the first 0x70-byte callback, or the pack
+plus the PS5's memory differ from PC. The old 0.9.23 build did not map extended memory. Fix in this change: Cemu patch
+0052 leaves the callback out and logs one line instead of crashing: `ProcUI: no memory for a callback (allocator, memory
+pool, initialized, default heap free, MEM2 end)`. The game then goes on without that foreground callback (it is the
+Home-menu handling; a guest crash later would still show in the PPC dump). Extended Memory stays on until the next run
+shows that line.
+
+**0 draws and 0 game frames for about 30 s (proven: not BetterVR, not frame pacing).** Cemu starts the guest only after
+the GPU thread has loaded the shader cache (`CafeSystem` waits for `g_isGPUInitFinished`, set after
+`LatteShaderCache_Load`). The log shows exactly that: "Run title" at 13:26:21, perf lines with 0 draws and the pipeline
+cache at 280 compiled, 336 read of 2081 at 31 s, the OSSched threads and `IOSU_ACT` (the first guest code) at 41.3 s /
+13:26:50, and the crash in the same second. The guest clock ratio 1.000 with 0.0 game frames is a game that had not started,
+so there was no draw to wait on `xrWaitFrame`, the shared queue or the capture events, and the crash is at the first
+frame's start, before any swapchain. VR start 4/5 (the swapchain of the first frame, `runtime.cpp`) was never reached for
+that reason. What the log does not show: how long the cache load takes with no scan running, and whether the system's
+play-area scan (which owns the headset display and input while it runs) slowed it; no XR call is made in that period
+(session 3/5 was up, no frame loop yet). The crash does not follow the scan ending: it follows the end of the cache load,
+and its cause (an allocation) has no path to the session state. One log line for the next run: none added, the existing
+`[perf]` pipeline-cache counts and the time of `OSSched` against `Run title` tell the cache load's length.
+
+**libScePad anchor (vibration).** The check reads the whole expected string, `scePadCtrlpSyncInit Error : cannot open
+[%08x]` and its NUL, from +0x1f650 (inside segment 1, +0x1c000 size 0x4000, readable) and compares it with `memcmp`; the
+in-process scan walks every readable segment the same way and found 0 copies. The code is consistent: the first 8 bytes
+are "scePadCt", so the text there starts like the anchor and differs further on (or the firmware's string is not the one in
+`hmd2.cpp`; the firmware is 13.590.001, the table says 13.60). It cannot be told from the 8 logged bytes, so the check
+stays as it is (a prefix match would pick unverified offsets) and the log now prints up to 64 bytes at the anchor, as text
+and hex, with how many leading bytes match. Execute-only code stays unread. The Sense vibration stays off until that line
+shows the real string; the Sense's mode calls still answered 0x80000001.
+
+Next console run must show: `[perf]` lines and the time to `OSSched`, the `ProcUI: no memory for a callback` line if it
+fires (its numbers decide the heap question), `VR start 4/5` and `5/5`, and the `at anchor +0x1f650` line.
