@@ -112,6 +112,13 @@ def fetch_git(item):
 
 
 def created(item):
+    if item["kind"] == "files":
+        # a file that is there but was cut short is fetched again, not trusted by its name
+        return all(
+            os.path.isfile(os.path.join(here(item["dest"]), entry["name"]))
+            and sha256(os.path.join(here(item["dest"]), entry["name"])) == entry["sha256"]
+            for entry in item["files"]
+        )
     marker = item.get("creates") or item.get("setup_creates")
     return marker is not None and os.path.exists(here(marker)) and (
         "setup_creates" not in item or os.path.exists(here(item["setup_creates"])))

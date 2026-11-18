@@ -12,6 +12,20 @@
       "creates": ".deps/Cemu/src/Cafe/CafeSystem.cpp"
     },
     {
+      "name": "zlib-source",
+      "about": "zlib 1.3.2's source archive where the boilerplate's setup expects it, from the GitHub release rather than zlib.net: that host intermittently answered with a corrupt file (sha256sum: WARNING: 1 computed checksum did NOT match), and the pinned SHA-256 is the same in both places",
+      "kind": "files",
+      "dest": ".deps/ps5-native-app-boilerplate/.deps/native/zlib",
+      "path": ".deps/ps5-native-app-boilerplate/.deps/native/zlib",
+      "files": [
+        {
+          "name": "zlib-1.3.2.tar.gz",
+          "url": "https://github.com/madler/zlib/releases/download/v1.3.2/zlib-1.3.2.tar.gz",
+          "sha256": "bb329a0a2cd0274d05519d61c667c062e06990d72e125ee2dfa8de64f0119d16"
+        }
+      ]
+    },
+    {
       "name": "boilerplate",
       "about": "PS5 Native App Boilerplate (BlackBearReloaded's, from drakmor's copy since the original went with its account): public Payload SDK v0.42, the runtime libc.prx shim and the native packaging tool",
       "kind": "git",

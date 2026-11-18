@@ -58,6 +58,8 @@ int scePadClose(int handle);
 int scePadVrControllerReadState(int handle, void* state);
 // port/bettervr/VrPS5.cpp: a number from bettervr.json, or fallback
 float BetterVR_PS5_Setting(const char* name, float fallback);
+// port/bettervr/VrPS5.cpp: bettervr.json's "profile" (true/false or 1/0), read once
+bool BetterVR_PS5_Profile();
 }
 
 #include <algorithm>
@@ -73,6 +75,16 @@ float BetterVR_PS5_Setting(const char* name, float fallback);
 #include <string_view>
 #include <utility>
 #include <vector>
+
+#if defined(__PROSPERO__)
+// patches/cemu 0055: the GPU thread's swap and VR frame end, summed until the [frame] line takes
+// them, and the GPU's own busy time (patch 0028). They live in Cemu, which the module links with.
+extern std::atomic<uint64_t> g_ps5FrameSwapNs;
+extern std::atomic<uint64_t> g_ps5FrameVrEndNs;
+extern std::atomic<uint32_t> g_ps5FrameProfileSamples;
+extern std::atomic<uint64_t> g_ps5GpuBusyNs;
+extern bool g_ps5GpuTimestamps;
+#endif
 
 // the port's (ps5/log.cpp): a line of the boot log
 void PS5Cemu_LogLine(std::string_view line);
@@ -247,6 +259,9 @@ struct XrSwapchain_T
 	VkImage images[kSwapchainImages] = {};
 	VkDeviceMemory memory[kSwapchainImages] = {};
 	VkImageView views[kSwapchainImages] = {};
+	// sRGB swapchain images as UNORM, so the compositor reads the bytes the application wrote
+	// without the sampler's sRGB decode; VK_FORMAT_UNDEFINED when the format is not sRGB
+	VkImageView sampleViews[kSwapchainImages] = {};
 	uint32_t next = 0;	   // the next acquire
 	int released = -1;	   // the last image released, the one a layer shows
 };
@@ -280,6 +295,14 @@ struct XrSession_T
 	VkDeviceMemory dummyMemory = VK_NULL_HANDLE;
 	VkImageView dummyView = VK_NULL_HANDLE;
 	VkSampler sampler = VK_NULL_HANDLE;
+	// the HUD's mip chain: a copy of the HUD image at each level, made each frame so the compose
+	// minifies ~2.4x through a level instead of one bilinear tap (see EnsureHudMips)
+	VkImage hudMip = VK_NULL_HANDLE;
+	VkDeviceMemory hudMipMemory = VK_NULL_HANDLE;
+	VkImageView hudMipView = VK_NULL_HANDLE;
+	uint32_t hudMipWidth = 0, hudMipHeight = 0, hudMipLevels = 0;
+	VkFormat hudMipFormat = VK_FORMAT_UNDEFINED;
+	bool hudMipsSupported = false;
 	VkDescriptorSetLayout setLayout = VK_NULL_HANDLE;
 	VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
 	VkPipeline pipeline = VK_NULL_HANDLE;
@@ -325,11 +348,12 @@ namespace
 	X(vkDestroyPipeline) X(vkCreateDescriptorPool) X(vkDestroyDescriptorPool) X(vkAllocateDescriptorSets)                   \
 	X(vkUpdateDescriptorSets) X(vkCreateCommandPool) X(vkDestroyCommandPool) X(vkAllocateCommandBuffers)                    \
 	X(vkResetCommandBuffer) X(vkBeginCommandBuffer) X(vkEndCommandBuffer) X(vkCmdPipelineBarrier) X(vkCmdBindPipeline)     \
-	X(vkCmdBindDescriptorSets) X(vkCmdPushConstants) X(vkCmdDispatch) X(vkQueueSubmit) X(vkCreateFence) X(vkDestroyFence)  \
-	X(vkWaitForFences) X(vkResetFences) X(vkDeviceWaitIdle)
+	X(vkCmdBindDescriptorSets) X(vkCmdPushConstants) X(vkCmdDispatch) X(vkCmdCopyImage) X(vkCmdBlitImage)            \
+	X(vkQueueSubmit) X(vkCreateFence) X(vkDestroyFence) X(vkWaitForFences) X(vkResetFences) X(vkDeviceWaitIdle)
 #define VK_MEMBER(name) PFN_##name name = nullptr;
 		VK_FUNCTIONS(VK_MEMBER)
 		PFN_vkGetPhysicalDeviceMemoryProperties vkGetPhysicalDeviceMemoryProperties = nullptr;
+		PFN_vkGetPhysicalDeviceFormatProperties vkGetPhysicalDeviceFormatProperties = nullptr;
 		PFN_vkEnumeratePhysicalDevices vkEnumeratePhysicalDevices = nullptr;
 
 		bool Load(VkInstance instance, VkDevice device)
@@ -348,7 +372,9 @@ namespace
 			VK_FUNCTIONS(VK_LOAD)
 			vkGetPhysicalDeviceMemoryProperties =
 				(PFN_vkGetPhysicalDeviceMemoryProperties)vk_icdGetInstanceProcAddr(instance, "vkGetPhysicalDeviceMemoryProperties");
-			return all && vkGetPhysicalDeviceMemoryProperties;
+			vkGetPhysicalDeviceFormatProperties =
+				(PFN_vkGetPhysicalDeviceFormatProperties)vk_icdGetInstanceProcAddr(instance, "vkGetPhysicalDeviceFormatProperties");
+			return all && vkGetPhysicalDeviceMemoryProperties && vkGetPhysicalDeviceFormatProperties;
 		}
 	} vk;
 
@@ -406,6 +432,13 @@ namespace
 		uint64_t shownAtFrame = 0;
 		bool reproject = true; // bettervr.json's "reproject": 0 submits every frame as rendered from the display time's pose
 		bool tv = true; // bettervr.json's "tv": 0 keeps the TV dark while VR runs
+		// bettervr.json's "profile": one [frame] line every 10 s, splitting the GPU thread's swap, the
+		// VR frame end, the compose fence and hmd2's submit; off by default, nothing is timed when off
+		bool profile = false;
+		uint64_t profileAt = 0; // sceKernelGetProcessTime of the last [frame] line, us
+		uint64_t profileFenceNs = 0, profileSubmitNs = 0;
+		uint64_t profileFrames = 0;
+		uint64_t profileGpuAt = 0; // g_ps5GpuBusyNs at the last line
 		// the VR start's milestones (the log lines "VR start n/5"): when the session began, the swapchains made, and
 		// whether the first submitted frame and the first one with a stereo picture are logged
 		uint64_t sessionStartedAt = 0; // sceKernelGetProcessTime, us
@@ -916,7 +949,8 @@ namespace
 	}
 
 	void ImageBarrier(VkCommandBuffer commands, VkImage image, VkImageAspectFlags aspect, VkImageLayout from, VkImageLayout to,
-		VkAccessFlags srcAccess, VkAccessFlags dstAccess, VkPipelineStageFlags srcStage, VkPipelineStageFlags dstStage)
+		VkAccessFlags srcAccess, VkAccessFlags dstAccess, VkPipelineStageFlags srcStage, VkPipelineStageFlags dstStage,
+		uint32_t baseLevel = 0, uint32_t levels = 1, uint32_t layers = 1)
 	{
 		VkImageMemoryBarrier barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
 		barrier.srcAccessMask = srcAccess;
@@ -926,18 +960,19 @@ namespace
 		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 		barrier.image = image;
-		barrier.subresourceRange = {aspect, 0, 1, 0, 1};
+		barrier.subresourceRange = {aspect, baseLevel, levels, 0, layers};
 		vk.vkCmdPipelineBarrier(commands, srcStage, dstStage, 0, 0, nullptr, 0, nullptr, 1, &barrier);
 	}
 
 	bool MakeImage(XrSession_T* session, uint32_t width, uint32_t height, VkFormat format, VkImageUsageFlags usage, VkImage& image,
-		VkDeviceMemory& memory, VkImageView* view)
+		VkDeviceMemory& memory, VkImageView* view, uint32_t mipLevels = 1)
 	{
 		VkImageCreateInfo info{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+		info.flags = VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT; // an sRGB image sampled through a UNORM view
 		info.imageType = VK_IMAGE_TYPE_2D;
 		info.format = format;
 		info.extent = {width, height, 1};
-		info.mipLevels = 1;
+		info.mipLevels = mipLevels;
 		info.arrayLayers = 1;
 		info.samples = VK_SAMPLE_COUNT_1_BIT;
 		info.tiling = VK_IMAGE_TILING_OPTIMAL;
@@ -965,11 +1000,66 @@ namespace
 			viewInfo.image = image;
 			viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
 			viewInfo.format = format;
-			viewInfo.subresourceRange = {(VkImageAspectFlags)(depth ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT), 0, 1, 0, 1};
+			viewInfo.subresourceRange = {(VkImageAspectFlags)(depth ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT), 0, mipLevels, 0, 1};
 			result = vk.vkCreateImageView(session->device, &viewInfo, nullptr, view);
 			if (result != VK_SUCCESS)
 				return Fail("vkCreateImageView", result);
 		}
+		return true;
+	}
+
+	void DestroyHudMips(XrSession_T* session)
+	{
+		if (session->hudMipView)
+			vk.vkDestroyImageView(session->device, session->hudMipView, nullptr);
+		if (session->hudMip)
+			vk.vkDestroyImage(session->device, session->hudMip, nullptr);
+		if (session->hudMipMemory)
+			vk.vkFreeMemory(session->device, session->hudMipMemory, nullptr);
+		session->hudMipView = VK_NULL_HANDLE;
+		session->hudMip = VK_NULL_HANDLE;
+		session->hudMipMemory = VK_NULL_HANDLE;
+		session->hudMipWidth = session->hudMipHeight = session->hudMipLevels = 0;
+		session->hudMipFormat = VK_FORMAT_UNDEFINED;
+	}
+
+	// The HUD is a 2000x2040 image on a quad of about 836x487 eye pixels: a 2.4x minification, which
+	// one bilinear tap at level 0 turns into crawling edges. A full mip chain of the HUD, copied each
+	// frame, lets the compose pick the right level with textureGrad. About 5.4 Mpx of blits a frame.
+	bool EnsureHudMips(XrSession_T* session, const XrSwapchain_T* hud)
+	{
+		if (session->hudMip && session->hudMipWidth == hud->width && session->hudMipHeight == hud->height && session->hudMipFormat == hud->format)
+			return session->hudMipsSupported;
+		DestroyHudMips(session);
+		if (!vk.vkCmdCopyImage || !vk.vkCmdBlitImage || !vk.vkGetPhysicalDeviceFormatProperties)
+			return false;
+		VkFormatProperties properties{};
+		vk.vkGetPhysicalDeviceFormatProperties(session->physical, hud->format, &properties);
+		const VkFormatFeatureFlags needed = VK_FORMAT_FEATURE_BLIT_SRC_BIT | VK_FORMAT_FEATURE_BLIT_DST_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT;
+		if ((properties.optimalTilingFeatures & needed) != needed)
+		{
+			static bool logged = false;
+			if (!logged)
+				Log("the HUD format %d has no linear blit: the HUD keeps its one bilinear tap (mip chain off)", (int)hud->format);
+			logged = true;
+			return false;
+		}
+		uint32_t levels = 1;
+		while ((1u << levels) < std::max(hud->width, hud->height))
+			levels++;
+		if (!MakeImage(session, hud->width, hud->height, hud->format,
+				VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, session->hudMip, session->hudMipMemory,
+				&session->hudMipView, levels))
+		{
+			DestroyHudMips(session);
+			return false;
+		}
+		session->hudMipWidth = hud->width;
+		session->hudMipHeight = hud->height;
+		session->hudMipLevels = levels;
+		session->hudMipFormat = hud->format;
+		session->hudMipsSupported = true;
+		Log("HUD mip chain: %ux%u, %u levels, format %d, made each frame for the compose", hud->width, hud->height, levels, (int)hud->format);
 		return true;
 	}
 
@@ -1044,9 +1134,10 @@ namespace
 		VkSamplerCreateInfo samplerInfo{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
 		samplerInfo.magFilter = VK_FILTER_LINEAR;
 		samplerInfo.minFilter = VK_FILTER_LINEAR;
-		samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+		// linear between mip levels: the HUD is sampled with textureGrad, the eye images at LOD 0
+		samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
 		samplerInfo.addressModeU = samplerInfo.addressModeV = samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-		samplerInfo.maxLod = 0.0f;
+		samplerInfo.maxLod = VK_LOD_CLAMP_NONE;
 		result = vk.vkCreateSampler(session->device, &samplerInfo, nullptr, &session->sampler);
 		if (result != VK_SUCCESS)
 			return Fail("vkCreateSampler", result);
@@ -1160,6 +1251,7 @@ namespace
 			vk.vkDestroyImage(device, session->dummy, nullptr);
 		if (session->dummyMemory)
 			vk.vkFreeMemory(device, session->dummyMemory, nullptr);
+		DestroyHudMips(session);
 		if (session->sampler)
 			vk.vkDestroySampler(device, session->sampler, nullptr);
 		if (session->pool)
@@ -1486,8 +1578,18 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateSession(XrInstance, const XrSessionCreate
 	s.gripYaw = BetterVR_PS5_Setting("gripYaw", 17.0f);
 	s.gripRoll = BetterVR_PS5_Setting("gripRoll", 30.0f);
 	s.reproject = BetterVR_PS5_Setting("reproject", 1.0f) != 0.0f;
+	s.profile = BetterVR_PS5_Profile();
+	if (s.profile)
+	{
+		s.profileAt = sceKernelGetProcessTime();
+#if defined(__PROSPERO__)
+		s.profileGpuAt = g_ps5GpuBusyNs.load(std::memory_order_relaxed);
+#endif
+	}
 	Log("reprojection of the game's frames: %s (bettervr.json's reproject); HUD quad drawn as its plane, a mono picture across each eye, "
 		"a re-shown pair keeps its render pose", s.reproject ? "on" : "off");
+	Log("frame profile: %s (bettervr.json's profile), %s", s.profile ? "one [frame] line every 10 s" : "off",
+		s.profile ? "GPU busy, swap, VR end, compose fence and hmd2 submit" : "nothing extra is timed");
 	if (!s.tv)
 		Log("TV mirror off (bettervr.json's tv): the TV stays dark while VR runs");
 	else if (hmd2::mirroring())
@@ -1754,9 +1856,35 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateSwapchain(XrSession session, const XrSwap
 	swapchain->width = info->width;
 	swapchain->height = info->height;
 	swapchain->color = color;
+	VkFormat sampleFormat = VK_FORMAT_UNDEFINED;
+	if (color)
+	{
+		if (format == VK_FORMAT_R8G8B8A8_SRGB)
+			sampleFormat = VK_FORMAT_R8G8B8A8_UNORM;
+		else if (format == VK_FORMAT_B8G8R8A8_SRGB)
+			sampleFormat = VK_FORMAT_B8G8R8A8_UNORM;
+	}
 	for (int i = 0; i < kSwapchainImages; i++)
+	{
 		if (!MakeImage(session, info->width, info->height, format, usage, swapchain->images[i], swapchain->memory[i], &swapchain->views[i]))
 			return XR_ERROR_RUNTIME_FAILURE;
+		if (sampleFormat != VK_FORMAT_UNDEFINED)
+		{
+			// the same image as UNORM: the compose reads the bytes as written, without the sRGB
+			// decode that would need the pow chain to encode them again
+			VkImageViewCreateInfo viewInfo{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+			viewInfo.image = swapchain->images[i];
+			viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+			viewInfo.format = sampleFormat;
+			viewInfo.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+			const VkResult created = vk.vkCreateImageView(session->device, &viewInfo, nullptr, &swapchain->sampleViews[i]);
+			if (created != VK_SUCCESS)
+			{
+				Fail("vkCreateImageView (UNORM sample)", created);
+				return XR_ERROR_RUNTIME_FAILURE;
+			}
+		}
+	}
 	// the layout the application finds them in, and leaves them in at release
 	const bool ok = RunOnce(session, [&](VkCommandBuffer commands) {
 		for (int i = 0; i < kSwapchainImages; i++)
@@ -1783,6 +1911,8 @@ XRAPI_ATTR XrResult XRAPI_CALL xrDestroySwapchain(XrSwapchain swapchain)
 		}
 		for (int i = 0; i < kSwapchainImages; i++)
 		{
+			if (swapchain->sampleViews[i])
+				vk.vkDestroyImageView(s.session->device, swapchain->sampleViews[i], nullptr);
 			if (swapchain->views[i])
 				vk.vkDestroyImageView(s.session->device, swapchain->views[i], nullptr);
 			if (swapchain->images[i])
@@ -1955,7 +2085,8 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
 			eyeFov[eye] = view.fov;
 			if (!swapchain || swapchain->released < 0 || !swapchain->color)
 				continue;
-			eyeViews[eye] = swapchain->views[swapchain->released];
+			// the UNORM view reads the bytes as they were written; the sRGB view is only for rendering
+			eyeViews[eye] = swapchain->sampleViews[swapchain->released] ? swapchain->sampleViews[swapchain->released] : swapchain->views[swapchain->released];
 			eyeImages[eye] = swapchain->images[swapchain->released];
 			const XrRect2Di& r = view.subImage.imageRect;
 			params.source[eye][0] = (float)r.offset.x / swapchain->width;
@@ -2045,6 +2176,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
 	}
 	VkImageView hudView = session->dummyView;
 	VkImage hudImage = VK_NULL_HANDLE;
+	const XrSwapchain_T* hudSwapchain = nullptr;
 	if (quad && quad->subImage.swapchain && quad->subImage.swapchain->released >= 0 && quad->subImage.swapchain->color)
 	{
 		const XrSwapchain_T* swapchain = quad->subImage.swapchain;
@@ -2066,6 +2198,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
 		}
 		if (any)
 		{
+			hudSwapchain = swapchain;
 			hudView = swapchain->views[swapchain->released];
 			hudImage = swapchain->images[swapchain->released];
 			params.flags |= 4u;
@@ -2087,10 +2220,23 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
 	if ((params.flags & 7u) == 0)
 		session->emptyFrames++;
 
+	// a mip chain of the HUD image, so the 2.4x minification through the quad picks a level
+	bool hudMips = false;
+	if (hudImage && hudSwapchain && hudImage != eyeImages[0] && hudImage != eyeImages[1] && EnsureHudMips(session, hudSwapchain))
+	{
+		hudMips = true;
+		hudView = session->hudMipView;
+		params.flags |= 32u;
+	}
+	// the one colour format the runtime offers that is not sRGB: its bytes are already encoded
+	if (hudSwapchain && hudSwapchain->format == VK_FORMAT_R8G8B8A8_UNORM)
+		params.flags |= 64u;
+
 	const hmd2::EyeBuffer eye = hmd2::acquire();
 	const int index = eye.index >= 0 && eye.index < kEyeBuffers ? eye.index : 0;
 	VkDescriptorImageInfo images[3] = {{session->sampler, eyeViews[0], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
-		{session->sampler, eyeViews[1], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}, {session->sampler, hudView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}};
+		{session->sampler, eyeViews[1], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+		{session->sampler, hudView, hudMips ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}};
 	VkDescriptorBufferInfo buffer{session->eyeBuffers[index], 0, VK_WHOLE_SIZE};
 	VkWriteDescriptorSet writes[3] = {};
 	for (auto& write : writes)
@@ -2104,23 +2250,61 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
 	vk.vkUpdateDescriptorSets(session->device, 3, writes, 0, nullptr);
 
 	// the images the application wrote, readable here and given back in its layout after
-	VkImage sampled[3] = {eyeImages[0], eyeImages[1], hudImage};
-	if (sampled[1] == sampled[0])
-		sampled[1] = VK_NULL_HANDLE;
+	VkImage sampledEyes[2] = {eyeImages[0], eyeImages[1]};
+	if (sampledEyes[1] == sampledEyes[0])
+		sampledEyes[1] = VK_NULL_HANDLE;
 	const bool ok = SubmitCompose(session, [&](VkCommandBuffer commands) {
-		for (VkImage image : sampled)
+		for (VkImage image : sampledEyes)
 			if (image)
 				ImageBarrier(commands, image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
 					VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
 					VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+		if (hudImage && hudMips)
+		{
+			// the HUD as the game wrote it, into level 0, then each level down from the one above; the
+			// levels stay in GENERAL so a level is read and written without a layout transition
+			ImageBarrier(commands, hudImage, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+				VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+			ImageBarrier(commands, session->hudMip, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL, 0,
+				VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, session->hudMipLevels);
+			VkImageCopy copy{};
+			copy.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+			copy.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+			copy.extent = {hudSwapchain->width, hudSwapchain->height, 1};
+			vk.vkCmdCopyImage(commands, hudImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, session->hudMip, VK_IMAGE_LAYOUT_GENERAL, 1, &copy);
+			for (uint32_t level = 1; level < session->hudMipLevels; level++)
+			{
+				ImageBarrier(commands, session->hudMip, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_GENERAL,
+					VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+					level - 1, 1);
+				VkImageBlit blit{};
+				blit.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, level - 1, 0, 1};
+				blit.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, level, 0, 1};
+				blit.srcOffsets[1] = {(int32_t)std::max(1u, hudSwapchain->width >> (level - 1)), (int32_t)std::max(1u, hudSwapchain->height >> (level - 1)), 1};
+				blit.dstOffsets[1] = {(int32_t)std::max(1u, hudSwapchain->width >> level), (int32_t)std::max(1u, hudSwapchain->height >> level), 1};
+				vk.vkCmdBlitImage(commands, session->hudMip, VK_IMAGE_LAYOUT_GENERAL, session->hudMip, VK_IMAGE_LAYOUT_GENERAL, 1, &blit, VK_FILTER_LINEAR);
+			}
+			ImageBarrier(commands, session->hudMip, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_GENERAL,
+				VK_ACCESS_TRANSFER_WRITE_BIT | VK_ACCESS_TRANSFER_READ_BIT, VK_ACCESS_SHADER_READ_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+				VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, session->hudMipLevels);
+			ImageBarrier(commands, hudImage, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+				VK_ACCESS_TRANSFER_READ_BIT, 0, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
+		}
+		else if (hudImage)
+			ImageBarrier(commands, hudImage, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+				VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+				VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
 		vk.vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_COMPUTE, session->pipeline);
 		vk.vkCmdBindDescriptorSets(commands, VK_PIPELINE_BIND_POINT_COMPUTE, session->pipelineLayout, 0, 1, &session->set, 0, nullptr);
 		vk.vkCmdPushConstants(commands, session->pipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(params), &params);
 		vk.vkCmdDispatch(commands, (2 * kEyeWidth + 7) / 8, (kEyeHeight + 7) / 8, 1);
-		for (VkImage image : sampled)
+		for (VkImage image : sampledEyes)
 			if (image)
 				ImageBarrier(commands, image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
 					VK_ACCESS_SHADER_READ_BIT, 0, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
+		if (hudImage && !hudMips)
+			ImageBarrier(commands, hudImage, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+				VK_ACCESS_SHADER_READ_BIT, 0, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
 		// the GPU wrote the buffer: visible to Hmd2 before the flip (HLA-PSVR2's barrier, as M2's)
 		VkBufferMemoryBarrier toHost{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
 		toHost.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
@@ -2140,10 +2324,13 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
 	// timeline value Cemu's GPU thread signals in its next submit, and that thread takes s.lock in xrAcquireSwapchainImage
 	// and the like. Holding the lock here would make the wait cause its own timeout.
 	session->composeBusy = true;
+	const uint64_t fenceStarted = s.profile ? sceKernelGetProcessTime() : 0;
 	lock.unlock();
 	const VkResult waited = vk.vkWaitForFences(session->device, 1, &session->composeFence, VK_TRUE, kGpuTimeoutNs);
 	lock.lock();
 	session->composeBusy = false;
+	if (s.profile)
+		s.profileFenceNs += (sceKernelGetProcessTime() - fenceStarted) * 1000;
 	if (s.stopped || s.session != session)
 		return Lost();
 	if (!ComposeFenceResult(session, waited) || session->composePending)
@@ -2156,7 +2343,13 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
 		return XR_SUCCESS; // the frame stays open: the next xrEndFrame looks at the fence again
 	}
 	session->frameOpen = false;
+	const uint64_t submitStarted = s.profile ? sceKernelGetProcessTime() : 0;
 	const bool submitted = hmd2::submit(ToHmd(renderHead));
+	if (s.profile)
+	{
+		s.profileSubmitNs += (sceKernelGetProcessTime() - submitStarted) * 1000;
+		s.profileFrames++;
+	}
 	// Hmd2's compositor is what puts this frame on the TV: no present of ours and no queue lock
 	if (s.tv && submitted)
 		(hmd2::mirroring() ? session->tvShown : session->tvSkipped)++;
@@ -2197,6 +2390,30 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
 			s.handLocated[0].p.x, s.handLocated[0].p.y, s.handLocated[0].p.z, s.handLocated[1].p.x, s.handLocated[1].p.y, s.handLocated[1].p.z,
 			s.hands[0].poseValid ? 1 : 0, s.hands[1].poseValid ? 1 : 0, (unsigned long long)session->planeQuads, s.tv ? "on" : "off",
 			(unsigned long long)session->tvShown, (unsigned long long)session->tvSkipped);
+	}
+	if (s.profile)
+	{
+		const uint64_t now = sceKernelGetProcessTime();
+		if (s.profileAt && now - s.profileAt >= 10'000'000)
+		{
+			const double seconds = (double)(now - s.profileAt) / 1e6;
+#if defined(__PROSPERO__)
+			const uint64_t swapNs = g_ps5FrameSwapNs.exchange(0, std::memory_order_relaxed);
+			const uint64_t vrEndNs = g_ps5FrameVrEndNs.exchange(0, std::memory_order_relaxed);
+			const uint32_t samples = g_ps5FrameProfileSamples.exchange(0, std::memory_order_relaxed);
+			const uint64_t gpuNs = g_ps5GpuBusyNs.load(std::memory_order_relaxed);
+			const double gpuBusy = now > s.profileAt ? (double)(gpuNs - s.profileGpuAt) / 1000.0 * 100.0 / (double)(now - s.profileAt) : 0.0;
+			s.profileGpuAt = gpuNs;
+			const double notifyFrames = samples ? (double)samples : (s.profileFrames ? (double)s.profileFrames : 1.0);
+			const double runtimeFrames = s.profileFrames ? (double)s.profileFrames : notifyFrames;
+			Log("[frame] swap %.2f ms | VR end %.2f ms | compose fence %.2f ms | hmd2 submit %.2f ms | %.1f fps | GPU busy %.0f%% (over %.1f s, %u frames)",
+				(double)swapNs / 1e6 / notifyFrames, (double)vrEndNs / 1e6 / notifyFrames, (double)s.profileFenceNs / 1e6 / runtimeFrames,
+				(double)s.profileSubmitNs / 1e6 / runtimeFrames, notifyFrames / seconds, gpuBusy, seconds, samples);
+#endif
+			s.profileAt = now;
+			s.profileFenceNs = s.profileSubmitNs = 0;
+			s.profileFrames = 0;
+		}
 	}
 	return XR_SUCCESS;
 }

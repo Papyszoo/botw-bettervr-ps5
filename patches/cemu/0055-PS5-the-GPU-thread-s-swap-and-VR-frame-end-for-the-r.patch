@@ -1,0 +1,57 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Patryk Kowalczyk <papyszoo@gmail.com>
+Date: Wed, 18 Nov 2026 17:14:28 +0100
+Subject: [PATCH] PS5: the GPU thread's swap and VR frame end for the runtime's
+ frame profile
+
+---
+ src/Cafe/HW/Latte/Core/LatteRenderTarget.cpp | 25 ++++++++++++++++++++
+ 1 file changed, 25 insertions(+)
+
+diff --git a/src/Cafe/HW/Latte/Core/LatteRenderTarget.cpp b/src/Cafe/HW/Latte/Core/LatteRenderTarget.cpp
+index 40fb5a7a..a6dbb816 100644
+--- a/src/Cafe/HW/Latte/Core/LatteRenderTarget.cpp
++++ b/src/Cafe/HW/Latte/Core/LatteRenderTarget.cpp
+@@ -800,8 +800,18 @@ void LatteRenderTarget_trackUpdates()
+ // Averages over ten seconds hide the frames a player feels while the game streams an area in.
+ std::atomic<uint32> g_ps5FramesOver[3]{};
+ std::atomic<uint32> g_ps5LongestFrameUs{0};
++// the frame profile (bettervr.json "profile", port/app/emulator.cpp): the GPU thread's swap and the
++// VR frame end, summed until the runtime's [frame] line takes them (port/bettervr/xr/runtime.cpp)
++bool g_ps5FrameProfile = false;
++std::atomic<uint64> g_ps5FrameSwapNs{0};
++std::atomic<uint64> g_ps5FrameVrEndNs{0};
++std::atomic<uint32> g_ps5FrameProfileSamples{0};
+ extern uint64 _rdtscFrequency;
+ static uint64 s_ps5LastSwapTsc = 0;
++static uint64 TscToNs(uint64 ticks)
++{
++	return _rdtscFrequency ? ticks * 1000000000ull / _rdtscFrequency : 0;
++}
+ #endif
+ 
+ void LatteRenderTarget_itHLESwapScanBuffer()
+@@ -832,8 +842,23 @@ void LatteRenderTarget_itHLESwapScanBuffer()
+ 	LattePerformanceMonitor_frameEnd();
+ 	FrameBenchmarkHelper::FrameEnd();
+ 	LatteGPUState.frameCounter++;
++#if defined(CEMU_PS5)
++	const uint64 ps5SwapStart = g_ps5FrameProfile ? __rdtsc() : 0;
++#endif
+ 	g_renderer->SwapBuffers(true, true);
++#if defined(CEMU_PS5)
++	const uint64 ps5VrStart = g_ps5FrameProfile ? __rdtsc() : 0;
++	if (g_ps5FrameProfile)
++		g_ps5FrameSwapNs.fetch_add(TscToNs(ps5VrStart - ps5SwapStart), std::memory_order_relaxed);
++#endif
+ 	HostModule::NotifyFrameSubmitted(HostModule::FrameKind::Guest);
++#if defined(CEMU_PS5)
++	if (g_ps5FrameProfile)
++	{
++		g_ps5FrameVrEndNs.fetch_add(TscToNs(__rdtsc() - ps5VrStart), std::memory_order_relaxed);
++		g_ps5FrameProfileSamples.fetch_add(1, std::memory_order_relaxed);
++	}
++#endif
+ 
+ 	catchOpenGLError();
+ 	performanceMonitor.gpuTime_frameTime.beginMeasuring();
