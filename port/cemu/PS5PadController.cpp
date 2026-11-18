@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "PS5PadController.h"
 #include "../app/ingame.h"
+#include "../ps5/log.h"
 #include "../ps5/pad.h"
 #include "../stream/stream.h"
 
@@ -16,6 +17,10 @@ namespace
 	// four players see who is who: set when the DualSense first answers, again after it comes back
 	constexpr uint8_t kPlayerLight[ps5pad::kMaxPlayers][3] = {{0, 70, 255}, {255, 30, 40}, {30, 210, 70}, {255, 70, 190}};
 	std::array<std::atomic<bool>, ps5pad::kMaxPlayers> s_lit{};
+	// BotW-BetterVR on PS5 (port/bettervr/xr/runtime.cpp): while a VR session runs its mixer is the DualSense's
+	// only rumble source, so Cemu's own on/off pattern does not fire the pad a second time. The mixer's level
+	// already carries BetterVR's category strength; the launcher's Vibration row still gates ps5pad::SetVibration.
+	std::atomic<bool> s_externalRumble{false};
 
 	float StickAxis(uint8 raw)
 	{
@@ -180,6 +185,8 @@ PositionVisibility PS5PadController::GetPositionVisibility()
 
 void PS5PadController::start_rumble()
 {
+	if (s_externalRumble.load())
+		return; // BetterVR's mixer (PS5Pad_ExternalRumble) is the pad's only rumble while VR runs
 	const float strength = std::clamp(get_settings().rumble, 0.0f, 1.0f);
 	if (strength <= 0.0f)
 		return;
@@ -189,7 +196,31 @@ void PS5PadController::start_rumble()
 
 void PS5PadController::stop_rumble()
 {
+	if (s_externalRumble.load())
+		return;
 	ps5pad::SetVibration(m_player, 0, 0);
+}
+
+// BotW-BetterVR on PS5 (port/bettervr/xr/runtime.cpp): the runtime takes the DualSense's rumble over when its VR
+// session begins and gives it back when the game ends, so the game's pattern and BetterVR's never double. The
+// level is the mixer's (0..1, player 1's pad); ps5pad's launcher switch stays the outer gate.
+extern "C" void PS5Pad_SetExternalRumble(bool on)
+{
+	if (s_externalRumble.exchange(on) == on)
+		return;
+	// either way the motors start from rest: a Cemu burst that was on when VR began must not stay on, and the VR
+	// mixer's last level must not linger when it ends
+	ps5pad::SetVibration(0, 0, 0);
+	ps5log::Line("[pad] rumble: {}", on ? "BetterVR's vibration mixer drives the DualSense, Cemu's own pattern output is held back"
+									   : "Cemu's own pattern output is back");
+}
+
+extern "C" void PS5Pad_ExternalRumble(float level)
+{
+	if (!s_externalRumble.load())
+		return;
+	const auto motor = static_cast<uint8>(std::clamp(level, 0.0f, 1.0f) * 255.0f);
+	ps5pad::SetVibration(0, motor, motor);
 }
 
 std::string PS5PadController::get_button_name(uint64 button) const

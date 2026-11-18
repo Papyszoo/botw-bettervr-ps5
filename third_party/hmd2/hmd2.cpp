@@ -1588,6 +1588,62 @@ int sense_set_vibration(int handle, uint8_t intensity) {
     return scePadVrControllerSetVibration(handle, intensity);
 }
 
+// -- the headset's own motor -------------------------------------------------
+// sceHmd2SetVibration(handle, level): 0..25, one motor (AnyPS5 checks a level against 25 on a connected headset;
+// AstroBotVR2 uses 1..25 and holds no longer than 2 s). libSceHmd2 does not export it by name on 13.60, and its
+// offset is Ghost-VR's and HLA-PSVR2's tables' (+0x2ae00 on 13.60), not our own dump: it is bound like the Sense
+// exports, optional, and only through a table whose anchor string matched (libSceHmd2's own, so the build is pinned
+// before the offset is believed). Other firmware stays unbound and the motor stays still.
+int (*sceHmd2SetVibration)(int handle, uint32_t level) = nullptr;
+const Slot kHeadsetVibrationSlots[] = {
+    {"sceHmd2SetVibration", reinterpret_cast<void **>(&sceHmd2SetVibration)},
+};
+const export_sig_t kExports_libSceHmd2Vibration_1360[] = {
+    {"sceHmd2SetVibration", 0x2ae00u},
+};
+const export_table_t kTables_libSceHmd2Vibration[] = {
+    {1360, kExports_libSceHmd2Vibration_1360, 1, &kAnchor_libSceHmd2_1360},
+};
+int g_headset_vibration = 0; // 0 not tried, 1 bound, -1 unavailable
+int g_headset_vibration_logged = 0;
+int g_headset_vibration_failures = 0;
+
+bool bind_headset_vibration() {
+    if (g_headset_vibration != 0)
+        return g_headset_vibration > 0;
+    g_headset_vibration = -1;
+    const int handle = load_sysmodule(kSysmoduleHmd2, "libSceHmd2");
+    if (handle >= 0 &&
+        resolve_module(handle, "libSceHmd2.sprx", kHeadsetVibrationSlots, kSlots(kHeadsetVibrationSlots),
+                       kTables_libSceHmd2Vibration, sizeof kTables_libSceHmd2Vibration / sizeof *kTables_libSceHmd2Vibration,
+                       nullptr, false)) {
+        g_headset_vibration = 1;
+        logf("hmd2: headset vibration bound at %p (sceHmd2SetVibration, 13.60 table, anchor checked)",
+             reinterpret_cast<void *>(sceHmd2SetVibration));
+    } else {
+        sceHmd2SetVibration = nullptr;
+        logf("hmd2: sceHmd2SetVibration not found on this firmware, the headset stays still");
+    }
+    return g_headset_vibration > 0;
+}
+
+int set_vibration(int level) {
+    level = level < 0 ? 0 : level > 25 ? 25 : level;
+    if (!s.hmd2_up || s.hmd < 0)
+        return kHmd2VibrationUnavailable;
+    if (!bind_headset_vibration())
+        return kHmd2VibrationUnavailable;
+    const int rc = sceHmd2SetVibration(s.hmd, (uint32_t)level);
+    if (g_headset_vibration_logged < 6 || rc != 0) {
+        if (rc == 0 || g_headset_vibration_failures++ < 20) {
+            logf("hmd2: headset vibration level %d -> 0x%08x (%s)", level, (unsigned)rc,
+                 rc == 0 ? (g_headset_vibration_logged < 6 ? "one of the first" : "ok") : "failed");
+        }
+        g_headset_vibration_logged++;
+    }
+    return rc;
+}
+
 bool controller_pose(int tracker_handle, float pos[3], float quat[4]) {
     if (pos != nullptr) pos[0] = pos[1] = pos[2] = 0.0f;
     if (quat != nullptr) {

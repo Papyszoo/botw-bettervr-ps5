@@ -10,6 +10,9 @@ static const export_sig_t kExports_libSceHmd2_1360[] = {
     {"sceHmd2Open", 0x2a740u},
     {"sceHmd2Close", 0x2a8e0u},
     {"sceHmd2GetDeviceInformation", 0x2ab90u},
+    /* not an export of the library by name; the headset's motor (third_party/hmd2/hmd2.cpp's
+       bind_headset_vibration, optional): Ghost-VR's and HLA-PSVR2's 13.60 tables, not our own dump */
+    {"sceHmd2SetVibration", 0x2ae00u},
     {"sceHmd2GetFieldOfViewWithoutHandle", 0x27940u},
     {"sceHmd2ReprojectionQueryBufferSizeAlign", 0x218c0u},
     {"sceHmd2ReprojectionQueryDisplayBufferSizeAlign", 0x21940u},

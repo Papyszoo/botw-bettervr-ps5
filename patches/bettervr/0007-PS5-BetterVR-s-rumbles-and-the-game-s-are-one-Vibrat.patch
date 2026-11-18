@@ -1,0 +1,1254 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Patryk Kowalczyk <papyszoo@gmail.com>
+Date: Wed, 18 Nov 2026 17:12:53 +0100
+Subject: [PATCH] PS5: BetterVR's rumbles and the game's are one Vibration
+ page, one mixer
+
+Nine categories (swings, bow, shield/guard, gear/inventory, attacks/items/throws, runes,
+the game's own rumble, damage taken, explosions), each with an on/off, a strength and the
+devices it is felt on (the Sense controllers, the PS VR2 headset's motor, the DualSense).
+The defaults are v0.5.0's output: every category on at 100% on the Sense controllers, the
+game's pattern on both hands at full strength; the two new ones start on for the hands and
+the headset. Everything lives in BetterVR_settings.ini and on the new Vibration page.
+
+RumbleManager is a 60 Hz mixer: the game's pattern is a level per tick and each input
+rumble an enveloped level on its hand, and a device gets the louder of the categories that
+were switched on for it. The game pattern and BetterVR's own rumbles no longer cut each
+other off. The headset and the DualSense are reached through the runtime's two sinks; while
+a VR session runs Cemu's own rumble output is held back so the pad cannot fire twice. The
+page has a test button for each device, and its [vib] lines say what answered.
+
+The game's own rumble also logs, at most 40 lines 150 ms apart, the caller and, when the
+sead addon is reachable, its pattern string (+0x14), so one console run can tell which
+situations make which pattern.
+---
+ src/CMakeLists.txt               |   1 +
+ src/game/botw/game_structs.h     |   3 +
+ src/game/botw/input/controls.cpp | 130 ++++++++++++++----
+ src/game/botw/player/player.cpp  |  31 +++++
+ src/game/botw/player/weapon.cpp  |   2 +-
+ src/rendering/haptic_types.h     |  26 ++++
+ src/rendering/haptics.cpp        |  33 ++++-
+ src/rendering/haptics.h          |  12 +-
+ src/rendering/imgui_menus.cpp    | 146 ++++++++++++++++++++
+ src/rendering/imgui_menus.h      |  19 +--
+ src/rendering/renderer.h         |   1 +
+ src/rendering/rumble.h           | 222 +++++++++++++++++++------------
+ src/utils/mod_settings.cpp       |  60 +++++++++
+ src/utils/mod_settings.h         |  46 +++++++
+ 14 files changed, 608 insertions(+), 124 deletions(-)
+ create mode 100644 src/rendering/haptic_types.h
+
+diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
+index ee8d53e..643f4b1 100644
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
+@@ -104,6 +104,7 @@ add_library(BetterVR STATIC
+     rendering/openxr.cpp
+     rendering/openxr.h
+     rendering/rumble.h
++    rendering/haptic_types.h
+     rendering/haptics.h
+     rendering/haptics.cpp
+     rendering/tracking.h
+diff --git a/src/game/botw/game_structs.h b/src/game/botw/game_structs.h
+index 319d750..0d50ed7 100644
+--- a/src/game/botw/game_structs.h
++++ b/src/game/botw/game_structs.h
+@@ -1,5 +1,7 @@
+ #pragma once
+ 
++#include "rendering/haptic_types.h"
++
+ #pragma pack(push, 1)
+ namespace sead {
+     struct SafeString : BETypeCompatible {
+@@ -542,6 +544,7 @@ enum class RumbleType {
+      double effectDuration = 0;
+      float frequency = 0.0f;
+      float amplitude = 0.0f;
++     HapticCategory category = HapticCategory::Game;
+  };
+ 
+ struct Weapon : WeaponBase {
+diff --git a/src/game/botw/input/controls.cpp b/src/game/botw/input/controls.cpp
+index 06f73cf..ac2d9d8 100644
+--- a/src/game/botw/input/controls.cpp
++++ b/src/game/botw/input/controls.cpp
+@@ -552,7 +552,7 @@ static void ProcessLeftHandInGameInput(
+     bool isCurrentGrabPressed = !suppressGrabActions && (s_grabButtons[0].IsDown() || (grabEvent == ButtonState::Event::ShortPress && s_pullSlots[0] != PullSlot::None));
+     
+     if (state.leftHandEquipType == EquipType::SheikahSlate)
+-        Haptics::Play(RuneRumble);
++        Haptics::Play(RuneRumble, HapticCategory::Rune);
+ 
+     // Gesture enabled only when both melee weapon and shield are in hands to prevent 2 handed weapons and quick drawing shield 
+     if (!inputs.inGame.useLeftItem.currentState && state.leftHandEquipType == EquipType::Shield && state.rightHandEquipType == EquipType::Melee && (leftGesture.isNearChestHeight)) {
+@@ -560,13 +560,13 @@ static void ProcessLeftHandInGameInput(
+         rightStickSource.currentState.y = 0.2f; // Force disable the lock on view when holding shield
+         state.isShieldGuarding = true;
+         if ((state.previousButtonHold & VPAD_BUTTON_ZL) == 0)
+-            Haptics::Play(leftRumbleRaise);
++            Haptics::Play(leftRumbleRaise, HapticCategory::Guard);
+     }
+     else if (!inputs.inGame.useLeftItem.currentState)
+         state.isShieldGuarding = false;
+ 
+     if (!state.isShieldGuarding && state.previousButtonHold & VPAD_BUTTON_ZL)
+-        Haptics::Play(leftRumbleFall);
++        Haptics::Play(leftRumbleFall, HapticCategory::Guard);
+ 
+     float ACCELERATION_THRESHOLD = 35.0f;
+     auto handVelocity = glm::length(ToGLM(inputs.shared.poseVelocity[0].linearVelocity));
+@@ -574,7 +574,7 @@ static void ProcessLeftHandInGameInput(
+     state.previousLeftHandVelocity = handVelocity;
+     if (acceleration > ACCELERATION_THRESHOLD && state.leftHandEquipType == EquipType::Shield && state.isShieldGuarding) {
+         buttonHold |= VPAD_BUTTON_A;
+-        Haptics::Play(leftRumbleFall);
++        Haptics::Play(leftRumbleFall, HapticCategory::Guard);
+     }
+ 
+     if (IsHandOverLeftShoulderSlot(leftGesture) || IsHandOverRightShoulderSlot(leftGesture)) {
+@@ -585,7 +585,7 @@ static void ProcessLeftHandInGameInput(
+         }
+ 
+         if (!state.preventGrabInputs && isGrabPressed) {
+-            Haptics::Play(leftRumbleFall);
++            Haptics::Play(leftRumbleFall, HapticCategory::Equip);
+             ToggleBodySlotEquip(GetBodySlotUnderHand(leftGesture), buttonHold, state);
+             state.preventGrabInputs = true;
+             state.preventGrabTime = now;
+@@ -601,7 +601,7 @@ static void ProcessLeftHandInGameInput(
+         }
+ 
+         if (!state.preventGrabInputs && isGrabPressed) {
+-            Haptics::Play(leftRumbleFall);
++            Haptics::Play(leftRumbleFall, HapticCategory::Equip);
+             ToggleBodySlotEquip(PullSlot::LeftWaist, buttonHold, state);
+             state.preventGrabInputs = true;
+             state.preventGrabTime = now;
+@@ -622,7 +622,7 @@ static void ProcessLeftHandInGameInput(
+     if (IsHandOverRightWaistSlot(leftGesture))
+     {
+         if (isGrabPressedLong) {
+-            Haptics::Play(leftRumbleFall);
++            Haptics::Play(leftRumbleFall, HapticCategory::Equip);
+             Weapons::RequestDrop(0);
+             s_grabButtons[0].Cancel();
+             state.preventGrabInputs = true;
+@@ -672,10 +672,10 @@ static void ProcessRightHandInGameInput(
+         }
+ 
+         if (IsHandOverRightShoulderSlot(rightGesture) && state.rightHandEquipType == EquipType::Melee && !state.handThrowCarrying && !inputs.inGame.useRightItem.currentState)
+-            Haptics::Play(OverSlotsRumble);
++            Haptics::Play(OverSlotsRumble, HapticCategory::Equip);
+ 
+         if (!state.preventGrabInputs && isGrabPressedShort) { 
+-            Haptics::Play(rightRumbleFall);
++            Haptics::Play(rightRumbleFall, HapticCategory::Equip);
+             ToggleBodySlotEquip(GetBodySlotUnderHand(rightGesture), buttonHold, state);
+             state.preventGrabInputs = true;
+             state.preventGrabTime = now;
+@@ -687,12 +687,12 @@ static void ProcessRightHandInGameInput(
+             // Keep going or start shoot arrow action even if hand gets over right shoulder slot
+             if (state.leftHandEquipType == EquipType::Bow)
+             {
+-                Haptics::Play(rightRumbleInfiniteRaise);
++                Haptics::Play(rightRumbleInfiniteRaise, HapticCategory::Bow);
+                 buttonHold |= VPAD_BUTTON_ZR;
+                 state.triggerPressedOverBodySlot = true;
+             }
+             else if (state.rightHandEquipType == EquipType::Melee && !state.handThrowCarrying) {
+-                Haptics::Play(rightRumbleInfiniteRaise);
++                Haptics::Play(rightRumbleInfiniteRaise, HapticCategory::UseThrow);
+                 buttonHold |= VPAD_BUTTON_R;
+                 state.triggerPressedOverBodySlot = true;
+             }
+@@ -716,7 +716,7 @@ static void ProcessRightHandInGameInput(
+         }
+ 
+         if (!state.preventGrabInputs && isGrabPressedShort) {
+-            Haptics::Play(rightRumbleFall);
++            Haptics::Play(rightRumbleFall, HapticCategory::Equip);
+             ToggleBodySlotEquip(PullSlot::LeftWaist, buttonHold, state);
+             state.preventGrabInputs = true;
+             state.preventGrabTime = now;
+@@ -727,7 +727,7 @@ static void ProcessRightHandInGameInput(
+     if (IsHandOverRightWaistSlot(rightGesture))
+     {
+         if (isGrabPressedLong) {
+-            Haptics::Play(rightRumbleFall);
++            Haptics::Play(rightRumbleFall, HapticCategory::Equip);
+             Weapons::RequestDrop(1);
+             s_grabButtons[1].Cancel();
+             state.preventGrabInputs = true;
+@@ -738,7 +738,7 @@ static void ProcessRightHandInGameInput(
+     
+     if (isCurrentGrabPressed) {
+         if (EquipFromBodySlot(s_pullSlots[1], buttonHold, state))
+-            Haptics::Play(rightRumbleFall);
++            Haptics::Play(rightRumbleFall, HapticCategory::Equip);
+         if (s_pullSlots[1] != PullSlot::None) {
+             s_pullSlots[1] = PullSlot::None;
+             s_grabButtons[1].Cancel();
+@@ -776,7 +776,7 @@ static void ProcessLeftTriggerBindings(
+     // Reset the guard state to trigger again the lock on camera
+     if (!state.isLockingOnTarget && state.previousButtonHold & VPAD_BUTTON_ZL) {
+         if (state.leftHandEquipType == EquipType::SheikahSlate) {
+-            Haptics::Play(raiseRumble);
++            Haptics::Play(raiseRumble, HapticCategory::Guard);
+             buttonHold |= VPAD_BUTTON_B; // Cancel rune grab
+         }
+         buttonHold &= ~VPAD_BUTTON_ZL;
+@@ -784,7 +784,7 @@ static void ProcessLeftTriggerBindings(
+ 
+     else {
+         if (!state.isShieldGuarding)
+-            Haptics::Play(raiseRumble);
++            Haptics::Play(raiseRumble, HapticCategory::Guard);
+         buttonHold |= VPAD_BUTTON_ZL;
+         state.isLockingOnTarget = true;
+         state.isShieldGuarding = true;
+@@ -829,7 +829,7 @@ static void ProcessHandThrow(uint32_t& buttonHold, const OpenXR::InputState& inp
+     if ((triggerPressed || gripPressed) && !state.handThrowArmed) {
+         state.handThrowArmed = true;
+         state.handThrowArmedByGrip = gripPressed;
+-        Haptics::Play(readyRumble);
++        Haptics::Play(readyRumble, HapticCategory::UseThrow);
+     }
+     if (!state.handThrowArmed || !(state.handThrowArmedByGrip ? gripReleased : triggerReleased))
+         return;
+@@ -854,7 +854,7 @@ static void ProcessHandThrow(uint32_t& buttonHold, const OpenXR::InputState& inp
+         Log::print<CONTROLS>("[Throw] released without a hand speed");
+     }
+     buttonHold |= VPAD_BUTTON_R;
+-    Haptics::Play(throwRumble);
++    Haptics::Play(throwRumble, HapticCategory::UseThrow);
+ }
+ 
+ static void ProcessRightTriggerBindings(
+@@ -884,43 +884,43 @@ static void ProcessRightTriggerBindings(
+ 
+     if (state.hasSomethingInLeftHand || state.hasSomethingInRightHand) {
+         if (state.isThrowableObjectHeld) {
+-            Haptics::Play(rightRumbleFixed);
++            Haptics::Play(rightRumbleFixed, HapticCategory::UseThrow);
+             buttonHold |= VPAD_BUTTON_R;  // Throw object
+         }
+         else if (state.leftHandEquipType == EquipType::Bow || state.lastEquipTypeHeld == EquipType::Bow) {
+-            Haptics::Play(rightRumbleInfiniteRaiseBow);
++            Haptics::Play(rightRumbleInfiniteRaiseBow, HapticCategory::Bow);
+             buttonHold |= VPAD_BUTTON_ZR;  // Shoot bow
+         }
+         else if (state.leftHandEquipType == EquipType::SheikahSlate) {
+             buttonHold |= VPAD_BUTTON_A; // Use rune
+-            Haptics::Play(leftRumbleFixed);
++            Haptics::Play(leftRumbleFixed, HapticCategory::Rune);
+         }
+         // the triggerPressedOverBodySlot check prevents the melee attack rumbles to wrongly start when the throw weapon inputs 
+         // hasn't been released yet. Necessary because the melee attack action won't start if the throw input is still held.
+         else if (!state.triggerPressedOverBodySlot){
+-            Haptics::Play(rightRumbleInfiniteRaiseWeaponThrow);
++            Haptics::Play(rightRumbleInfiniteRaiseWeaponThrow, HapticCategory::UseThrow);
+             buttonHold |= VPAD_BUTTON_Y;  // Melee attack
+         }
+     }
+     else {
+         if (state.lastEquipTypeHeld == EquipType::Melee) {
+             buttonHold |= VPAD_BUTTON_Y;
+-            Haptics::Play(rightRumbleFixed);
++            Haptics::Play(rightRumbleFixed, HapticCategory::UseThrow);
+         }
+         else if (state.lastEquipTypeHeld == EquipType::Bow) {
+             buttonHold |= VPAD_BUTTON_ZR;
+-            Haptics::Play(rightRumbleFixed);
++            Haptics::Play(rightRumbleFixed, HapticCategory::UseThrow);
+         }
+         else if (state.lastEquipTypeHeld == EquipType::SheikahSlate) {
+             buttonHold |= VPAD_BUTTON_L;
+             if ((state.previousButtonHold & VPAD_BUTTON_L) == 0) {
+-                Haptics::Play(rightRumbleFixed);
+-                Haptics::Play(leftRumbleFixed);
++                Haptics::Play(rightRumbleFixed, HapticCategory::Rune);
++                Haptics::Play(leftRumbleFixed, HapticCategory::Rune);
+             }
+         }
+         else if (Player::IsRiding(true)) {
+             buttonHold |= VPAD_BUTTON_Y;  // Soothe the horse
+-            Haptics::Play(rightRumbleFixed);
++            Haptics::Play(rightRumbleFixed, HapticCategory::UseThrow);
+         }
+     }
+ }
+@@ -1386,7 +1386,7 @@ static void ProcessGameplayInput(uint32_t& buttonHold, OpenXR::InputState& input
+ 
+     if (IsHandOverMouthSlot(leftGesture) && IsHandOverMouthSlot(rightGesture)) {
+         if (s_grabButtons[0].IsDown() && s_grabButtons[1].IsDown()) {
+-            Haptics::Play({ true, 0, RumbleType::OscillationRaisingSawtoothWave, 1.0f, false, 0.25, 0.2f, 0.2f });
++            Haptics::Play({ true, 0, RumbleType::OscillationRaisingSawtoothWave, 1.0f, false, 0.25, 0.2f, 0.2f }, HapticCategory::UseThrow);
+             buttonHold |= VPAD_BUTTON_DOWN;
+         }
+     }
+@@ -1515,17 +1515,91 @@ static void hook_InjectXRInput(PPCInterpreter_t* hCPU) {
+ }
+ 
+ 
++#if defined(__PROSPERO__)
++// The game's own rumble, one [vib] line per event for the v0.6 console run (at most 40 lines, 150 ms apart). The
++// caller names the game system that started it (Route B in the v0.6 research); sead's PatternRumbleAddon keeps the
++// authored pattern string at +0x14 ("*" is on) and its repeat count at +0x1C, and when the addon's this is one of the
++// callee-saved registers or on the stack (Route A) its string is printed too. The VPAD bytes are only the rhythm.
++// This logs and nothing else: the game's rumble stays one category until a run has shown what the patterns mean.
++static void LogGameRumbleEvent(PPCInterpreter_t* hCPU, const uint8_t* pattern, uint8_t length, bool stopped) {
++    static std::chrono::steady_clock::time_point s_last{};
++    static int s_logged = 0;
++    if (!GetSettings().hapticsLogPatterns || s_logged >= 40)
++        return;
++    const auto now = std::chrono::steady_clock::now();
++    if (s_last != std::chrono::steady_clock::time_point{} && now - s_last < std::chrono::milliseconds(150))
++        return;
++    s_last = now;
++    s_logged++;
++
++    char text[41] = {};
++    uint32_t addon = 0;
++    uint32_t repeat = 0;
++    auto probe = [&](uint32_t candidate) {
++        if (addon != 0 || candidate < 0x10000000 || candidate >= 0x50000000 || (candidate & 3) != 0)
++            return;
++        const uint32_t vtable = Guest::Get<uint32_t>(candidate).getLE();
++        if (vtable < 0x02000000 || vtable >= 0x05000000)
++            return;
++        const uint32_t stringPtr = Guest::Get<uint32_t>(candidate + 0x14).getLE();
++        if (stringPtr < 0x10000000 || stringPtr >= 0x50000000 || (stringPtr & 3) != 0)
++            return;
++        const char* chars = Guest::CString(stringPtr);
++        size_t charsRead = 0;
++        bool hasOn = false;
++        while (charsRead < sizeof(text) - 1 && chars[charsRead] != '\0') {
++            const char c = chars[charsRead];
++            if (c < 0x20 || c > 0x7e)
++                return;
++            hasOn |= c == '*';
++            charsRead++;
++        }
++        if (charsRead < 2 || charsRead >= sizeof(text) - 1 || !hasOn)
++            return;
++        std::memcpy(text, chars, charsRead);
++        addon = candidate;
++        repeat = Guest::Get<uint32_t>(candidate + 0x1C).getLE();
++    };
++    for (int reg = 31; reg >= 24; reg--)
++        probe((uint32_t)hCPU->gpr[reg]);
++    const uint32_t stackPointer = (uint32_t)hCPU->gpr[1];
++    if (stackPointer >= 0x10000000 && stackPointer < 0x50000000)
++        for (uint32_t offset = 4; offset <= 0x24 && addon == 0; offset += 4)
++            probe(Guest::Get<uint32_t>(stackPointer + offset).getLE());
++
++    std::string state = GameState::IsShowingMenu() ? "menu" : (GameState::IsInGame() ? "in-game" : "not-in-game");
++    if (Player::IsRiding()) state += "+riding";
++    if (Player::IsGliding()) state += "+gliding";
++    if (Player::IsClimbing()) state += "+climbing";
++    if (Events::IsActive()) state += "+event";
++    std::string bytes;
++    if (!stopped) {
++        const int count = std::min<int>(15, (length + 7) / 8);
++        for (int i = 0; i < count; i++)
++            bytes += fmt::format("{}{:02x}", i ? " " : "", pattern[i]);
++    }
++    Log::print<INFO>("[vib] game rumble #{} {} caller=0x{:08X} {} bytes=[{}] pattern=\"{}\" repeat={} addon=0x{:08X}",
++        s_logged, stopped ? "stop" : "start", hCPU->sprNew.LR, state, bytes, text[0] != '\0' ? text : "?", repeat, addon);
++}
++#endif
++
+ static void hook_XRRumble_VPADControlMotor(PPCInterpreter_t* hCPU) {
+     hCPU->instructionPointer = hCPU->sprNew.LR;
+ 
+     uint8_t* pattern = Guest::HostPointer<uint8_t>(hCPU->gpr[4]);
+     uint8_t length = (uint8_t)hCPU->gpr[5];
++#if defined(__PROSPERO__)
++    LogGameRumbleEvent(hCPU, pattern, length, false);
++#endif
+     Haptics::PlayGamePattern(pattern, length);
+ }
+ 
+ static void hook_XRRumble_VPADStopMotor(PPCInterpreter_t* hCPU) {
+     hCPU->instructionPointer = hCPU->sprNew.LR;
+ 
++#if defined(__PROSPERO__)
++    LogGameRumbleEvent(hCPU, nullptr, 0, true);
++#endif
+     Haptics::StopGamePattern();
+ }
+ 
+diff --git a/src/game/botw/player/player.cpp b/src/game/botw/player/player.cpp
+index 61299a1..5df1f1a 100644
+--- a/src/game/botw/player/player.cpp
++++ b/src/game/botw/player/player.cpp
+@@ -4,6 +4,7 @@
+ #include "game/botw/game_state.h"
+ #include "game/botw/camera/camera.h"
+ #include "game/botw/debug/entity_debugger.h"
++#include "rendering/haptics.h"
+ #include "rendering/tracking.h"
+ #include "utils/render_utils.h"
+ 
+@@ -97,6 +98,32 @@ static bool ShouldBlockFirstPersonPlayerNormalState(uint32_t stateNamePtr) {
+     }
+ }
+ 
++// A damage reaction state is the frame a hit lands (vib.md, "Damage taken"): one falling rumble on both hands, once
++// per state change, since the hook can fire again for the same hit. The state's name is also logged once each, as
++// the first-person block below never reaches the state-change line.
++static void PlayDamageRumble(uint32_t stateNamePtr) {
++    using clock = std::chrono::steady_clock;
++    static clock::time_point s_lastPlayed{};
++    static uint32_t s_lastState = 0;
++    static int s_namesLogged = 0;
++    const auto now = clock::now();
++    if (stateNamePtr == s_lastState && now - s_lastPlayed < std::chrono::milliseconds(300))
++        return;
++    s_lastState = stateNamePtr;
++    s_lastPlayed = now;
++
++    if (s_namesLogged < 6) {
++        s_namesLogged++;
++        Log::print<INFO>("[vib] damage state '{}' (0x{:08X})", Guest::CString(stateNamePtr), stateNamePtr);
++    }
++
++    constexpr RumbleParameters damageRumble = { true, 0, RumbleType::Falling, 0.5f, false, 0.4, 0.1f, 0.8f };
++    Haptics::Play(damageRumble, HapticCategory::Damage);
++    RumbleParameters otherHand = damageRumble;
++    otherHand.hand = 1;
++    Haptics::Play(otherHand, HapticCategory::Damage);
++}
++
+ static void hook_PlayerNormalChangeState(PPCInterpreter_t* hCPU) {
+     hCPU->instructionPointer = orig_PlayerNormalChangeStateInnerChangeChildFuncAddr;
+ 
+@@ -105,6 +132,10 @@ static void hook_PlayerNormalChangeState(PPCInterpreter_t* hCPU) {
+         return;
+     }
+ 
++    if (ShouldBlockFirstPersonPlayerNormalState(stateNamePtr)) {
++        PlayDamageRumble(stateNamePtr);
++    }
++
+     if (GameState::IsFirstPerson() && GetSettings().ShouldPreventFirstPersonRagdoll() && ShouldBlockFirstPersonPlayerNormalState(stateNamePtr)) {
+         Log::print<PPC>("Suppressing PlayerNormal state '{}' in first person", Guest::CString(stateNamePtr));
+         hCPU->instructionPointer = hCPU->sprNew.LR;
+diff --git a/src/game/botw/player/weapon.cpp b/src/game/botw/player/weapon.cpp
+index 0af8b47..cd88ea0 100644
+--- a/src/game/botw/player/weapon.cpp
++++ b/src/game/botw/player/weapon.cpp
+@@ -559,7 +559,7 @@ static void hook_EnableWeaponAttackSensor(PPCInterpreter_t* hCPU) {
+                 0.7f * rumbleVelocity
+             };
+ 
+-            Haptics::Play(rumbleParams);
++            Haptics::Play(rumbleParams, HapticCategory::Swing);
+         }
+     }
+ }
+diff --git a/src/rendering/haptic_types.h b/src/rendering/haptic_types.h
+new file mode 100644
+index 0000000..f3141e0
+--- /dev/null
++++ b/src/rendering/haptic_types.h
+@@ -0,0 +1,26 @@
++#pragma once
++
++#include <cstdint>
++
++// The situations a rumble belongs to, as the Vibration page groups them (rendering/imgui_menus.cpp). The game's
++// own rumble is one category in this build: the [vib] pattern log in controls.cpp is what will split it later.
++enum class HapticCategory : uint8_t {
++    Swing,
++    Bow,
++    Guard,
++    Equip,
++    UseThrow,
++    Rune,
++    Game,
++    Damage,
++    Explosion,
++    Count,
++};
++
++// The devices a category can be felt on, one bit each in Haptics<Category>Devices (utils/mod_settings.h).
++enum HapticDevice : uint32_t {
++    HapticDeviceSense = 1,
++    HapticDeviceHeadset = 2,
++    HapticDevicePad = 4,
++    HapticDeviceAll = HapticDeviceSense | HapticDeviceHeadset | HapticDevicePad,
++};
+diff --git a/src/rendering/haptics.cpp b/src/rendering/haptics.cpp
+index 671515b..248fb16 100644
+--- a/src/rendering/haptics.cpp
++++ b/src/rendering/haptics.cpp
+@@ -2,14 +2,26 @@
+ #include "haptics.h"
+ #include "instance.h"
+ 
++#if defined(__PROSPERO__)
++// port/bettervr/xr/runtime.cpp: the Vibration page's test buttons for the headset and the pad
++extern "C" void BetterVR_PS5_TestHeadset();
++extern "C" void BetterVR_PS5_TestPad();
++#endif
++
+ static RumbleManager* GetRumbleManager() {
+     auto& xr = VRManager::instance().XR;
+     return xr ? xr->GetRumbleManager() : nullptr;
+ }
+ 
+-void Haptics::Play(const RumbleParameters& rumble) {
++void Haptics::Play(const RumbleParameters& rumble, HapticCategory category) {
++    // the strength and the on/off are read again for each frame of the envelope (RumbleManager::updateHaptics), so the
++    // page's changes are live; a request made while the category is off is dropped here
++    if (GetSettings().GetHapticsGain(category) <= 0.0f)
++        return;
++    RumbleParameters tagged = rumble;
++    tagged.category = category;
+     if (RumbleManager* manager = GetRumbleManager())
+-        manager->enqueueInputsRumbleCommand(rumble);
++        manager->enqueueInputsRumbleCommand(tagged);
+ }
+ 
+ void Haptics::Stop(int hand, RumbleType rumbleType) {
+@@ -31,3 +43,20 @@ void Haptics::StopGamePattern() {
+     if (RumbleManager* manager = GetRumbleManager())
+         manager->stopMotor();
+ }
++
++void Haptics::TestHands() {
++    if (RumbleManager* manager = GetRumbleManager())
++        manager->testHands();
++}
++
++void Haptics::TestHeadset() {
++#if defined(__PROSPERO__)
++    BetterVR_PS5_TestHeadset(); // the runtime's: hmd2's set_vibration, one [vib] line
++#endif
++}
++
++void Haptics::TestPad() {
++#if defined(__PROSPERO__)
++    BetterVR_PS5_TestPad(); // the runtime's: the DualSense, one [vib] line
++#endif
++}
+diff --git a/src/rendering/haptics.h b/src/rendering/haptics.h
+index 8333739..ae71dc1 100644
+--- a/src/rendering/haptics.h
++++ b/src/rendering/haptics.h
+@@ -1,11 +1,19 @@
+ #pragma once
+ 
+-// requests from any hook get queued and played in Update
++#include "rendering/haptic_types.h"
++
++// requests from any hook get queued and played by the rumble manager's 60 Hz mixer
+ namespace Haptics {
+-    void Play(const RumbleParameters& rumble);
++    void Play(const RumbleParameters& rumble, HapticCategory category);
+     void Stop(int hand, RumbleType rumbleType);
+     void Update();
+ 
+     void PlayGamePattern(uint8_t* pattern, uint8_t length);
+     void StopGamePattern();
++
++    // the Vibration page's test buttons: the hands through the XR paths, the headset and the pad through the
++    // runtime's two sinks, each with one [vib] line saying what answered
++    void TestHands();
++    void TestHeadset();
++    void TestPad();
+ }
+diff --git a/src/rendering/imgui_menus.cpp b/src/rendering/imgui_menus.cpp
+index 3fc94d9..9eda25e 100644
+--- a/src/rendering/imgui_menus.cpp
++++ b/src/rendering/imgui_menus.cpp
+@@ -8,6 +8,7 @@
+ #include "game/botw/debug/weapon_attack_debugger.h"
+ #include "imgui_internal.h"
+ #include "instance.h"
++#include "rendering/haptics.h"
+ #include "rendering/renderer.h"
+ #include "rendering/openxr.h"
+ #include "utils/profiler.h"
+@@ -348,6 +349,22 @@ static void DrawPercentSlider(FloatSetting& setting, float minPercent, float max
+     ImGui::PopID();
+ }
+ 
++// the same for a whole-number percent setting (the Vibration page's headset cap)
++static void DrawPercentIntSlider(UIntSetting& setting, bool* changed) {
++    ImGui::PushID(setting.name);
++    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - ResetButtonReserve());
++    int percent = (int)setting.load();
++    if (ImGui::SliderInt("##value", &percent, 0, 100, "%d%%")) {
++        setting = (uint32_t)std::clamp(percent, 0, 100);
++        *changed = true;
++    }
++    if (DrawResetButton(setting.load() != setting.defaultValue)) {
++        setting.Reset();
++        *changed = true;
++    }
++    ImGui::PopID();
++}
++
+ static void DrawBowArcSlider(FloatSetting& setting, bool* changed) {
+     static constexpr const char* kStepLabels[] = { "Off", "Dot Only", "10%%", "20%%", "30%%", "40%%", "50%%", "60%%", "70%%", "80%%", "90%%", "100%%" };
+     ImGui::PushID(setting.name);
+@@ -439,6 +456,7 @@ static constexpr MenuPageEntry kSettingsPages[] = {
+     { ImGuiMenus::PLAYSTYLE_PAGE, ICON_MS_ACCESSIBILITY_NEW "  Play Style" },
+     { ImGuiMenus::COMFORT_PAGE, ICON_MS_SPA "  Comfort" },
+     { ImGuiMenus::CONTROLS_PAGE, ICON_MS_STADIA_CONTROLLER "  Controls" },
++    { ImGuiMenus::VIBRATION_PAGE, ICON_MS_SPORTS "  Vibration" },
+     { ImGuiMenus::DISPLAY_PAGE, ICON_MS_DESKTOP_WINDOWS "  Display" },
+     { ImGuiMenus::SYSTEM_PAGE, ICON_MS_SETTINGS "  System" },
+ };
+@@ -1220,6 +1238,133 @@ static void DrawRecordingModeSetting() {
+     });
+ }
+ 
++// the categories the Vibration page lists, in its order
++struct HapticCategoryRow {
++    HapticCategory category;
++    const char* icon;
++    const char* label;
++};
++static constexpr HapticCategoryRow kHapticCategoryRows[] = {
++    { HapticCategory::Swing, ICON_MS_SWORDS, "Weapon Swings" },
++    { HapticCategory::Bow, ICON_MS_BOW_ARC, "Bow" },
++    { HapticCategory::Guard, ICON_MS_SHIELD, "Shield & Guard" },
++    { HapticCategory::Equip, ICON_MS_BACK_HAND, "Gear & Inventory" },
++    { HapticCategory::UseThrow, ICON_MS_SPEED, "Attacks, Items & Throws" },
++    { HapticCategory::Rune, ICON_MS_TABLET_ANDROID, "Runes" },
++    { HapticCategory::Game, ICON_MS_STADIA_CONTROLLER, "Game Rumble" },
++    { HapticCategory::Damage, ICON_MS_FALLING, "Damage Taken" },
++    { HapticCategory::Explosion, ICON_MS_LOCAL_FIRE_DEPARTMENT, "Explosions" },
++};
++
++// the strength slider's narrow home in the categories table (DrawPercentSlider's reset button does not fit)
++static void DrawStrengthSlider(UIntSetting& setting, bool* changed) {
++    ImGui::PushID(setting.name);
++    ImGui::SetNextItemWidth(-FLT_MIN);
++    int percent = (int)setting.load();
++    if (ImGui::SliderInt("##strength", &percent, 0, 100, "%d%%")) {
++        setting = (uint32_t)std::clamp(percent, 0, 100);
++        *changed = true;
++    }
++    ImGui::PopID();
++}
++
++void RND_Renderer::ImGuiOverlay::DrawVibrationPage(bool* changed) {
++    auto& settings = GetSettings();
++
++    DrawPageHeader(ICON_MS_SPORTS, "Vibration");
++
++    if (BeginCard("##VibrationDevices", "Devices")) {
++        DrawSetting(ICON_MS_SPORTS, "Vibration", "BetterVR's own rumbles and the game's, with the strength and devices each row picks.", [&]() {
++            DrawToggle(settings.haptics, changed);
++        });
++        DrawSetting(ICON_MS_HEAD_MOUNTED_DEVICE, "Headset Limit", "The headset's motor rests on your forehead, so it is capped below the controllers.", [&]() {
++            DrawPercentIntSlider(settings.hapticsHeadsetLimit, changed);
++        });
++        EndCard();
++    }
++
++    DrawSectionCaption("Test");
++    ImGui::Dummy(ImVec2(0.0f, 2.0f));
++    const float testSpacing = 6.0f;
++    const float testWidth = (ImGui::GetContentRegionAvail().x - testSpacing * 2.0f) / 3.0f;
++    if (ImGui::Button("Sense Controllers", ImVec2(testWidth, 0.0f)))
++        Haptics::TestHands();
++    ImGui::SameLine(0.0f, testSpacing);
++    if (ImGui::Button("Headset", ImVec2(testWidth, 0.0f)))
++        Haptics::TestHeadset();
++    ImGui::SameLine(0.0f, testSpacing);
++    if (ImGui::Button("DualSense", ImVec2(testWidth, 0.0f)))
++        Haptics::TestPad();
++    DrawPageNote("Each test says what answered in the log line that starts with [vib].");
++
++    DrawSectionCaption("Categories");
++    ImGuiWindow* window = ImGui::GetCurrentWindow();
++    ImGui::Dummy(ImVec2(0.0f, 4.0f));
++    const ImVec2 cardMin = ImGui::GetCursorScreenPos();
++    const ImGuiID cardId = window->GetID("##VibrationCategories");
++    const float cardWidth = ImGui::GetContentRegionAvail().x;
++    const float cardHeight = window->StateStorage.GetFloat(cardId, 0.0f);
++    if (cardHeight > 0.0f) {
++        window->DrawList->AddRectFilled(cardMin, ImVec2(cardMin.x + cardWidth, cardMin.y + cardHeight), ImGui::GetColorU32(kCardColor), kCardRounding);
++    }
++    ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(8.0f, 9.0f));
++    if (ImGui::BeginTable("##VibrationCategories", 6, ImGuiTableFlags_NoSavedSettings | ImGuiTableFlags_PadOuterX)) {
++        ImGui::TableSetupColumn("##category", ImGuiTableColumnFlags_WidthStretch);
++        ImGui::TableSetupColumn("On", ImGuiTableColumnFlags_WidthFixed, 40.0f);
++        ImGui::TableSetupColumn("Strength", ImGuiTableColumnFlags_WidthFixed, 150.0f);
++        ImGui::TableSetupColumn("Hands", ImGuiTableColumnFlags_WidthFixed, 58.0f);
++        ImGui::TableSetupColumn("Headset", ImGuiTableColumnFlags_WidthFixed, 72.0f);
++        ImGui::TableSetupColumn("DualSense", ImGuiTableColumnFlags_WidthFixed, 88.0f);
++        ImGui::TableHeadersRow();
++        for (const HapticCategoryRow& row : kHapticCategoryRows) {
++            BoolSetting& enabled = settings.HapticsEnabled(row.category);
++            UIntSetting& strength = settings.HapticsStrength(row.category);
++            UIntSetting& devices = settings.HapticsDevices(row.category);
++            const bool active = settings.haptics.load() && enabled.load();
++
++            ImGui::TableNextRow();
++            ImGui::TableSetColumnIndex(0);
++            ImGui::AlignTextToFramePadding();
++            ImGui::Text("%s  %s", row.icon, row.label);
++
++            ImGui::TableSetColumnIndex(1);
++            bool on = enabled.load();
++            if (ImGui::Checkbox("##on", &on)) {
++                enabled = on;
++                *changed = true;
++            }
++
++            ImGui::TableSetColumnIndex(2);
++            ImGui::BeginDisabled(!enabled.load());
++            DrawStrengthSlider(strength, changed);
++            ImGui::EndDisabled();
++
++            for (int column = 0; column < 3; column++) {
++                const uint32_t bit = column == 0 ? HapticDeviceSense : column == 1 ? HapticDeviceHeadset : HapticDevicePad;
++                ImGui::TableSetColumnIndex(3 + column);
++                ImGui::BeginDisabled(!active);
++                bool picked = (devices.load() & bit) != 0;
++                ImGui::PushID(row.label);
++                ImGui::PushID(column);
++                if (ImGui::Checkbox("##device", &picked)) {
++                    const uint32_t value = devices.load();
++                    devices = picked ? (value | bit) : (value & ~bit);
++                    *changed = true;
++                }
++                ImGui::PopID();
++                ImGui::PopID();
++                ImGui::EndDisabled();
++            }
++        }
++        ImGui::EndTable();
++    }
++    ImGui::PopStyleVar();
++    const float bottom = ImGui::GetCursorScreenPos().y - ImGui::GetStyle().ItemSpacing.y;
++    window->StateStorage.SetFloat(cardId, bottom - cardMin.y);
++
++    DrawPageNote("Game Rumble is whatever the game asks for itself: damage, hits, explosions and cutscenes all arrive on it today, so turning it down turns all of them down. Damage Taken is the hit that starts one of the game's damage reactions; it is felt on top of Game Rumble unless that row is off. The launcher's Vibration row under Settings > VR stays the DualSense's outer switch.");
++}
++
+ void RND_Renderer::ImGuiOverlay::DrawDisplayPage(bool* changed) {
+     auto& settings = GetSettings();
+ 
+@@ -1808,6 +1953,7 @@ void RND_Renderer::ImGuiOverlay::DrawHelpMenu() {
+                 case ImGuiMenus::PLAYSTYLE_PAGE: DrawPlaystylePage(&changed); break;
+                 case ImGuiMenus::COMFORT_PAGE: DrawComfortPage(&changed); break;
+                 case ImGuiMenus::CONTROLS_PAGE: DrawControlsPage(&changed); break;
++                case ImGuiMenus::VIBRATION_PAGE: DrawVibrationPage(&changed); break;
+                 case ImGuiMenus::DISPLAY_PAGE: DrawDisplayPage(&changed); break;
+                 case ImGuiMenus::SYSTEM_PAGE: DrawSystemPage(&changed); break;
+                 case ImGuiMenus::GUIDE_CONTROLS_PAGE:
+diff --git a/src/rendering/imgui_menus.h b/src/rendering/imgui_menus.h
+index 0011c54..fae71af 100644
+--- a/src/rendering/imgui_menus.h
++++ b/src/rendering/imgui_menus.h
+@@ -9,15 +9,16 @@ namespace ImGuiMenus {
+     inline constexpr uint8_t PLAYSTYLE_PAGE = 0;
+     inline constexpr uint8_t COMFORT_PAGE = 1;
+     inline constexpr uint8_t CONTROLS_PAGE = 2;
+-    inline constexpr uint8_t DISPLAY_PAGE = 3;
+-    inline constexpr uint8_t SYSTEM_PAGE = 4;
+-    inline constexpr uint8_t GUIDE_CONTROLS_PAGE = 5;
+-    inline constexpr uint8_t GUIDE_EQUIPMENT_PAGE = 6;
+-    inline constexpr uint8_t GUIDE_SWING_PAGE = 7;
+-    inline constexpr uint8_t GUIDE_WHISTLE_PAGE = 8;
+-    inline constexpr uint8_t CREDITS_PAGE = 9;
+-    inline constexpr uint8_t DEBUG_PAGE = 10;
+-    inline constexpr uint8_t PAGE_COUNT = 11;
++    inline constexpr uint8_t VIBRATION_PAGE = 3;
++    inline constexpr uint8_t DISPLAY_PAGE = 4;
++    inline constexpr uint8_t SYSTEM_PAGE = 5;
++    inline constexpr uint8_t GUIDE_CONTROLS_PAGE = 6;
++    inline constexpr uint8_t GUIDE_EQUIPMENT_PAGE = 7;
++    inline constexpr uint8_t GUIDE_SWING_PAGE = 8;
++    inline constexpr uint8_t GUIDE_WHISTLE_PAGE = 9;
++    inline constexpr uint8_t CREDITS_PAGE = 10;
++    inline constexpr uint8_t DEBUG_PAGE = 11;
++    inline constexpr uint8_t PAGE_COUNT = 12;
+ 
+     inline std::atomic_bool g_isOpen = false;
+     inline std::atomic_uint8_t g_currentPage = PLAYSTYLE_PAGE;
+diff --git a/src/rendering/renderer.h b/src/rendering/renderer.h
+index 475a83c..ff7c908 100644
+--- a/src/rendering/renderer.h
++++ b/src/rendering/renderer.h
+@@ -283,6 +283,7 @@ public:
+         void DrawPlaystylePage(bool* changed);
+         void DrawComfortPage(bool* changed);
+         void DrawControlsPage(bool* changed);
++        void DrawVibrationPage(bool* changed);
+         void DrawDisplayPage(bool* changed);
+         void DrawSystemPage(bool* changed);
+         void DrawGuidePage(size_t helpImageIndex);
+diff --git a/src/rendering/rumble.h b/src/rendering/rumble.h
+index 1b8c579..d25e599 100644
+--- a/src/rendering/rumble.h
++++ b/src/rendering/rumble.h
+@@ -1,9 +1,23 @@
+ #pragma once
+ 
+-
++#include "utils/mod_settings.h"
++
++#if defined(__PROSPERO__)
++// port/bettervr/xr/runtime.cpp: the runtime's sinks for the devices BetterVR's OpenXR paths do not reach. The
++// headset takes 0..1 (the runtime maps it to hmd2's 0..25), the pad 0..1 (Cemu's own rumble is taken over
++// for as long as a VR session runs, so the two never double).
++extern "C" void BetterVR_PS5_HeadsetVibration(float amplitude);
++extern "C" void BetterVR_PS5_PadVibration(float amplitude);
++#endif
++
++// Every rumble BetterVR or the game's pattern asks for goes through one 60 Hz mixer: the game's pattern is a
++// level per tick, each input rumble an enveloped level on its hand, and a device gets the louder of the ones
++// whose category was switched on for it. Sending a level per tick (rather than an infinite haptic the next
++// input rumble would cut) is what keeps the game's pattern and BetterVR's own rumbles from cancelling each
++// other. A level is sent even when it did not change: the runtime and the sinks skip it.
+ class RumbleManager {
+ public:
+-    RumbleManager(XrSession session, XrAction haptic_action, XrPath subaction_path = XR_NULL_PATH) : m_session(session), m_haptic_action(haptic_action), m_subaction_path(subaction_path) {
++    RumbleManager(XrSession session, XrAction haptic_action) : m_session(session), m_haptic_action(haptic_action) {
+         m_update_thread = std::thread(&RumbleManager::update_thread, this);
+     }
+ 
+@@ -19,6 +33,7 @@ public:
+         xrStringToPath(instance, "/user/hand/left", &m_handSubactionPaths[0]);
+         xrStringToPath(instance, "/user/hand/right", &m_handSubactionPaths[1]);
+         m_startTime = std::chrono::steady_clock::now();
++        m_pathsReady.store(true);
+     }
+ 
+     // pattern: uint8_t* rumble pattern
+@@ -40,8 +55,7 @@ public:
+             m_rumble_queue.pop();
+         }
+         m_parser = 0;
+-        m_current_rumbling = false;
+-        stop_haptic();
++        m_gameLevel.store(false);
+     }
+ 
+     void stopInputsRumble(int hand, RumbleType rumbleType) {
+@@ -50,6 +64,7 @@ public:
+         if (state.active && state.inputRumble && rumbleType == state.params.rumbleType) {
+             state.endTime = std::chrono::steady_clock::now();
+             state.active = false;
++            state.level = 0.0f;
+         }
+     }
+ 
+@@ -64,9 +79,11 @@ public:
+             m_inputs_rumble_queue.push(rumbleParameters);
+     }
+ 
++    // called once per game frame: takes the queued requests and computes each hand's envelope, never sends
+     void updateHaptics() {
+         std::scoped_lock lock(m_inputs_rumble_mutex);
+         auto now = std::chrono::steady_clock::now();
++        m_lastUpdateNs.store(steady_clock_ns(now));
+ 
+         while (!m_inputs_rumble_queue.empty()) {
+             RumbleParameters cmd = m_inputs_rumble_queue.front();
+@@ -93,14 +110,18 @@ public:
+ 
+         for (int i = 0; i < 2; ++i) {
+             auto& state = m_hapticStates[i];
+-            if (!state.active) continue;
++            if (!state.active) {
++                state.level = 0.0f;
++                continue;
++            }
+ 
+             if (now >= state.endTime) {
+                 state.active = false;
++                state.level = 0.0f;
+                 continue;
+             }
+ 
+-            double currentAmplitude = state.params.amplitude;
++            double currentAmplitude = state.params.amplitude * GetSettings().GetHapticsGain(state.params.category);
+             double currentFrequency = state.params.frequency;
+             double elapsed = std::chrono::duration<double>(now - state.startTime).count();
+             double progress = 0.0;
+@@ -155,23 +176,26 @@ public:
+                     break;
+             }
+ 
+-            XrHapticVibration vibration = { XR_TYPE_HAPTIC_VIBRATION };
+-            vibration.next = nullptr;
+-            // Pulse duration: Set slightly longer than the frame time
+-            // to ensure continuous feel without gaps.
+-            vibration.duration = (XrDuration)(0.03 * 1e9);
+-            vibration.frequency = (float)currentFrequency;
+-            vibration.amplitude = (float)currentAmplitude;
+-
+-            XrHapticActionInfo haptic_info = { XR_TYPE_HAPTIC_ACTION_INFO };
+-            haptic_info.action = m_haptic_action;
+-            haptic_info.subactionPath = m_handSubactionPaths[state.params.hand];
+-
+-            xrApplyHapticFeedback(m_session, &haptic_info, (const XrHapticBaseHeader*)&vibration);
++            state.level = (float)currentAmplitude;
+         }
+     }
+ 
++    // the Vibration page's test: both hands at 0.6 for half a second, through the same mixer as everything else
++    void testHands() {
++        const auto until = std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
++        m_testUntilNs.store(steady_clock_ns(until));
++        Log::print<INFO>("[vib] test hands: level 0.60 for 500 ms on both Sense controllers");
++    }
++
+ private:
++    static int64_t steady_clock_ns() {
++        return steady_clock_ns(std::chrono::steady_clock::now());
++    }
++
++    static int64_t steady_clock_ns(std::chrono::steady_clock::time_point time) {
++        return std::chrono::duration_cast<std::chrono::nanoseconds>(time.time_since_epoch()).count();
++    }
++
+     bool push_rumble(uint8_t* pattern, uint8_t length) {
+         if (pattern == nullptr || length == 0) {
+             stopMotor();
+@@ -200,100 +224,134 @@ private:
+         return true;
+     }
+ 
+-    void update_thread() {
+-        using clock = std::chrono::steady_clock;
+-        const auto period = std::chrono::milliseconds(1000 / 60);
+-
+-        auto next_tick = clock::now();
+-        while (!m_shutdown.load(std::memory_order_relaxed)) {
+-            {
+-                std::unique_lock lock(m_rumble_mutex);
+-                if (m_rumble_queue.empty()) {
+-                    if (m_current_rumbling) {
+-                        stop_haptic();
+-                        m_current_rumbling = false;
+-                    }
+-                    m_parser = 0;
+-                }
+-                else {
+-                    const auto& current_pattern = m_rumble_queue.front();
+-                    bool should_rumble = current_pattern[m_parser];
+-                    if (should_rumble != m_current_rumbling) {
+-                        if (should_rumble) {
+-                            apply_haptic_infinite();
+-                        }
+-                        else {
+-                            stop_haptic();
+-                        }
+-                        m_current_rumbling = should_rumble;
+-                    }
+-                    ++m_parser;
+-                    if (m_parser >= current_pattern.size()) {
+-                        m_rumble_queue.pop();
+-                        m_parser = 0;
+-                    }
+-                }
+-            }
+-            next_tick += period;
+-            std::this_thread::sleep_until(next_tick);
++    // the game's pattern at 60 Hz: one bit per tick, as Cemu samples it (two pattern bits ORed)
++    void tickGamePattern() {
++        std::scoped_lock lock(m_rumble_mutex);
++        if (m_rumble_queue.empty()) {
++            m_gameLevel.store(false);
++            m_parser = 0;
++            return;
++        }
++        const auto& current_pattern = m_rumble_queue.front();
++        m_gameLevel.store(current_pattern[m_parser]);
++        ++m_parser;
++        if (m_parser >= current_pattern.size()) {
++            m_rumble_queue.pop();
++            m_parser = 0;
+         }
+     }
+ 
+-void apply_haptic_infinite() {
+-        XrHapticVibration vibration = {};
+-        vibration.type = XR_TYPE_HAPTIC_VIBRATION;
++    void applyHand(int hand, float amplitude) {
++        XrHapticVibration vibration = { XR_TYPE_HAPTIC_VIBRATION };
+         vibration.next = nullptr;
+-        vibration.duration = XR_INFINITE_DURATION;
++        // one frame, so a level that stops being sent stops being felt (the runtime's own 2 s clamp never matters)
++        vibration.duration = (XrDuration)(0.03 * 1e9);
+         vibration.frequency = XR_FREQUENCY_UNSPECIFIED;
+-        vibration.amplitude = 1.0f;
++        vibration.amplitude = std::clamp(amplitude, 0.0f, 1.0f);
+ 
+-        XrHapticActionInfo haptic_info = {};
+-        haptic_info.type = XR_TYPE_HAPTIC_ACTION_INFO;
+-        haptic_info.next = nullptr;
++        XrHapticActionInfo haptic_info = { XR_TYPE_HAPTIC_ACTION_INFO };
+         haptic_info.action = m_haptic_action;
+-        haptic_info.subactionPath = m_subaction_path;
++        haptic_info.subactionPath = m_handSubactionPaths[hand];
+ 
+-        checkXRResult(xrApplyHapticFeedback(m_session, &haptic_info, (const XrHapticBaseHeader*)&vibration), "Failed to start rumble");
+-
+-        m_haptic_active = true;
++        xrApplyHapticFeedback(m_session, &haptic_info, (const XrHapticBaseHeader*)&vibration);
+     }
+ 
+-    void stop_haptic() {
+-        XrHapticActionInfo haptic_info = {};
+-        haptic_info.type = XR_TYPE_HAPTIC_ACTION_INFO;
+-        haptic_info.next = nullptr;
+-        haptic_info.action = m_haptic_action;
+-        haptic_info.subactionPath = m_subaction_path;
++    // one tick of the mixer: what each device should feel now, out of the game's pattern and the input rumbles
++    void mix() {
++        if (!m_pathsReady.load(std::memory_order_acquire))
++            return;
++        ModSettings& settings = GetSettings();
++        const int64_t nowNs = steady_clock_ns();
++
++        // a paused game stops calling updateHaptics: its last envelope must not stay on
++        const bool inputsLive = nowNs - m_lastUpdateNs.load(std::memory_order_relaxed) < 100'000'000;
++
++        float inputLevel[2] = {};
++        HapticCategory inputCategory[2] = { HapticCategory::Game, HapticCategory::Game };
++        {
++            std::scoped_lock lock(m_inputs_rumble_mutex);
++            for (int hand = 0; hand < 2; ++hand) {
++                if (!inputsLive || !m_hapticStates[hand].active)
++                    continue;
++                inputLevel[hand] = m_hapticStates[hand].level;
++                inputCategory[hand] = m_hapticStates[hand].params.category;
++            }
++        }
++
++        float senseLevel[2] = {};
++        float headsetLevel = 0.0f;
++        float padLevel = 0.0f;
++        auto add = [&](float level, uint32_t devices) {
++            if (level <= 0.0f)
++                return;
++            if (devices & HapticDeviceSense) {
++                senseLevel[0] = std::max(senseLevel[0], level);
++                senseLevel[1] = std::max(senseLevel[1], level);
++            }
++            if (devices & HapticDeviceHeadset)
++                headsetLevel = std::max(headsetLevel, level);
++            if (devices & HapticDevicePad)
++                padLevel = std::max(padLevel, level);
++        };
++
++        if (m_gameLevel.load(std::memory_order_relaxed))
++            add(settings.GetHapticsGain(HapticCategory::Game), settings.GetHapticsDeviceMask(HapticCategory::Game));
++        for (int hand = 0; hand < 2; ++hand)
++            add(inputLevel[hand], settings.GetHapticsDeviceMask(inputCategory[hand]));
++
++        if (nowNs < m_testUntilNs.load(std::memory_order_relaxed)) {
++            senseLevel[0] = std::max(senseLevel[0], kTestLevel);
++            senseLevel[1] = std::max(senseLevel[1], kTestLevel);
++        }
++
++        for (int hand = 0; hand < 2; ++hand)
++            applyHand(hand, senseLevel[hand]);
+ 
+-        checkXRResult(xrStopHapticFeedback(m_session, &haptic_info), "Failed to stop rumble");
++#if defined(__PROSPERO__)
++        BetterVR_PS5_HeadsetVibration(std::min(1.0f, headsetLevel * settings.GetHapticsHeadsetLimit()));
++        BetterVR_PS5_PadVibration(padLevel);
++#endif
++    }
++
++    void update_thread() {
++        using clock = std::chrono::steady_clock;
++        const auto period = std::chrono::milliseconds(1000 / 60);
+ 
+-        m_haptic_active = false;
++        auto next_tick = clock::now();
++        while (!m_shutdown.load(std::memory_order_relaxed)) {
++            tickGamePattern();
++            mix();
++            next_tick += period;
++            std::this_thread::sleep_until(next_tick);
++        }
+     }
+ 
+-    XrInstance m_instance;
++    static constexpr float kTestLevel = 0.6f;
++
+     XrSession m_session;
+     XrAction m_haptic_action;
+-    XrPath m_subaction_path;
+-    XrPath m_handSubactionPaths[2];
++    XrPath m_handSubactionPaths[2] = {};
++    std::atomic<bool> m_pathsReady{ false };
+ 
+     std::queue<std::vector<bool>> m_rumble_queue;
+     std::mutex m_rumble_mutex;
+     size_t m_parser = 0;
+-    bool m_current_rumbling = false;
++    std::atomic<bool> m_gameLevel{ false };
+     std::atomic<bool> m_shutdown{ false };
+     std::thread m_update_thread;
+ 
+-    bool m_haptic_active = false;
+-
+     std::mutex m_inputs_rumble_mutex;
+     std::queue<RumbleParameters> m_inputs_rumble_queue;
+     struct ActiveHaptic {
+         bool active = false;
+         bool inputRumble = false;
++        float level = 0.0f;
+         std::chrono::steady_clock::time_point startTime;
+         std::chrono::steady_clock::time_point endTime;
+         RumbleParameters params;
+     };
+     ActiveHaptic m_hapticStates[2]; // 0 = left, 1 = right
++    std::atomic<int64_t> m_lastUpdateNs{ 0 };
++    std::atomic<int64_t> m_testUntilNs{ 0 };
+     std::chrono::steady_clock::time_point m_startTime;
+-};
+\ No newline at end of file
++};
+diff --git a/src/utils/mod_settings.cpp b/src/utils/mod_settings.cpp
+index 8967cda..87fd34d 100644
+--- a/src/utils/mod_settings.cpp
++++ b/src/utils/mod_settings.cpp
+@@ -16,6 +16,66 @@ ModSettings& GetSettings() {
+     return g_settings;
+ }
+ 
++BoolSetting& ModSettings::HapticsEnabled(HapticCategory category) {
++    switch (category) {
++        case HapticCategory::Swing: return hapticsSwing;
++        case HapticCategory::Bow: return hapticsBow;
++        case HapticCategory::Guard: return hapticsGuard;
++        case HapticCategory::Equip: return hapticsEquip;
++        case HapticCategory::UseThrow: return hapticsUseThrow;
++        case HapticCategory::Rune: return hapticsRune;
++        case HapticCategory::Damage: return hapticsDamage;
++        case HapticCategory::Explosion: return hapticsExplosion;
++        case HapticCategory::Game:
++        case HapticCategory::Count:
++        default: return hapticsGame;
++    }
++}
++
++UIntSetting& ModSettings::HapticsStrength(HapticCategory category) {
++    switch (category) {
++        case HapticCategory::Swing: return hapticsSwingStrength;
++        case HapticCategory::Bow: return hapticsBowStrength;
++        case HapticCategory::Guard: return hapticsGuardStrength;
++        case HapticCategory::Equip: return hapticsEquipStrength;
++        case HapticCategory::UseThrow: return hapticsUseThrowStrength;
++        case HapticCategory::Rune: return hapticsRuneStrength;
++        case HapticCategory::Damage: return hapticsDamageStrength;
++        case HapticCategory::Explosion: return hapticsExplosionStrength;
++        case HapticCategory::Game:
++        case HapticCategory::Count:
++        default: return hapticsGameStrength;
++    }
++}
++
++UIntSetting& ModSettings::HapticsDevices(HapticCategory category) {
++    switch (category) {
++        case HapticCategory::Swing: return hapticsSwingDevices;
++        case HapticCategory::Bow: return hapticsBowDevices;
++        case HapticCategory::Guard: return hapticsGuardDevices;
++        case HapticCategory::Equip: return hapticsEquipDevices;
++        case HapticCategory::UseThrow: return hapticsUseThrowDevices;
++        case HapticCategory::Rune: return hapticsRuneDevices;
++        case HapticCategory::Damage: return hapticsDamageDevices;
++        case HapticCategory::Explosion: return hapticsExplosionDevices;
++        case HapticCategory::Game:
++        case HapticCategory::Count:
++        default: return hapticsGameDevices;
++    }
++}
++
++float ModSettings::GetHapticsGain(HapticCategory category) {
++    if (!haptics.load() || !HapticsEnabled(category).load())
++        return 0.0f;
++    return HapticsStrength(category).load() / 100.0f;
++}
++
++uint32_t ModSettings::GetHapticsDeviceMask(HapticCategory category) {
++    if (GetHapticsGain(category) <= 0.0f)
++        return 0;
++    return HapticsDevices(category).load();
++}
++
+ void Settings_LogSavedSettings() {
+     Log::print<INFO>("VR Settings Saved:\n{}", GetSettings().ToString());
+ }
+diff --git a/src/utils/mod_settings.h b/src/utils/mod_settings.h
+index 50684ec..0f57532 100644
+--- a/src/utils/mod_settings.h
++++ b/src/utils/mod_settings.h
+@@ -2,6 +2,8 @@
+ #include <cerrno>
+ #include <cstdlib>
+ 
++#include "rendering/haptic_types.h"
++
+ class ModSettingBase;
+ 
+ inline std::vector<ModSettingBase*>& SettingRegistry() {
+@@ -619,6 +621,50 @@ struct ModSettings {
+     EnumSetting<SwingSensitivity> swingSensitivity{ "SwingSensitivity", SwingSensitivity::SWING_NORMAL };
+     BoolSetting oneHitPerSwing{ "OneHitPerSwing", true };
+ 
++    // Vibration (the Vibration page, rendering/imgui_menus.cpp): one on/off, strength and set of devices per
++    // situation, and the headset motor's own cap. The defaults are what v0.5.0 did: BetterVR's rumbles and the
++    // game's own pattern on the Sense controllers at full strength, nothing on the headset or the pad. Damage taken
++    // and explosions are new, so they start on for both hands and the headset.
++    BoolSetting haptics{ "Haptics", true };
++    UIntSetting hapticsHeadsetLimit{ "HapticsHeadsetLimit", 60, 0, 100 };
++    BoolSetting hapticsLogPatterns{ "HapticsLogPatterns", true };
++    BoolSetting hapticsSwing{ "HapticsSwing", true };
++    UIntSetting hapticsSwingStrength{ "HapticsSwingStrength", 100, 0, 100 };
++    UIntSetting hapticsSwingDevices{ "HapticsSwingDevices", HapticDeviceSense, 0, HapticDeviceAll };
++    BoolSetting hapticsBow{ "HapticsBow", true };
++    UIntSetting hapticsBowStrength{ "HapticsBowStrength", 100, 0, 100 };
++    UIntSetting hapticsBowDevices{ "HapticsBowDevices", HapticDeviceSense, 0, HapticDeviceAll };
++    BoolSetting hapticsGuard{ "HapticsGuard", true };
++    UIntSetting hapticsGuardStrength{ "HapticsGuardStrength", 100, 0, 100 };
++    UIntSetting hapticsGuardDevices{ "HapticsGuardDevices", HapticDeviceSense, 0, HapticDeviceAll };
++    BoolSetting hapticsEquip{ "HapticsEquip", true };
++    UIntSetting hapticsEquipStrength{ "HapticsEquipStrength", 100, 0, 100 };
++    UIntSetting hapticsEquipDevices{ "HapticsEquipDevices", HapticDeviceSense, 0, HapticDeviceAll };
++    BoolSetting hapticsUseThrow{ "HapticsUseThrow", true };
++    UIntSetting hapticsUseThrowStrength{ "HapticsUseThrowStrength", 100, 0, 100 };
++    UIntSetting hapticsUseThrowDevices{ "HapticsUseThrowDevices", HapticDeviceSense, 0, HapticDeviceAll };
++    BoolSetting hapticsRune{ "HapticsRune", true };
++    UIntSetting hapticsRuneStrength{ "HapticsRuneStrength", 100, 0, 100 };
++    UIntSetting hapticsRuneDevices{ "HapticsRuneDevices", HapticDeviceSense, 0, HapticDeviceAll };
++    BoolSetting hapticsGame{ "HapticsGame", true };
++    UIntSetting hapticsGameStrength{ "HapticsGameStrength", 100, 0, 100 };
++    UIntSetting hapticsGameDevices{ "HapticsGameDevices", HapticDeviceSense, 0, HapticDeviceAll };
++    BoolSetting hapticsDamage{ "HapticsDamage", true };
++    UIntSetting hapticsDamageStrength{ "HapticsDamageStrength", 100, 0, 100 };
++    UIntSetting hapticsDamageDevices{ "HapticsDamageDevices", HapticDeviceSense | HapticDeviceHeadset, 0, HapticDeviceAll };
++    BoolSetting hapticsExplosion{ "HapticsExplosion", true };
++    UIntSetting hapticsExplosionStrength{ "HapticsExplosionStrength", 100, 0, 100 };
++    UIntSetting hapticsExplosionDevices{ "HapticsExplosionDevices", HapticDeviceSense | HapticDeviceHeadset, 0, HapticDeviceAll };
++
++    // the category's own settings; an unknown category is the game's pattern, never silent by accident
++    BoolSetting& HapticsEnabled(HapticCategory category);
++    UIntSetting& HapticsStrength(HapticCategory category);
++    UIntSetting& HapticsDevices(HapticCategory category);
++    // what Haptics::Play scales a request by: 0 when the master or the category is off, else its strength
++    float GetHapticsGain(HapticCategory category);
++    uint32_t GetHapticsDeviceMask(HapticCategory category);
++    float GetHapticsHeadsetLimit() const { return hapticsHeadsetLimit.load() / 100.0f; }
++
+     static std::span<ModSettingBase* const> GetOptions() {
+         return SettingRegistry();
+     }

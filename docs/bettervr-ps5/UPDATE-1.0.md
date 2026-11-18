@@ -835,3 +835,57 @@ Open: nothing here has run on a console. The mip chain's cost and the skipped pa
 HUD quads' edges need a headset. The optional FSR/upscale for presets below 1x (task 6) is not done; the compose
 still samples BetterVR's already-upscaled eye image. The depth write in the present shader is not removed.
 Next step: push `bettervr-1.0/v06-perf`, wait for `BetterVR build`, then Test request 53 in `STATUS.md`.
+
+## v0.6 vibration
+
+Branch `bettervr-1.0/v06-vibration`, from v0.5.0. Console facts stay the ones STATUS.md reports; everything here is
+built only on CI, **untested on console**.
+
+- **One Vibration page, nine categories.** BetterVR's own menu (Hold Options) has a page between Controls and Display
+  (`rendering/imgui_menus.cpp`, `VIBRATION_PAGE`), with a master switch, a headset cap, a test button for each device
+  and a row per category: Weapon Swings, Bow, Shield & Guard, Gear & Inventory, Attacks/Items/Throws, Runes, Game
+  Rumble, Damage Taken, Explosions. Each row has on/off, strength 0-100 % and a tick per device (Sense controllers,
+  PS VR2 headset, DualSense). Changes are live and save to `BetterVR_settings.ini` with the rest.
+- **Defaults reproduce v0.5.0**: every existing category on at 100 % on the Sense controllers, the game's pattern on
+  both hands at full strength. Damage Taken and Explosions are new, so they start on at 100 % on the hands and the
+  headset. Keys: `Haptics`, `HapticsHeadsetLimit` (60), `HapticsLogPatterns` (true), and per category
+  `Haptics{Category}`, `Haptics{Category}Strength`, `Haptics{Category}Devices` (bits: Sense 1, headset 2, pad 4).
+  Old settings files get the defaults; an older build ignores the new keys, so a downgrade is safe.
+- **A 60 Hz mixer in `RumbleManager`** (`rendering/rumble.h`) replaces the two independent XR calls. The game's pattern
+  is a level per tick, each input rumble an enveloped level on its hand, and every device takes the louder of the
+  categories switched on for it. The game's pattern no longer cuts an input rumble and an input rumble no longer hides
+  the pattern: they now add by maximum. A game pause stops the input envelopes (100 ms), so nothing stays on.
+- **The PS VR2 headset's motor** is bound in `third_party/hmd2` as an optional export: `sceHmd2SetVibration(handle,
+  level)`, 0-25, one motor. `sceKernelDlsym` first; otherwise the 13.60 table's `+0x2ae00` only behind libSceHmd2's
+  anchor check. Other firmware leaves it unbound (one `hmd2:` line) and VR continues. The runtime sends on change, caps
+  a continuous hold at 2 s, maps 0..1 to 0..25 and logs the first calls and every failure. It is not called with a zero
+  level at VR start: the page's Headset test is its first call, so an unproven offset cannot crash a session that never
+  uses the motor. The page's Headset button logs `[vib] test headset: level 25 -> 0x...`.
+- **The DualSense is taken over while VR runs.** `port/cemu/PS5PadController.cpp` gains `PS5Pad_SetExternalRumble`
+  (Cemu's own `start_rumble`/`stop_rumble` return at once, and both motors are cleared when the mode changes) and
+  `PS5Pad_ExternalRumble` (the mixer's level; the launcher's Vibration row stays the outer switch, and Cemu's own
+  per-controller rumble percentage is not applied while VR drives the pad). `port/bettervr/xr/runtime.cpp` turns it on
+  at `xrBeginSession` and off at `xrDestroySession` and `BetterVR_PS5_Stop`; one `[pad] rumble:` line says which side
+  drives the pad. No Cemu patch was needed.
+- **Damage taken** uses the existing `PlayerNormal` damage-state hook (`player.cpp`): one falling rumble on both hands,
+  once per state change (300 ms apart at most), plus `[vib] damage state '...'` for the first six, which also names the
+  three states the first-person block hides today.
+- **The game's rumble stays one category for now, with a learning log.** At the `VPADControlMotor`/`StopMotor` hooks
+  (`controls.cpp`, at most 40 lines 150 ms apart, `HapticsLogPatterns` turns it off) it prints the caller LR, the
+  playing state, the VPAD pattern bytes, and either the sead `PatternRumbleAddon`'s string at `+0x14` and its repeat
+  count at `+0x1C` when the addon is in a callee-saved register or on the stack, or `pattern="?"`. That one run is what
+  decides how to split "game rumble" (Route A/B in the research).
+- **Not done: explosions.** They are a category with their settings, but no event source yet: the cheap route is an
+  actor-walk list of bomb/barrel names (the Wii U names still need the Entity Debugger), the precise one hooks the Wii U
+  `Explode::enter_`. Backlog line: "Explosions: actor list of Bomb/BombArrow/Barrel with last positions, checked on the
+  damage frame; or the Wii U Explode::enter_ hook".
+- **Headset offset unverified.** `+0x2ae00` is from public PS VR2 tables, not our own dump; the anchor check pins the
+  build, and the first 16 bytes were not logged because the code segment may be execute-only. `tools/export-tables/
+  tables.json` is not in this repo: whoever regenerates `hmd2_exports.h` must add `sceHmd2SetVibration` to the 13.60
+  libSceHmd2 entry, or the next regeneration drops it (the binder has its own small table as well, so the build keeps
+  working).
+- Patch bettervr 0007; port files `port/bettervr/xr/runtime.cpp`, `port/cemu/PS5PadController.cpp` and
+  `third_party/hmd2/` (edited directly).
+- **Open**: one console run for the page, the tests, damage and the pattern log; then split the game's rumble by the
+  logged callers; explosions (above); whether 60 % is the right headset cap.
+- **Next step**: build this branch on CI, then test request 53 in `STATUS.md`.

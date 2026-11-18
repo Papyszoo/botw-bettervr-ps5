@@ -60,6 +60,10 @@ int scePadVrControllerReadState(int handle, void* state);
 float BetterVR_PS5_Setting(const char* name, float fallback);
 // port/bettervr/VrPS5.cpp: bettervr.json's "profile" (true/false or 1/0), read once
 bool BetterVR_PS5_Profile();
+// port/cemu/PS5PadController.cpp: the DualSense while a VR session runs (Cemu's own rumble output is held back,
+// so the game's pattern and BetterVR's mixer never fire the pad twice). The level is 0..1.
+void PS5Pad_SetExternalRumble(bool on);
+void PS5Pad_ExternalRumble(float level);
 }
 
 #include <algorithm>
@@ -123,6 +127,18 @@ namespace
 		std::vsnprintf(text, sizeof(text), format, args);
 		va_end(args);
 		PS5Cemu_LogLine(std::string("[vr-xr] ") + text);
+	}
+
+	// The Vibration page's lines (its test buttons, the devices' state changes): "[vib] ..." in the boot log,
+	// the same tag BetterVR's own side uses, so one search finds all of them.
+	void VibLog(const char* format, ...)
+	{
+		char text[512];
+		va_list args;
+		va_start(args, format);
+		std::vsnprintf(text, sizeof(text), format, args);
+		va_end(args);
+		PS5Cemu_LogLine(std::string("[vib] ") + text);
 	}
 
 	void HmdLog(const char* line)
@@ -391,6 +407,7 @@ namespace
 		XrPath touchProfile = XR_NULL_PATH;
 		Pose handLocated[2]; // the hand spaces' last located poses, in their base space, for the frame log
 		bool touchSuggested = false, attached = false;
+		bool padTakenOver = false; // the DualSense's rumble is the mixer's (PS5Pad_SetExternalRumble) while this session runs
 		std::vector<XrAction_T*> actions;
 		struct Hand
 		{
@@ -1343,6 +1360,129 @@ namespace
 	}
 }
 
+// ==== the Vibration page's other devices ========================================================
+// BetterVR's mixer (rendering/rumble.h) calls the two sinks below every 60 Hz tick with 0..1. The headset's motor
+// takes 0..25 and one motor has no direction; a level is sent when it changes, and a continuous hold is capped at
+// 2 s like AstroBotVR2 so the forehead never buzzes for long. The Vibration page's test buttons override the level
+// for 400 ms. The pad's level is 0..255, sent to port/cemu/PS5PadController.cpp; BetterVR's page is its strength.
+namespace
+{
+	constexpr int kHeadsetTestLevel = 25;
+	constexpr int kPadTestLevel = 204;
+	constexpr XrTime kHeadsetHoldCap = 2'000'000'000;
+	constexpr XrTime kDeviceTestHold = 400'000'000;
+
+	struct DeviceSinkState
+	{
+		int wanted = 0; // the mixer's last level (headset 0..25, pad 0..255)
+		int sent = -1;  // what the device last took; -1 none yet
+		bool capped = false;
+		XrTime sameAt = 0;
+		XrTime testUntil = 0;
+	};
+	DeviceSinkState s_headset, s_pad;
+
+	int SendHeadsetLevel(int level)
+	{
+		static int s_failures = 0;
+		const int rc = hmd2::set_vibration(level);
+		// hmd2 logs the bind and each failed call; the runtime names what it asked for the first few times
+		if (level && rc != 0 && s_failures++ < 10)
+			VibLog("headset level %d failed: 0x%08x", level, (unsigned)rc);
+		return rc;
+	}
+
+	int ApplyHeadset()
+	{
+		const XrTime now = Now();
+		const bool testing = now < s_headset.testUntil;
+		const int wanted = testing ? kHeadsetTestLevel : s_headset.wanted;
+		if (wanted == 0 && s_headset.sent <= 0)
+		{
+			// nothing to stop and the export has not been proven yet: VR start must not be its first call. The
+			// Vibration page's test button is the first one, as the brief asks.
+			s_headset.sent = 0;
+			return 0;
+		}
+		if (wanted == s_headset.sent)
+		{
+			if (!testing && wanted > 0 && !s_headset.capped && now - s_headset.sameAt >= kHeadsetHoldCap)
+			{
+				SendHeadsetLevel(0);
+				s_headset.sent = 0;
+				s_headset.capped = true;
+				VibLog("headset held at %d for 2 s: off until the level changes", wanted);
+			}
+			return 0;
+		}
+		const int rc = SendHeadsetLevel(wanted);
+		if (rc == 0)
+		{
+			s_headset.sent = wanted;
+			s_headset.sameAt = now;
+			s_headset.capped = false;
+		}
+		else
+			s_headset.sent = -1;
+		return rc;
+	}
+
+	void ApplyPad()
+	{
+		const XrTime now = Now();
+		const int wanted = now < s_pad.testUntil ? kPadTestLevel : s_pad.wanted;
+		if (wanted == s_pad.sent)
+			return;
+		PS5Pad_ExternalRumble(wanted / 255.0f);
+		s_pad.sent = wanted;
+	}
+}
+
+extern "C" void BetterVR_PS5_HeadsetVibration(float amplitude)
+{
+	std::lock_guard lock(s.lock);
+	if (s.stopped)
+		return;
+	s_headset.wanted = (int)std::lround(std::clamp(amplitude, 0.0f, 1.0f) * 25.0f);
+	ApplyHeadset();
+}
+
+extern "C" void BetterVR_PS5_PadVibration(float amplitude)
+{
+	std::lock_guard lock(s.lock);
+	if (s.stopped)
+		return;
+	s_pad.wanted = (int)std::lround(std::clamp(amplitude, 0.0f, 1.0f) * 255.0f);
+	ApplyPad();
+}
+
+extern "C" void BetterVR_PS5_TestHeadset()
+{
+	std::lock_guard lock(s.lock);
+	const XrTime now = Now();
+	const int rc = hmd2::set_vibration(kHeadsetTestLevel);
+	s_headset.sent = rc == 0 ? kHeadsetTestLevel : -1;
+	s_headset.sameAt = now;
+	s_headset.capped = false;
+	s_headset.testUntil = rc == 0 ? now + kDeviceTestHold : now;
+	VibLog("test headset: level %d -> 0x%08x (%s)", kHeadsetTestLevel, (unsigned)rc,
+		rc == 0 ? "took it, 400 ms" : rc == hmd2::kHmd2VibrationUnavailable ? "sceHmd2SetVibration is not bound on this firmware" : "refused");
+}
+
+extern "C" void BetterVR_PS5_TestPad()
+{
+	std::lock_guard lock(s.lock);
+	if (!s.padTakenOver)
+	{
+		VibLog("test pad: no VR session is driving the DualSense");
+		return;
+	}
+	PS5Pad_ExternalRumble(kPadTestLevel / 255.0f);
+	s_pad.sent = kPadTestLevel;
+	s_pad.testUntil = Now() + kDeviceTestHold;
+	VibLog("test pad: level %d for 400 ms on the DualSense (player 1)", kPadTestLevel);
+}
+
 // ==== the OpenXR functions ======================================================================
 extern "C" {
 
@@ -1616,6 +1756,12 @@ XRAPI_ATTR XrResult XRAPI_CALL xrDestroySession(XrSession session)
 	}
 	CloseHands();
 	s.attached = false;
+	if (s.padTakenOver)
+	{
+		s.padTakenOver = false;
+		PS5Pad_ExternalRumble(0.0f);
+		PS5Pad_SetExternalRumble(false);
+	}
 	EndSessionObjects(session);
 	Log("session ended after %llu frames (%llu without layers, %llu without an Hmd2 frame)", (unsigned long long)session->frames,
 		(unsigned long long)session->emptyFrames, (unsigned long long)session->skipped);
@@ -1632,6 +1778,13 @@ XRAPI_ATTR XrResult XRAPI_CALL xrBeginSession(XrSession session, const XrSession
 	if (session->running)
 		return XR_ERROR_SESSION_RUNNING;
 	session->running = true;
+	// the Vibration page's DualSense sink is the pad's only rumble from here (Cemu's own pattern output is
+	// held back in port/cemu/PS5PadController.cpp), so the game's burst and BetterVR's cannot fire twice
+	if (!s.padTakenOver)
+	{
+		s.padTakenOver = true;
+		PS5Pad_SetExternalRumble(true);
+	}
 	QueueState(XR_SESSION_STATE_SYNCHRONIZED);
 	QueueState(XR_SESSION_STATE_VISIBLE);
 	QueueState(XR_SESSION_STATE_FOCUSED);
@@ -2649,6 +2802,8 @@ XRAPI_ATTR XrResult XRAPI_CALL xrGetInputSourceLocalizedName(XrSession, const Xr
 XRAPI_ATTR XrResult XRAPI_CALL xrApplyHapticFeedback(XrSession, const XrHapticActionInfo* info, const XrHapticBaseHeader* header)
 {
 	std::lock_guard lock(s.lock);
+	if (s.stopped)
+		return XR_SUCCESS;
 	if (!header || header->type != XR_TYPE_HAPTIC_VIBRATION)
 		return XR_SUCCESS;
 	const auto* vibration = reinterpret_cast<const XrHapticVibration*>(header);
@@ -2759,6 +2914,16 @@ void BetterVR_PS5_Stop()
 	for (int i = 0; i < 2; i++)
 		if (s.hands[i].vibrating)
 			SetVibration(i, 0.0f);
+	// the Vibration page's other devices: no motor left on when the game ends, and the pad's own rumble back
+	if (s_headset.sent > 0)
+		hmd2::set_vibration(0);
+	s_headset.sent = 0;
+	if (s.padTakenOver)
+	{
+		s.padTakenOver = false;
+		PS5Pad_ExternalRumble(0.0f);
+		PS5Pad_SetExternalRumble(false);
+	}
 	if (s.session && s.session->hmdUp)
 	{
 		hmd2::shutdown();
