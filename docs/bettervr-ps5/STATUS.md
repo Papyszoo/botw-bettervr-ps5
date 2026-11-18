@@ -30,8 +30,9 @@ player looks. New patches: bettervr 0007-0010, cemu 0055. Details: `UPDATE-1.0.m
   ignored, game input is blocked`).
 - (b) Strafe flash. Strafe left and right with the left stick near grass and say whether Link's body still flashes for
   a frame. Send the `[pose] a short camera stall kept first person (N frames)` lines (at most one a second), the new
-  `[pose] first-person body-view yaw delta N deg` lines, and every `[pose] first-person body root ...` line (they
-  name the skip: actor missing, model mismatch, hand pose inactive, bone missing); say whether the frame rate held.
+  `[pose] first-person body-view yaw delta N deg` lines, every `[pose] first-person body root ...` line (they name
+  the skip: actor missing, model mismatch, hand pose inactive, bone missing), and any `[pose] camera hook kept the
+  last first-person body pose (...)` line; say whether the frame rate held.
 - (c) Weapon wheel and HUD. Open the weapon wheel: the left and right arrows must be visible on the black buttons, and
   the minimap and clock must not look faded or black. Turn your head slowly while looking at the HUD and at menu text,
   menu open and closed: say whether the edges still crawl or shimmer, and whether the TV mirror differs. Send the
