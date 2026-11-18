@@ -3,6 +3,21 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-18: v0.6, Options holds for the menu and taps for pause, no popup at start, built, untested on console
+
+Branch `bettervr-1.0/v06`, from v0.5.0. Requested from the console (v0.5.0): the short press of Options was too easy to
+hit when the player meant to pause, and the popup at game start that tells the player how the menu opens was unwanted.
+Hold Options on the right Sense for 700 ms and BetterVR's menu opens at that moment (hold again 700 ms: it closes);
+release it earlier and the press is the game's "+", the pause screen, sent as one tap. The popup is no longer drawn on
+the PS5. Details: `UPDATE-1.0.md`, "v0.6".
+
+**Test request 52 (the build of this commit, 13.60 console).** Play in VR. (a) Tap Options on the right controller once:
+the game's pause screen (the inventory) opens; tap it again: the screen closes. (b) Hold Options for about a second:
+BetterVR's menu opens while the button is still held, and the game's pause screen does not open; hold it about a second
+again: the menu closes. (c) Say whether anything (a help card, a popup) still appears over the game at start. (d) Send
+the logs zip and the `[menu]` lines: `Options down`, `Options up after N ms`, `long press -> open` / `closed`, `short
+press -> pause`. Say whether the "+" on the right stick click still opens the same pause screen.
+
 ## 2026-11-18: console run 4 (37c6028, 13.60)
 
 Reported from the console: the community graphic packs are listed again; opening and closing the inventory no longer

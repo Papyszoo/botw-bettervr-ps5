@@ -727,3 +727,27 @@ growing over time on its own. Run 2 (0.5x) reported none; whether the inventory 
 **Fix (patch cemu 0054):** the clamp counts `depth * (hasViewLayer ? 2 : 1) - slice` layers. Built, untested on console.
 The log's `[copy] image clamped ... x0 copied` lines for same-size images should be gone; Test request 51 asks for that
 and for the eye.
+
+## v0.6
+
+Branch `bettervr-1.0/v06`, from v0.5.0. Built only on CI; every result is "built, untested on console". Reported from
+the console on v0.5.0: the short press of Options was too easy to hit when the player meant to pause, and the popup at
+game start was unwanted.
+
+- **The menu takes a hold.** Options on the right Sense held for 700 ms opens BetterVR's menu when the threshold is
+  reached, not on the release; holding it again for 700 ms closes it, and the release that ends either hold does
+  nothing. The threshold is one constant (`kLongPress` in `ProcessOptionsButton`, `controls.cpp`, patch bettervr 0004).
+- **A short press is the game's pause.** Released before 700 ms, Options is the Wii U "+" that opens the inventory and
+  map screens: one tap on the frame of the release. The route is the one 1.0.0 already uses for the game's "+": the
+  right stick click's short press sends `VPAD_BUTTON_PLUS` (`ProcessGameplayInput`), so the Options tap adds the same
+  `VPAD_BUTTON_PLUS`, and `VPAD_BUTTON_MINUS` while the map is open, as the stick click is read in the menus
+  (`ProcessMenuInput`). A hold sends nothing (no pause), a tap opens no menu, and the "+" stays on the right stick
+  click. The gamepad's own + and upstream's 500 ms hold on it are untouched.
+- **No popup at start.** `DrawTutorialPromptAndControllerVerification` returns at once on the PS5, so the first-time
+  setup card over the game is gone; the PS5 prompt text that patch 0004 added to `GetControllerModMenuPrompt` goes with
+  it, as nothing draws it now.
+- **Logs** (BetterVR's, mirrored to the boot log as `[bettervr] ...`): `[menu] Options down`, `[menu] Options up after
+  N ms`, `[menu] long press -> open` or `closed` (or `[menu] long press ignored, the menu's overlay is not ready`), and
+  `[menu] short press -> pause`.
+- Unchanged: the left Square long press still opens the menu, with its own 250 ms threshold.
+- Test request 52 in `STATUS.md`.

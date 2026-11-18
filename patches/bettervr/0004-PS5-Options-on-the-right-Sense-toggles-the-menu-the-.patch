@@ -1,24 +1,25 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Patryk Kowalczyk <papyszoo@gmail.com>
 Date: Wed, 18 Nov 2026 10:54:38 +0100
-Subject: [PATCH] PS5: Options on the right Sense toggles the menu, the seated
- height is the default and is asked for in game
+Subject: [PATCH] PS5: Options held for 700 ms opens the menu, a short press is
+ the game's pause
 
-- ProcessModMenuInput takes Options (BetterVR_PS5_OptionsDown, the runtime's) down and up edges: a press released
-  within a second opens or closes the menu, a hold does nothing; [menu] lines log each step. The Touch profile
-  gives that button no action, and the left X (Square) long press stays.
-- The menu's first-run prompt names Options on the PS5.
+- ProcessOptionsButton takes Options (BetterVR_PS5_OptionsDown, the runtime's) down, held and up edges: held for
+  700 ms it opens or closes the menu at that moment and the release then does nothing; released earlier it sends
+  the game's + (the pause screen), one tap, as a short press of the right stick click sends it. [menu] lines log
+  each step. The Touch profile gives that button no action, and the left X (Square) long press stays.
+- The first-run prompt is not drawn on the PS5.
 - PlayPosition defaults to Seated on the PS5 (the tracker's origin is not known to be the floor), and the first
   in-game frame requests the calibration when the loading screen passed before the session existed.
 ---
- src/game/botw/input/controls.cpp | 39 ++++++++++++++++++++++++++++++++
- src/rendering/imgui_menus.cpp    |  3 +++
- src/rendering/openxr.cpp         | 11 +++++++++
- src/utils/mod_settings.h         |  4 ++++
- 4 files changed, 57 insertions(+)
+ src/game/botw/input/controls.cpp | 50 ++++++++++++++++++++++++++++++++
+ src/rendering/imgui_menus.cpp    |  6 ++++
+ src/rendering/openxr.cpp         | 11 +++++++
+ src/utils/mod_settings.h         |  4 +++
+ 4 files changed, 71 insertions(+)
 
 diff --git a/src/game/botw/input/controls.cpp b/src/game/botw/input/controls.cpp
-index 195735a..6b4ee33 100644
+index 195735a..06f73cf 100644
 --- a/src/game/botw/input/controls.cpp
 +++ b/src/game/botw/input/controls.cpp
 @@ -8,6 +8,8 @@
@@ -30,7 +31,7 @@ index 195735a..6b4ee33 100644
  #include "rendering/haptics.h"
  #include "rendering/imgui_menus.h"
  #include "rendering/tracking.h"
-@@ -964,11 +966,48 @@ static void ProcessInputPrevention(ControlState& state, std::chrono::steady_cloc
+@@ -964,6 +966,51 @@ static void ProcessInputPrevention(ControlState& state, std::chrono::steady_cloc
          state.preventGrabInputs = false;
  }
  
@@ -38,61 +39,84 @@ index 195735a..6b4ee33 100644
 +// the runtime's: whether Options on the right Sense controller is down (port/bettervr/xr/runtime.cpp)
 +extern "C" bool BetterVR_PS5_OptionsDown();
 +
-+// Options on the right Sense controller opens and closes the menu with one short press (released within a second;
-+// a hold does nothing). The Touch profile gives that button no action, so it is read from the runtime. The left
-+// X (Square) long press below still works.
-+static void ToggleModMenuOnOptionsPress(std::atomic_bool& isMenuOpen) {
++// Options on the right Sense controller: held for 700 ms it opens or closes the menu at that moment, and its release
++// then does nothing; released earlier it is the game's + (the pause screen), sent as one tap, as a short press of the
++// right stick click sends it. The Touch profile gives that button no action, so it is read from the runtime. The
++// left X (Square) long press below still works.
++static void ProcessOptionsButton(std::atomic_bool& isMenuOpen, uint32_t& buttonHold, const ControlState& state) {
++    constexpr auto kLongPress = std::chrono::milliseconds(700);
 +    static bool s_wasDown = false;
++    static bool s_longPressDone = false;
 +    static std::chrono::steady_clock::time_point s_downAt;
 +    const bool down = BetterVR_PS5_OptionsDown();
-+    if (down == s_wasDown)
-+        return;
-+    s_wasDown = down;
 +    const auto now = std::chrono::steady_clock::now();
-+    if (down) {
++    if (down && !s_wasDown) {
++        s_wasDown = true;
++        s_longPressDone = false;
 +        s_downAt = now;
 +        Log::print<INFO>("[menu] Options down");
 +        return;
 +    }
-+    const auto heldMs = std::chrono::duration_cast<std::chrono::milliseconds>(now - s_downAt).count();
-+    Log::print<INFO>("[menu] Options up after {} ms", (long long)heldMs);
-+    RND_Renderer* renderer = VRManager::instance().XR->GetRenderer();
-+    if (heldMs >= 1000)
-+        return;
-+    if (renderer == nullptr || !renderer->m_imguiOverlay) {
-+        Log::print<INFO>("[menu] toggle ignored, the menu's overlay is not ready");
++    if (down && !s_longPressDone && now - s_downAt >= kLongPress) {
++        s_longPressDone = true;
++        RND_Renderer* renderer = VRManager::instance().XR->GetRenderer();
++        if (renderer == nullptr || !renderer->m_imguiOverlay) {
++            Log::print<INFO>("[menu] long press ignored, the menu's overlay is not ready");
++            return;
++        }
++        isMenuOpen = !isMenuOpen;
++        Log::print<INFO>("[menu] long press -> {}", isMenuOpen.load() ? "open" : "closed");
 +        return;
 +    }
-+    isMenuOpen = !isMenuOpen;
-+    Log::print<INFO>("[menu] toggle -> {}", isMenuOpen.load() ? "open" : "closed");
++    if (down || !s_wasDown)
++        return;
++    s_wasDown = false;
++    const auto heldMs = std::chrono::duration_cast<std::chrono::milliseconds>(now - s_downAt).count();
++    Log::print<INFO>("[menu] Options up after {} ms", (long long)heldMs);
++    if (s_longPressDone)
++        return;
++    Log::print<INFO>("[menu] short press -> pause");
++    buttonHold |= state.mapOpen ? VPAD_BUTTON_MINUS : VPAD_BUTTON_PLUS;
 +}
 +#endif
 +
  static void ProcessModMenuInput(std::atomic_bool& isMenuOpen, OpenXR::InputState& inputs, VPADStatus& vpadInputs, XrActionStateVector2f& leftStickSource, XrActionStateVector2f& rightStickSource)
  {
      if (s_modMenuButton.lastEvent == ButtonState::Event::LongPress) {
-         isMenuOpen = !isMenuOpen;
-     }
+@@ -1414,6 +1461,9 @@ static void hook_InjectXRInput(PPCInterpreter_t* hCPU) {
+ 
+     auto& isMenuOpen = ImGuiMenus::g_isOpen;
+     ProcessModMenuInput(isMenuOpen, inputs, vpadStatus, leftStickSource, rightStickSource);
 +#if defined(__PROSPERO__)
-+    ToggleModMenuOnOptionsPress(isMenuOpen);
++    ProcessOptionsButton(isMenuOpen, newXRBtnHold, state);
 +#endif
- 
-     ImGuiMenus::ProcessInputs(inputs, vpadInputs);
- 
+     UpdateGuide(inputs, isMenuOpen);
+     HandGestureState leftGesture = {};
+     HandGestureState rightGesture = {};
 diff --git a/src/rendering/imgui_menus.cpp b/src/rendering/imgui_menus.cpp
-index 1b2a6c2..46eaab0 100644
+index 1b2a6c2..3fc94d9 100644
 --- a/src/rendering/imgui_menus.cpp
 +++ b/src/rendering/imgui_menus.cpp
-@@ -1488,6 +1488,9 @@ static const char* GetControllerModMenuPrompt() {
-     auto& caps = VRManager::instance().XR->m_capabilities;
-     switch (caps.activeControllerType) {
-         case ControllerType::OculusTouch:
+@@ -1551,6 +1551,11 @@ static bool FooterItem(const std::string& label, bool clickable) {
+ }
+ 
+ static void DrawTutorialPromptAndControllerVerification(bool isMenuOpen) {
 +#if defined(__PROSPERO__)
-+            return "Press the Options button on your right controller to open the mod menu.\nHolding the Square button on your left controller for 1 second works too.";
++    // no popup over the game at start on the PS5: the game's page in the app says how the menu opens
++    (void)isMenuOpen;
++    return;
++#else
+     auto& settings = GetSettings();
+ 
+     float alphaForNotify = settings.tutorialPromptShown ? 0.9f : 0.98f;
+@@ -1586,6 +1591,7 @@ static void DrawTutorialPromptAndControllerVerification(bool isMenuOpen) {
+         }
+     }
+     ImGui::End();
 +#endif
-         case ControllerType::Pico4:
-         case ControllerType::HPReverbG2:
-         case ControllerType::ViveCosmos:
+ }
+ 
+ static void DrawUpdateBanner(bool isMenuOpen) {
 diff --git a/src/rendering/openxr.cpp b/src/rendering/openxr.cpp
 index 433b28a..c5a8b4b 100644
 --- a/src/rendering/openxr.cpp
