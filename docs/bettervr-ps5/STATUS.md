@@ -24,6 +24,26 @@ right with the left stick near grass and say whether Link's body still flashes f
 one a second) count the stalls the tolerance kept first person. (f) Open the weapon wheel: the left and right arrows
 must be visible on the black buttons, and the minimap and clock must not look faded or black.
 
+**Test request 53 (v0.6 combined).** The vibration track's checks, under the shared heading (append other tracks'
+here at merge time). Play in VR, then:
+- (a) Hold Options: a **Vibration** page sits between Controls and Display. Open it and say whether it draws (the
+  master switch, the headset cap, three test buttons and nine category rows with On / Strength / Hands / Headset /
+  DualSense).
+- (b) Press **Sense Controllers**, **Headset**, **DualSense**. Say which buzzed. Send the `[vib] test hands`, `[vib]
+  test headset` and `[vib] test pad` lines, and the `hmd2: headset vibration bound` line (or `not found on this
+  firmware`).
+- (c) Each category's toggle and strength: at 0 % (or Off) a sword swing, a weapon/gear equip, a bow draw, a shield
+  raise and the slate's hum are each silent on their own; turning Game Rumble to 0 % silences the game's own rumble
+  while BetterVR's rows still work. Strength 30 % is clearly weaker than 100 %.
+- (d) Damage: get hit (Bokoblin, fall, fire) at Damage Taken 100 %: both hands give one rumble; at 0 %, the same hit
+  gives none. Send the `[vib] damage state '...'` lines (up to 6).
+- (e) DualSense without doubles: with a category set to DualSense, one event is felt once, not twice, and the boot log
+  has one `[pad] rumble: BetterVR's vibration mixer drives the DualSense` line at VR start. Say whether the pad still
+  works normally (no rumble) when VR is not running.
+- (f) Send every `[vib] game rumble ...` line (at most 40, 150 ms apart): play a few minutes with a hit, damage, a
+  remote bomb, a cutscene and a shrine. Each has `caller=`, `state=`, the VPAD `bytes=` and, when it was found, the
+  sead `pattern="..." repeat=`. Say whether the run crashed or stuttered around them.
+
 ## 2026-11-18: console run 4 (37c6028, 13.60)
 
 Reported from the console: the community graphic packs are listed again; opening and closing the inventory no longer

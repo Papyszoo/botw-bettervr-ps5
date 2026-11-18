@@ -235,6 +235,14 @@ constexpr int kSenseVibrationUnavailable = (int)0x80000001;
 int sense_set_vibration_mode(int handle, int mode);
 int sense_set_vibration(int handle, uint8_t intensity);
 
+// The PS VR2 headset's motor, sceHmd2SetVibration(int handle, uint32_t level): one motor with no direction, level
+// 0..25. Bound on first use by name, else at the 13.60 offset public PS VR2 tables give (+0x2ae00) and only after
+// libSceHmd2's own anchor string checked; the offset is not from our own dump, so the bind, the level and any
+// failure are logged and the Vibration page's test button is the proof. A library or firmware without it returns
+// kHmd2VibrationUnavailable (logged once) and the headset simply stays still: never fatal. UNVERIFIED on hardware.
+constexpr int kHmd2VibrationUnavailable = (int)0x80000001;
+int set_vibration(int level);
+
 int eye_size();     // per-eye width
 int eye_height();   // per-eye height (PSVR2: 1984 wide by 2048 high)
 int buffer_count();
