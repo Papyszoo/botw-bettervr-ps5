@@ -407,3 +407,17 @@ Open problems and risks (none seen on a console):
 
 Backlog (outside stage 2): the `bettervr.json` keys `roomscale`, `stereoRays`, `graphicsPack` and the other
 old switches are no longer read; `docs/bettervr-ps5/INSTALL.md` still describes the 0.9.23 flow (stage 5).
+
+CI: run 44204670020 on de2a992. Its first attempt failed in `make deps` before any compile: a fresh
+`.deps` (the stage 1 branch's cache is not readable from this branch) and the boilerplate's zlib download
+from zlib.net gave a wrong checksum (the file is right when fetched by hand; a transient answer). Re-run
+started; a full build from empty caches takes hours (RADV included). The `Tests` workflow fails on the
+Eden layout copy check (`port/app/system_layout.h` differs from `ecam_layout.h`), as it did on stage 1 and
+`testing`: not from this branch.
+Local checks done: the module's sources that were patched, and `xr/runtime.cpp` against 1.0.0's vendored
+OpenXR headers, pass a clang `-fsyntax-only` with `-D__PROSPERO__` (macOS libc++, not libc++ 18); every `xr*`
+call 1.0.0 makes exists in the runtime; the patch applies on the pin and equals the branch.
+Next step: read `gh run list --branch bettervr-1.0/stage2`; on failure `gh run view <id> --log-failed | tail -80`
+and fix the first error (likeliest: a libc++ 18 gap in the module, a duplicate `__atomic_*` symbol, a missing
+include dir for `PlatformPS5.cpp`/`runtime.cpp` in `module.cmake`); on green, check the ELF for the strings
+`BetterVR's host module starts` and `Acquired system to be used`, then publish nothing and report to the user.
