@@ -226,6 +226,15 @@ bool register_controller(int tracker_handle, bool right_hand);
 // UNVERIFIED on hardware: see register_controller().
 bool controller_pose(int tracker_handle, float pos[3], float quat[4]);
 
+// A Sense controller's vibration, through libScePad's own Sense exports (the DualSense setters
+// refuse a Sense handle with 0x80920003). `handle` is the scePadVrControllerReadState handle.
+// Resolved on first use by name, else at Ghost-VR's 13.60 offsets after an anchor check; other
+// firmware returns kSenseVibrationUnavailable and logs it once. Intensity 0 stops it.
+// UNVERIFIED on hardware.
+constexpr int kSenseVibrationUnavailable = (int)0x80000001;
+int sense_set_vibration_mode(int handle, int mode);
+int sense_set_vibration(int handle, uint8_t intensity);
+
 int eye_size();     // per-eye width
 int eye_height();   // per-eye height (PSVR2: 1984 wide by 2048 high)
 int buffer_count();

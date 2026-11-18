@@ -8,8 +8,11 @@
 #   tools/build-cemu.sh --reconfigure  start the CMake build directory over
 #   tools/build-cemu.sh TARGET...    build only those targets
 #
-# Cemu itself stays at its pinned commit in .deps/Cemu; patches/cemu/*.patch are applied on a
-# branch named ps5 (tools/cemu-patches.sh).
+# Cemu itself (Crementif's BetterVR fork) stays at its pinned commit in .deps/Cemu; patches/cemu/*.patch are applied on a
+# branch named ps5 (tools/cemu-patches.sh). BetterVR 1.0.0 is a host module of that Cemu: its src/ (with
+# patches/bettervr on a branch named ps5 in .deps/BotW-BetterVR, tools/bettervr-patches.sh) goes into
+# CEMU_EXTERNAL_MODULES, and takes the PS5's platform and the OpenXR runtime over hmd2 from port/bettervr
+# (module.cmake).
 
 set -euo pipefail
 source "$(dirname -- "${BASH_SOURCE[0]}")/env.sh"
@@ -29,11 +32,13 @@ if [[ -d $build && $(cat "$build/ps5-toolchain" 2>/dev/null) != "$toolchain" ]];
 fi
 
 bash "$PS5CEMU_ROOT/tools/cemu-patches.sh" apply
+bash "$PS5CEMU_ROOT/tools/bettervr-patches.sh" apply
 bash "$PS5CEMU_ROOT/tools/reshade-patches.sh" apply # its effect compiler (port/cemu/ReShadeEffects.cpp)
 
 options=(
     -DCMAKE_TOOLCHAIN_FILE="$PS5CEMU_TOOLCHAIN" -DCMAKE_BUILD_TYPE=Release
     -DCEMU_PS5=ON -DCEMU_PS5_PORT_DIR="$PS5CEMU_ROOT/port"
+    -DCEMU_EXTERNAL_MODULES="$PS5CEMU_ROOT/.deps/BotW-BetterVR/src"
     -DENABLE_VCPKG=OFF -DENABLE_WXWIDGETS=OFF -DENABLE_OPENGL=OFF -DENABLE_METAL=OFF -DENABLE_VULKAN=ON
     -DENABLE_DISCORD_RPC=OFF -DENABLE_HIDAPI=OFF -DENABLE_SDL=OFF -DENABLE_LIBUSB=OFF -DENABLE_CUBEB=OFF
     -DALLOW_PORTABLE=OFF -DBoost_USE_STATIC_LIBS=ON -DBoost_ROOT="$PS5CEMU_SYSROOT"

@@ -28,10 +28,10 @@ are drawn after Cemu's.
  3 files changed, 115 insertions(+), 8 deletions(-)
 
 diff --git a/src/Cafe/HW/Latte/Core/LatteRenderTarget.cpp b/src/Cafe/HW/Latte/Core/LatteRenderTarget.cpp
-index f1556f8..acf2ed1 100644
+index 6dc00843..89ced4ac 100644
 --- a/src/Cafe/HW/Latte/Core/LatteRenderTarget.cpp
 +++ b/src/Cafe/HW/Latte/Core/LatteRenderTarget.cpp
-@@ -864,6 +864,54 @@ void LatteRenderTarget_getScreenImageArea(sint32* x, sint32* y, sint32* width, s
+@@ -995,6 +995,54 @@ void LatteRenderTarget_getScreenImageArea(sint32* x, sint32* y, sint32* width, s
  		*fullHeight = h;
  }
  
@@ -86,9 +86,9 @@ index f1556f8..acf2ed1 100644
  void LatteRenderTarget_copyToBackbuffer(LatteTextureView* textureView, bool isPadView)
  {
  	// make sure texture is updated to latest data in cache
-@@ -964,12 +1012,20 @@ void LatteRenderTarget_copyToBackbuffer(LatteTextureView* textureView, bool isPa
- 	}
- 	cemu_assert(shader);
+@@ -1099,12 +1147,20 @@ void LatteRenderTarget_copyToBackbuffer(LatteTextureView* textureView, bool isPa
+ 		VulkanRenderer::GetInstance()->HostModule_DeliverScanBuffer(textureView, isPadView);
+ #endif
  	g_renderer->DrawBackbufferQuad(textureView, shader, filter==LatteTextureView::MagFilter::kLinear, imageX, imageY, imageWidth, imageHeight, isPadView, clearBackground);
 +#if defined(CEMU_PS5)
 +	if (!isPadView)
@@ -107,7 +107,7 @@ index f1556f8..acf2ed1 100644
  	g_renderer->ImguiEnd();
  }
  
-@@ -1008,6 +1064,14 @@ void LatteRenderTarget_itHLECopyColorBufferToScanBuffer(MPTR colorBufferPtr, uin
+@@ -1143,6 +1199,14 @@ void LatteRenderTarget_itHLECopyColorBufferToScanBuffer(MPTR colorBufferPtr, uin
  
  	bool showDRC = swkbd_hasKeyboardInputHook() == false && (isDRCPrimary ^ altScreenRequested);
  
@@ -123,7 +123,7 @@ index f1556f8..acf2ed1 100644
  		LatteRenderTarget_copyToBackbuffer(texView, true);
  	if (((renderTarget & RENDER_TARGET_TV) && !showDRC) || ((renderTarget & RENDER_TARGET_DRC) && showDRC))
 diff --git a/src/Cafe/OS/libs/swkbd/swkbd.cpp b/src/Cafe/OS/libs/swkbd/swkbd.cpp
-index 16b8d73..80c1455 100644
+index 3bec4e14..79882fac 100644
 --- a/src/Cafe/OS/libs/swkbd/swkbd.cpp
 +++ b/src/Cafe/OS/libs/swkbd/swkbd.cpp
 @@ -5,6 +5,9 @@
@@ -136,7 +136,7 @@ index 16b8d73..80c1455 100644
  #include "util/helpers/helpers.h"
  #include "resource/IconsFontAwesome5.h"
  
-@@ -397,15 +400,33 @@ void SwkbdCalc(void* controllerInfo)
+@@ -395,15 +398,33 @@ void SwkbdCalc(void* controllerInfo)
  }
  
  void swkbd_keyInput(uint32 keyCode);
@@ -173,7 +173,7 @@ index 16b8d73..80c1455 100644
  	if (!font || !textFont)
  		return;
  
-@@ -428,7 +449,7 @@ void swkbd_render(bool mainWindow)
+@@ -426,7 +447,7 @@ void swkbd_render(bool mainWindow)
  	const auto button_len = font->GetCharAdvance('W');
  	const float len = button_len * std::max(4, std::max(swkbdInternalState->maxTextLength, (sint32)swkbdInternalState->keyboardArg.receiverArg.stringBufSize));
  
@@ -182,7 +182,7 @@ index 16b8d73..80c1455 100644
  	ImGui::SetNextWindowPos(position, ImGuiCond_Always, pivot);
  	ImGui::SetNextWindowSize(box_size, ImGuiCond_Always);
  	ImGui::SetNextWindowBgAlpha(0.9f);
-@@ -436,7 +457,7 @@ void swkbd_render(bool mainWindow)
+@@ -434,7 +455,7 @@ void swkbd_render(bool mainWindow)
  	if (ImGui::Begin("Keyboard Input", nullptr, kPopupFlags))
  	{
  		ImGui::Text("%s", _utf8WrapperPtr(ICON_FA_KEYBOARD));
@@ -191,7 +191,7 @@ index 16b8d73..80c1455 100644
  		auto text = boost::nowide::narrow(fmt::format(L"{}", swkbdInternalState->formStringBuffer));
  
  		static std::chrono::steady_clock::time_point s_last_tick = tick_cached();
-@@ -456,7 +477,7 @@ void swkbd_render(bool mainWindow)
+@@ -454,7 +475,7 @@ void swkbd_render(bool mainWindow)
  		ImGui::TextUnformatted(text.c_str(), text.c_str() + text.size());
  		ImGui::PopTextWrapPos();
  
@@ -200,7 +200,7 @@ index 16b8d73..80c1455 100644
  	}
  	ImGui::End();
  	ImGui::PopFont();
-@@ -466,8 +487,16 @@ void swkbd_render(bool mainWindow)
+@@ -464,8 +485,16 @@ void swkbd_render(bool mainWindow)
  	ImGui::SetNextWindowBgAlpha(0.9f);
  	ImGui::PushFont(textFont);
  
@@ -217,7 +217,7 @@ index 16b8d73..80c1455 100644
  		if(swkbdInternalState->shiftActivated)
  		{
  			const char* keys[] =
-@@ -482,7 +511,7 @@ void swkbd_render(bool mainWindow)
+@@ -480,7 +509,7 @@ void swkbd_render(bool mainWindow)
  			{
  				if (*key != '\n')
  				{
@@ -226,7 +226,7 @@ index 16b8d73..80c1455 100644
  					{
  						if (strcmp(key, _utf8WrapperPtr(ICON_FA_ARROW_CIRCLE_LEFT)) == 0)
  							swkbd_keyInput(8);
-@@ -514,7 +543,7 @@ void swkbd_render(bool mainWindow)
+@@ -512,7 +541,7 @@ void swkbd_render(bool mainWindow)
  			{
  				if (*key != '\n')
  				{
@@ -235,7 +235,7 @@ index 16b8d73..80c1455 100644
  					{
  						if (strcmp(key, _utf8WrapperPtr(ICON_FA_ARROW_CIRCLE_LEFT)) == 0)
  							swkbd_keyInput(8);
-@@ -533,6 +562,10 @@ void swkbd_render(bool mainWindow)
+@@ -531,6 +560,10 @@ void swkbd_render(bool mainWindow)
  			}
  		}
  		ImGui::NewLine();
@@ -247,7 +247,7 @@ index 16b8d73..80c1455 100644
  	ImGui::End();
  
 diff --git a/src/imgui/imgui_extension.cpp b/src/imgui/imgui_extension.cpp
-index eb0e31e..1e5917c 100644
+index eb0e31ef..1e5917c7 100644
 --- a/src/imgui/imgui_extension.cpp
 +++ b/src/imgui/imgui_extension.cpp
 @@ -123,8 +123,18 @@ ImFont* ImGui_GetFont(float size)

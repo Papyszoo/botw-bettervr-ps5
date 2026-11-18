@@ -12,7 +12,7 @@ scan does not, DetectFormat does).
  1 file changed, 30 insertions(+)
 
 diff --git a/src/Cafe/TitleList/TitleList.cpp b/src/Cafe/TitleList/TitleList.cpp
-index 7b75fac..4917784 100644
+index 7b75fac7..49177840 100644
 --- a/src/Cafe/TitleList/TitleList.cpp
 +++ b/src/Cafe/TitleList/TitleList.cpp
 @@ -210,6 +210,27 @@ void _RemoveTitleFromMultimap(TitleInfo* titleInfo)

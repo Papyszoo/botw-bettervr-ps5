@@ -10,28 +10,28 @@ Cemu submits its command buffer every 300 draws, and sooner around occlusion que
  1 file changed, 8 insertions(+)
 
 diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
-index 4e7be57..009f128 100644
+index 5f40c1df..5958937d 100644
 --- a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
 +++ b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
-@@ -6,6 +6,10 @@ void PS5_NoteCopy(const std::string& key, const std::string& line, bool overrun)
+@@ -7,6 +7,10 @@ void PS5_NoteCopy(const std::string& key, const std::string& line, bool overrun)
  // The port's in-game menu (port/app/ingame.cpp): its pictures, made where the font's is, before
  // ImGui's render pass begins (a copy may not run inside one)
  void PS5Cemu_ImguiUploads();
 +// The draws a command buffer takes before it is submitted (port/app/emulator.cpp: ps5cemu.json's
-+// cemuSubmitDraws, 300 as Cemu's own unless set). On the PS5 each submission costs the driver a copy
++// cemuSubmitDraws, 300 unless set; the fork's own is 1000). On the PS5 each submission costs the driver a copy
 +// of its words and an AGC submission, and the GPU a reset of its state and a write-back of its caches
 +uint32 PS5Cemu_SubmitDraws();
  #endif
  #include "Cafe/HW/Latte/Renderer/Vulkan/VulkanAPI.h"
  #include "Cafe/HW/Latte/Renderer/Vulkan/LatteTextureVk.h"
-@@ -2305,7 +2309,11 @@ void VulkanRenderer::SubmitCommandBuffer(VkSemaphore signalSemaphore, VkSemaphor
- 	occlusionQuery_notifyBeginCommandBuffer();
+@@ -2420,7 +2424,11 @@ void VulkanRenderer::SubmitCommandBuffer(VkSemaphore signalSemaphore, VkSemaphor
+ 	m_state.resetCommandBufferState();
  
  	m_recordedDrawcalls = 0;
 +#if defined(CEMU_PS5)
 +	m_submitThreshold = PS5Cemu_SubmitDraws();
 +#else
- 	m_submitThreshold = 300;
+ 	m_submitThreshold = 1000;
 +#endif
  	m_submitOnIdle = false;
  }

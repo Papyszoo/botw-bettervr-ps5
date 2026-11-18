@@ -1,0 +1,80 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Patryk Kowalczyk <papyszoo@gmail.com>
+Date: Wed, 18 Nov 2026 09:20:17 +0100
+Subject: [PATCH] PS5: foveation off, and a headset that does not start ends
+ the launch with a reason
+
+- no UseFoveatedShading and FoveatedRendering defaults to Off: the console's GPU has no fragment shading rate
+- VRManager::Init/InitSession failing (the session, the headset) logs, calls BetterVR_PS5_VrFailed (the app
+  returns to the library with the reason) and rethrows
+---
+ src/cemu/host_module.cpp | 22 ++++++++++++++++++++++
+ src/utils/mod_settings.h |  4 ++++
+ 2 files changed, 26 insertions(+)
+
+diff --git a/src/cemu/host_module.cpp b/src/cemu/host_module.cpp
+index 46a30ef..5da357e 100644
+--- a/src/cemu/host_module.cpp
++++ b/src/cemu/host_module.cpp
+@@ -19,6 +19,7 @@
+ 
+ #if defined(__PROSPERO__)
+ bool PS5Cemu_BetterVRWanted(uint64_t titleId); // port/bettervr/VrPS5.cpp
++extern "C" void BetterVR_PS5_VrFailed(const char* what); // port/bettervr/VrPS5.cpp: the game ends, the library says why
+ #endif
+ 
+ PFN_vkGetInstanceProcAddr VulkanLoader::GetInstanceProcAddr() {
+@@ -312,7 +313,12 @@ public:
+         if (!m_active) {
+             return false;
+         }
++#if defined(__PROSPERO__)
++        // the console's GPU has no fragment shading rate: the Cemu fork would draw without it anyway, and the menu says Off
++        Log::print<INFO>("Foveated shading is off: the console's GPU has no fragment shading rate");
++#else
+         HostModule::UseFoveatedShading(title->renderWidth, title->renderHeight, kFoveationInnerRadius, kFoveationOuterRadius);
++#endif
+         const auto createInstance = (PFN_vkCreateInstance)VulkanLoader::GetInstanceProcAddr()(VK_NULL_HANDLE, "vkCreateInstance");
+         result = VulkanDevice::CreateInstance(createInstance, &createInfo, nullptr, &instance);
+         return true;
+@@ -348,8 +354,24 @@ public:
+         if (!m_active) {
+             return;
+         }
++#if defined(__PROSPERO__)
++        // Cemu is creating its renderer: an exception here would end the launch with a renderer error. The packs are
++        // already registered and the game's patches call the module's hooks, so it cannot go on flat; the app takes
++        // the player back to the library, where the reason is, and Play on TV starts the game without the headset.
++        try {
++            VRManager::instance().Init(device.instance, device.physicalDevice, device.device);
++            VRManager::instance().InitSession();
++        }
++        catch (const std::exception& e) {
++            Log::print<ERROR>("VR did not start: {}", e.what());
++            Log::Flush();
++            BetterVR_PS5_VrFailed(e.what());
++            throw;
++        }
++#else
+         VRManager::instance().Init(device.instance, device.physicalDevice, device.device);
+         VRManager::instance().InitSession();
++#endif
+     }
+ 
+     void OnHostEvent(const HostModule::HostEvent& event, VkCommandBuffer commandBuffer) override {
+diff --git a/src/utils/mod_settings.h b/src/utils/mod_settings.h
+index d75c505..a0017ac 100644
+--- a/src/utils/mod_settings.h
++++ b/src/utils/mod_settings.h
+@@ -588,7 +588,11 @@ struct ModSettings {
+     BoolSetting preventFirstPersonRagdoll{ "PreventFirstPersonRagdoll", true };
+     EnumSetting<AngularVelocityFixerMode> buggyAngularVelocity{ "BuggyAngularVelocity", AngularVelocityFixerMode::AUTO };
+     EnumSetting<PerformanceOverlayMode> performanceOverlay{ "PerformanceOverlay", PerformanceOverlayMode::DISABLE };
++#if defined(__PROSPERO__) // no fragment shading rate on the console's GPU
++    EnumSetting<FoveatedRenderingMode> foveatedRendering{ "FoveatedRendering", FoveatedRenderingMode::OFF };
++#else
+     EnumSetting<FoveatedRenderingMode> foveatedRendering{ "FoveatedRendering", FoveatedRenderingMode::ON };
++#endif
+     BoolSetting logRendering{ "LogRendering", false, Log::SetCategory<RENDERING> };
+     BoolSetting logInterop{ "LogInterop", false, Log::SetCategory<INTEROP> };
+     BoolSetting logControls{ "LogControls", false, Log::SetCategory<CONTROLS> };

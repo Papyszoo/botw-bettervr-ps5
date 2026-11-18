@@ -16,18 +16,18 @@ GPU, to tell whether this is why.
  1 file changed, 13 insertions(+)
 
 diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
-index f8fef3f..9be4251 100644
+index 86f661a1..03844b64 100644
 --- a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
 +++ b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
-@@ -10,6 +10,7 @@ void PS5Cemu_ImguiUploads();
- // cemuSubmitDraws, 300 as Cemu's own unless set). On the PS5 each submission costs the driver a copy
+@@ -11,6 +11,7 @@ void PS5Cemu_ImguiUploads();
+ // cemuSubmitDraws, 300 unless set; the fork's own is 1000). On the PS5 each submission costs the driver a copy
  // of its words and an AGC submission, and the GPU a reset of its state and a write-back of its caches
  uint32 PS5Cemu_SubmitDraws();
 +extern bool g_ps5StandardBorderColors; // below
  #endif
  #include "Cafe/HW/Latte/Renderer/Vulkan/VulkanAPI.h"
  #include "Cafe/HW/Latte/Renderer/Vulkan/LatteTextureVk.h"
-@@ -1448,6 +1449,14 @@ bool VulkanRenderer::CheckDeviceExtensionSupport(const VkPhysicalDevice device,
+@@ -1561,6 +1562,14 @@ bool VulkanRenderer::CheckDeviceExtensionSupport(const VkPhysicalDevice device,
  	info.deviceExtensions.pipeline_feedback = isExtensionAvailable(VK_EXT_PIPELINE_CREATION_FEEDBACK_EXTENSION_NAME);
  	info.deviceExtensions.cubic_filter = isExtensionAvailable(VK_EXT_FILTER_CUBIC_EXTENSION_NAME);
  	info.deviceExtensions.custom_border_color = isExtensionAvailable(VK_EXT_CUSTOM_BORDER_COLOR_EXTENSION_NAME);
@@ -42,7 +42,7 @@ index f8fef3f..9be4251 100644
  	info.deviceExtensions.driver_properties = isExtensionAvailable(VK_KHR_DRIVER_PROPERTIES_EXTENSION_NAME);
  	info.deviceExtensions.external_memory_host = isExtensionAvailable(VK_EXT_EXTERNAL_MEMORY_HOST_EXTENSION_NAME);
  	info.deviceExtensions.synchronization2 = isExtensionAvailable(VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME);
-@@ -1697,6 +1706,10 @@ void VulkanRenderer::CreateCommandPool()
+@@ -1812,6 +1821,10 @@ void VulkanRenderer::CreateCommandPool()
  }
  
  #if defined(CEMU_PS5)

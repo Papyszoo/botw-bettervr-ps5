@@ -17,10 +17,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "hmd2.h"
 
+#include <algorithm>
 #include <cstdarg>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <unistd.h>
 
 // System functions, declared here as PS5VR declares them: the payload SDK has
 // stubs for all of them but no headers.
@@ -30,6 +32,7 @@ const char *sceKernelGetFsSandboxRandomWord(void);
 int sceKernelLoadStartModule(const char *path, size_t argc, const void *argv, uint32_t flags,
                              void *opt, int *res);
 int sceKernelDlsym(int handle, const char *name, void **addr);
+int sceKernelGetModuleList(int32_t *handles, size_t num, size_t *actual);
 int sceKernelGetModuleInfo(int handle, void *info);
 int sceKernelAllocateDirectMemory(int64_t start, int64_t end, size_t len, size_t align, int type,
                                   int64_t *offset);
@@ -367,17 +370,63 @@ void flush_cpu_writes(const void *address, size_t bytes) {
 }
 
 // -- module loading ---------------------------------------------------------
+uintptr_t module_base(int handle, const char *file, ModuleInfo *info);
+
 // id 0: no sysmodule to load, only the library path (libSceVrHand).
 int load_sysmodule(uint32_t id, const char *name) {
     const int rc = id != 0 ? sceSysmoduleLoadModule(id) : 0;
     char path[160];
     std::snprintf(path, sizeof path, "/%s/common/lib/%s.sprx", sceKernelGetFsSandboxRandomWord(), name);
     int res = 0;
-    const int handle = sceKernelLoadStartModule(path, 0, nullptr, 0, nullptr, &res);
+    int handle = sceKernelLoadStartModule(path, 0, nullptr, 0, nullptr, &res);
     if (id != 0)
         logf("hmd2: %s: sysmodule 0x%x -> 0x%08x", name, id, (unsigned)rc);
     logf("hmd2: %s: load \"%s\" -> handle 0x%x (res 0x%08x)", name, path, handle,
          (unsigned)res);
+    const char *found = handle >= 0 ? "sandbox path" : nullptr;
+    if (handle < 0) {
+        // A process outside the app's sandbox has no /<sandbox word>/ view of the system libraries;
+        // they are at their plain paths there. Which ones exist is logged once.
+        char plain[2][160];
+        std::snprintf(plain[0], sizeof plain[0], "/system/common/lib/%s.sprx", name);
+        std::snprintf(plain[1], sizeof plain[1], "/system_ex/common_ex/lib/%s.sprx", name);
+        const bool here[3] = {access(path, F_OK) == 0, access(plain[0], F_OK) == 0,
+                              access(plain[1], F_OK) == 0};
+        static uint32_t said = 0;
+        const uint32_t bit = 1u << (id & 31);
+        if (!(said & bit)) {
+            said |= bit;
+            logf("hmd2: %s: euid %d, sandbox \"%s\" (%s), %s (%s), %s (%s)", name, (int)geteuid(),
+                 sceKernelGetFsSandboxRandomWord(), here[0] ? "exists" : "missing", plain[0],
+                 here[1] ? "exists" : "missing", plain[1], here[2] ? "exists" : "missing");
+        }
+        for (int i = 0; i < 2 && handle < 0; i++) {
+            if (!here[i + 1])
+                continue;
+            handle = sceKernelLoadStartModule(plain[i], 0, nullptr, 0, nullptr, &res);
+            logf("hmd2: %s: load \"%s\" -> handle 0x%x (res 0x%08x)", name, plain[i], handle,
+                 (unsigned)res);
+            if (handle >= 0)
+                found = "plain path";
+        }
+        // Last step, as Ghost-VR's PS5XR: a module the process already holds, found by file name
+        // (a title that loaded it before it changed its credentials).
+        if (handle < 0) {
+            char file[96];
+            std::snprintf(file, sizeof file, "%s.sprx", name);
+            int32_t handles[256];
+            size_t count = 0;
+            if (sceKernelGetModuleList(handles, 256, &count) == 0)
+                for (size_t i = 0; i < count && i < 256 && handle < 0; i++) {
+                    ModuleInfo info;
+                    if (module_base(handles[i], file, &info) != 0) {
+                        handle = handles[i];
+                        found = "already loaded";
+                    }
+                }
+        }
+    }
+    logf("hmd2: %s: found by: %s (handle 0x%x)", name, found ? found : "none", handle);
     return handle;
 }
 
@@ -405,6 +454,84 @@ bool anchor_matches(const ModuleInfo *info, uintptr_t base, const export_anchor_
     return false;
 }
 
+// The anchor did not sit at its offset. Log the module's segments, then look for the anchor string
+// in the readable ones (execute-only code is never read). A string found exactly once gives the
+// offset delta; the base moves by it so the table's export offsets land where this build has them.
+const export_table_t *module_table_scan(const ModuleInfo *info, const char *file,
+                                        const export_table_t *tables, size_t tables_n,
+                                        uintptr_t *base) {
+    for (uint32_t i = 0; i < info->nseg && i < 4; i++)
+        logf("hmd2: %s: segment %u at +0x%llx size 0x%x prot %d", file, (unsigned)i,
+             (unsigned long long)(info->seg[i].addr - *base), (unsigned)info->seg[i].size,
+             (int)info->seg[i].prot);
+    for (size_t k = 0; k < tables_n; k++) {
+        const export_anchor_t *anchor = tables[k].anchor;
+        const size_t len = std::strlen(anchor->text) + 1;
+        const uintptr_t want = *base + anchor->va;
+        bool shown = false;
+        for (uint32_t i = 0; i < info->nseg && i < 4 && !shown; i++) {
+            const uintptr_t lo = info->seg[i].addr;
+            if (want >= lo && want < lo + info->seg[i].size && (info->seg[i].prot & 1)) {
+                // up to 64 bytes of what sits there, as text (the anchor string is expected) and as hex
+                const size_t n = std::min<size_t>(64, lo + info->seg[i].size - want);
+                const uint8_t *p = reinterpret_cast<const uint8_t *>(want);
+                char text[65], hex[64 * 3 + 1];
+                size_t same = 0;
+                while (same < n && same < len && p[same] == static_cast<uint8_t>(anchor->text[same]))
+                    same++;
+                for (size_t b = 0; b < n; b++) {
+                    text[b] = p[b] >= 0x20 && p[b] < 0x7f ? static_cast<char>(p[b]) : '.';
+                    std::snprintf(hex + b * 3, 4, "%02x ", p[b]);
+                }
+                text[n] = 0;
+                logf("hmd2: %s: at anchor +0x%x: %zu byte(s) match the expected string (%zu with its end): \"%s\" %s",
+                     file, (unsigned)anchor->va, same, len, text, hex);
+                shown = true;
+            }
+        }
+        if (!shown)
+            logf("hmd2: %s: anchor +0x%x is not in a readable segment", file, (unsigned)anchor->va);
+        for (size_t j = 0; j < tables[k].count; j++) {
+            const uintptr_t at = *base + tables[k].exports[j].offset;
+            bool readable = false;
+            for (uint32_t i = 0; i < info->nseg && i < 4; i++)
+                if (at >= info->seg[i].addr && at + 8 <= info->seg[i].addr + info->seg[i].size &&
+                    (info->seg[i].prot & 1))
+                    readable = true;
+            if (readable) {
+                const uint8_t *p = reinterpret_cast<const uint8_t *>(at);
+                logf("hmd2: %s: %s +0x%x: %02x %02x %02x %02x %02x %02x %02x %02x", file,
+                     tables[k].exports[j].name, (unsigned)tables[k].exports[j].offset, p[0], p[1],
+                     p[2], p[3], p[4], p[5], p[6], p[7]);
+            } else
+                logf("hmd2: %s: %s +0x%x is execute-only, bytes not read", file,
+                     tables[k].exports[j].name, (unsigned)tables[k].exports[j].offset);
+        }
+        int hits = 0;
+        uintptr_t found = 0;
+        for (uint32_t i = 0; i < info->nseg && i < 4; i++) {
+            if (!(info->seg[i].prot & 1) || info->seg[i].size < len)
+                continue;
+            const uint8_t *seg = reinterpret_cast<const uint8_t *>(info->seg[i].addr);
+            for (size_t off = 0; off + len <= info->seg[i].size; off++)
+                if (seg[off] == static_cast<uint8_t>(anchor->text[0]) &&
+                    std::memcmp(seg + off, anchor->text, len) == 0) {
+                    if (hits++ == 0)
+                        found = info->seg[i].addr + off;
+                }
+        }
+        logf("hmd2: %s: anchor string found %d time(s)%s", file, hits, hits == 1 ? "" : ", offsets kept");
+        if (hits == 1) {
+            const intptr_t delta = static_cast<intptr_t>(found - want);
+            logf("hmd2: %s: anchor string at base+0x%llx (expected +0x%x), offsets move by %lld", file,
+                 (unsigned long long)(found - *base), (unsigned)anchor->va, (long long)delta);
+            *base += delta;
+            return &tables[k];
+        }
+    }
+    return nullptr;
+}
+
 // The table of the firmware whose anchor sits in this library, or nullptr.
 const export_table_t *module_table(int handle, const char *file, const export_table_t *tables,
                                 size_t tables_n, uintptr_t *base) {
@@ -423,7 +550,9 @@ const export_table_t *module_table(int handle, const char *file, const export_ta
     }
     logf("hmd2: %s: no export table for this firmware (base %p)", file,
          reinterpret_cast<void *>(*base));
-    return nullptr;
+    // Only a library with a single known build is scanned: with several tables a shifted match
+    // could pick the wrong firmware's offsets.
+    return tables_n == 1 ? module_table_scan(&info, file, tables, tables_n, base) : nullptr;
 }
 
 // sceKernelDlsym first; at the export offsets of the firmware's table when the
@@ -476,6 +605,49 @@ void bind_vrhand() {
         logf("hmd2: libSceVrHand bound (%u exports)", (unsigned)kSlots(kVrHandSlots));
     else
         logf("hmd2: libSceVrHand not usable here, hand tracking stays off");
+}
+
+// -- the Sense controllers' own vibration exports ----------------------------
+// libScePad's scePadSetVibrationMode / scePadSetVibration refuse a Sense controller's handle
+// (0x80920003); the Sense has exports of its own that take the scePadVrControllerReadState handle.
+// Their names (NIDs Wf6-PNCyY20 and DGCwN1Lmmys), the 13.60 offsets and the anchor string are
+// Ghost-VR's firmware facts (GPL-3.0, psvr2.c); no code is taken from it.
+int (*scePadVrControllerSetVibrationMode)(int handle, int mode) = nullptr;
+int (*scePadVrControllerSetVibration)(int handle, uint8_t intensity) = nullptr;
+const Slot kSenseVibrationSlots[] = {
+    {"scePadVrControllerSetVibrationMode", reinterpret_cast<void **>(&scePadVrControllerSetVibrationMode)},
+    {"scePadVrControllerSetVibration", reinterpret_cast<void **>(&scePadVrControllerSetVibration)},
+};
+const export_sig_t kExports_libScePad_1360[] = {
+    {"scePadVrControllerSetVibrationMode", 0x100b0u},
+    {"scePadVrControllerSetVibration", 0x5610u},
+};
+// the string ends in a line feed (read on a 13.60 console: 5d 0a 00)
+const export_anchor_t kAnchor_libScePad_1360 = {0x1f650u, "scePadCtrlpSyncInit Error : cannot open [%08x]\n"};
+const export_table_t kTables_libScePad[] = {
+    {1360, kExports_libScePad_1360, 2, &kAnchor_libScePad_1360},
+};
+int g_sense_vibration = 0; // 0 not tried, 1 bound, -1 unavailable
+
+bool bind_sense_vibration() {
+    if (g_sense_vibration != 0)
+        return g_sense_vibration > 0;
+    g_sense_vibration = -1;
+    const int handle = load_sysmodule(0, "libScePad");
+    if (handle >= 0 &&
+        resolve_module(handle, "libScePad.sprx", kSenseVibrationSlots, kSlots(kSenseVibrationSlots),
+                       kTables_libScePad, sizeof kTables_libScePad / sizeof *kTables_libScePad,
+                       nullptr, false)) {
+        g_sense_vibration = 1;
+        logf("hmd2: Sense vibration exports bound (mode %p, intensity %p)",
+             reinterpret_cast<void *>(scePadVrControllerSetVibrationMode),
+             reinterpret_cast<void *>(scePadVrControllerSetVibration));
+    } else {
+        scePadVrControllerSetVibrationMode = nullptr;
+        scePadVrControllerSetVibration = nullptr;
+        logf("hmd2: Sense vibration exports not found on this firmware, Sense vibration stays off");
+    }
+    return g_sense_vibration > 0;
 }
 
 // -- textures ---------------------------------------------------------------
@@ -1402,6 +1574,18 @@ bool register_controller(int tracker_handle, bool right_hand) {
     if (rc != 0) return false;
     s.controllers[slot] = tracker_handle;
     return true;
+}
+
+int sense_set_vibration_mode(int handle, int mode) {
+    if (!bind_sense_vibration())
+        return kSenseVibrationUnavailable;
+    return scePadVrControllerSetVibrationMode(handle, mode);
+}
+
+int sense_set_vibration(int handle, uint8_t intensity) {
+    if (!bind_sense_vibration())
+        return kSenseVibrationUnavailable;
+    return scePadVrControllerSetVibration(handle, intensity);
 }
 
 bool controller_pose(int tracker_handle, float pos[3], float quat[4]) {

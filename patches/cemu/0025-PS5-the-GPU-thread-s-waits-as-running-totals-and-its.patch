@@ -18,7 +18,7 @@ its log.
  2 files changed, 22 insertions(+), 1 deletion(-)
 
 diff --git a/src/Cafe/HW/Latte/Core/LattePerformanceMonitor.h b/src/Cafe/HW/Latte/Core/LattePerformanceMonitor.h
-index dbc3cff..bd841b9 100644
+index dbc3cff9..bd841b9c 100644
 --- a/src/Cafe/HW/Latte/Core/LattePerformanceMonitor.h
 +++ b/src/Cafe/HW/Latte/Core/LattePerformanceMonitor.h
 @@ -18,6 +18,7 @@ public:
@@ -57,10 +57,10 @@ index dbc3cff..bd841b9 100644
  	// generic
  	uint32 numCompiledVS; // number of compiled vertex shader programs
 diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
-index 009f128..ac0a3bd 100644
+index 5958937d..6b5f149f 100644
 --- a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
 +++ b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
-@@ -2214,7 +2214,9 @@ void VulkanRenderer::WaitForNextFinishedCommandBuffer()
+@@ -2329,7 +2329,9 @@ void VulkanRenderer::WaitForNextFinishedCommandBuffer()
  {
  	cemu_assert_debug(m_commandBufferSyncIndex != m_commandBufferIndex);
  	// wait on least recently submitted command buffer
@@ -70,7 +70,7 @@ index 009f128..ac0a3bd 100644
  	if (result == VK_TIMEOUT)
  	{
  		cemuLog_log(LogType::Force, "vkWaitForFences: Returned VK_TIMEOUT on infinite fence");
-@@ -3057,7 +3059,10 @@ bool VulkanRenderer::UpdateSwapchainProperties(bool mainWindow)
+@@ -3172,7 +3174,10 @@ bool VulkanRenderer::UpdateSwapchainProperties(bool mainWindow)
  
  void VulkanRenderer::SwapBuffer(bool mainWindow)
  {
@@ -82,7 +82,7 @@ index 009f128..ac0a3bd 100644
  		return;
  
  	auto& chainInfo = GetChainInfo(mainWindow);
-@@ -3080,7 +3085,9 @@ void VulkanRenderer::SwapBuffer(bool mainWindow)
+@@ -3195,7 +3200,9 @@ void VulkanRenderer::SwapBuffer(bool mainWindow)
  	WaitCommandBufferFinished(m_commandBufferIDOfPrevFrame);
  	m_commandBufferIDOfPrevFrame = currentFrameCmdBufferID;
  
@@ -92,7 +92,7 @@ index 009f128..ac0a3bd 100644
  
  	VkPresentIdKHR presentId = {};
  
-@@ -3106,12 +3113,16 @@ void VulkanRenderer::SwapBuffer(bool mainWindow)
+@@ -3221,12 +3228,16 @@ void VulkanRenderer::SwapBuffer(bool mainWindow)
  		if(chainInfo.m_queueDepth >= chainInfo.m_maxQueued)
  		{
  			uint64 waitFrameId = chainInfo.m_presentId - chainInfo.m_queueDepth;

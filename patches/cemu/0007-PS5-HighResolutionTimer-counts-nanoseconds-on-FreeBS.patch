@@ -15,7 +15,7 @@ is now 10^9, as on macOS.
  1 file changed, 4 insertions(+), 3 deletions(-)
 
 diff --git a/src/util/highresolutiontimer/HighResolutionTimer.cpp b/src/util/highresolutiontimer/HighResolutionTimer.cpp
-index 6bb96a8..54fa4fb 100644
+index 6bb96a8d..54fa4fb2 100644
 --- a/src/util/highresolutiontimer/HighResolutionTimer.cpp
 +++ b/src/util/highresolutiontimer/HighResolutionTimer.cpp
 @@ -34,9 +34,10 @@ uint64 HighResolutionTimer::m_freq = []() -> uint64 {

@@ -13,10 +13,10 @@ RADV holds a descriptor pool to its declared sizes, where desktop drivers let it
  5 files changed, 90 insertions(+), 5 deletions(-)
 
 diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/VKRBase.h b/src/Cafe/HW/Latte/Renderer/Vulkan/VKRBase.h
-index 7d2cb65..a2de3f2 100644
+index 280211b7..0ca958aa 100644
 --- a/src/Cafe/HW/Latte/Renderer/Vulkan/VKRBase.h
 +++ b/src/Cafe/HW/Latte/Renderer/Vulkan/VKRBase.h
-@@ -230,4 +230,7 @@ public:
+@@ -233,4 +233,7 @@ public:
  	~VKRObjectDescriptorSet() override;
  
  	VkDescriptorSet descriptorSet{ VK_NULL_HANDLE };
@@ -26,10 +26,10 @@ index 7d2cb65..a2de3f2 100644
  };
 \ No newline at end of file
 diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
-index 4aa1fca..eba56e4 100644
+index 683a36c8..90367798 100644
 --- a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
 +++ b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
-@@ -883,6 +883,11 @@ VulkanRenderer::~VulkanRenderer()
+@@ -989,6 +989,11 @@ VulkanRenderer::~VulkanRenderer()
  	}
  
  	vkDestroyDescriptorPool(m_logicalDevice, m_descriptorPool, nullptr);
@@ -41,7 +41,7 @@ index 4aa1fca..eba56e4 100644
  
  	for(auto& i : m_backbufferBlitPipelineCache)
  	{
-@@ -3294,27 +3299,82 @@ void VulkanRenderer::DrawBackbufferQuad(LatteTextureView* texView, RendererOutpu
+@@ -3409,27 +3414,82 @@ void VulkanRenderer::DrawBackbufferQuad(LatteTextureView* texView, RendererOutpu
  	chainInfo.hasDefinedSwapchainImage = true;
  }
  
@@ -129,7 +129,7 @@ index 4aa1fca..eba56e4 100644
  }
  
  VkDescriptorSet VulkanRenderer::backbufferBlit_createDescriptorSet(VkDescriptorSetLayout descriptor_set_layout, LatteTextureViewVk* texViewVk, bool useLinearTexFilter)
-@@ -4469,6 +4529,10 @@ VKRObjectDescriptorSet::VKRObjectDescriptorSet()
+@@ -4822,6 +4882,10 @@ VKRObjectDescriptorSet::VKRObjectDescriptorSet()
  VKRObjectDescriptorSet::~VKRObjectDescriptorSet()
  {
  	auto vkr = VulkanRenderer::GetInstance();
@@ -141,10 +141,10 @@ index 4aa1fca..eba56e4 100644
  	performanceMonitor.vk.numDescriptorSets.decrement();
  }
 diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.h b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.h
-index 692bd00..93fe22a 100644
+index 4b7ca629..d583dd7a 100644
 --- a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.h
 +++ b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.h
-@@ -230,6 +230,12 @@ public:
+@@ -232,6 +232,12 @@ public:
  	VkPhysicalDevice GetPhysicalDevice() const { return m_physicalDevice; }
  
  	VkDescriptorPool GetDescriptorPool() const { return m_descriptorPool; }
@@ -157,7 +157,7 @@ index 692bd00..93fe22a 100644
  
  	void WaitDeviceIdle() const { vkDeviceWaitIdle(m_logicalDevice); }
  
-@@ -434,6 +440,10 @@ private:
+@@ -439,6 +445,10 @@ private:
  	VkRenderPass m_imguiRenderPass = VK_NULL_HANDLE;
  
  	VkDescriptorPool m_descriptorPool;
@@ -169,10 +169,10 @@ index 692bd00..93fe22a 100644
    public:
  	struct QueueFamilyIndices
 diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRendererCore.cpp b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRendererCore.cpp
-index 512ebee..c765a42 100644
+index d7a81981..a00c7c4a 100644
 --- a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRendererCore.cpp
 +++ b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRendererCore.cpp
-@@ -623,7 +623,11 @@ VkDescriptorSetInfo* VulkanRenderer::draw_getOrCreateDescriptorSet(PipelineInfo*
+@@ -653,7 +653,11 @@ VkDescriptorSetInfo* VulkanRenderer::draw_getOrCreateDescriptorSet(PipelineInfo*
  	allocInfo.pSetLayouts = &descriptor_set_layout;
  
  	VkDescriptorSet result;
@@ -185,10 +185,10 @@ index 512ebee..c765a42 100644
  		UnrecoverableError(fmt::format("Failed to allocate descriptor sets. Currently allocated: Descriptors={} TextureSamplers={} DynUniformBuffers={} StorageBuffers={}",
  			performanceMonitor.vk.numDescriptorSets.get(),
 diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanSurfaceCopy.cpp b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanSurfaceCopy.cpp
-index d102a89..1ea131e 100644
+index 236d843f..9f9ba995 100644
 --- a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanSurfaceCopy.cpp
 +++ b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanSurfaceCopy.cpp
-@@ -523,7 +523,11 @@ VKRObjectDescriptorSet* VulkanRenderer::surfaceCopy_getOrCreateDescriptorSet(VkC
+@@ -529,7 +529,11 @@ VKRObjectDescriptorSet* VulkanRenderer::surfaceCopy_getOrCreateDescriptorSet(VkC
  	allocInfo.descriptorSetCount = 1;
  	allocInfo.pSetLayouts = &pipelineInfo->vkObjPipeline->m_pixelDSL;
  

@@ -1,0 +1,26 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Patryk Kowalczyk <papyszoo@gmail.com>
+Date: Wed, 18 Nov 2026 13:30:39 +0100
+Subject: [PATCH] PS5: Breath of the Wild's downloaded community packs load
+ until a host module registers its own copy
+
+---
+ src/Cafe/GraphicPack/GraphicPack2.cpp | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/src/Cafe/GraphicPack/GraphicPack2.cpp b/src/Cafe/GraphicPack/GraphicPack2.cpp
+index 2b35f61c..8cb2e454 100644
+--- a/src/Cafe/GraphicPack/GraphicPack2.cpp
++++ b/src/Cafe/GraphicPack/GraphicPack2.cpp
+@@ -105,8 +105,9 @@ void GraphicPack2::LoadAll()
+ 		if (!it->is_directory(ec))
+ 			continue;
+ 		fs::path gfxPackPath = it->path();
+-		// the community packs ship with this build instead
+-		if (it.depth() == 0 && gfxPackPath.filename() == "downloadedGraphicPacks")
++		// a host module's bundled packs are its own copy of Breath of the Wild's community packs: the
++		// downloaded ones are left out once it has registered them, so none is listed twice
++		if (it.depth() == 1 && gfxPackPath.filename() == "BreathOfTheWild" && gfxPackPath.parent_path().filename() == "downloadedGraphicPacks" && !HostModule::GetBundledGraphicPackDirectories().empty())
+ 		{
+ 			it.disable_recursion_pending();
+ 			continue;

@@ -37,6 +37,10 @@
 #include <map>
 #include <mutex>
 
+// BotW-BetterVR's OpenXR runtime (port/bettervr/xr/runtime.cpp): the menu's open, close and each frame it is
+// up (log lines only: does the headset's frame loop run under the menu?)
+extern "C" void BetterVR_PS5_MenuProbe(int what);
+
 namespace
 {
 	using ps5lang::Percent;
@@ -118,6 +122,7 @@ namespace
 	{
 		s_menuOpen = false;
 		s_saveRequested = true;
+		BetterVR_PS5_MenuProbe(0);
 	}
 
 	void SetVolume(int volume)
@@ -673,6 +678,7 @@ namespace ps5ingame
 		s_menuOpenedAt = sceKernelGetProcessTime();
 		s_menuFresh = true;
 		s_menuOpen = true;
+		BetterVR_PS5_MenuProbe(1);
 	}
 
 	void SwapScreens()
@@ -833,6 +839,7 @@ void PS5Cemu_RenderOverlay()
 	const float scale = UiScale();
 	if (s_menuOpen)
 	{
+		BetterVR_PS5_MenuProbe(2);
 		DrawMenu(scale);
 		return;
 	}

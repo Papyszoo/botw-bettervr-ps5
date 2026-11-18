@@ -16,7 +16,7 @@ leave it on clock_gettime.
  1 file changed, 25 insertions(+)
 
 diff --git a/src/Common/unix/platform.cpp b/src/Common/unix/platform.cpp
-index 879ae4d..9462c65 100644
+index 879ae4dc..9462c654 100644
 --- a/src/Common/unix/platform.cpp
 +++ b/src/Common/unix/platform.cpp
 @@ -1,8 +1,33 @@

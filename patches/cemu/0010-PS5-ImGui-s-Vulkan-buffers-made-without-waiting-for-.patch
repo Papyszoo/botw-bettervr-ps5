@@ -16,7 +16,7 @@ grows them. Cemu's own overlays still wait when they grow one.
  1 file changed, 9 insertions(+)
 
 diff --git a/src/imgui/imgui_impl_vulkan.cpp b/src/imgui/imgui_impl_vulkan.cpp
-index f9a2316..cf530b9 100644
+index f9a23166..cf530b9a 100644
 --- a/src/imgui/imgui_impl_vulkan.cpp
 +++ b/src/imgui/imgui_impl_vulkan.cpp
 @@ -246,7 +246,16 @@ static void check_vk_result(VkResult err)

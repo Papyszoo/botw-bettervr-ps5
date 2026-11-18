@@ -17,7 +17,7 @@ code from CEMU_PS5_PORT_DIR:
 - threads are named with FreeBSD's pthread_set_name_np.
 ---
  CMakeLists.txt                                | 15 ++++++-
- src/CMakeLists.txt                            | 16 ++++++--
+ src/CMakeLists.txt                            | 20 +++++++--
  src/Cafe/CMakeLists.txt                       | 10 +++++
  .../Recompiler/BackendX64/BackendX64.cpp      |  8 +++-
  .../HW/Espresso/Recompiler/PPCRecompiler.h    |  7 ++++
@@ -37,10 +37,10 @@ code from CEMU_PS5_PORT_DIR:
  src/input/CMakeLists.txt                      | 10 +++++
  src/util/CMakeLists.txt                       |  9 +++-
  src/util/helpers/helpers.cpp                  |  4 ++
- 21 files changed, 160 insertions(+), 21 deletions(-)
+ 21 files changed, 163 insertions(+), 22 deletions(-)
 
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index 644032c..542032e 100644
+index 8a5cbff3..6556cce2 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
 @@ -3,6 +3,10 @@ cmake_minimum_required(VERSION 3.21.1)
@@ -66,9 +66,9 @@ index 644032c..542032e 100644
 +endif()
 +
  # enable link time optimization for release builds
- set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE ON)
- set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELWITHDEBINFO ON)
-@@ -102,7 +113,7 @@ if (APPLE)
+ option(CEMU_ENABLE_LTO "Enable link time optimization for Release and RelWithDebInfo builds" ON)
+ set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE ${CEMU_ENABLE_LTO})
+@@ -103,7 +114,7 @@ if (APPLE)
      set(CMAKE_OSX_DEPLOYMENT_TARGET "13.4")
  endif()
  
@@ -77,7 +77,7 @@ index 644032c..542032e 100644
  	option(ENABLE_WAYLAND "Build with Wayland support" ON)
  	option(ENABLE_FERAL_GAMEMODE "Enables Feral Interactive GameMode Support" ON)
  	option(ENABLE_BLUEZ "Build with Bluez support" ON)
-@@ -173,7 +184,7 @@ if (NOT TARGET glslang::SPIRV AND TARGET SPIRV)
+@@ -174,7 +185,7 @@ if (NOT TARGET glslang::SPIRV AND TARGET SPIRV)
  	add_library(glslang::SPIRV ALIAS SPIRV)
  endif()
  
@@ -87,10 +87,10 @@ index 644032c..542032e 100644
  	if (ENABLE_WAYLAND)
  		find_package(Wayland REQUIRED Client)
 diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
-index d8378c3..8a8538b 100644
+index 7003428b..6c2ae545 100644
 --- a/src/CMakeLists.txt
 +++ b/src/CMakeLists.txt
-@@ -23,7 +23,7 @@ elseif(UNIX)
+@@ -25,7 +25,7 @@ elseif(UNIX)
  		else()
  			add_compile_definitions(_XOPEN_SOURCE)
  		endif()
@@ -99,24 +99,29 @@ index d8378c3..8a8538b 100644
  		if (ENABLE_VULKAN)
  			add_compile_definitions(
  				VK_USE_PLATFORM_XLIB_KHR # legacy. Do we need to support XLIB surfaces?
-@@ -64,10 +64,16 @@ add_subdirectory(util)
- add_subdirectory(imgui)
- add_subdirectory(resource)
- 
+@@ -81,12 +81,20 @@ foreach(hostModule IN LISTS CEMU_HOST_MODULE_LIBRARIES)
+ 	string(APPEND HOST_MODULE_REGISTRATIONS "\t\t${hostModule}_RegisterHostModule();\n")
+ endforeach()
+ configure_file(Cafe/HostModule/HostModuleRegistry.cpp.in "${CMAKE_CURRENT_BINARY_DIR}/HostModuleRegistry.cpp" @ONLY)
+-
 +if(CEMU_PS5)
 +	# The port's host code: entry point, launcher, WindowSystem, DualSense, AudioOut, memory and JIT.
 +	add_subdirectory("${CEMU_PS5_PORT_DIR}" ps5port)
-+	add_executable(CemuBin "${CEMU_PS5_PORT_DIR}/main_ps5.cpp")
++	add_executable(CemuBin
++		"${CEMU_PS5_PORT_DIR}/main_ps5.cpp"
++		"${CMAKE_CURRENT_BINARY_DIR}/HostModuleRegistry.cpp"
++	)
 +else()
  add_executable(CemuBin
  	main.cpp
  	mainLLE.cpp
+ 	"${CMAKE_CURRENT_BINARY_DIR}/HostModuleRegistry.cpp"
  )
 +endif()
  
  cemu_use_precompiled_header(CemuBin)
  
-@@ -206,6 +212,10 @@ if(ENABLE_SDL)
+@@ -239,6 +247,10 @@ if(ENABLE_SDL)
  	target_link_libraries(CemuBin PRIVATE SDL3::SDL3)
  endif()
  
@@ -125,9 +130,9 @@ index d8378c3..8a8538b 100644
 +endif()
 +
  target_link_libraries(CemuBin PRIVATE
+ 	${CEMU_HOST_MODULE_LIBRARIES}
  	CemuAudio
- 	CemuCafe
-@@ -217,7 +227,7 @@ target_link_libraries(CemuBin PRIVATE
+@@ -251,7 +263,7 @@ target_link_libraries(CemuBin PRIVATE
  	CemuUtil
  )
  
@@ -136,7 +141,7 @@ index d8378c3..8a8538b 100644
  	# due to nasm output some linkers will make stack executable
  	# cemu does not require this so we explicity disable it
  	target_link_options(CemuBin PRIVATE -z noexecstack)
-@@ -226,6 +236,6 @@ if(UNIX AND NOT APPLE)
+@@ -260,6 +272,6 @@ if(UNIX AND NOT APPLE)
  	target_link_options(CemuBin PRIVATE "$<$<CONFIG:Release>:-Xlinker;--strip-debug>")
  endif()
  
@@ -145,10 +150,10 @@ index d8378c3..8a8538b 100644
  	target_link_libraries(CemuBin PRIVATE execinfo SPIRV-Tools SPIRV-Tools-opt)
  endif()
 diff --git a/src/Cafe/CMakeLists.txt b/src/Cafe/CMakeLists.txt
-index b509e72..32d3025 100644
+index 6af5dd33..d2132c19 100644
 --- a/src/Cafe/CMakeLists.txt
 +++ b/src/Cafe/CMakeLists.txt
-@@ -548,6 +548,16 @@ if (ENABLE_VULKAN)
+@@ -559,6 +559,16 @@ if (ENABLE_VULKAN)
    )
  endif()
  
@@ -166,7 +171,7 @@ index b509e72..32d3025 100644
  	target_sources(CemuCafe PRIVATE
  	    HW/Latte/Renderer/MetalView.mm
 diff --git a/src/Cafe/HW/Espresso/Recompiler/BackendX64/BackendX64.cpp b/src/Cafe/HW/Espresso/Recompiler/BackendX64/BackendX64.cpp
-index e466deb..c899c3a 100644
+index 056af08c..53647af2 100644
 --- a/src/Cafe/HW/Espresso/Recompiler/BackendX64/BackendX64.cpp
 +++ b/src/Cafe/HW/Espresso/Recompiler/BackendX64/BackendX64.cpp
 @@ -285,7 +285,7 @@ bool PPCRecompilerX64Gen_imlInstruction_macro(PPCRecFunction_t* PPCRecFunction,
@@ -178,7 +183,7 @@ index e466deb..c899c3a 100644
  		x64Gen_call_reg64(x64GenContext, X86_REG_RAX);
  		// restore RSP to hCPU (from RAX, result of PPCRecompiler_virtualHLE)
  		x64Gen_mov_reg64_reg64(x64GenContext, REG_RESV_HCPU, X86_REG_RAX);
-@@ -1674,7 +1674,13 @@ void PPCRecompilerX64Gen_generateEnterRecompilerCode()
+@@ -1653,7 +1653,13 @@ void PPCRecompilerX64Gen_generateEnterRecompilerCode()
  	uint8* executableMemory = PPCRecompilerX86_allocateExecutableMemory(x64GenContext.emitter->GetBuffer().size_bytes());
  	// copy code to executable memory
  	memcpy(executableMemory, x64GenContext.emitter->GetBuffer().data(), x64GenContext.emitter->GetBuffer().size_bytes());
@@ -189,11 +194,11 @@ index e466deb..c899c3a 100644
 +#else
  	PPCRecompiler_enterRecompilerCode = (void ATTR_MS_ABI (*)(uint64,uint64))executableMemory;
 +#endif
+ 	s_enterRecompilerCodeExit = executableMemory + exitOffset;
  }
  
- 
 diff --git a/src/Cafe/HW/Espresso/Recompiler/PPCRecompiler.h b/src/Cafe/HW/Espresso/Recompiler/PPCRecompiler.h
-index 3e9a794..e70f029 100644
+index 3e9a7940..e70f029a 100644
 --- a/src/Cafe/HW/Espresso/Recompiler/PPCRecompiler.h
 +++ b/src/Cafe/HW/Espresso/Recompiler/PPCRecompiler.h
 @@ -127,6 +127,13 @@ struct ppcImlGenContext_t
@@ -211,10 +216,10 @@ index 3e9a794..e70f029 100644
  {
  	PPCREC_JUMP_ENTRY ppcRecompilerDirectJumpTable[PPC_REC_ALIGN_TO_4MB(PPC_REC_CODE_AREA_SIZE/4)]; // lookup table for ppc offset to native code function
 diff --git a/src/Cafe/HW/Espresso/Recompiler/PPCRecompilerImlGen.cpp b/src/Cafe/HW/Espresso/Recompiler/PPCRecompilerImlGen.cpp
-index 89e805d..d9cb6e6 100644
+index b7075ec3..ea100710 100644
 --- a/src/Cafe/HW/Espresso/Recompiler/PPCRecompilerImlGen.cpp
 +++ b/src/Cafe/HW/Espresso/Recompiler/PPCRecompilerImlGen.cpp
-@@ -498,7 +498,7 @@ bool PPCRecompilerImlGen_MFTB(ppcImlGenContext_t* ppcImlGenContext, uint32 opcod
+@@ -466,7 +466,7 @@ bool PPCRecompilerImlGen_MFTB(ppcImlGenContext_t* ppcImlGenContext, uint32 opcod
  	if( spr == SPR_TBL || spr == SPR_TBU )
  	{
  		IMLReg resultReg = _GetRegGPR(ppcImlGenContext, rD);
@@ -224,7 +229,7 @@ index 89e805d..d9cb6e6 100644
  	}
  	return false;
 diff --git a/src/Cafe/HW/Espresso/Recompiler/PPCRecompilerImlGenFPU.cpp b/src/Cafe/HW/Espresso/Recompiler/PPCRecompilerImlGenFPU.cpp
-index f9c811b..6330a55 100644
+index 1052df1e..1ddfd403 100644
 --- a/src/Cafe/HW/Espresso/Recompiler/PPCRecompilerImlGenFPU.cpp
 +++ b/src/Cafe/HW/Espresso/Recompiler/PPCRecompilerImlGenFPU.cpp
 @@ -643,7 +643,7 @@ bool PPCRecompilerImlGen_FRES(ppcImlGenContext_t* ppcImlGenContext, uint32 opcod
@@ -268,7 +273,7 @@ index f9c811b..6330a55 100644
  	PPRecompilerImmGen_roundToSinglePrecision(ppcImlGenContext, fprDps0);
  	PPRecompilerImmGen_roundToSinglePrecision(ppcImlGenContext, fprDps1);
 diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanAPI.cpp b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanAPI.cpp
-index b7dc500..e10dd96 100644
+index b7dc5001..e10dd96f 100644
 --- a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanAPI.cpp
 +++ b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanAPI.cpp
 @@ -142,6 +142,47 @@ bool InitializeDeviceVulkan(VkDevice device)
@@ -320,7 +325,7 @@ index b7dc500..e10dd96 100644
  
  void* dlopen_vulkan_loader()
 diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanAPI.h b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanAPI.h
-index f503c10..a164738 100644
+index a0f2cda8..71780b1c 100644
 --- a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanAPI.h
 +++ b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanAPI.h
 @@ -26,6 +26,9 @@ extern bool g_vulkan_available;
@@ -349,10 +354,10 @@ index f503c10..a164738 100644
  VKFUNC_INSTANCE(vkCreateXcbSurfaceKHR);
  #ifdef HAS_WAYLAND
 diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
-index 599190a..2ed0094 100644
+index fbbe8ac3..9c6e839a 100644
 --- a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
 +++ b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
-@@ -113,6 +113,8 @@ std::vector<VulkanRenderer::DeviceInfo> VulkanRenderer::GetDevices()
+@@ -115,6 +115,8 @@ std::vector<VulkanRenderer::DeviceInfo> VulkanRenderer::GetDevices()
  	requiredExtensions.emplace_back(VK_KHR_SURFACE_EXTENSION_NAME);
  	#if BOOST_OS_WINDOWS
  	requiredExtensions.emplace_back(VK_KHR_WIN32_SURFACE_EXTENSION_NAME);
@@ -361,7 +366,7 @@ index 599190a..2ed0094 100644
  	#elif BOOST_OS_LINUX || BOOST_OS_BSD
  	auto backend = WindowSystem::GetWindowInfo().window_main.backend;
  	if(backend == WindowSystem::WindowHandleInfo::Backend::X11)
-@@ -1491,6 +1493,8 @@ std::vector<const char*> VulkanRenderer::CheckInstanceExtensionSupport(FeatureCo
+@@ -1606,6 +1608,8 @@ std::vector<const char*> VulkanRenderer::CheckInstanceExtensionSupport(FeatureCo
  	requiredInstanceExtensions.emplace_back(VK_KHR_SURFACE_EXTENSION_NAME);
  	#if BOOST_OS_WINDOWS
  	requiredInstanceExtensions.emplace_back(VK_KHR_WIN32_SURFACE_EXTENSION_NAME);
@@ -370,7 +375,7 @@ index 599190a..2ed0094 100644
  	#elif BOOST_OS_LINUX || BOOST_OS_BSD
  	auto backend = WindowSystem::GetWindowInfo().window_main.backend;
  	if(backend == WindowSystem::WindowHandleInfo::Backend::X11)
-@@ -1578,7 +1582,7 @@ VkSurfaceKHR VulkanRenderer::CreateWinSurface(VkInstance instance, HWND hwindow)
+@@ -1693,7 +1697,7 @@ VkSurfaceKHR VulkanRenderer::CreateWinSurface(VkInstance instance, HWND hwindow)
  }
  #endif
  
@@ -379,7 +384,7 @@ index 599190a..2ed0094 100644
  VkSurfaceKHR VulkanRenderer::CreateXlibSurface(VkInstance instance, Display* dpy, Window window)
  {
      VkXlibSurfaceCreateInfoKHR sci{};
-@@ -1642,6 +1646,10 @@ VkSurfaceKHR VulkanRenderer::CreateFramebufferSurface(VkInstance instance, Windo
+@@ -1757,6 +1761,10 @@ VkSurfaceKHR VulkanRenderer::CreateFramebufferSurface(VkInstance instance, Windo
  {
  #if BOOST_OS_WINDOWS
  	return CreateWinSurface(instance, static_cast<HWND>(windowInfo.surface));
@@ -391,10 +396,10 @@ index 599190a..2ed0094 100644
  	if(windowInfo.backend == WindowSystem::WindowHandleInfo::Backend::X11)
  		return CreateXlibSurface(instance, static_cast<Display*>(windowInfo.display), reinterpret_cast<Window>(windowInfo.surface));
 diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.h b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.h
-index d975e11..692bd00 100644
+index e7661732..4b7ca629 100644
 --- a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.h
 +++ b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.h
-@@ -212,7 +212,7 @@ public:
+@@ -214,7 +214,7 @@ public:
  #if BOOST_OS_WINDOWS
  	static VkSurfaceKHR CreateWinSurface(VkInstance instance, HWND hwindow);
  #endif
@@ -404,10 +409,10 @@ index d975e11..692bd00 100644
      static VkSurfaceKHR CreateXcbSurface(VkInstance instance, xcb_connection_t* connection, xcb_window_t window);
  	#ifdef HAS_WAYLAND
 diff --git a/src/Common/CMakeLists.txt b/src/Common/CMakeLists.txt
-index cb80eb6..fc1b2f3 100644
+index d3ffb711..42550c55 100644
 --- a/src/Common/CMakeLists.txt
 +++ b/src/Common/CMakeLists.txt
-@@ -61,7 +61,7 @@ target_link_libraries(CemuCommon PRIVATE
+@@ -63,7 +63,7 @@ target_link_libraries(CemuCommon PRIVATE
  	glm::glm
  )
  
@@ -417,7 +422,7 @@ index cb80eb6..fc1b2f3 100644
  endif()
  
 diff --git a/src/Common/GLInclude/GLInclude.h b/src/Common/GLInclude/GLInclude.h
-index e6a4e8c..eba299c 100644
+index e6a4e8cf..eba299c1 100644
 --- a/src/Common/GLInclude/GLInclude.h
 +++ b/src/Common/GLInclude/GLInclude.h
 @@ -6,7 +6,7 @@
@@ -430,7 +435,7 @@ index e6a4e8c..eba299c 100644
  // from Xlib
  #define Bool int
 diff --git a/src/Common/GLInclude/glFunctions.h b/src/Common/GLInclude/glFunctions.h
-index 76ff846..dbb0cac 100644
+index 76ff846f..dbb0cacc 100644
 --- a/src/Common/GLInclude/glFunctions.h
 +++ b/src/Common/GLInclude/glFunctions.h
 @@ -299,7 +299,7 @@ GLFUNC(PFNWGLSWAPINTERVALEXTPROC, wglSwapIntervalEXT)
@@ -443,7 +448,7 @@ index 76ff846..dbb0cac 100644
  EGLFUNC(PFNEGLGETCURRENTDISPLAYPROC, eglGetCurrentDisplay)
  #endif
 diff --git a/src/Common/platform.h b/src/Common/platform.h
-index 08462a9..ef28540 100644
+index 08462a97..ef28540b 100644
 --- a/src/Common/platform.h
 +++ b/src/Common/platform.h
 @@ -8,12 +8,16 @@
@@ -464,7 +469,7 @@ index 08462a9..ef28540 100644
  #elif BOOST_OS_MACOS
  #include <libkern/OSByteOrder.h>
 diff --git a/src/Common/precompiled.h b/src/Common/precompiled.h
-index e037395..6f43fd8 100644
+index e0373952..6f43fd83 100644
 --- a/src/Common/precompiled.h
 +++ b/src/Common/precompiled.h
 @@ -589,7 +589,10 @@ std::atomic<T>* _rawPtrToAtomic(T* ptr)
@@ -480,7 +485,7 @@ index e037395..6f43fd8 100644
  #else
  #define ATTR_MS_ABI
 diff --git a/src/audio/CMakeLists.txt b/src/audio/CMakeLists.txt
-index 7f2d626..9456281 100644
+index 7f2d6264..94562812 100644
 --- a/src/audio/CMakeLists.txt
 +++ b/src/audio/CMakeLists.txt
 @@ -20,6 +20,14 @@ if(WIN32)
@@ -499,7 +504,7 @@ index 7f2d626..9456281 100644
  	target_sources(CemuAudio PRIVATE
  		CubebAPI.cpp
 diff --git a/src/gui/interface/WindowSystem.h b/src/gui/interface/WindowSystem.h
-index b2346c1..c5862be 100644
+index f5be24fb..36a2e5dc 100644
 --- a/src/gui/interface/WindowSystem.h
 +++ b/src/gui/interface/WindowSystem.h
 @@ -12,6 +12,7 @@ namespace WindowSystem
@@ -511,7 +516,7 @@ index b2346c1..c5862be 100644
  		void* display = nullptr;
  		void* surface = nullptr;
 diff --git a/src/input/CMakeLists.txt b/src/input/CMakeLists.txt
-index 4978ef0..69c7041 100644
+index 4978ef0a..69c70412 100644
 --- a/src/input/CMakeLists.txt
 +++ b/src/input/CMakeLists.txt
 @@ -88,6 +88,16 @@ if (SUPPORTS_WIIMOTE)
@@ -532,10 +537,10 @@ index 4978ef0..69c7041 100644
  	target_sources(CemuInput PRIVATE
  		api/SDL/SDLController.cpp
 diff --git a/src/util/CMakeLists.txt b/src/util/CMakeLists.txt
-index be10d40..1ab4b01 100644
+index a008e5cc..1c08248a 100644
 --- a/src/util/CMakeLists.txt
 +++ b/src/util/CMakeLists.txt
-@@ -70,7 +70,14 @@ add_library(CemuUtil
+@@ -69,7 +69,14 @@ add_library(CemuUtil
    Zir/Passes/ZpIRRegisterAllocator.cpp
  )
  
@@ -552,7 +557,7 @@ index be10d40..1ab4b01 100644
  	target_sources(CemuUtil PRIVATE MemMapper/MemMapperWin.cpp)
  	target_sources(CemuUtil PRIVATE SystemInfo/SystemInfoWin.cpp)
 diff --git a/src/util/helpers/helpers.cpp b/src/util/helpers/helpers.cpp
-index d13a31a..2e0195a 100644
+index d13a31a2..2e0195a4 100644
 --- a/src/util/helpers/helpers.cpp
 +++ b/src/util/helpers/helpers.cpp
 @@ -14,6 +14,8 @@

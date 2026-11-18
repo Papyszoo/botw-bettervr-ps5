@@ -22,11 +22,11 @@ on or taken off changed them under its portal lock.
  src/Cafe/OS/libs/nsyshid/Dimensions.cpp |  27 +++---
  src/Cafe/OS/libs/nsyshid/Infinity.cpp   |  31 +++---
  src/Cafe/OS/libs/nsyshid/Skylander.cpp  |  18 ++--
- src/Cafe/OS/libs/nsyshid/nsyshid.cpp    | 119 ++++++++++++++++++------
- 4 files changed, 138 insertions(+), 57 deletions(-)
+ src/Cafe/OS/libs/nsyshid/nsyshid.cpp    | 121 +++++++++++++++++++-----
+ 4 files changed, 140 insertions(+), 57 deletions(-)
 
 diff --git a/src/Cafe/OS/libs/nsyshid/Dimensions.cpp b/src/Cafe/OS/libs/nsyshid/Dimensions.cpp
-index b23560f..8105991 100644
+index b23560f1..8105991d 100644
 --- a/src/Cafe/OS/libs/nsyshid/Dimensions.cpp
 +++ b/src/Cafe/OS/libs/nsyshid/Dimensions.cpp
 @@ -515,20 +515,24 @@ namespace nsyshid
@@ -74,7 +74,7 @@ index b23560f..8105991 100644
  	}
  
 diff --git a/src/Cafe/OS/libs/nsyshid/Infinity.cpp b/src/Cafe/OS/libs/nsyshid/Infinity.cpp
-index 94ef817..6756a52 100644
+index 94ef817e..6756a522 100644
 --- a/src/Cafe/OS/libs/nsyshid/Infinity.cpp
 +++ b/src/Cafe/OS/libs/nsyshid/Infinity.cpp
 @@ -475,24 +475,28 @@ namespace nsyshid
@@ -128,7 +128,7 @@ index 94ef817..6756a52 100644
  	}
  
 diff --git a/src/Cafe/OS/libs/nsyshid/Skylander.cpp b/src/Cafe/OS/libs/nsyshid/Skylander.cpp
-index 7833796..fc39b43 100644
+index 5097d6e9..43950dca 100644
 --- a/src/Cafe/OS/libs/nsyshid/Skylander.cpp
 +++ b/src/Cafe/OS/libs/nsyshid/Skylander.cpp
 @@ -962,17 +962,21 @@ namespace nsyshid
@@ -161,28 +161,28 @@ index 7833796..fc39b43 100644
  			uint8 active = 0x00;
  			if (m_activated)
 diff --git a/src/Cafe/OS/libs/nsyshid/nsyshid.cpp b/src/Cafe/OS/libs/nsyshid/nsyshid.cpp
-index a26aef6..d2c0929 100644
+index 7c11a0ad..2dd312ee 100644
 --- a/src/Cafe/OS/libs/nsyshid/nsyshid.cpp
 +++ b/src/Cafe/OS/libs/nsyshid/nsyshid.cpp
-@@ -1,11 +1,17 @@
+@@ -1,9 +1,17 @@
  #include "Cafe/OS/common/OSCommon.h"
  #include "Cafe/HW/Espresso/PPCCallback.h"
- #include <bitset>
++#include <bitset>
 +#include <condition_variable>
 +#include <deque>
 +#include <functional>
 +#include <future>
 +#include <map>
- #include <mutex>
++#include <mutex>
  #include "nsyshid.h"
  #include "Cafe/OS/libs/coreinit/coreinit_Thread.h"
  #include "Backend.h"
  #include "Whitelist.h"
 +#include "util/helpers/helpers.h"
  
+ 
  namespace nsyshid
- {
-@@ -344,6 +350,76 @@ namespace nsyshid
+@@ -359,6 +367,76 @@ namespace nsyshid
  		coreinitAsyncCallback_add(callbackFuncMPTR, 5, hidHandle, errorCode, buffer, length, callbackParamMPTR);
  	}
  
@@ -259,7 +259,7 @@ index a26aef6..d2c0929 100644
  	void _hidGetDescriptorAsync(std::shared_ptr<Device> device, uint8 descType, uint8 descIndex, uint16 lang, uint8* output, uint32 outputMaxLength, MPTR callbackFuncMPTR, MPTR callbackParamMPTR)
  	{
  		if (device->GetDescriptor(descType, descIndex, lang, output, outputMaxLength))
-@@ -401,8 +477,7 @@ namespace nsyshid
+@@ -416,8 +494,7 @@ namespace nsyshid
  		else
  		{
  			// asynchronous
@@ -269,7 +269,7 @@ index a26aef6..d2c0929 100644
  			returnCode = 0;
  		}
  		osLib_returnFromFunction(hCPU, returnCode);
-@@ -463,8 +538,7 @@ namespace nsyshid
+@@ -478,8 +555,7 @@ namespace nsyshid
  		else
  		{
  			// asynchronous
@@ -279,7 +279,7 @@ index a26aef6..d2c0929 100644
  			returnCode = 0;
  		}
  		osLib_returnFromFunction(hCPU, returnCode);
-@@ -523,8 +597,7 @@ namespace nsyshid
+@@ -538,8 +614,7 @@ namespace nsyshid
  		else
  		{
  			// asynchronous
@@ -289,7 +289,7 @@ index a26aef6..d2c0929 100644
  			returnCode = 0;
  		}
  		osLib_returnFromFunction(hCPU, returnCode);
-@@ -604,18 +677,16 @@ namespace nsyshid
+@@ -619,18 +694,16 @@ namespace nsyshid
  		if (callbackFuncMPTR == MPTR_NULL)
  		{
  			// synchronous
@@ -314,7 +314,7 @@ index a26aef6..d2c0929 100644
  			returnCode = 0;
  		}
  		osLib_returnFromFunction(hCPU, returnCode);
-@@ -703,17 +774,15 @@ namespace nsyshid
+@@ -718,17 +791,15 @@ namespace nsyshid
  		if (callbackFuncMPTR != MPTR_NULL)
  		{
  			// asynchronous transfer
@@ -336,7 +336,7 @@ index a26aef6..d2c0929 100644
  		}
  
  		osLib_returnFromFunction(hCPU, returnCode);
-@@ -800,17 +869,15 @@ namespace nsyshid
+@@ -815,17 +886,15 @@ namespace nsyshid
  		if (callbackFuncMPTR != MPTR_NULL)
  		{
  			// asynchronous transfer

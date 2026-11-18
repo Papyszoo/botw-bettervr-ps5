@@ -1,0 +1,35 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Patryk <papyszoo@gmail.com>
+Date: Mon, 16 Nov 2026 11:03:14 +0100
+Subject: [PATCH] Cemu: no crash on an invalid gs copyshader
+ (cemu-project/Cemu@5a0430b)
+
+patches/cemu 0053: a geometry shader without a valid copy shader crashed the decompiler. The GX2 flush
+half (@934329f) is in the BetterVR fork.
+---
+ src/Cafe/HW/Latte/LegacyShaderDecompiler/LatteDecompiler.cpp | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/src/Cafe/HW/Latte/LegacyShaderDecompiler/LatteDecompiler.cpp b/src/Cafe/HW/Latte/LegacyShaderDecompiler/LatteDecompiler.cpp
+index 8b1348c9..e2c4c4d5 100644
+--- a/src/Cafe/HW/Latte/LegacyShaderDecompiler/LatteDecompiler.cpp
++++ b/src/Cafe/HW/Latte/LegacyShaderDecompiler/LatteDecompiler.cpp
+@@ -1151,6 +1151,8 @@ void LatteDecompiler_DecompileGeometryShader(uint64 shaderBaseHash, uint32* cont
+ 	else
+ 	{
+ 		shaderContext.parsedGSCopyShader = LatteGSCopyShaderParser_parse(gsCopyProgramData, gsCopyProgramSize);
++		if (!shaderContext.parsedGSCopyShader)
++			shader->hasError = true;
+ 	}
+ 	for (sint32 i = 0; i < LATTE_NUM_MAX_TEX_UNITS; i++)
+ 	{
+@@ -1158,7 +1160,8 @@ void LatteDecompiler_DecompileGeometryShader(uint64 shaderBaseHash, uint32* cont
+ 		shader->textureUsesDepthCompare[i] = false;
+ 	}
+ 	// parse & compile
+-	_LatteDecompiler_Process(&shaderContext, programData, programSize);
++	if (!shader->hasError)
++		_LatteDecompiler_Process(&shaderContext, programData, programSize);
+ 	performanceMonitor.gpuTime_shaderCreate.endMeasuring();
+ }
+ 

@@ -1,0 +1,27 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Patryk Kowalczyk <papyszoo@gmail.com>
+Date: Wed, 18 Nov 2026 13:37:12 +0100
+Subject: [PATCH] PS5: a copy between textures with a view layer keeps the
+ right view's slices, the clamp counted only the guest's
+
+The stereo view layer puts the right view's slices after the guest's (LatteView_GetSiblingSlice: slice + depth), so the image has depth * 2 layers. The copy clamp of patch 0015 counted depth - slice, which is 0 for every right-view copy: it was skipped ("x1 layers asked, x0 copied (nothing: skipped)" in the boot log) and the right view's copy of a texture the game copied (the scene behind the inventory) stayed stale.
+---
+ src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
+index c738a37b..5263f60c 100644
+--- a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
++++ b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
+@@ -4200,8 +4200,9 @@ void VulkanRenderer::texture_copyImageSubData(LatteTexture* src, sint32 srcMip,
+ 		sint32 srcRoomW, srcRoomH, dstRoomW, dstRoomH;
+ 		room(src, srcMip, effectiveSrcX, effectiveSrcY, srcRoomW, srcRoomH);
+ 		room(dst, dstMip, effectiveDstX, effectiveDstY, dstRoomW, dstRoomH);
+-		const sint32 srcLayers = src->Is3DTexture() ? std::max(src->depth >> srcMip, 1) - srcSlice : (sint32)src->depth - srcSlice;
+-		const sint32 dstLayers = dst->Is3DTexture() ? std::max(dst->depth >> dstMip, 1) - dstSlice : (sint32)dst->depth - dstSlice;
++		// a texture with a view layer holds the right view's slices after the guest's (LatteView_GetSiblingSlice)
++		const sint32 srcLayers = src->Is3DTexture() ? std::max(src->depth >> srcMip, 1) - srcSlice : (sint32)src->depth * (src->hasViewLayer ? 2 : 1) - srcSlice;
++		const sint32 dstLayers = dst->Is3DTexture() ? std::max(dst->depth >> dstMip, 1) - dstSlice : (sint32)dst->depth * (dst->hasViewLayer ? 2 : 1) - dstSlice;
+ 		const sint32 width = std::min({effectiveCopyWidth, srcRoomW, dstRoomW});
+ 		const sint32 height = std::min({effectiveCopyHeight, srcRoomH, dstRoomH});
+ 		const sint32 layers = std::min({srcDepth, srcLayers, dstLayers});

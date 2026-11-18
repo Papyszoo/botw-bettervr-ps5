@@ -2815,6 +2815,16 @@ msgstr "Azahar中途停止；原因见{0}/azahar/log/azahar_log.txt"
 msgid "it is not a CIA Azahar can install"
 msgstr "不是Azahar可以安装的CIA"
 
+#. {0} is why the headset did not start, from the log ("load libSceHmd2, 0x80020002"); {1} is the button "Play on TV"
+#: port/bettervr/VrPS5.cpp:625
+msgid "VR did not start ({0}). Back in the library: {1} starts the game without the headset. The log has more."
+msgstr "VR 未能启动（{0}）。已返回游戏库：“{1}”会在不使用头显的情况下开始游戏。日志中有更多信息。"
+
+#. Breath of the Wild's page in BotW VR: start the game on the TV, without the headset
+#: port/bettervr/VrPS5.cpp:626 port/frontend/shell/home.cpp:194 port/frontend/shell/hub.cpp:257
+msgid "Play on TV"
+msgstr "在电视上游玩"
+
 #: port/cemu/MemMapperPS5.cpp:139
 msgid "The PS5 has no memory left for this Wii U game, so it has to stop. The boot log has the details."
 msgstr "PS5没有足够内存运行此Wii U游戏，游戏只能停止。详情见启动日志。"
@@ -3387,11 +3397,6 @@ msgstr "在 VR 中游玩"
 #: port/frontend/shell/home.cpp:191
 msgid "In the PS VR2 headset, with the Sense controllers"
 msgstr "在 PS VR2 头显中，使用 Sense 控制器"
-
-#. Breath of the Wild's page in BotW VR: start the game on the TV, without the headset
-#: port/frontend/shell/home.cpp:194 port/frontend/shell/hub.cpp:257
-msgid "Play on TV"
-msgstr "在电视上游玩"
 
 #. BotW VR's home, under Play on TV
 #: port/frontend/shell/home.cpp:196

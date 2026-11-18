@@ -38,7 +38,7 @@ Both are off unless the port asks: then nothing changes.
  2 files changed, 50 insertions(+), 1 deletion(-)
 
 diff --git a/src/Cafe/OS/libs/coreinit/coreinit_Scheduler.cpp b/src/Cafe/OS/libs/coreinit/coreinit_Scheduler.cpp
-index bb31077..8d68cab 100644
+index bb310778..8d68cabc 100644
 --- a/src/Cafe/OS/libs/coreinit/coreinit_Scheduler.cpp
 +++ b/src/Cafe/OS/libs/coreinit/coreinit_Scheduler.cpp
 @@ -11,10 +11,35 @@ CRITICAL_SECTION s_csSchedulerLock;
@@ -78,10 +78,10 @@ index bb31077..8d68cab 100644
  	pthread_mutex_lock(&s_ptmSchedulerLock);
  #endif
 diff --git a/src/Cafe/OS/libs/coreinit/coreinit_Thread.cpp b/src/Cafe/OS/libs/coreinit/coreinit_Thread.cpp
-index dddf176..fc0fb38 100644
+index 84b4937f..b6495891 100644
 --- a/src/Cafe/OS/libs/coreinit/coreinit_Thread.cpp
 +++ b/src/Cafe/OS/libs/coreinit/coreinit_Thread.cpp
-@@ -1246,6 +1246,11 @@ namespace coreinit
+@@ -1248,6 +1248,11 @@ namespace coreinit
  	// PS5: how long an idle core spins for a thread to run before it sleeps, in PAUSEs (about 20 ns
  	// each on the console); the port sets it before a game starts (idleSpinUs), 0 sleeps at once
  	uint32 g_ps5IdleSpinIterations = 0;
@@ -93,7 +93,7 @@ index dddf176..fc0fb38 100644
  #endif
  
  	// idle fiber per core if no thread is runnable
-@@ -1270,7 +1275,24 @@ namespace coreinit
+@@ -1272,7 +1277,24 @@ namespace coreinit
  			}
  			if (isMainCore)
  			{
@@ -118,7 +118,7 @@ index dddf176..fc0fb38 100644
  				if(g_isMulticoreMode == false)
  					coreIndex = (coreIndex + 1) % 3;
  			}
-@@ -1281,7 +1303,9 @@ namespace coreinit
+@@ -1283,7 +1305,9 @@ namespace coreinit
  				// PS5: a while spinning first, so that a thread made ready from another core (games
  				// hand work between their cores many times a frame) starts without the console's
  				// thread wake-up latency; then asleep, as everywhere else

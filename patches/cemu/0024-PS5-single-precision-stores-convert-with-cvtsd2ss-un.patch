@@ -18,7 +18,7 @@ not been measured yet.
  1 file changed, 13 insertions(+)
 
 diff --git a/src/Cafe/HW/Espresso/Recompiler/BackendX64/BackendX64FPU.cpp b/src/Cafe/HW/Espresso/Recompiler/BackendX64/BackendX64FPU.cpp
-index 8751a04..45d17b4 100644
+index 8f118c23..89fabd5d 100644
 --- a/src/Cafe/HW/Espresso/Recompiler/BackendX64/BackendX64FPU.cpp
 +++ b/src/Cafe/HW/Espresso/Recompiler/BackendX64/BackendX64FPU.cpp
 @@ -191,6 +191,15 @@ static void PPCRecompilerX64Gen_fprConvertToSingleBits(x64GenContext_t* x64GenCo

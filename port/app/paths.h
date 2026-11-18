@@ -111,6 +111,41 @@ namespace ps5paths
 		s.decided = true;
 	}
 	inline std::string Mlc() { return CemuRoot() + "/mlc01"; }
+	// BetterVR's settings (BotW VR, docs/bettervr-ps5): 1.0.0 reads BetterVR_settings.ini from Cemu's user data
+	// folder (HostModule::GetUserDataPath, here CemuRoot), the launcher writes the same file. The older builds'
+	// bettervr_settings.ini in the launcher's folder is moved there once, when the new file is not there yet
+	inline std::string BetterVrSettings()
+	{
+		const std::string path = CemuRoot() + "/BetterVR_settings.ini";
+		static bool moved = false;
+		if (!moved)
+		{
+			moved = true;
+			const std::string older = Root() + "/bettervr_settings.ini";
+			struct stat info;
+			if (stat(path.c_str(), &info) != 0 && stat(older.c_str(), &info) == 0 && std::rename(older.c_str(), path.c_str()) != 0)
+			{
+				// another drive: copy it, then the old file goes
+				if (std::FILE* in = std::fopen(older.c_str(), "rb"))
+				{
+					std::FILE* out = std::fopen(path.c_str(), "wb");
+					char buffer[4096];
+					size_t count = 0;
+					bool whole = out != nullptr;
+					while (whole && (count = std::fread(buffer, 1, sizeof(buffer), in)) > 0)
+						whole = std::fwrite(buffer, 1, count, out) == count;
+					if (out && std::fclose(out) != 0)
+						whole = false;
+					std::fclose(in);
+					if (whole)
+						std::remove(older.c_str());
+					else
+						std::remove(path.c_str());
+				}
+			}
+		}
+		return path;
+	}
 	inline std::string Games() { return CemuFolder() + "/games"; }
 	inline std::string CemuCache() { return CemuRoot() + "/cache"; }
 	inline std::string DiscKeys() { return CemuRoot() + "/keys.txt"; }

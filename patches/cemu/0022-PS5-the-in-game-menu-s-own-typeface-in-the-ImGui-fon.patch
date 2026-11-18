@@ -9,7 +9,7 @@ Subject: [PATCH] PS5: the in-game menu's own typeface in the ImGui font cache
  2 files changed, 54 insertions(+), 2 deletions(-)
 
 diff --git a/src/imgui/imgui_extension.cpp b/src/imgui/imgui_extension.cpp
-index 1e5917c..f37c464 100644
+index 1e5917c7..f37c464b 100644
 --- a/src/imgui/imgui_extension.cpp
 +++ b/src/imgui/imgui_extension.cpp
 @@ -53,13 +53,27 @@ extern char const g_fontawesome_data[];
@@ -97,7 +97,7 @@ index 1e5917c..f37c464 100644
  // The console has no mouse or keyboard: PS5Cemu gives ImGui the DualSense instead, as a gamepad,
  // and its touchpad as the mouse while an overlay takes input (ps5cemu/port/app/ingame.cpp)
 diff --git a/src/imgui/imgui_extension.h b/src/imgui/imgui_extension.h
-index ef2ee34..0100650 100644
+index ef2ee342..01006506 100644
 --- a/src/imgui/imgui_extension.h
 +++ b/src/imgui/imgui_extension.h
 @@ -14,4 +14,10 @@ bool ImGui_BeginPadDistinct(const char* name, bool* p_open, ImGuiWindowFlags fla

@@ -27,7 +27,7 @@ the DualSense for its own keyboard. Elsewhere nothing changes.
  1 file changed, 53 insertions(+), 38 deletions(-)
 
 diff --git a/src/Cafe/OS/libs/swkbd/swkbd.cpp b/src/Cafe/OS/libs/swkbd/swkbd.cpp
-index 80c1455..69bd121 100644
+index 79882fac..24d37d6e 100644
 --- a/src/Cafe/OS/libs/swkbd/swkbd.cpp
 +++ b/src/Cafe/OS/libs/swkbd/swkbd.cpp
 @@ -5,9 +5,6 @@
@@ -40,10 +40,10 @@ index 80c1455..69bd121 100644
  #include "util/helpers/helpers.h"
  #include "resource/IconsFontAwesome5.h"
  
-@@ -89,6 +86,10 @@ typedef struct
+@@ -90,6 +87,10 @@ typedef struct
+ 	bool cancelState;
  }swkbdInternalState_t;
  
- swkbdInternalState_t* swkbdInternalState = nullptr;
 +#if defined(CEMU_PS5)
 +// how often the game has shown the keyboard, for PS5Cemu to start its keyboard over (swkbd_render)
 +std::atomic<uint32> s_ps5Appearances{0};
@@ -51,7 +51,7 @@ index 80c1455..69bd121 100644
  sint32 isNeedCalcSubThreadFont = 0;
  sint32 isNeedCalcSubThreadPredict = 0;
  
-@@ -195,6 +196,9 @@ static_assert(offsetof(swkbdAppearArg_t, cursorIndex) == 0xC4, "appearArg.cursor
+@@ -193,6 +194,9 @@ static_assert(offsetof(swkbdAppearArg_t, cursorIndex) == 0xC4, "appearArg.cursor
  
  uint32 SwkbdAppearInputForm(const swkbdAppearArg_t* appearArg)
  {
@@ -61,7 +61,7 @@ index 80c1455..69bd121 100644
  	swkbdInternalState->formStringLength = 0;
  	swkbdInternalState->isActive = true;
  	swkbdInternalState->decideButtonWasPressed = false;
-@@ -237,6 +241,9 @@ uint32 SwkbdAppearKeyboard(const SwkbdKeyboardArg_t* keyboardArg)
+@@ -235,6 +239,9 @@ uint32 SwkbdAppearKeyboard(const SwkbdKeyboardArg_t* keyboardArg)
  		debug_printf("+0x%03x: 0x%08x\n", i, memory_readU32(argPtr+i));
  	}
  
@@ -71,7 +71,7 @@ index 80c1455..69bd121 100644
  	swkbdInternalState->formStringLength = 0;
  	swkbdInternalState->isActive = true;
  	swkbdInternalState->keyboardOnlyMode = true;
-@@ -401,32 +408,52 @@ void SwkbdCalc(void* controllerInfo)
+@@ -399,32 +406,52 @@ void SwkbdCalc(void* controllerInfo)
  
  void swkbd_keyInput(uint32 keyCode);
  #if defined(CEMU_PS5)
@@ -142,7 +142,7 @@ index 80c1455..69bd121 100644
  	if (!font || !textFont)
  		return;
  
-@@ -449,7 +476,7 @@ void swkbd_render(bool mainWindow)
+@@ -447,7 +474,7 @@ void swkbd_render(bool mainWindow)
  	const auto button_len = font->GetCharAdvance('W');
  	const float len = button_len * std::max(4, std::max(swkbdInternalState->maxTextLength, (sint32)swkbdInternalState->keyboardArg.receiverArg.stringBufSize));
  
@@ -151,7 +151,7 @@ index 80c1455..69bd121 100644
  	ImGui::SetNextWindowPos(position, ImGuiCond_Always, pivot);
  	ImGui::SetNextWindowSize(box_size, ImGuiCond_Always);
  	ImGui::SetNextWindowBgAlpha(0.9f);
-@@ -457,7 +484,7 @@ void swkbd_render(bool mainWindow)
+@@ -455,7 +482,7 @@ void swkbd_render(bool mainWindow)
  	if (ImGui::Begin("Keyboard Input", nullptr, kPopupFlags))
  	{
  		ImGui::Text("%s", _utf8WrapperPtr(ICON_FA_KEYBOARD));
@@ -160,7 +160,7 @@ index 80c1455..69bd121 100644
  		auto text = boost::nowide::narrow(fmt::format(L"{}", swkbdInternalState->formStringBuffer));
  
  		static std::chrono::steady_clock::time_point s_last_tick = tick_cached();
-@@ -477,7 +504,7 @@ void swkbd_render(bool mainWindow)
+@@ -475,7 +502,7 @@ void swkbd_render(bool mainWindow)
  		ImGui::TextUnformatted(text.c_str(), text.c_str() + text.size());
  		ImGui::PopTextWrapPos();
  
@@ -169,7 +169,7 @@ index 80c1455..69bd121 100644
  	}
  	ImGui::End();
  	ImGui::PopFont();
-@@ -487,16 +514,8 @@ void swkbd_render(bool mainWindow)
+@@ -485,16 +512,8 @@ void swkbd_render(bool mainWindow)
  	ImGui::SetNextWindowBgAlpha(0.9f);
  	ImGui::PushFont(textFont);
  
@@ -186,7 +186,7 @@ index 80c1455..69bd121 100644
  		if(swkbdInternalState->shiftActivated)
  		{
  			const char* keys[] =
-@@ -511,7 +530,7 @@ void swkbd_render(bool mainWindow)
+@@ -509,7 +528,7 @@ void swkbd_render(bool mainWindow)
  			{
  				if (*key != '\n')
  				{
@@ -195,7 +195,7 @@ index 80c1455..69bd121 100644
  					{
  						if (strcmp(key, _utf8WrapperPtr(ICON_FA_ARROW_CIRCLE_LEFT)) == 0)
  							swkbd_keyInput(8);
-@@ -543,7 +562,7 @@ void swkbd_render(bool mainWindow)
+@@ -541,7 +560,7 @@ void swkbd_render(bool mainWindow)
  			{
  				if (*key != '\n')
  				{
@@ -204,7 +204,7 @@ index 80c1455..69bd121 100644
  					{
  						if (strcmp(key, _utf8WrapperPtr(ICON_FA_ARROW_CIRCLE_LEFT)) == 0)
  							swkbd_keyInput(8);
-@@ -562,10 +581,6 @@ void swkbd_render(bool mainWindow)
+@@ -560,10 +579,6 @@ void swkbd_render(bool mainWindow)
  			}
  		}
  		ImGui::NewLine();

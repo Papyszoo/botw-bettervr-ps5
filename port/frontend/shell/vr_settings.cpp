@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // BotW VR (docs/bettervr-ps5): Settings > VR, BetterVR's options without its in-game menu or a file
-// to edit. BetterVR keeps them in its ImGui ini (bettervr_settings.ini in the launcher's folder,
-// patches/bettervr: BETTERVR_SETTINGS_INI), section [BetterVR][Settings], one Key=VALUE a line
+// to edit. BetterVR keeps them in its ini (BetterVR_settings.ini in Cemu's user data folder, where
+// 1.0.0's host module reads it as VR starts; ps5paths::BetterVrSettings), section [BetterVR][Settings], one Key=VALUE a line
 // (hooking/settings.cpp; the keys and their defaults are utils/mod_settings.h's), and reads it as
 // VR starts. The app's own options are in bettervr.json: "vr" (Play in VR or on TV), "bettervr"
 // (false: the flat screen in the headset) and the Sense controllers' gripPitch and aimPitch
 // (port/bettervr/xr/runtime.cpp). Both files are written at each change; the rest of each file
 // (ImGui's other sections, other keys) is kept, and bettervr.json is read again before a write so
-// the switches added outside the app (graphicsPack, reproject) survive Play in VR/TV and Settings > VR.
+// the switches added outside the app (reproject) survive Play in VR/TV and Settings > VR.
 
 #include "shell_internal.h"
 #include "../../app/paths.h"
@@ -46,7 +46,7 @@ namespace ps5shell
 		constexpr float kHudDistances[] = {0.75f, 1.0f, 1.25f, 1.5f, 1.85f, 2.0f, 2.25f, 2.5f};
 		constexpr float kHudSizes[] = {0.5f, 0.6f, 0.7f, 0.85f, 1.0f, 1.25f, 1.5f, 1.75f};
 
-		std::string IniPath() { return ps5paths::Root() + "/bettervr_settings.ini"; }
+		std::string IniPath() { return ps5paths::BetterVrSettings(); }
 		std::string JsonPath() { return ps5paths::Root() + "/bettervr.json"; }
 
 		std::string ReadText(const std::string& path)
@@ -195,7 +195,7 @@ namespace ps5shell
 			}
 			return json;
 		}
-		// Read again before a write: the switches in this file (graphicsPack, reproject) are meant to be
+		// Read again before a write: the switches in this file (reproject) are meant to be
 		// added outside the app, and a write from the home screen or Settings > VR must keep them
 		void JsonReload()
 		{

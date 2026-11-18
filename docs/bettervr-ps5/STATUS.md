@@ -3,6 +3,342 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-18: 1.0.0 port, console run 3 (50143ed, 1x): scene corruption after the inventory, patch cemu 0054, built, untested on console
+
+Reported from the console: after closing the inventory the 3D scene shows coloured and black patches; it gets worse with
+each open and close. Cause found in code (not seen on console): patch cemu 0015's copy clamp skipped every right-view
+image copy of a texture with a view layer, so the right view's copy of the scene stayed stale. Patch 0054 counts the
+view layer's slices. Details: `UPDATE-1.0.md`, "Console run 3: scene corruption".
+
+**Test request 51 (the build of this commit, 13.60 console).** Play in VR (1x). (a) Open the inventory, close it, three
+times, looking at both eyes and the TV: say whether the patches are gone, and which eye (cover one eye) if not.
+(b) Send the logs zip. Cemu's boot log must have no `[copy] image clamped ... x1 layers asked, ... x0 copied (nothing:
+skipped)` lines for same-size images any more (run 3 had about 100 of them). (c) If patches remain: repeat (a) with the
+Graphics pack on 0.5x (Cemu's Graphic packs, BetterVR's Graphics pack, VR Resolution Multiplier) and say whether the
+inventory glitches there too; send the lines `[copy] image clamped` and `[copy] image WOULD OVERRUN` of both runs.
+
+## 2026-11-18: 1.0.0 port, console run 2 (db1f541, 13.60): BotW in VR works
+Next build: VR resolution preset 1x (BetterVR's default) instead of 0.5x; built, untested on console.
+
+Reported from the console: it works. From the boot log: Extended Memory off; VR start 1/5 to 5/5 reached (first
+frame to the headset 11.1 s after the session, during the shader cache load); no `[crash]`, no ProcUI line.
+Game: about 57 to 60 fps from 90 s on (10 s windows 54.5 to 60.0), 5,100 to 5,700 draws a frame, GPU thread
+idle 1 to 2 %, waiting on the GPU 0 %; headset submits 57 to 60 fps. Eye images 1280x1320 (BetterVR's preset of
+the 1984x2048 eye). Menu: Options down/up within 1 s toggled it open, then closed. Haptic calls arrive. Sense
+vibration stayed off: libScePad's anchor at +0x1f650 is `...open [%08x]` followed by a line feed (`5d 0a 00`),
+and the table's string had no line feed; fixed in 80a6a12 (built, untested on console).
+Build27 for comparison: about 33 fps median in the overworld at 9,000 to 10,000 draws.
+
+## 2026-11-18: first console run of the 1.0.0 port (build 3e8c18d), crash in Cemu's ProcUI, patch 0052, built, untested on console
+
+Reported from the console: the PS5's play-area scan ran, then "PSVR crashed during room scan". The log: VR start 1/5 to
+3/5 reached, the game's start waited about 30 s for the shader cache (0 draws), then signal 11 at 0x60 in
+`proc_ui::AddCallbackInternal`: the game's allocator returned 0 for the first ProcUI callback. Why it returned 0 is not
+proven (Extended Memory is the new variable, on by default in 1.0.0; optional for BetterVR, so it is now off by default, patch bettervr 0005). Patch cemu 0052 leaves such a callback out and logs
+the allocator, pool and heap sizes. The libScePad anchor check now logs 64 bytes at the anchor. Nothing else changed;
+details in `UPDATE-1.0.md`, "Console run 1".
+
+**Test request 50 (the build of this commit, 13.60 console).** Play in VR again. Send the logs zip: the `[perf]` lines, the
+`OSSched` line, every `ProcUI:` line in Cemu's log.txt, `VR start 4/5` and `5/5`, the `at anchor +0x1f650` line, any
+`[crash]`; the `Extended Memory pack:` line in the boot log, and that Cemu's log has no `modified RAM mapping` and no `BotW_ExtendedMemory_V208` (the memory layout is 0.9.23's again). Say whether the game reached the title screen and whether the scan ran before or after the game started.
+
+## 2026-11-18: 1.0.0 port, stage 4 (Sense controllers, menu, vibration, written blind), built, untested on console
+
+Branch `bettervr-1.0/stage4`. The Sense controllers answer BetterVR 1.0.0's Oculus Touch bindings (sticks, grips,
+triggers, face buttons, stick clicks, poses with the calibrated grip defaults 17/32/30). One short press of Options on
+the right controller opens and closes BetterVR's own menu (patch 0004; the 1.0.0 default of holding Square on the left
+also works); haptics go to the Sense through hmd2's vibration functions. PlayPosition starts on Seated. Details:
+`UPDATE-1.0.md`, "Stage 4 progress". Stages 1 to 3's Test requests (46 to 48) and 45 are still unanswered, so a stage 4
+run may stop at an earlier problem.
+
+**Test request 49 (stage 4 build, 13.60 console).** Install the stage 4 build, Play in VR. (a) Walk with the left stick,
+turn with the right stick, jump (B), run (A), draw a weapon with the grip and swing it at a bokoblin or a tree, draw
+the bow (grip, then pull with the trigger) and shoot, use magnesis from the Runes (Y on the left, then pick an object
+with the trigger). Say whether anything is late or missing, and whether Link's hands sit where yours do. (b) Press
+Options on the right controller once, quickly: the menu should appear in the headset; change one setting (for example
+Play position), press Options again to close it. Say whether the menu is readable and where it hangs, and what the
+sticks and A/B do inside it. (c) Take a hit or hit something with a weapon: say whether either controller vibrates.
+Send the logs zip and `BetterVR_log.txt`: every `[menu]` line, `Seated height`, `Touch profile`, `Sense controller`,
+`Sense buttons`, `haptic call` and `Sense controller vibration` line, the `[vr-xr] ... frames` lines, and any `[crash]`.
+
+## 2026-11-18: 1.0.0 port, stage 3 (stereo in the headset, written blind), built, untested on console
+
+Branch `bettervr-1.0/stage3`. The OpenXR runtime over hmd2 now answers what BetterVR 1.0.0 asks (no depth swapchains,
+one 2D layer per swapchain, the frame pump's one-ahead wait), foveation is off, the packaged pack is the checked-in
+`patch_compiled.asm`, the Graphics pack starts on the 0.5x preset, and a headset that does not start ends in the
+library with the reason (issue #3). Each step of the VR start logs one line (`VR start 1/5` to `5/5`). Details:
+`UPDATE-1.0.md`, "Stage 3 progress". Nothing here has run on a console; stage 1 and 2's Test requests (46, 47) are
+still unanswered, so a stage 3 run may stop at an earlier problem.
+
+**Test request 48 (stage 3 build, 13.60 console).** Install the stage 3 build. (a) Play in VR with the headset on:
+play two minutes at the start, then two in a village (Kakariko or Hateno). Look at both eyes: is the depth right,
+is there ghosting or a doubled picture, does the head follow and does the picture stay where it is when you turn.
+(b) Quit to the library, switch the headset off (not just taken off: powered down or unplugged) and start Play in
+VR once more: it should return to the library with a message that says why, not a crash or a black headset that
+stays. Send the logs zip (`/data/botwvr/cemu/log.txt`, the boot log) and `/data/botwvr/cemu/BetterVR_log.txt`:
+every `VR start n/5` line (says how far the start got), the `view configuration`, `Creating Vulkan device ... mod
+queue`, `Foveated shading is off`, `Graphics pack preset` and `Vulkan: multiview` lines, the `[vr-xr] ... frames, N
+fps submitted` lines (the headset's rate), the `[perf]` fps and GPU-busy lines from the game, any `[crash]`, and for
+(b) the `VR did not start` line and the text on Breath of the Wild's page. Say what the fps lines show against
+build27's 31.6 to 34 fps in the overworld and 60 fps flat, and whether the TV shows the headset's view.
+
+## 2026-11-18: 1.0.0 port, stage 2 (BetterVR 1.0.0 compiled in, no headset work), built, untested on console
+
+Branch `bettervr-1.0/stage2`. BetterVR 1.0.0 (`db5495b`) is a host module of the Cemu fork
+(`CEMU_EXTERNAL_MODULES`), with the PS5 platform layer and the OpenXR runtime over hmd2 linked in
+beside it. `patches/bettervr` is one patch now (28 of the 0.9.23 patches are gone); Play in VR starts
+the module as the game starts, Play on TV starts none. No stereo, controller or menu work yet: the
+headset may show nothing. Details: `UPDATE-1.0.md`, "Stage 2 progress".
+
+**Test request 47 (stage 2 build, 13.60 console).** Install the stage 2 build and start the app.
+(a) Play on TV with Breath of the Wild, two minutes in Kakariko or Hateno: it runs flat as in the
+stage 1 build; say whether the picture and fps match. (b) Play in VR, with the headset on, and let it
+run for a minute or until it stops. Send the logs zip (`/data/botwvr/cemu/log.txt`, the boot log) and
+`/data/botwvr/cemu/BetterVR_log.txt`: every `[emu] BetterVR`, `[bettervr]`, `[vr]` and `hmd2` line,
+and any `[crash]`. Expected in the boot log: `BetterVR's host module starts`, `Registered host
+module: BetterVR`, BetterVR's `Acquired system to be used` with the system and runtime names, its
+`Graphics pack preset ...` lines, then the Vulkan instance and device lines through the module and
+the first frames. Say whether the headset shows anything (a picture, black, or the system's), whether
+the app crashed or returned to the library, and, if the game ended, how.
+
+## 2026-11-18: 1.0.0 port, stage 1 (Cemu fork base, flat only), built, untested on console
+
+Branch `bettervr-1.0/stage1`, commit 576d15a, CI run 44198974605 green (`make release`). Cemu moves
+from premohq's `cc6fea1` to Crementif's fork `86168a8`; `patches/cemu` rebased (old 0050 to 0052 dropped,
+already in the fork; 0053 cut to its gs copyshader half); BetterVR is not compiled in, so Play in VR
+shows the TV picture in the headset. New patch 0051 logs `Vulkan: multiview: ...` and
+`Vulkan: fragment shading rate: ...` at device creation (both strings checked in the built ELF).
+Details: `UPDATE-1.0.md`, "Stage 1 progress". Not published yet: `testing` still carries build27
+until Test request 45 is answered.
+
+**Test request 46 (stage 1 build, 13.60 console).** Install the stage 1 build, start the app, Play on
+TV, and play two minutes in Kakariko or Hateno. Send `/data/botwvr/cemu/log.txt` and the boot log:
+the `Using GPU`, `Driver version`, `Vulkan: multiview` and `Vulkan: fragment shading rate` lines, the
+fps and GPU-busy lines, and any `[crash]`. Expected: multiview supported with max views at least 2,
+fragment shading rate unsupported. Say whether the picture and fps match build27 on TV. If multiview
+is unsupported, the port stops here (`UPDATE-1.0.md`, "Stages").
+
+## 2026-11-17: build27 (menu toggle chain and Sense vibration lookup diagnosed/fixed), built, untested on console
+
+Build26's console run: Options reached no menu (no `[menu]` line) and no vibration was felt.
+
+- **Menu** (patch 0028, new; 0001 to 0027 untouched): the runtime's right `menu/click` is Options and was
+  already read correctly (build23's calibration used it). In BetterVR, a short press came from
+  `ButtonState`, which needs a release within 250 ms; a longer press counts as a long press, which the PS5
+  build ignores. The toggle now takes the mod menu action's own down and up edges: a press released within
+  1 s toggles, a hold does nothing. Logs: `[menu] switch: on/off (bettervr.json's menu)` once,
+  `[menu] mod menu action is active/not active` on change, `[menu] Options down` / `up after N ms`,
+  `[menu] toggle -> open/closed`, and in the runtime `[vr-xr] Options down/up` (first 60).
+  This is the likeliest cause, not proven; the new lines show where the chain stops if it is another.
+- **Vibration** (`third_party/hmd2/hmd2.cpp`): libScePad's 13.60 anchor did not match at +0x1f650. When
+  the single-table libraries (libScePad) find no match, the module's segments are logged, the bytes at the
+  anchor and at the export offsets are logged where the segment is readable (execute-only code is not
+  read, and logged as such), and the readable segments are searched for the anchor string. Found exactly
+  once: the base moves by the difference and the table's offsets are used. Found zero or several times:
+  nothing changes.
+
+**Test request 45 (build27, 13.60 console, `"menu": 1` in bettervr.json).** Press Options on the right
+controller once (short); a panel should open in the headset. Press it again; it should close. Then hit
+something with a weapon and feel for vibration. Send the log: the `[menu]` and `Options` lines and the
+`hmd2: libScePad` lines (segments, anchor, `anchor string found`).
+
+## 2026-11-17: build26 (Sense controller vibration), built, untested on console
+
+Build23's log showed `scePadSetVibrationMode` and `scePadSetVibration` returning 0x80920003 for both
+Sense controllers: libScePad's DualSense setters refuse pad types 3 and 4, so nothing was ever felt.
+
+- **Calls** (`third_party/hmd2/hmd2.cpp`, `hmd2::sense_set_vibration_mode` and `sense_set_vibration`;
+  `port/bettervr/xr/runtime.cpp`): libScePad's own Sense exports, `scePadVrControllerSetVibrationMode`
+  (NID Wf6-PNCyY20) and `scePadVrControllerSetVibration` (NID DGCwN1Lmmys, one intensity byte), on the
+  `scePadVrControllerReadState` handle. Resolved with hmd2's `load_sysmodule` and `resolve_module`:
+  `sceKernelDlsym` by name first, else on 13.60 at +0x100b0 / +0x5610 after the anchor string at +0x1f650
+  matches. Other firmware: vibration stays off, one log line. Names, offsets and anchor are firmware
+  facts from Ghost-VR (GPL); no code taken.
+- **Use:** at controller open, mode 2 once per hand, logged as `[vr-xr] left Sense controller vibration
+  mode -> 0x...`. `SetVibration(i, amplitude)` sends `amplitude * 255` as one byte, 0 stops it; the first
+  one is logged as `vibration -> 0x...`. The DualSense calls for the Sense controllers are gone; Cemu's
+  own DualSense rumble is untouched.
+- **Backlog:** headset vibration on damage taken and on explosions, not on hits landed. The PS VR2
+  headset has a single motor (`sceHmd2SetVibration(hmdHandle, 0..25)`, 13.60 offset 0x2ae00 per
+  Ghost-VR's and HLA-PSVR2's export tables, unverified on hardware), so it has no direction; direction
+  could only come from the two Sense controllers (left/right). BetterVR 0.9.23 only sees the game's
+  generic rumble (VPADControlMotor), so damage-only or explosion-only needs a new hook into BotW's code.
+  Planned, not built.
+
+**Test request 44 (build26, 13.60 console).** Hit something with a weapon and use anything that rumbles
+in the game, with the Sense controllers on. Send or let the log show the `vibration mode ->` and
+`vibration ->` lines for both hands. Expected: `0x00000000` and a felt pulse. If `Sense vibration
+exports not found` appears instead, send the `hmd2: libScePad` lines.
+
+**Result 44 (build26, 13.60, 2026-11-17, from the console's log).** No vibration felt. The log has
+`hmd2: libScePad: load ".../common/lib/libScePad.sprx" -> handle 0x72 (res 0)`, `found by: sandbox path`,
+`libScePad.sprx: no export table for this firmware (base 8009f8000)`, `Sense vibration exports not found on
+this firmware, Sense vibration stays off`, and the mode and vibration calls returning 0x80000001.
+
+## 2026-11-17: build25 (BetterVR menu stage A behind bettervr.json's menu switch), built, untested on console
+
+First step of BetterVR's own menu in the headset: the ImGui overlay starts and a small panel is drawn. Not the
+real menu pages yet, and gameplay input is not blocked on purpose beyond what BetterVR does itself while its
+menu flag is open.
+
+- **Switch:** `"menu"` in `bettervr.json`, default 0. At 0 nothing new runs: no overlay, no Options toggle, the
+  mod menu stays shut as before.
+- **Patch 0027** (new; 0001 to 0026 untouched): `vulkan_imgui.cpp` gets a Linux/PS5 overlay. It is made on the
+  first open, on Cemu's recording thread (the HUD hook), with one text font and no help images. It draws into
+  its own render target and `LinuxCopyHudToSwapchain` blits that to the HUD quad in place of Cemu's HUD image,
+  which is only read. All ImGui calls are on that one thread.
+- **Queue safety:** the backend's font upload makes its own submit and waits for the queue to go idle, and goes
+  to the driver directly. It is called once, in the overlay's constructor, under `ps5xr::QueueMutex()`
+  (`BETTERVR_PS5_QUEUE_LOCK`), on Cemu's queue family and index. No ImGui frame creates it later.
+- **Options:** in the Touch profile the mod menu action is bound to `/user/hand/right/input/menu/click` instead
+  of the left X on this port, and a short press toggles `m_isMenuOpen` (the long-press toggle is Windows only).
+- **Log lines** (one each): `[menu] init: <phase> -> ok/fail (...)` for context, font, descriptor pool,
+  render pass, backend functions, backend, font upload, target and first draw; `[menu] open`, `[menu] closed`.
+  A failed init logs `fail`, closes the menu and keeps it closed.
+
+**Test request 43 (build25, any console).** Set `"menu": 1` in `/data/botwvr/launcher/bettervr.json`, start
+Breath of the Wild in VR, press Options on the right controller, wait 3 s, press Options again. Send the
+`[menu]` lines and any `[crash]` lines from boot.log, and say whether a panel with the BetterVR version and a
+frame rate line appeared in the headset and where.
+
+**Result 43 (build25, 2026-11-17, from the console's log).** `bettervr.json` has `"menu": 1`. Options was
+pressed in game (short presses and one hold of about 3 s). The log has no `[menu]` line and no crash.
+
+## 2026-11-17: build24 (calibrated hand defaults; calibration mode removed), built, untested on console
+
+- **Defaults** (`port/bettervr/xr/runtime.cpp`): `gripYaw` 17, `gripPitch` 32, `gripRoll` 30 when
+  `bettervr.json` has no key (the values build23's calibration found). Yaw and roll are mirrored for the
+  right hand as before. The three keys, the `controllers: grip ...` log line and the first 20 s of
+  `[vr-xr] hands:` lines stay.
+- **Calibration mode removed:** build23's Options handling, input blocking, stick turning, Cross reset,
+  pulses, `hands calibrated` log and `BetterVR_PS5_SaveHands` are gone; `vr_settings.cpp` is back to its
+  pre-build23 content. INSTALL.md's calibration note is dropped.
+
+**Test request 42 (build24, any console).** On a fresh `bettervr.json`, without the grip keys: do the
+hands look right (pointing ahead, down, palms up)? Send the `[vr-xr] hands:` lines if not.
+
+**Result 42 (build24 defaults, 2026-11-17, from the console).** With the default grip 17/32/30 the hands are
+"better now".
+
+## 2026-11-17: build23 (hold Options to calibrate the hands), built, untested on console
+
+Build22's 80 degree `gripYaw` default is gone: it turned the hands about the wrong axis. All three
+angles, `gripYaw`, `gripPitch` and `gripRoll`, now default to 0, which is build21's hands.
+
+- **Rotation** (`port/bettervr/xr/runtime.cpp`, in `xrLocateSpace`): the angles are one local rotation
+  after the tracker pose, in the order yaw (local Y), pitch (local X), roll (local Z), on grip and aim.
+  Yaw and roll are mirrored for the right hand. `aimPitch` stays an extra on aim only. `gripPitch` now
+  applies to aim as well as grip.
+- **Calibration:** while Options on the right controller is held, neither controller's buttons or sticks
+  reach the game. Left stick X turns yaw, left stick Y pitch, right stick X roll (45 degrees a second),
+  Cross resets. Both controllers pulse when it starts and ends. On release the angles are written to
+  `bettervr.json` through the VR settings page's writer, and `[vr-xr] hands calibrated: yaw Y pitch P
+  roll R (saved to bettervr.json)` is logged. `[vr-xr] hands:` is logged every 1 s while held.
+
+**Test request 41 (build23, any console).** Hold Options on the right controller and turn the hands
+until they match the real controllers held pointing ahead, then release. Check pointing down and palms
+up. Send the `[vr-xr] hands calibrated:` line, or let the log be read.
+
+**Result 41 (build23, 2026-11-17, from the console's log and `bettervr.json`).** Calibration works, no
+crash; the hands are "ok now, maybe not perfect, but better". Saved: `gripYaw` 17.3, `gripPitch` 31.9,
+`gripRoll` 29.7; the log reads `hands calibrated: yaw 17 pitch 32 roll 30`. Holding Options while using
+the right stick is awkward, since both need the right thumb; build24 changes it to a tap toggle.
+
+## 2026-11-17: build22 (Sense hands turned inward), built, untested on console
+
+Build21's first console run showed both of Link's hands turned inward about 80 degrees (range 70 to 95)
+with the controllers neutral and pointing ahead, mirrored left and right, pitch and roll about level.
+
+- **Yaw correction** (`port/bettervr/xr/runtime.cpp`, in `xrLocateSpace`): grip and aim poses are turned
+  about the controller's vertical axis by `gripYaw` degrees, +left and -right, before the pitch. The
+  default is 80, the measured value; the code shows no exact convention, so it is empirical.
+- **`gripYaw` key** in `bettervr.json`, read like `gripPitch`, and logged in the
+  "controllers: grip pitch ..." line. Documented in INSTALL.md.
+- **Diagnostic:** every 2 s for the first 20 s of hand poses, `[vr-xr] hands: L yaw/pitch/roll ...`
+  with the final grip rotation against the head, in degrees. Neutral and correct reads about 0/0/0.
+
+**Test request 40 (build22, any console).** Hold the controllers neutral pointing straight ahead, then
+straight down, then turn the palms up. Say whether Link's hands match each time, and send the
+`[vr-xr] hands:` lines from the log. If the hands are still off, send a `gripYaw` value to try in
+`/data/botwvr/launcher/bettervr.json`.
+
+## 2026-11-16: build21 (upstream Cemu fixes), built, first console run 2026-11-17
+
+Backports of small upstream fixes, each its own patch, code verbatim:
+
+- **patches/cemu 0050** (cemu-project/Cemu `babd690`, `b044641`): graphic pack patch groups resolved in
+  linear time, each group with its full code cave. BetterVR's pack has thousands of groups.
+- **patches/cemu 0051** (`feb7c7b`): async Vulkan pipeline compile race.
+- **patches/cemu 0052** (`d1ca2e9`): the PPC recompiler's function scan no longer reads unmapped memory.
+- **patches/cemu 0053** (`5a0430b`, `934329f`): no crash on an invalid gs copyshader; a GX2 flush of an
+  empty command buffer starts a bigger one.
+- **patches/bettervr 0026** (Crementif/BotW-BetterVR `47ea413`): GPU memory properties read through Vulkan
+  1.1 (the KHR alias is null when its extension is not enabled).
+- Applied in order on the pins (Cemu `cc6fea1`, 53 patches; BetterVR `2e06b31`, 26 patches).
+
+**Test request 39 (build21, any console).** Play Breath of the Wild in VR for about 15 minutes,
+including a shrine and a fight. Send the logs zip, any `[crash]` lines, and say whether crashes or
+first-time stutters changed against build20. Test requests 31 to 33 still apply to this build.
+
+**Result 39 (2026-11-17, firmware 13.60, kstuff from ps5_autoloader with no app-jailbreak list, fresh
+install after a factory reset):** the game runs, fighting worked, and nothing went wrong. Not reported
+yet: the shrine and the stutter comparison with build20. The app's `boot.log`, about 5 minutes in VR
+up to the time it was read, has no `[crash]` line. It says "HEN: no ... JIT available (executable
+direct memory)" and "the recompiler's code is in executable direct memory (no HEN JIT grant
+needed)". It also answers Test request 31 for this setup: `hmd2: libSceHmd2: found by: sandbox path`,
+firmware table 13.60, `sceHmd2Initialize`, `sceVrTracker2Initialize` and `sceHmd2ReprojectionInitialize` all
+0, and no `[vr] VR did not start`.
+
+## 2026-11-16: BetterVR 1.0.0 update planned (not built)
+
+- The work list is in [`UPDATE-1.0.md`](UPDATE-1.0.md): BetterVR 1.0.0 (`db5495b`) on Crementif's Cemu
+  fork (`86168a8`), in five stages with Test requests 34 to 38. Multiview is exposed by the driver's
+  source, fragment shading rate is not (foveation off). Nothing built, nothing run on the console.
+- **Backlog:** premohq's Playtendoh branch (the renamed PS5-ECAM) is not merged: 75 conflicts, and its
+  Cemu pin did not move. Only Cemu fixes are picked from it (see the quick wins in UPDATE-1.0.md).
+
+## 2026-11-14: build20 (failed VR start, hmd2 load fallback, Graphics pack, menu probe), built, untested on console
+
+- **A failed VR start ends in the library, not a crash (issue #3).** When BetterVR cannot start VR on
+  the first eye clear, patch 0004 calls `BetterVR_PS5_VrFailed`, which logs "[vr] VR did not start
+  (<step, rc>): back to the library", writes the reason as the game's launch error and restarts to
+  the library. Breath of the Wild's page then shows "The game could not start". The game cannot go on
+  flat: its pack's patches already call BetterVR's hooks. Only the first-clear start path is covered.
+- **hmd2 load fallback (issue #3).** When the sandbox-path load fails, `load_sysmodule` logs euid, the
+  sandbox word and which of the sandbox, `/system/common/lib` and `/system_ex/common_ex/lib` paths
+  hold the library, loads the plain path that exists, and last looks the module up among the loaded
+  ones by file name (as Ghost-VR does). One line `hmd2: <name>: found by: ...` says which step worked.
+- **Graphics pack (issue #2).** `PS5Cemu_BetterVRApplyMode` no longer touches "Graphics (Modified
+  Version For BetterVR)" in either mode, so the player's choice in Graphic packs stays. The
+  `graphicsPack` key in bettervr.json is gone. New installs have it off.
+- **Menu probe (issue #2).** INSTALL.md no longer promises BetterVR's R3 menu (it does not exist
+  here; the in-game menu is touchpad click + Options and shows on the TV only). A log-only probe counts
+  xrWaitFrame, xrEndFrame, hmd2 submits and Cemu TV presents while the in-game menu is open, to show
+  whether the headset loop runs under it before any TV-image bridge is built.
+- **Backlog:** the `hmd2.cpp` changes must be carried back to ps5-splat-vr (`platform/ps5/hmd2/hmd2.cpp`):
+  `#include <unistd.h>`, the `sceKernelGetModuleList` extern, the `const char *found ...` block through
+  the `found by` log in `load_sysmodule`, and `const int handle` -> `int handle`.
+- **Built, untested on console.** Pre-release `testing`, titled build20-vr-fallback.
+
+**Test request 31 (VR start, the issue #3 setup or any console).** Install the build and start
+Breath of the Wild in VR. Send the logs zip and every line starting `hmd2: libSceHmd2:` (sysmodule
+line, the `euid ..., sandbox ...` line, each `load ...` line, the `found by: ...` line),
+`hmd2 did not start`, `[vr] VR did not start` and any `[crash]`. Expected: either VR starts (found by:
+plain path or already loaded), or the app returns to the library with "The game could not start" and
+no crash screen. Say which, and the firmware version.
+
+**Test request 32 (Graphics pack toggle).** In Breath of the Wild's Graphic packs turn on "Graphics
+(Modified Version For BetterVR)", quit to the library, start Play in VR, then Play on TV once. Send the
+`graphic pack ... turned` lines and Cemu's `Activate graphic pack` lines. Say whether the pack is
+still on in Graphic packs after each start, and what the VR picture looks like (earlier builds had
+the view offset with this pack on).
+
+**Test request 33 (menu probe).** Start Breath of the Wild in VR and reach the game world. Click the
+touchpad and press Options to open the in-game menu, wait about 5 s, close it with O. Send the logs
+zip. Expected `[vr-xr]` lines: "in-game menu open (xrWaitFrame A, xrEndFrame B, hmd2 submits C, Cemu TV
+presents D so far)", about one "in-game menu still open at N ms" a second, and "in-game menu closed
+after N ms". Counts near N/16.7 mean the headset loop runs under the menu; zeros mean it stalls.
+
 ## 2026-11-08: v0.1.1 (built, untested on console as a whole)
 
 - **Contains:** hmd2 export tables for 5.50 to 13.60 (issue #2, see the entry below), the app renamed

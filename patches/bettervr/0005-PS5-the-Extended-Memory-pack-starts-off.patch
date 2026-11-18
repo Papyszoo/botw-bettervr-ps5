@@ -1,0 +1,25 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Patryk Kowalczyk <papyszoo@gmail.com>
+Date: Wed, 18 Nov 2026 12:07:21 +0100
+Subject: [PATCH] PS5: the Extended Memory pack starts off
+
+BetterVR 1.0.0's code and the pack's own text say it is for mods that need it (DrawDistance's Extreme and Ultra
+presets); on, it moved the game's heaps and the first console run's allocator returned 0. The pack stays in the
+Graphic packs list to turn on.
+---
+ .../graphicPacks/BreathOfTheWild/Mods/ExtendedMemory/rules.txt  | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/resources/graphicPacks/BreathOfTheWild/Mods/ExtendedMemory/rules.txt b/resources/graphicPacks/BreathOfTheWild/Mods/ExtendedMemory/rules.txt
+index 3040940..ffad01b 100644
+--- a/resources/graphicPacks/BreathOfTheWild/Mods/ExtendedMemory/rules.txt
++++ b/resources/graphicPacks/BreathOfTheWild/Mods/ExtendedMemory/rules.txt
+@@ -4,7 +4,7 @@ name = Extended Memory
+ path = "The Legend of Zelda: Breath of the Wild/Mods/Extended Memory"
+ description = Adds an extra 2GB of emulated RAM.|Only enable this if a mod you want to use requires this since it'll use more RAM.
+ version = 6
+-default = true
++default = false
+ 
+ [RAM]
+ mapping0 = 0x10000000-0xA0000000 # extend MEM2 region (default range is 0x10000000-0x50000000)

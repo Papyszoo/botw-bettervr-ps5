@@ -14,7 +14,7 @@ again, as in 1.0.
  1 file changed, 13 deletions(-)
 
 diff --git a/src/util/highresolutiontimer/HighResolutionTimer.cpp b/src/util/highresolutiontimer/HighResolutionTimer.cpp
-index 507434d..54fa4fb 100644
+index 507434df..54fa4fb2 100644
 --- a/src/util/highresolutiontimer/HighResolutionTimer.cpp
 +++ b/src/util/highresolutiontimer/HighResolutionTimer.cpp
 @@ -1,10 +1,5 @@

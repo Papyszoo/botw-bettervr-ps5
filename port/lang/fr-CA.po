@@ -143,15 +143,15 @@ msgstr "Le téléchargement n’a pas abouti : la PS5 est-elle en ligne?"
 msgid "Azahar stopped part-way through; {0}/azahar/log/azahar_log.txt says why"
 msgstr "Azahar s’est arrêté en cours de route; {0}/azahar/log/azahar_log.txt dit pourquoi"
 
+#. Breath of the Wild's page in BotW VR: start the game on the TV, without the headset
+#: port/bettervr/VrPS5.cpp:626 port/frontend/shell/home.cpp:194 port/frontend/shell/hub.cpp:257
+msgid "Play on TV"
+msgstr "Jouer sur la télé"
+
 #. Breath of the Wild's page in BotW VR: start the game in the PS VR2 headset
 #: port/frontend/shell/home.cpp:189 port/frontend/shell/hub.cpp:254
 msgid "Play in VR"
 msgstr "Jouer en RV"
-
-#. Breath of the Wild's page in BotW VR: start the game on the TV, without the headset
-#: port/frontend/shell/home.cpp:194 port/frontend/shell/hub.cpp:257
-msgid "Play on TV"
-msgstr "Jouer sur la télé"
 
 #: port/frontend/shell/pages.cpp:306
 msgid "Cross turns a pack on or off; Right goes to its presets. Choosing a preset turns its pack on. Changes apply at the next start."

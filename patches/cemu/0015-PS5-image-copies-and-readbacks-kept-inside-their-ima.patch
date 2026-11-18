@@ -19,7 +19,7 @@ Copies between a compressed and an uncompressed image are left as they are.
  2 files changed, 66 insertions(+), 1 deletion(-)
 
 diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/TextureReadbackVk.cpp b/src/Cafe/HW/Latte/Renderer/Vulkan/TextureReadbackVk.cpp
-index 94104f1..95cfb7a 100644
+index 94104f1c..95cfb7a5 100644
 --- a/src/Cafe/HW/Latte/Renderer/Vulkan/TextureReadbackVk.cpp
 +++ b/src/Cafe/HW/Latte/Renderer/Vulkan/TextureReadbackVk.cpp
 @@ -125,8 +125,27 @@ void LatteTextureReadbackInfoVk::StartTransfer()
@@ -52,10 +52,10 @@ index 94104f1..95cfb7a 100644
  	renderer->barrier_sequentializeTransfer();
  
 diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
-index 5546d5b..4aa1fca 100644
+index 37e4b8ce..683a36c8 100644
 --- a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
 +++ b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
-@@ -3678,6 +3678,52 @@ void VulkanRenderer::texture_copyImageSubData(LatteTexture* src, sint32 srcMip,
+@@ -3814,6 +3814,52 @@ void VulkanRenderer::texture_copyImageSubData(LatteTexture* src, sint32 srcMip,
  	srcVkObj->flagForCurrentCommandBuffer();
  	dstVkObj->flagForCurrentCommandBuffer();
  

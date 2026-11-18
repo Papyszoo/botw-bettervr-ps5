@@ -1,0 +1,63 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Patryk Kowalczyk <papyszoo@gmail.com>
+Date: Wed, 18 Nov 2026 09:58:58 +0100
+Subject: [PATCH] PS5: a failure in a capture event (the lazy swapchains) ends
+ the launch with a reason
+
+- OnHostEvent catches what the first capture event throws (EnsureLayers creates the layers and swapchains on Cemu's GPU thread), logs, calls BetterVR_PS5_VrFailed and ignores the events after
+---
+ src/cemu/host_module.cpp | 27 +++++++++++++++++++++++++++
+ 1 file changed, 27 insertions(+)
+
+diff --git a/src/cemu/host_module.cpp b/src/cemu/host_module.cpp
+index 5da357e..5d6b807 100644
+--- a/src/cemu/host_module.cpp
++++ b/src/cemu/host_module.cpp
+@@ -375,6 +375,25 @@ public:
+     }
+ 
+     void OnHostEvent(const HostModule::HostEvent& event, VkCommandBuffer commandBuffer) override {
++#if defined(__PROSPERO__)
++        // The layers and swapchains are created lazily by the first capture event, on Cemu's GPU thread, outside
++        // OnVkDeviceCreated: a failure there (memory, the runtime) ends like the others, in the library with the reason.
++        if (m_failed) {
++            return;
++        }
++        try {
++            HandleHostEvent(event, commandBuffer);
++        }
++        catch (const std::exception& e) {
++            m_failed = true;
++            Log::print<ERROR>("VR did not start: {}", e.what());
++            Log::Flush();
++            BetterVR_PS5_VrFailed(e.what());
++        }
++    }
++
++    void HandleHostEvent(const HostModule::HostEvent& event, VkCommandBuffer commandBuffer) {
++#endif
+         if (!m_active || event.surface == nullptr) {
+             return;
+         }
+@@ -416,6 +435,11 @@ public:
+     }
+ 
+     void OnFrameSubmitted(HostModule::FrameKind kind) override {
++#if defined(__PROSPERO__)
++        if (m_failed) {
++            return;
++        }
++#endif
+         if (m_active) {
+             Capture::OnFrameSubmitted();
+         }
+@@ -424,6 +448,9 @@ public:
+ private:
+     bool m_available = false;
+     bool m_active = false;
++#if defined(__PROSPERO__)
++    bool m_failed = false; // a capture event threw: the app is on its way back to the library
++#endif
+ };
+ 
+ void BetterVR_RegisterHostModule() {

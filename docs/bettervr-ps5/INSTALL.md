@@ -198,9 +198,11 @@ Optional settings in `/data/botwvr/launcher/bettervr.json`, with any build:
 | Setting | What it does |
 | --- | --- |
 | `"bettervr": false` | No BetterVR: the game as a flat screen in the headset (M2), to compare. |
-| `"gripPitch": 30`, `"aimPitch": 30` | Tilt the controllers' poses, in degrees, if Link's hands point the wrong way. |
+| `"gripPitch": 30`, `"aimPitch": 30` | Tilt the controllers' poses, in degrees, if Link's hands point the wrong way (`gripPitch` default 32, `aimPitch` default 0). |
+| `"gripYaw": 30`, `"gripRoll": 30` | Turn the controllers' poses about their vertical axis and their long axis, in degrees (left hand +, right hand -; defaults 17 and 30; `gripPitch` defaults to 32). Tune by editing `bettervr.json`. |
 
-BetterVR's own menu, in the game: long-press the right stick (R3).
+BetterVR's own menu does not exist on this port. The app's in-game menu opens with a touchpad click plus Options (O closes it); it takes the input and is drawn on the TV only, not yet in the headset.
+
 
 ## 8. If something goes wrong
 

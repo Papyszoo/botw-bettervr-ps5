@@ -24,7 +24,7 @@ from the cache. The game's own fetch shaders assert as before.
  3 files changed, 57 insertions(+), 1 deletion(-)
 
 diff --git a/src/Cafe/HW/Latte/Core/FetchShader.cpp b/src/Cafe/HW/Latte/Core/FetchShader.cpp
-index d5e8bdd..a2b869c 100644
+index 2aed3925..988a5667 100644
 --- a/src/Cafe/HW/Latte/Core/FetchShader.cpp
 +++ b/src/Cafe/HW/Latte/Core/FetchShader.cpp
 @@ -16,6 +16,26 @@
@@ -72,7 +72,7 @@ index d5e8bdd..a2b869c 100644
  	if (attribGroup->attribCount < (groupAttribIndex + 1))
  	{
  		cemu_assert(groupAttribIndex < 127);
-@@ -309,7 +333,7 @@ void _fetchShaderDecompiler_parseVTXClause(LatteFetchShader* parsedFetchShader,
+@@ -312,7 +336,7 @@ void _fetchShaderDecompiler_parseVTXClause(LatteFetchShader* parsedFetchShader,
  		{
  			_fetchShaderDecompiler_parseInstruction_VTX_SEMANTIC(parsedFetchShader, contextRegister, instr);
  		}
@@ -81,7 +81,7 @@ index d5e8bdd..a2b869c 100644
  		{
  			assert_dbg();
  		}
-@@ -422,6 +446,15 @@ LatteFetchShader* LatteShaderRecompiler_createFetchShader(LatteFetchShader::Cach
+@@ -425,6 +449,15 @@ LatteFetchShader* LatteShaderRecompiler_createFetchShader(LatteFetchShader::Cach
  		}
  	}
  	newFetchShader->bufferGroups.shrink_to_fit();
@@ -97,7 +97,7 @@ index d5e8bdd..a2b869c 100644
  	// calculate group information
  	cemu_assert(newFetchShader->bufferGroups.size() <= Latte::GPU_LIMITS::NUM_VERTEX_BUFFERS);
  	for (auto& bufferGroup : newFetchShader->bufferGroups)
-@@ -457,6 +490,17 @@ LatteFetchShader* LatteShaderRecompiler_createFetchShader(LatteFetchShader::Cach
+@@ -462,6 +495,17 @@ LatteFetchShader* LatteShaderRecompiler_createFetchShader(LatteFetchShader::Cach
  	return newFetchShader;
  }
  
@@ -116,10 +116,10 @@ index d5e8bdd..a2b869c 100644
  {
  	UnregisterInCache();
 diff --git a/src/Cafe/HW/Latte/Core/FetchShader.h b/src/Cafe/HW/Latte/Core/FetchShader.h
-index 0a29a83..48c32b0 100644
+index e571d90d..be6d499a 100644
 --- a/src/Cafe/HW/Latte/Core/FetchShader.h
 +++ b/src/Cafe/HW/Latte/Core/FetchShader.h
-@@ -74,3 +74,8 @@ struct LatteFetchShader
+@@ -81,3 +81,8 @@ struct LatteFetchShader
  };
  
  LatteFetchShader* LatteShaderRecompiler_createFetchShader(LatteFetchShader::CacheHash fsHash, uint32* contextRegister, uint32* fsProgramCode, uint32 fsProgramSize);
@@ -129,10 +129,10 @@ index 0a29a83..48c32b0 100644
 +LatteFetchShader* LatteShaderRecompiler_createFetchShaderFromCache(LatteFetchShader::CacheHash fsHash, uint32* contextRegister, uint32* fsProgramCode, uint32 fsProgramSize);
 +#endif
 diff --git a/src/Cafe/HW/Latte/Core/LatteShaderCache.cpp b/src/Cafe/HW/Latte/Core/LatteShaderCache.cpp
-index ab2898b..892d917 100644
+index 7625534d..8ae2fade 100644
 --- a/src/Cafe/HW/Latte/Core/LatteShaderCache.cpp
 +++ b/src/Cafe/HW/Latte/Core/LatteShaderCache.cpp
-@@ -849,7 +849,14 @@ bool LatteShaderCache_readSeparableVertexShader(MemStreamReader& streamReader, u
+@@ -852,7 +852,14 @@ bool LatteShaderCache_readSeparableVertexShader(MemStreamReader& streamReader, u
  	LatteShader_UpdatePSInputs(lcr->GetRawView());
  	// get fetch shader
  	LatteFetchShader::CacheHash fsHash = LatteFetchShader::CalculateCacheHash((uint32*)fetchShaderData.data(), fetchShaderData.size());
@@ -146,4 +146,4 @@ index ab2898b..892d917 100644
 +#endif
  	// determine decompiler options
  	LatteDecompilerOptions options;
- 	LatteShader_GetDecompilerOptions(options, LatteConst::ShaderType::Vertex, usesGeometryShader);
+ 	LatteShader_GetDecompilerOptions(options, LatteConst::ShaderType::Vertex, usesGeometryShader, shaderBaseHash);

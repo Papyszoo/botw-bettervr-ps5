@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // BotW-BetterVR on PS5, M3: a small OpenXR runtime over hmd2 (third_party/hmd2, from photo-splat-vr),
-// built into BetterVR's object (port/bettervr/layer). It implements what BetterVR's Linux backend
+// built into BetterVR's module (port/bettervr/module.cmake). It implements what BetterVR's Linux backend
 // calls, and nothing else (PLAN.md, M3, option A, the way PS5XR does for HL:A):
 //
-//   instance, system   one of each: "PlayStation VR2", Vulkan (XR_KHR_vulkan_enable). It also lists
-//                      XR_KHR_composition_layer_depth, which BetterVR requires, and ignores the depth
-//                      it is given: Hmd2 reprojects without depth.
+//   instance, system   one of each: "PlayStation VR2", Vulkan (XR_KHR_vulkan_enable). It does not list
+//                      XR_KHR_composition_layer_depth (BetterVR 1.0.0 then keeps its depth in a local
+//                      attachment and makes no depth swapchains), and ignores the depth it is given
+//                      when asked to take it: Hmd2 reprojects without depth.
 //   session            on BetterVR's Vulkan binding (Cemu's device, queue family and queue): three
 //                      host-visible eye buffers on that device, handed to hmd2::init as
 //                      Config::external, as M2 does (port/bettervr/VrPS5.cpp)
@@ -13,7 +14,7 @@
 //                      OpenXR's); VIEW follows the head. Action spaces locate nothing yet (M4).
 //   views              xrLocateViews: hmd2's predicted head pose for the time, its eyes' offsets from
 //                      the frame's own result (else half a 63 mm IPD each side), and its FOV tangents
-//   swapchains         three Vulkan images each, on Cemu's device. A released colour image is left in
+//   swapchains         three Vulkan images each (one 2D layer: 1.0.0's stereo is two swapchains), on Cemu's device. A released colour image is left in
 //                      COLOR_ATTACHMENT_OPTIMAL, as the spec has the application leave it.
 //   frames             xrWaitFrame is hmd2::wait_slot + begin_frame (Hmd2's pacing, 60 frames a
 //                      second, each shown for two of its 120 Hz refreshes). xrEndFrame composes the
@@ -27,7 +28,7 @@
 //                      Create = menu. Read with scePadVrControllerReadState (types 3 and 4, opened
 //                      for Hmd2's user), posed by VrTracker2 (hmd2::register_controller /
 //                      controller_pose) with velocities from successive poses; haptics through
-//                      scePadSetVibration. The DualSense stays the game's GamePad (Cemu's), which
+//                      hmd2::sense_set_vibration (libScePad's Sense exports). The DualSense stays the game's GamePad (Cemu's), which
 //                      BetterVR merges with these. Layout from photo-splat-vr's pad_input.h and
 //                      HLA-PSVR2's psvr2.c (third_party/hmd2/reference); none of it seen on a console.
 //
@@ -38,7 +39,9 @@
 // The app ends a game with a LoadExec: BetterVR_PS5_Stop (app/emulator.cpp, before it) turns Hmd2 off
 // from any thread, and every call after it answers XR_ERROR_SESSION_LOST.
 
+#ifndef VK_NO_PROTOTYPES
 #define VK_NO_PROTOTYPES
+#endif
 #include <vulkan/vulkan.h>
 #define XR_USE_GRAPHICS_API_VULKAN
 #include <openxr/openxr.h>
@@ -53,38 +56,8 @@ int scePadOpen(int user, int type, int index, const void* parameters);
 int scePadGetHandle(int user, int type, int index);
 int scePadClose(int handle);
 int scePadVrControllerReadState(int handle, void* state);
-int scePadSetVibration(int handle, const void* vibration);
-int scePadSetVibrationMode(int handle, int mode);
 // port/bettervr/VrPS5.cpp: a number from bettervr.json, or fallback
 float BetterVR_PS5_Setting(const char* name, float fallback);
-// BetterVR's gate (entity_controller.cpp): the playerOnce value it cached and the asm runs, default on
-bool BetterVR_PS5_PlayerOnce();
-// BetterVR's comfort fades (entity_controller.cpp): bettervr.json's fades, default on
-bool BetterVR_PS5_Fades();
-// BetterVR's flat/menu presentation (entity_controller.cpp): bettervr.json's flatScene, default on
-bool BetterVR_PS5_FlatScene();
-// BetterVR's menu pictures (entity_controller.cpp): bettervr.json's monoQuad, menuLock and quadPlane, default on
-bool BetterVR_PS5_MonoQuad();
-bool BetterVR_PS5_MenuLock();
-bool BetterVR_PS5_QuadPlane();
-// BetterVR's kept pose (entity_controller.cpp): bettervr.json's poseKeep, default on
-bool BetterVR_PS5_PoseKeep();
-// BetterVR's autosave hold (entity_controller.cpp): bettervr.json's saveHold, default on
-bool BetterVR_PS5_SaveHold();
-// BetterVR's stereo pose freeze (entity_controller.cpp): bettervr.json's poseFreeze, default on
-bool BetterVR_PS5_PoseFreeze();
-// BetterVR's renderer (renderer_vulkan.cpp): the poseFreeze proof counters, per eye, and the
-// StartFrame guard clears
-void BetterVR_PS5_PoseProof(uint64_t* leftStale, uint64_t* rightStale, double* maxAgeMs, uint64_t* guardClears);
-// BetterVR's renderer (renderer_vulkan.cpp): the leftSlot proof counters, per eye, and the number
-// of 3D pairs copied
-void BetterVR_PS5_CopyProof(uint64_t* leftOverwritten, uint64_t* rightOverwritten, uint64_t* copies);
-// BetterVR's renderer (renderer_vulkan.cpp): the autosave snapshots whose pair was held
-void BetterVR_PS5_SnapshotProof(uint64_t* holds);
-// BetterVR's renderer (entity_controller.cpp): bettervr.json's leftSlot, default on
-bool BetterVR_PS5_LeftSlot();
-// BetterVR's stereo rays (entity_controller.cpp): bettervr.json's stereoRays, default on
-bool BetterVR_PS5_StereoRays();
 }
 
 #include <algorithm>
@@ -98,6 +71,7 @@ bool BetterVR_PS5_StereoRays();
 #include <mutex>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 // the port's (ps5/log.cpp): a line of the boot log
@@ -105,6 +79,8 @@ void PS5Cemu_LogLine(std::string_view line);
 // RADV's, linked into the app: where the runtime's own Vulkan calls come from (not through BetterVR's layer)
 extern "C" VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vk_icdGetInstanceProcAddr(VkInstance instance, const char* pName);
 extern "C" uint64_t sceKernelGetProcessTime(void);
+// port/bettervr/VrPS5.cpp: the app goes back to the library with the reason
+extern "C" void BetterVR_PS5_VrFailed(const char* what);
 
 namespace ps5xr
 {
@@ -124,6 +100,8 @@ namespace
 	constexpr XrDuration kFramePeriod = 16'666'667; // ns: a frame every two of Hmd2's 120 Hz refreshes
 	constexpr float kHalfIpd = 0.0315f;
 	constexpr uint64_t kGpuTimeoutNs = 2'000'000'000ull;
+	// a compose that has not finished this long after its first 2 s timeout ends the VR run (the VR-failed path)
+	constexpr uint64_t kGpuGiveUpUs = 30'000'000ull;
 
 	void Log(const char* format, ...)
 	{
@@ -139,6 +117,15 @@ namespace
 	{
 		PS5Cemu_LogLine(std::string("[vr-xr] ") + line);
 	}
+
+	// The in-game menu's probe (BetterVR_PS5_MenuProbe): how often the headset's frame loop turns, whole-run
+	// counts that the menu's open and close lines subtract. Atomics: the loop's threads, Cemu's GPU thread
+	// and the app's render thread each touch them.
+	// (hmd2's own frames_submitted counts the submits)
+	std::atomic<uint64_t> s_waitFrames{0}, s_endFrames{0}, s_tvPresents{0};
+	std::atomic<bool> s_live{false}; // Hmd2 is up for a session: s.session->hmdUp, readable without s.lock
+	std::atomic<uint64_t> s_menuOpenedAt{0}, s_menuLoggedAt{0}; // sceKernelGetProcessTime, us; 0 closed
+	std::atomic<uint64_t> s_menuAtOpen[4] = {};					// the counters when it opened
 
 	XrTime Now()
 	{
@@ -301,8 +288,20 @@ struct XrSession_T
 	VkCommandPool commandPool = VK_NULL_HANDLE;
 	VkCommandBuffer commands = VK_NULL_HANDLE;
 	VkFence fence = VK_NULL_HANDLE;
+	// xrEndFrame's own command buffer and fence: its wait runs without s.lock, so no other call's one-time commands may share them
+	VkCommandBuffer composeCommands = VK_NULL_HANDLE;
+	VkFence composeFence = VK_NULL_HANDLE;
+	bool composePending = false; // the compose was submitted and its fence has not been seen signalled
+	bool composeBusy = false;    // an xrEndFrame is waiting on composeFence without s.lock
+	uint64_t gpuStallSince = 0;  // sceKernelGetProcessTime of the first timeout of the stall in progress, 0 when none
+	uint64_t gpuTimeouts = 0, gpuStuckSkips = 0, gpuRecovered = 0;
 
 	uint64_t frames = 0, emptyFrames = 0, skipped = 0;
+	// xrWaitFrame calls that found the previous frame still open (the frame pump runs one ahead), and xrEndFrame
+	// calls that found no frame open (nothing is submitted for them)
+	uint64_t waitsAhead = 0, endsWithoutFrame = 0;
+	uint64_t lateBegins = 0; // xrEndFrame calls that found no open frame and began one themselves
+	uint64_t lastFrameLogAt = 0; // sceKernelGetProcessTime of the last 600-frame line
 	// frames whose render pose was found among the located views, and frames where it was not
 	uint64_t poseFound = 0, poseLost = 0;
 	// frames whose re-shown pair kept the render pose it was published with (poseKeep)
@@ -389,11 +388,15 @@ namespace
 			Pose pose;
 			Vec3 linear, angular;
 			XrTime hapticUntil = 0;
-			bool vibrating = false, vibrationLogged = false, poseLogged = false;
+			bool vibrating = false, poseLogged = false;
+			int vibrationsLogged = 0;
+			int lastLevel = -1; // the level libScePad last took on this handle; -1: none, or the call failed
 		} hands[2];
-		float gripPitch = 0, aimPitch = 0;
-		bool monoQuad = true, quadPlane = true; // bettervr.json's "monoQuad", "quadPlane": 0 is build15's picture across the eye, upright box quad
-		bool poseKeep = true; // bettervr.json's "poseKeep": 0 forgets a re-shown pair's render pose once the located ring drops it
+		float gripYaw = 17, gripPitch = 32, gripRoll = 30, aimPitch = 0; // degrees: the grip and aim poses' turn, bettervr.json's keys
+		// How a frame is composed, fixed (1.0.0 has no use for the 0.9.23 mod's presentation switches): a mono
+		// picture (identical views) stays across each eye, the HUD quad is drawn as the plane it is, and a re-shown
+		// pair (BetterVR's submit thread shows the last one again) keeps the render pose it was published with
+		static constexpr bool monoQuad = false, quadPlane = true, poseKeep = true;
 		// The render pose of the picture the submit thread is showing again: the left view it was
 		// rendered from and the head it was located with, so a pair re-shown beyond the ring still
 		// reprojects from where it was rendered instead of from the live head.
@@ -403,6 +406,11 @@ namespace
 		uint64_t shownAtFrame = 0;
 		bool reproject = true; // bettervr.json's "reproject": 0 submits every frame as rendered from the display time's pose
 		bool tv = true; // bettervr.json's "tv": 0 keeps the TV dark while VR runs
+		// the VR start's milestones (the log lines "VR start n/5"): when the session began, the swapchains made, and
+		// whether the first submitted frame and the first one with a stereo picture are logged
+		uint64_t sessionStartedAt = 0; // sceKernelGetProcessTime, us
+		int swapchainsMade = 0;
+		bool firstFrameLogged = false, firstStereoLogged = false;
 		XrTime syncTime = 0;
 		hmd2::Fov fov{1.0f, 1.0f, 1.0f, 1.0f};
 		Vec3 eyeOffset[2] = {{-kHalfIpd, 0, 0}, {kHalfIpd, 0, 0}}; // in the head's frame
@@ -499,7 +507,7 @@ namespace
 	constexpr uint32_t kCreate = 0x1, kL3 = 0x2, kR3 = 0x4, kOptions = 0x8, kL1 = 0x400, kR1 = 0x800, kTriangle = 0x1000,
 					   kCircle = 0x2000, kCross = 0x4000, kSquare = 0x8000;
 	constexpr XrDuration kPadRetry = 2'000'000'000; // as photo-splat-vr and HLA-PSVR2: every 2 s
-	constexpr int kVibrationModeCompatible = 2;			 // the app's pad.cpp sets it for the DualSense's motors
+	constexpr int kVibrationModeCompatible = 2;			 // the mode Ghost-VR sets on the Sense before its first vibration
 
 	const char* HandName(int hand)
 	{
@@ -538,12 +546,14 @@ namespace
 				continue;
 			}
 			hand.handle = handle;
+			hand.lastLevel = -1;
 			hand.owned = owned;
 			hand.reportedMissing = false;
-			const int mode = scePadSetVibrationMode(handle, kVibrationModeCompatible);
+			const int mode = hmd2::sense_set_vibration_mode(handle, kVibrationModeCompatible);
 			hand.registered = hmd2::register_controller(handle, i == 1);
-			Log("%s Sense controller open (handle %d), VrTracker2 registration %s, vibration mode 0x%08x", HandName(i), handle,
-				hand.registered ? "done" : "FAILED (no pose for this hand)", (unsigned)mode);
+			Log("%s Sense controller open (handle %d), VrTracker2 registration %s", HandName(i), handle,
+				hand.registered ? "done" : "FAILED (no pose for this hand)");
+			Log("%s Sense controller vibration mode -> 0x%08x", HandName(i), (unsigned)mode);
 		}
 	}
 
@@ -558,9 +568,19 @@ namespace
 	}
 
 	// once a frame (xrSyncActions): buttons, stick, trigger and pose of each hand
+	// Whether Options on the right Sense is down, as of the last sync: BetterVR's menu toggle reads it
+	// (BetterVR_PS5_OptionsDown), as the Touch profile gives that button no action
+	std::atomic<bool> s_optionsDown{false};
+
 	void ReadHands()
 	{
 		OpenHands();
+		// stored when the sync is read, whichever way the loop leaves: a hand that is gone or intercepted is not down
+		struct Publish
+		{
+			bool optionsDown = false;
+			~Publish() { s_optionsDown.store(optionsDown, std::memory_order_release); }
+		} publish;
 		const XrTime now = Now();
 		for (int i = 0; i < 2; i++)
 		{
@@ -594,6 +614,8 @@ namespace
 			}
 			if (buttons & kIntercepted)
 				continue; // the system menu has it: nothing pressed here
+			if (i == 1 && (buttons & kOptions) != 0)
+				publish.optionsDown = true;
 			hand.buttons = buttons;
 			hand.stickX = Axis(state[kSenseStickX]);
 			hand.stickY = -Axis(state[kSenseStickY]); // its byte is down positive
@@ -734,18 +756,25 @@ namespace
 		return false;
 	}
 
+	// The one place that sets a Sense controller's vibration (hmd2's libScePad lookup is behind it). The first
+	// three calls with a level and every call that fails are in the log, with the level and libScePad's answer.
 	void SetVibration(int i, float amplitude)
 	{
 		auto& hand = s.hands[i];
 		if (hand.handle < 0)
 			return;
 		const uint8_t level = (uint8_t)std::lround(std::max(0.0f, std::min(1.0f, amplitude)) * 255.0f);
-		const uint8_t motors[2] = {level, level};
-		const int result = scePadSetVibration(hand.handle, motors);
-		if (!hand.vibrationLogged && level)
+		if (hand.lastLevel == level)
+			return; // the same level again (1.0.0 repeats its 30 ms pulses): libScePad is not called
+		const int result = hmd2::sense_set_vibration(hand.handle, level);
+		hand.lastLevel = result == 0 ? level : -1;
+		if (level && (hand.vibrationsLogged < 3 || result != 0))
 		{
-			hand.vibrationLogged = true;
-			Log("%s Sense controller vibration -> 0x%08x (first one; untested on this controller)", HandName(i), (unsigned)result);
+			static int s_failures = 0;
+			if (result == 0 || s_failures++ < 20)
+				Log("%s Sense controller vibration level %u -> 0x%08x (%s)", HandName(i), (unsigned)level, (unsigned)result,
+					hand.vibrationsLogged < 3 ? "one of the first" : "failed");
+			hand.vibrationsLogged++;
 		}
 		hand.vibrating = level != 0;
 	}
@@ -826,6 +855,66 @@ namespace
 		return true;
 	}
 
+	// xrEndFrame's compose: recorded and submitted here, waited for by the caller without s.lock (see xrEndFrame)
+	template<typename Record>
+	bool SubmitCompose(XrSession_T* session, Record&& record)
+	{
+		vk.vkResetCommandBuffer(session->composeCommands, 0);
+		VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+		begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+		vk.vkBeginCommandBuffer(session->composeCommands, &begin);
+		record(session->composeCommands);
+		vk.vkEndCommandBuffer(session->composeCommands);
+		vk.vkResetFences(session->device, 1, &session->composeFence);
+		VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};
+		submit.commandBufferCount = 1;
+		submit.pCommandBuffers = &session->composeCommands;
+		VkResult result;
+		{
+			std::lock_guard queue(ps5xr::QueueMutex());
+			result = vk.vkQueueSubmit(session->queue, 1, &submit, session->composeFence);
+		}
+		if (result != VK_SUCCESS)
+			return Fail("vkQueueSubmit (compose)", result);
+		session->composePending = true;
+		return true;
+	}
+
+	// The compose's fence is signalled, or has timed out again, or failed. Signalled: the stall (if there was one) is over.
+	// Timed out: the frame stays open and xrEndFrame tries again on the next frames, until kGpuGiveUpUs after the first timeout.
+	// Returns false when the run is given up (gpuFailed set; the caller leaves s.lock and takes the VR-failed path).
+	bool ComposeFenceResult(XrSession_T* session, VkResult result)
+	{
+		if (result == VK_SUCCESS)
+		{
+			session->composePending = false;
+			if (session->gpuStallSince)
+			{
+				session->gpuRecovered++;
+				Log("the compositor's GPU work finished again after %llu ms (%llu timeouts so far)",
+					(unsigned long long)((sceKernelGetProcessTime() - session->gpuStallSince) / 1000), (unsigned long long)session->gpuTimeouts);
+				session->gpuStallSince = 0;
+			}
+			return true;
+		}
+		const uint64_t now = sceKernelGetProcessTime();
+		if (result == VK_TIMEOUT)
+		{
+			if (!session->gpuStallSince)
+				session->gpuStallSince = now;
+			if (session->gpuTimeouts++ % 10 == 0)
+				Log("the compositor's GPU work has not finished (vkWaitForFences, %llu timeouts so far, stalled %llu ms); the frame is retried",
+					(unsigned long long)session->gpuTimeouts, (unsigned long long)((now - session->gpuStallSince) / 1000));
+			if (now - session->gpuStallSince < kGpuGiveUpUs)
+				return true;
+			Log("the compositor's GPU work did not finish in %llu s: VR stops here", (unsigned long long)(kGpuGiveUpUs / 1000000));
+		}
+		else
+			Log("vkWaitForFences (compose) -> %d: VR stops here", (int)result);
+		session->gpuFailed = true;
+		return false;
+	}
+
 	void ImageBarrier(VkCommandBuffer commands, VkImage image, VkImageAspectFlags aspect, VkImageLayout from, VkImageLayout to,
 		VkAccessFlags srcAccess, VkAccessFlags dstAccess, VkPipelineStageFlags srcStage, VkPipelineStageFlags dstStage)
 	{
@@ -900,10 +989,16 @@ namespace
 		result = vk.vkAllocateCommandBuffers(session->device, &allocate, &session->commands);
 		if (result != VK_SUCCESS)
 			return Fail("vkAllocateCommandBuffers", result);
+		result = vk.vkAllocateCommandBuffers(session->device, &allocate, &session->composeCommands);
+		if (result != VK_SUCCESS)
+			return Fail("vkAllocateCommandBuffers (compose)", result);
 		VkFenceCreateInfo fenceInfo{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
 		result = vk.vkCreateFence(session->device, &fenceInfo, nullptr, &session->fence);
 		if (result != VK_SUCCESS)
 			return Fail("vkCreateFence", result);
+		result = vk.vkCreateFence(session->device, &fenceInfo, nullptr, &session->composeFence);
+		if (result != VK_SUCCESS)
+			return Fail("vkCreateFence (compose)", result);
 
 		// the eye buffers: host-visible, coherent, device-local where there is such a type, mapped and
 		// 256-byte aligned for Hmd2's descriptor (as port/bettervr/VrPS5.cpp, M2)
@@ -1030,6 +1125,7 @@ namespace
 			return false;
 		}
 		session->hmdUp = true;
+		s_live = true;
 		s.fov = hmd2::field_of_view();
 		Log("headset up: %dx%d per eye, %d buffers, %d Hz output, user %d, export table %d, FOV tangents out %.3f in %.3f top %.3f bottom %.3f",
 			hmd2::eye_size(), hmd2::eye_height(), hmd2::buffer_count(), hmd2::refresh_hz(), hmd2::user_id(), hmd2::firmware_table(), s.fov.out,
@@ -1044,6 +1140,7 @@ namespace
 		{
 			hmd2::shutdown();
 			session->hmdUp = false;
+			s_live = false;
 		}
 		if (session->gpuFailed || s.stopped || session->device == VK_NULL_HANDLE || !vk.vkDestroyBuffer)
 			return;
@@ -1075,6 +1172,8 @@ namespace
 			vk.vkDestroyDescriptorSetLayout(device, session->setLayout, nullptr);
 		if (session->fence)
 			vk.vkDestroyFence(device, session->fence, nullptr);
+		if (session->composeFence)
+			vk.vkDestroyFence(device, session->composeFence, nullptr);
 		if (session->commandPool)
 			vk.vkDestroyCommandPool(device, session->commandPool, nullptr);
 	}
@@ -1163,18 +1262,14 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEnumerateApiLayerProperties(uint32_t capacity, 
 
 XRAPI_ATTR XrResult XRAPI_CALL xrEnumerateInstanceExtensionProperties(const char* layer, uint32_t capacity, uint32_t* count, XrExtensionProperties* props)
 {
-	static const char* const names[] = {XR_KHR_VULKAN_ENABLE_EXTENSION_NAME, XR_KHR_COMPOSITION_LAYER_DEPTH_EXTENSION_NAME};
-	static const uint32_t versions[] = {XR_KHR_vulkan_enable_SPEC_VERSION, XR_KHR_composition_layer_depth_SPEC_VERSION};
-	*count = 2;
+	// XR_KHR_composition_layer_depth is not offered, as 7fbceeb allows: BetterVR then keeps its depth in a local attachment, and no
+	// depth swapchain (three 16 MB images for each eye) is made for a compositor that ignores depth. xrCreateInstance still
+	// accepts the name, for an application that asks without having looked.
+	*count = 1;
 	if (capacity == 0)
 		return XR_SUCCESS;
-	if (capacity < 2)
-		return XR_ERROR_SIZE_INSUFFICIENT;
-	for (int i = 0; i < 2; i++)
-	{
-		std::snprintf(props[i].extensionName, XR_MAX_EXTENSION_NAME_SIZE, "%s", names[i]);
-		props[i].extensionVersion = versions[i];
-	}
+	std::snprintf(props[0].extensionName, XR_MAX_EXTENSION_NAME_SIZE, "%s", XR_KHR_VULKAN_ENABLE_EXTENSION_NAME);
+	props[0].extensionVersion = XR_KHR_vulkan_enable_SPEC_VERSION;
 	return XR_SUCCESS;
 }
 
@@ -1195,8 +1290,12 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateInstance(const XrInstanceCreateInfo* info
 		}
 	}
 	s.instance = new XrInstance_T{};
+	for (uint32_t i = 0; i < info->enabledExtensionCount; i++)
+		if (std::strcmp(info->enabledExtensionNames[i], XR_KHR_COMPOSITION_LAYER_DEPTH_EXTENSION_NAME) == 0)
+			s.instance->depth = true;
 	*instance = s.instance;
-	Log("instance for %s (%s)", info->applicationInfo.applicationName, info->applicationInfo.engineName);
+	Log("VR start 1/5: OpenXR instance for %s (%s), runtime \"PlayStation VR2\" over hmd2, extensions %s%s", info->applicationInfo.applicationName,
+		info->applicationInfo.engineName, XR_KHR_VULKAN_ENABLE_EXTENSION_NAME, s.instance->depth ? " and composition layer depth" : "");
 	return XR_SUCCESS;
 }
 
@@ -1293,6 +1392,9 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEnumerateViewConfigurationViews(XrInstance, XrS
 		return XR_SUCCESS;
 	if (capacity < 2)
 		return XR_ERROR_SIZE_INSUFFICIENT;
+	static bool logged = false; // the Graphics pack's presets (BetterVR's host module) are filled from this size
+	if (!std::exchange(logged, true))
+		Log("view configuration: two views of %ux%u, one sample (the headset's own eye size, which BetterVR's Graphics pack presets scale)", kEyeWidth, kEyeHeight);
 	for (int i = 0; i < 2; i++)
 	{
 		views[i].recommendedImageRectWidth = views[i].maxImageRectWidth = kEyeWidth;
@@ -1366,7 +1468,8 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateSession(XrInstance, const XrSessionCreate
 		return XR_ERROR_RUNTIME_FAILURE;
 	}
 	vk.vkGetDeviceQueue(session->device, binding->queueFamilyIndex, binding->queueIndex, &session->queue);
-	Log("session on Cemu's device %p, queue family %u index %u", (void*)binding->device, binding->queueFamilyIndex, binding->queueIndex);
+	Log("VR start 2/5: session on Cemu's device %p, queue family %u index %u", (void*)binding->device, binding->queueFamilyIndex, binding->queueIndex);
+	const uint64_t sessionBeganAt = sceKernelGetProcessTime();
 	// read before hmd2::init, which asks Hmd2 for the mirror or not
 	s.tv = BetterVR_PS5_Setting("tv", 1.0f) != 0.0f;
 	if (!StartSession(session))
@@ -1376,48 +1479,22 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateSession(XrInstance, const XrSessionCreate
 		delete session;
 		return XR_ERROR_RUNTIME_FAILURE;
 	}
-	s.gripPitch = BetterVR_PS5_Setting("gripPitch", 0.0f);
+	s.sessionStartedAt = sceKernelGetProcessTime();
+	Log("VR start 3/5: the headset is up and the compositor is ready (%llu ms after the session)", (unsigned long long)((sceKernelGetProcessTime() - sessionBeganAt) / 1000));
+	s.gripPitch = BetterVR_PS5_Setting("gripPitch", 32.0f);
 	s.aimPitch = BetterVR_PS5_Setting("aimPitch", 0.0f);
+	s.gripYaw = BetterVR_PS5_Setting("gripYaw", 17.0f);
+	s.gripRoll = BetterVR_PS5_Setting("gripRoll", 30.0f);
 	s.reproject = BetterVR_PS5_Setting("reproject", 1.0f) != 0.0f;
-	Log("reprojection of the game's frames: %s (bettervr.json's reproject)", s.reproject ? "on" : "off");
-	const bool playerOnce = BetterVR_PS5_PlayerOnce();
-	Log("player update gate: %s (bettervr.json's playerOnce%s)", playerOnce ? "one run a game frame, whichever pass asks first" : "upstream's, the right-eye pass only", playerOnce ? ", default on" : "=0");
-	const bool fades = BetterVR_PS5_Fades();
-	Log("game comfort fades: %s (bettervr.json's fades%s)", fades ? "on, ramped over 0.2 s" : "off", fades ? ", default on" : "=0");
-	const bool flatScene = BetterVR_PS5_FlatScene();
-	Log("flat/menu presentation: %s (bettervr.json's flatScene%s)",
-		flatScene ? "the mono scene with the HUD over it, one picture in both eyes, a menu's mono frame once" : "upstream's HUD-only flat quad and stereo menu",
-		flatScene ? ", default on" : "=0");
-	s.monoQuad = BetterVR_PS5_MonoQuad();
-	s.quadPlane = BetterVR_PS5_QuadPlane();
-	const bool menuLock = BetterVR_PS5_MenuLock();
-	Log("menu/flat picture: %s (bettervr.json's monoQuad%s)", s.monoQuad ? "on the HUD quad, one 16:9 screen in both eyes" : "across each eye, as build15", s.monoQuad ? ", default on" : "=0");
-	Log("menus and popups: %s (bettervr.json's menuLock%s)", menuLock ? "fixed in the room while open, latched when they open" : "head-locked", menuLock ? ", default on" : "=0");
-	Log("HUD quad: %s (bettervr.json's quadPlane%s)", s.quadPlane ? "drawn as the plane it is, tilt and roll keep its shape" : "its upright bounding box", s.quadPlane ? ", default on" : "=0");
-	s.poseKeep = BetterVR_PS5_PoseKeep();
-	Log("re-shown pair's render pose: %s (bettervr.json's poseKeep%s)",
-		s.poseKeep ? "kept past the located ring, and an unknown pose places the HUD with the live eyes" : "the ring only, as build15",
-		s.poseKeep ? ", default on" : "=0");
-	const bool saveHold = BetterVR_PS5_SaveHold();
-	Log("autosave snapshots: %s (bettervr.json's saveHold%s)",
-		saveHold ? "the last stereo pair is held while the game takes its snapshot" : "the game-camera frame is published, as build15",
-		saveHold ? ", default on" : "=0");
-	const bool leftSlot = BetterVR_PS5_LeftSlot();
-	Log("left eye's 3D slot: %s (bettervr.json's leftSlot%s)",
-		leftSlot ? "a third intermediate, clear of the published pair" : "the game's 0/1 slot, as before",
-		leftSlot ? ", default on" : "=0");
-	const bool poseFreeze = BetterVR_PS5_PoseFreeze();
-	Log("stereo pose freeze: %s (bettervr.json's poseFreeze%s)",
-		poseFreeze ? "on, one view pair for both eyes of a pair" : "off, the per-read latch", poseFreeze ? ", default on" : "=0");
-	const bool stereoRays = BetterVR_PS5_StereoRays();
-	Log("stereo god rays: %s (bettervr.json's stereoRays%s)", stereoRays ? "right-eye masked-light shadow recomputed" : "upstream's right-eye skip", stereoRays ? ", default on" : "=0");
+	Log("reprojection of the game's frames: %s (bettervr.json's reproject); HUD quad drawn as its plane, a mono picture across each eye, "
+		"a re-shown pair keeps its render pose", s.reproject ? "on" : "off");
 	if (!s.tv)
 		Log("TV mirror off (bettervr.json's tv): the TV stays dark while VR runs");
 	else if (hmd2::mirroring())
 		Log("TV mirror on: Hmd2's social screen shows the headset's view on the TV (bettervr.json's tv), no present of ours");
 	else
 		Log("TV mirror asked for but Hmd2 did not take it (bettervr.json's tv); the hmd2 lines say why, VR continues");
-	Log("controllers: grip pitch %.1f deg, aim pitch %.1f deg (bettervr.json's gripPitch, aimPitch)", s.gripPitch, s.aimPitch);
+	Log("controllers: grip pitch %.1f deg, aim pitch %.1f deg, grip yaw %.1f roll %.1f deg, yaw and roll left +, right - (bettervr.json's gripPitch, aimPitch, gripYaw, gripRoll)", s.gripPitch, s.aimPitch, s.gripYaw, s.gripRoll);
 	OpenHands();
 	*out = session;
 	QueueState(XR_SESSION_STATE_IDLE);
@@ -1558,8 +1635,28 @@ XRAPI_ATTR XrResult XRAPI_CALL xrLocateSpace(XrSpace space, XrSpace base, XrTime
 			location->pose = {{0, 0, 0, 1}, {0, 0, 0}};
 			return XR_SUCCESS;
 		}
-		const Pose tilt{AxisAngle(1, 0, 0, aim ? s.aimPitch : s.gripPitch), {}};
-		spacePose = Compose(Compose(hand->pose, tilt), space->offset);
+		// the Sense's raw pose has Link's hands turned inward about the vertical axis, mirrored for the two hands
+		const int side = int(hand - s.hands);
+		const float mirror = side == 0 ? 1.0f : -1.0f;
+		const Pose turn{AxisAngle(0, 1, 0, mirror * s.gripYaw), {}};
+		const Pose tilt{AxisAngle(1, 0, 0, s.gripPitch + (aim ? s.aimPitch : 0.0f)), {}};
+		const Pose roll{AxisAngle(0, 0, 1, mirror * s.gripRoll), {}};
+		spacePose = Compose(Compose(Compose(Compose(hand->pose, turn), tilt), roll), space->offset);
+		// for the first 20 s, every 2 s: the grip's rotation against the head, which reads about 0/0/0 when the
+		// controller points straight ahead
+		static XrTime handsStart = 0, handsLogged[2] = {0, 0};
+		const XrTime nowTime = Now();
+		if (!aim && side >= 0 && side < 2 && (handsStart == 0 || nowTime - handsStart < 20'000'000'000) && nowTime - handsLogged[side] >= 2'000'000'000)
+		{
+			if (handsStart == 0)
+				handsStart = nowTime;
+			handsLogged[side] = nowTime;
+			const Quat rel = Mul(Conj(HeadAt(time).q), spacePose.q);
+			const Vec3 fwd = Rotate(rel, {0, 0, -1}), right = Rotate(rel, {1, 0, 0}), up = Rotate(rel, {0, 1, 0});
+			const float deg = 180.0f / 3.14159265f;
+			Log("hands: %c yaw/pitch/roll %.0f/%.0f/%.0f (head-relative, degrees)", side == 0 ? 'L' : 'R', std::atan2(-fwd.x, -fwd.z) * deg,
+				std::asin(std::max(-1.0f, std::min(1.0f, fwd.y))) * deg, std::atan2(right.y, up.y) * deg);
+		}
 		const Pose toBase = Inverse(SpacePose(base, time));
 		for (auto* next = static_cast<XrBaseOutStructure*>(location->next); next; next = next->next)
 			if (next->type == XR_TYPE_SPACE_VELOCITY)
@@ -1639,6 +1736,13 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateSwapchain(XrSession session, const XrSwap
 		return Lost();
 	const VkFormat format = (VkFormat)info->format;
 	const bool color = format != VK_FORMAT_D32_SFLOAT;
+	// one 2D image per swapchain image: BetterVR asks for exactly that (its stereo is two swapchains, one a
+	// view), and the multiview rendering of the Cemu fork happens before the pictures reach the runtime
+	if (info->arraySize != 1 || info->faceCount != 1 || info->sampleCount != 1)
+	{
+		Log("xrCreateSwapchain: %u array layers, %u faces, %u samples asked, one of each is offered", info->arraySize, info->faceCount, info->sampleCount);
+		return XR_ERROR_FEATURE_UNSUPPORTED;
+	}
 	if (format != VK_FORMAT_R8G8B8A8_SRGB && format != VK_FORMAT_B8G8R8A8_SRGB && format != VK_FORMAT_R8G8B8A8_UNORM && color)
 		return XR_ERROR_SWAPCHAIN_FORMAT_UNSUPPORTED;
 	VkImageUsageFlags usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
@@ -1662,7 +1766,8 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateSwapchain(XrSession session, const XrSwap
 	});
 	if (!ok)
 		return XR_ERROR_RUNTIME_FAILURE;
-	Log("swapchain %ux%u format %d (%s)", info->width, info->height, (int)format, color ? "colour" : "depth, not shown");
+	Log("VR start 4/5: swapchain %d, %ux%u format %d (%s), %d images, %u array layer(s)", ++s.swapchainsMade, info->width, info->height, (int)format,
+		color ? "colour" : "depth, not shown", kSwapchainImages, info->arraySize);
 	*out = swapchain;
 	return XR_SUCCESS;
 }
@@ -1731,9 +1836,13 @@ XRAPI_ATTR XrResult XRAPI_CALL xrWaitFrame(XrSession session, const XrFrameWaitI
 	if (s.stopped)
 		return Lost();
 	hmd2::wait_slot();
+	s_waitFrames++;
 	std::lock_guard lock(s.lock);
 	if (s.stopped)
 		return Lost();
+	// BetterVR's frame pump waits for the next frame while the game is still drawing this one: the Hmd2 frame
+	// is then still open (one at a time), and the next one is begun by the wait that follows xrEndFrame
+	const bool openAlready = session->frameOpen;
 	if (!session->frameOpen)
 		session->frameOpen = hmd2::begin_frame();
 	state->predictedDisplayPeriod = kFramePeriod;
@@ -1745,8 +1854,11 @@ XRAPI_ATTR XrResult XRAPI_CALL xrWaitFrame(XrSession session, const XrFrameWaitI
 		state->shouldRender = XR_FALSE;
 		return XR_SUCCESS;
 	}
-	state->predictedDisplayTime = (XrTime)hmd2::display_time_us() * 1000;
+	// the open frame's display time is the one frame ahead of it for the frame that follows
+	state->predictedDisplayTime = (XrTime)hmd2::display_time_us() * 1000 + (openAlready ? kFramePeriod : 0);
 	state->shouldRender = XR_TRUE;
+	if (openAlready)
+		session->waitsAhead++;
 	// the eyes' offsets from the head, from this frame's tracker result, when it has a plausible one
 	const hmd2::Poses poses = hmd2::predicted_poses();
 	if (poses.head.tracked && poses.left.tracked && poses.right.tracked)
@@ -1765,11 +1877,40 @@ XRAPI_ATTR XrResult XRAPI_CALL xrBeginFrame(XrSession, const XrFrameBeginInfo*)
 
 XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInfo* info)
 {
-	std::lock_guard lock(s.lock);
+	s_endFrames++;
+	std::unique_lock lock(s.lock);
 	if (s.stopped)
 		return Lost();
+	// A back-to-back xrEndFrame (a repeated frame renders nothing) comes before the pump's next xrWaitFrame has begun
+	// the Hmd2 frame: begin it here and submit late, instead of dropping the picture (BeginFrame does not nap)
+	if (!session->frameOpen && !session->gpuFailed && session->hmdUp)
+	{
+		session->frameOpen = hmd2::begin_frame();
+		if (session->frameOpen && session->lateBegins++ == 0)
+			Log("xrEndFrame found no open Hmd2 frame and began one (counted in the frame log)");
+	}
 	if (!session->frameOpen || session->gpuFailed)
+	{
+		if (!session->frameOpen && session->endsWithoutFrame++ == 0)
+			Log("xrEndFrame found no open Hmd2 frame and BeginFrame gave none: the frame's picture is dropped (counted in the frame log)");
 		return XR_SUCCESS;
+	}
+	// The last compose is still in flight (its wait timed out): look again, and leave the frame open for the next try
+	if (session->composePending)
+	{
+		if (session->composeBusy)
+			return XR_SUCCESS;
+		session->gpuStuckSkips++;
+		if (!ComposeFenceResult(session, vk.vkWaitForFences(session->device, 1, &session->composeFence, VK_TRUE, 0)) || session->composePending)
+		{
+			if (session->gpuFailed)
+			{
+				lock.unlock();
+				BetterVR_PS5_VrFailed("the compositor's GPU work did not finish");
+			}
+			return XR_SUCCESS;
+		}
+	}
 
 	const XrCompositionLayerProjection* projection = nullptr;
 	const XrCompositionLayerQuad* quad = nullptr;
@@ -1966,7 +2107,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
 	VkImage sampled[3] = {eyeImages[0], eyeImages[1], hudImage};
 	if (sampled[1] == sampled[0])
 		sampled[1] = VK_NULL_HANDLE;
-	const bool ok = RunOnce(session, [&](VkCommandBuffer commands) {
+	const bool ok = SubmitCompose(session, [&](VkCommandBuffer commands) {
 		for (VkImage image : sampled)
 			if (image)
 				ImageBarrier(commands, image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
@@ -1995,39 +2136,67 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
 		Log("the compositor's GPU work failed; the headset stops here and nothing is freed");
 		return XR_ERROR_RUNTIME_FAILURE;
 	}
+	// The wait runs without s.lock: the compose sits on the shared queue behind the module's submit, which can wait on a
+	// timeline value Cemu's GPU thread signals in its next submit, and that thread takes s.lock in xrAcquireSwapchainImage
+	// and the like. Holding the lock here would make the wait cause its own timeout.
+	session->composeBusy = true;
+	lock.unlock();
+	const VkResult waited = vk.vkWaitForFences(session->device, 1, &session->composeFence, VK_TRUE, kGpuTimeoutNs);
+	lock.lock();
+	session->composeBusy = false;
+	if (s.stopped || s.session != session)
+		return Lost();
+	if (!ComposeFenceResult(session, waited) || session->composePending)
+	{
+		if (session->gpuFailed)
+		{
+			lock.unlock();
+			BetterVR_PS5_VrFailed("the compositor's GPU work did not finish");
+		}
+		return XR_SUCCESS; // the frame stays open: the next xrEndFrame looks at the fence again
+	}
 	session->frameOpen = false;
 	const bool submitted = hmd2::submit(ToHmd(renderHead));
 	// Hmd2's compositor is what puts this frame on the TV: no present of ours and no queue lock
 	if (s.tv && submitted)
 		(hmd2::mirroring() ? session->tvShown : session->tvSkipped)++;
+	if (!s.firstFrameLogged && submitted)
+	{
+		s.firstFrameLogged = true;
+		session->lastFrameLogAt = sceKernelGetProcessTime();
+		Log("VR start 5/5: the first frame is submitted to the headset (%llu ms after the session, %s)",
+			(unsigned long long)((sceKernelGetProcessTime() - s.sessionStartedAt) / 1000),
+			(params.flags & 3u) ? "with a stereo picture" : "without one yet, the HUD alone or black");
+	}
+	if (!s.firstStereoLogged && submitted && (params.flags & 3u))
+	{
+		s.firstStereoLogged = true;
+		Log("the first frame with a stereo picture is submitted (frame %llu, eye pictures %s %s, HUD quad %s)", (unsigned long long)session->frames + 1,
+			(params.flags & 1u) ? "left" : "-", (params.flags & 2u) ? "right" : "-", (params.flags & 4u) ? "yes" : "no");
+	}
 	if (++session->frames % 600 == 0)
 	{
 		const hmd2::PaceStats pace = hmd2::take_pace();
 		const hmd2::FlipInfo flip = hmd2::flip_status();
-		uint64_t leftPoseStale = 0, rightPoseStale = 0, poseGuardClears = 0;
-		double poseAgeMaxMs = 0.0;
-		BetterVR_PS5_PoseProof(&leftPoseStale, &rightPoseStale, &poseAgeMaxMs, &poseGuardClears);
-		uint64_t leftCopyOverwritten = 0, rightCopyOverwritten = 0, copies3D = 0;
-		BetterVR_PS5_CopyProof(&leftCopyOverwritten, &rightCopyOverwritten, &copies3D);
-		uint64_t snapshotHolds = 0;
-		BetterVR_PS5_SnapshotProof(&snapshotHolds);
-		Log("%llu frames: nap %.2f ms, BeginFrame %.2f ms, ahead %.2f ms, step %.2f ms; flip shown %llu pending %d; repeated %d, queue full %d, "
-			"missed %d, errors %d, without layers %llu, skipped %llu, worn %d; render pose found %llu, not found %llu, kept %llu; "
-			"leftPoseStale %llu rightPoseStale %llu poseAgeMax %.2f ms poseGuardClears %llu; "
-			"leftCopyOverwritten %llu rightCopyOverwritten %llu of %llu copies; "
+		// the headset's own frame rate over these 600 frames (the game's is the [perf] line's)
+		const uint64_t now = sceKernelGetProcessTime();
+		const double seconds = session->lastFrameLogAt ? (double)(now - session->lastFrameLogAt) / 1e6 : 0.0;
+		session->lastFrameLogAt = now;
+		Log("%llu frames, %.1f fps submitted over the last 600: nap %.2f ms, BeginFrame %.2f ms, ahead %.2f ms, step %.2f ms; flip shown %llu pending %d; "
+			"repeated %d, queue full %d, missed %d, errors %d, without layers %llu, skipped %llu, waits one frame ahead %llu, ends without a frame %llu, late begins %llu, worn %d; "
+			"GPU timeouts %llu, stuck skips %llu, recovered %llu; "
+			"render pose found %llu, not found %llu, kept %llu; "
 			"head %.2f %.2f %.2f, hand spaces left %.3f %.3f %.3f right %.3f %.3f %.3f, hands posed %d %d; "
-			"mono on quad %llu, plane quads %llu, snapshot holds %llu; "
-			"TV mirror %s, shown %llu skipped %llu",
-			(unsigned long long)session->frames, pace.nap_ms, pace.call_ms, pace.ahead_ms, pace.step_ms, (unsigned long long)flip.shown, flip.pending,
-			hmd2::repeated_frames(), hmd2::queue_full_waits(), hmd2::missed_frames(), hmd2::frame_errors(), (unsigned long long)session->emptyFrames,
-			(unsigned long long)session->skipped, hmd2::worn() ? 1 : 0, (unsigned long long)session->poseFound,
-			(unsigned long long)session->poseLost, (unsigned long long)session->poseKept, (unsigned long long)leftPoseStale,
-			(unsigned long long)rightPoseStale, poseAgeMaxMs, (unsigned long long)poseGuardClears,
-			(unsigned long long)leftCopyOverwritten, (unsigned long long)rightCopyOverwritten, (unsigned long long)copies3D,
-			renderHead.p.x, renderHead.p.y, renderHead.p.z, s.handLocated[0].p.x, s.handLocated[0].p.y,
-			s.handLocated[0].p.z, s.handLocated[1].p.x, s.handLocated[1].p.y, s.handLocated[1].p.z, s.hands[0].poseValid ? 1 : 0,
-			s.hands[1].poseValid ? 1 : 0, (unsigned long long)session->monoOnQuad, (unsigned long long)session->planeQuads,
-			(unsigned long long)snapshotHolds, s.tv ? "on" : "off", (unsigned long long)session->tvShown, (unsigned long long)session->tvSkipped);
+			"plane quads %llu; TV mirror %s, shown %llu skipped %llu",
+			(unsigned long long)session->frames, seconds > 0.0 ? 600.0 / seconds : 0.0, pace.nap_ms, pace.call_ms, pace.ahead_ms, pace.step_ms,
+			(unsigned long long)flip.shown, flip.pending, hmd2::repeated_frames(), hmd2::queue_full_waits(), hmd2::missed_frames(), hmd2::frame_errors(),
+			(unsigned long long)session->emptyFrames, (unsigned long long)session->skipped, (unsigned long long)session->waitsAhead,
+			(unsigned long long)session->endsWithoutFrame, (unsigned long long)session->lateBegins, (unsigned long long)session->gpuTimeouts,
+			(unsigned long long)session->gpuStuckSkips, (unsigned long long)session->gpuRecovered, hmd2::worn() ? 1 : 0, (unsigned long long)session->poseFound,
+			(unsigned long long)session->poseLost, (unsigned long long)session->poseKept, renderHead.p.x, renderHead.p.y, renderHead.p.z,
+			s.handLocated[0].p.x, s.handLocated[0].p.y, s.handLocated[0].p.z, s.handLocated[1].p.x, s.handLocated[1].p.y, s.handLocated[1].p.z,
+			s.hands[0].poseValid ? 1 : 0, s.hands[1].poseValid ? 1 : 0, (unsigned long long)session->planeQuads, s.tv ? "on" : "off",
+			(unsigned long long)session->tvShown, (unsigned long long)session->tvSkipped);
 	}
 	return XR_SUCCESS;
 }
@@ -2267,6 +2436,14 @@ XRAPI_ATTR XrResult XRAPI_CALL xrApplyHapticFeedback(XrSession, const XrHapticAc
 		return XR_SUCCESS;
 	const auto* vibration = reinterpret_cast<const XrHapticVibration*>(header);
 	const int which = HandOf(info->subactionPath);
+	// the first calls BetterVR's rumble makes, to show whether a hit reaches the controller
+	static int s_haptics = 0;
+	if (s_haptics < 6)
+	{
+		s_haptics++;
+		Log("haptic call %d: hand %d, amplitude %.2f, duration %lld ns, frequency %.0f", s_haptics, which, vibration->amplitude,
+			(long long)vibration->duration, vibration->frequency);
+	}
 	// XR_MIN_HAPTIC_DURATION (-1) asks for the shortest the device does: a frame
 	const XrDuration duration = vibration->duration <= 0 ? kFramePeriod : std::min<XrDuration>(vibration->duration, 2'000'000'000);
 	for (const Binding& binding : info->action->bindings)
@@ -2317,6 +2494,44 @@ XRAPI_ATTR XrResult XRAPI_CALL xrGetInstanceProcAddr(XrInstance, const char* nam
 	return XR_ERROR_FUNCTION_UNSUPPORTED;
 }
 
+// port/bettervr/VrPS5.cpp, at each TV frame Cemu presents (SwapBuffer, patches/cemu 0048)
+void BetterVR_PS5_TvPresent()
+{
+	s_tvPresents++;
+}
+
+// app/ingame.cpp, on the render thread: the in-game menu opens (1), closes (0), and each frame it is up (2).
+// Log only: whether the headset's frame loop keeps turning under the menu (xrWaitFrame, xrEndFrame, hmd2
+// submits) and whether Cemu keeps presenting the TV. A line when it opens and closes, and one a second between.
+void BetterVR_PS5_MenuProbe(int what)
+{
+	if (!s_live)
+		return; // no headset: flat play, VR not started, or already off
+	const uint64_t now = sceKernelGetProcessTime();
+	const uint64_t counts[4] = {s_waitFrames, s_endFrames, (uint64_t)hmd2::frames_submitted(), s_tvPresents};
+	if (what == 1)
+	{
+		for (int i = 0; i < 4; i++)
+			s_menuAtOpen[i] = counts[i];
+		s_menuOpenedAt = now;
+		s_menuLoggedAt = now;
+		Log("in-game menu open (xrWaitFrame %llu, xrEndFrame %llu, hmd2 submits %llu, Cemu TV presents %llu so far)",
+			(unsigned long long)counts[0], (unsigned long long)counts[1], (unsigned long long)counts[2], (unsigned long long)counts[3]);
+		return;
+	}
+	if (s_menuOpenedAt == 0 || (what == 2 && now - s_menuLoggedAt < 1'000'000))
+		return;
+	const unsigned long long ms = (now - s_menuOpenedAt) / 1000;
+	if (what == 2)
+		s_menuLoggedAt = now;
+	else
+		s_menuOpenedAt = 0;
+	Log("in-game menu %s%llu ms: xrWaitFrame %llu, xrEndFrame %llu, hmd2 submits %llu, Cemu TV presents %llu",
+		what == 2 ? "still open at " : "closed after ", ms, (unsigned long long)(counts[0] - s_menuAtOpen[0]),
+		(unsigned long long)(counts[1] - s_menuAtOpen[1]), (unsigned long long)(counts[2] - s_menuAtOpen[2]),
+		(unsigned long long)(counts[3] - s_menuAtOpen[3]));
+}
+
 // app/emulator.cpp, before every LoadExec (PS5Cemu_VrStop): Hmd2 off, from any thread. A title that
 // ends with VrTracker2 live faults the tracker (third_party/hmd2/hmd2.h).
 void BetterVR_PS5_Stop()
@@ -2331,8 +2546,15 @@ void BetterVR_PS5_Stop()
 	{
 		hmd2::shutdown();
 		s.session->hmdUp = false;
+		s_live = false;
 		Log("headset off after %llu frames, before the app is replaced", (unsigned long long)s.session->frames);
 	}
 }
 
 } // extern "C"
+
+// BetterVR's mod menu (patches/bettervr): Options on the right Sense controller, as of the last xrSyncActions
+extern "C" bool BetterVR_PS5_OptionsDown()
+{
+	return s_optionsDown.load(std::memory_order_acquire);
+}
