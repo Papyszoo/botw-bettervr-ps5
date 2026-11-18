@@ -525,3 +525,9 @@ review of that range found the three problems fixed above; the run for the fixes
 `gh run list --branch bettervr-1.0/stage3 -L 2`.
 Next step: on failure `gh run view <id> --log-failed | tail -80` and fix the first error; on green check the ELF for
 `VR start 5/5`, `Foveated shading is off` and `late begins`, then publish nothing and report. Stage 4 (Sense input, the 1.0.0 menu, haptics) follows Test request 47 and 48.
+
+CI green on e8798cc (run 44272216600). A second review of the fixes (49d3744..e8798cc) found no high or
+medium defects. Backlog (low): xrDestroySession from another thread during the compose's unlocked wait
+would write freed memory (runtime.cpp, after the wait; needs a concurrent destroy); the comment saying
+hmd2::begin_frame does not nap is wrong (it naps under `s.lock`); the frame counters also count discarded
+attempts; the VR-failed reason can name a stale hmd2 error step.
