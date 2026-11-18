@@ -3,6 +3,17 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-18: 1.0.0 port, console run 2 (db1f541, 13.60): BotW in VR works
+
+Reported from the console: it works. From the boot log: Extended Memory off; VR start 1/5 to 5/5 reached (first
+frame to the headset 11.1 s after the session, during the shader cache load); no `[crash]`, no ProcUI line.
+Game: about 57 to 60 fps from 90 s on (10 s windows 54.5 to 60.0), 5,100 to 5,700 draws a frame, GPU thread
+idle 1 to 2 %, waiting on the GPU 0 %; headset submits 57 to 60 fps. Eye images 1280x1320 (BetterVR's preset of
+the 1984x2048 eye). Menu: Options down/up within 1 s toggled it open, then closed. Haptic calls arrive. Sense
+vibration stayed off: libScePad's anchor at +0x1f650 is `...open [%08x]` followed by a line feed (`5d 0a 00`),
+and the table's string had no line feed; fixed in 80a6a12 (built, untested on console).
+Build27 for comparison: about 33 fps median in the overworld at 9,000 to 10,000 draws.
+
 ## 2026-11-18: first console run of the 1.0.0 port (build 3e8c18d), crash in Cemu's ProcUI, patch 0052, built, untested on console
 
 Reported from the console: the PS5's play-area scan ran, then "PSVR crashed during room scan". The log: VR start 1/5 to
