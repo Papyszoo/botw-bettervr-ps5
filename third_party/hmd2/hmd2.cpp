@@ -314,6 +314,8 @@ struct State {
     // and trusted only while the device and calibration checks pass.
     bool gaze_checked = false;
     bool gaze_bound = false;
+    const char *gaze_first_missing = nullptr; // the first name dlsym did not give, for the init log
+    int gaze_missing = 0;                     // count; -1 when libSceHmd2 itself did not load
     bool gaze_ready = false;   // the device is detected and the user is calibrated
     bool gaze_active = false;  // ActivateGazeTracking(1) took
     uint64_t gaze_started_us = 0;
@@ -666,27 +668,23 @@ bool bind_gaze_exports() {
     const int handle = load_sysmodule(kSysmoduleHmd2, "libSceHmd2");
     if (handle < 0) {
         // not latched: a later session or the init path may load the library where this early probe could not
-        logf("hmd2: [gaze] libSceHmd2 unavailable (handle 0x%x); eye tracking off", handle);
+        s.gaze_missing = -1;
+        s.gaze_first_missing = nullptr;
         return false;
     }
     s.gaze_checked = true;
-    int missing = 0;
-    const char *first_missing = nullptr;
+    s.gaze_missing = 0;
+    s.gaze_first_missing = nullptr;
     for (const GazeSlot &gaze_slot : slots) {
         *gaze_slot.slot = nullptr;
         if (sceKernelDlsym(handle, gaze_slot.name, gaze_slot.slot) != 0 ||
             *gaze_slot.slot == nullptr) {
-            if (first_missing == nullptr)
-                first_missing = gaze_slot.name;
-            missing++;
+            if (s.gaze_first_missing == nullptr)
+                s.gaze_first_missing = gaze_slot.name;
+            s.gaze_missing++;
         }
     }
-    s.gaze_bound = missing == 0;
-    if (s.gaze_bound)
-        logf("hmd2: [gaze] five exports bound by name (no offset table)");
-    else
-        logf("hmd2: [gaze] libSceHmd2 does not export %s%s; eye tracking off", first_missing,
-             missing > 1 ? " and the other gaze exports" : "");
+    s.gaze_bound = s.gaze_missing == 0;
     return s.gaze_bound;
 }
 
@@ -696,8 +694,18 @@ bool bind_gaze_exports() {
 // every other value is logged raw, so the first console run can correct it.
 void gaze_start() {
     s.gaze_started_us = sceKernelGetProcessTime();
-    if (!bind_gaze_exports())
+    if (!bind_gaze_exports()) {
+        // the probe may have run before the logger existed (the extension list is asked first), so the
+        // result is said here, once per session
+        if (s.gaze_missing < 0)
+            logf("hmd2: [gaze] libSceHmd2 unavailable; eye tracking off");
+        else
+            logf("hmd2: [gaze] libSceHmd2 does not export %s%s; eye tracking off",
+                 s.gaze_first_missing != nullptr ? s.gaze_first_missing : "the gaze exports",
+                 s.gaze_missing > 1 ? " and the other gaze exports" : "");
         return;
+    }
+    logf("hmd2: [gaze] five exports bound by name (no offset table)");
 
     const int activate = sceHmd2GazeActivateGazeTracking(1);
     s.gaze_active = activate == 0;
