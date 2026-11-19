@@ -2915,8 +2915,8 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
 	const uint64_t fenceStarted = sceKernelGetProcessTime();
 	lock.unlock();
 	const VkResult waited = vk.vkWaitForFences(session->device, 1, &session->composeFence, VK_TRUE, kGpuTimeoutNs);
-	lock.lock();
 	const uint64_t fenceEnded = sceKernelGetProcessTime();
+	lock.lock();
 	session->composeBusy = false;
 	session->drawLogFenceUs += fenceEnded - fenceStarted;
 	if (s.profile)

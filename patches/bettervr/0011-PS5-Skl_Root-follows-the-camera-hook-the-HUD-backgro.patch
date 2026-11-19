@@ -13,10 +13,10 @@ The first-person body root is latched from the player and head pose hook_UpdateC
  src/game/botw/camera/camera.h      |  10 +++
  src/game/botw/input/controls.cpp   |  14 +++-
  src/game/botw/player/bow.cpp       |  16 ++++
- src/game/botw/player/skeleton.cpp  | 120 +++++++++++++++++++++++++++--
+ src/game/botw/player/skeleton.cpp  | 121 +++++++++++++++++++++++++++--
  src/rendering/vulkan_imgui.cpp     |   3 +
  src/rendering/world_guide.cpp      |   9 +++
- 10 files changed, 261 insertions(+), 16 deletions(-)
+ 10 files changed, 262 insertions(+), 16 deletions(-)
 
 diff --git a/dependencies/imgui_impl_vulkan.cpp b/dependencies/imgui_impl_vulkan.cpp
 index e88820f..f2c5498 100644
@@ -380,7 +380,7 @@ index ec690b5..0279ff2 100644
      }
  }
 diff --git a/src/game/botw/player/skeleton.cpp b/src/game/botw/player/skeleton.cpp
-index 248a0c0..0fff98a 100644
+index 248a0c0..eeb8da5 100644
 --- a/src/game/botw/player/skeleton.cpp
 +++ b/src/game/botw/player/skeleton.cpp
 @@ -470,6 +470,82 @@ static bool IsThirdPersonForPose(bool rootBone) {
@@ -536,14 +536,15 @@ index 248a0c0..0fff98a 100644
  
          // headset in model space
          glm::mat4 headsetModel = glm::inverse(playerMtx4) * cameraMtx * headsetMtx;
-@@ -752,6 +850,14 @@ static void hook_ModifyBoneMatrix(PPCInterpreter_t* hCPU) {
+@@ -752,6 +850,15 @@ static void hook_ModifyBoneMatrix(PPCInterpreter_t* hCPU) {
          s_lastAppliedRightWristRot = s_twoHandGrip.engaged ? s_twoHandGrip.rightGripRotWorld : rightHandRotWorld;
          s_lastAppliedRightWristRotValid = !s_passAnimatedHands;
  
 +        s_latchedBodyRoot.valid = true;
 +        s_latchedBodyRoot.position = targetPos;
 +        s_latchedBodyRoot.yaw = yawRot;
-+        s_latchedBodyRoot.viewYaw = ExtractPlayerBodyYaw(cameraMtx);
++        // the root the game writes and this latch are in model space; the camera's world yaw is not
++        s_latchedBodyRoot.viewYaw = ExtractPlayerBodyYaw(headsetModel);
 +        s_latchedBodyRoot.bodyViewYawDelta = YawDeltaDegrees(yawRot, s_latchedBodyRoot.viewYaw);
 +        if (std::abs(s_latchedBodyRoot.bodyViewYawDelta) >= 0.5f)
 +            LogBodyRootDelta(s_latchedBodyRoot.bodyViewYawDelta);

@@ -434,6 +434,13 @@ namespace ps5vr
 		return s_mode == Mode::BetterVR;
 	}
 
+	bool Mirroring()
+	{
+		std::lock_guard lock(s_lock);
+		Wanted();
+		return s_mode == Mode::BetterVR && hmd2::mirroring();
+	}
+
 	bool Record(const Frame& frame)
 	{
 		BetterVR_PS5_TvPresent(); // the in-game menu's probe counts the TV's frames

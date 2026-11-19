@@ -4,15 +4,54 @@ Date: Thu, 19 Nov 2026 05:24:35 +0100
 Subject: [PATCH] PS5: 1x renders at the headset's 1984x2048 eye size, not a
  rules-compatible 2000x2040; built, untested on console
 
+The texture-rule search may prefer a nearby size whose shape is not the eye's: 0.75x landed on 1480x1560, 2% wide, and the compose maps the whole source onto the panel, so the world stretched. A candidate more than 0.1% off the eye's aspect is no longer taken; 0.75x now lands on 1504x1552 and the other presets keep the eye's shape too.
 ---
- src/utils/eye_resolution.h | 8 +++++++-
- 1 file changed, 7 insertions(+), 1 deletion(-)
+ src/utils/eye_resolution.h | 22 ++++++++++++++++++----
+ 1 file changed, 18 insertions(+), 4 deletions(-)
 
 diff --git a/src/utils/eye_resolution.h b/src/utils/eye_resolution.h
-index 4db876c..fe05ac7 100644
+index 4db876c..1b184ac 100644
 --- a/src/utils/eye_resolution.h
 +++ b/src/utils/eye_resolution.h
-@@ -142,7 +142,13 @@ namespace EyeResolution {
+@@ -12,6 +12,9 @@ namespace EyeResolution {
+     inline constexpr uint32_t kSearchAlignment = 8;
+     inline constexpr uint32_t kSearchRadius = 32;
+     inline constexpr double kPreferredMatchDistance = 32.0;
++    // the compose maps the whole source rect onto the eye: a nearby size more than this much off the eye's shape
++    // stretches the picture (0.75x's 1480x1560 was 2% wide), so it is not taken
++    inline constexpr double kMaximumAspectError = 0.001;
+     inline constexpr double kMinimumWidth = 1280.0;
+     inline constexpr double kMinimumHeight = 720.0;
+ 
+@@ -83,11 +86,15 @@ namespace EyeResolution {
+             uint32_t height;
+             double distance;
+             double penalty;
++            double aspectError;
+         };
+ 
+-        const auto evaluateCandidate = [width, height](uint32_t candidateWidth, uint32_t candidateHeight) {
++        const double targetAspect = width / height;
++        const auto evaluateCandidate = [width, height, targetAspect](uint32_t candidateWidth, uint32_t candidateHeight) {
+             const double distance = std::hypot(double(candidateWidth) - width, double(candidateHeight) - height);
+-            return Candidate{ candidateWidth, candidateHeight, distance, GetTextureRedefinePenalty(candidateWidth, candidateHeight) };
++            const double aspectError = std::abs(double(candidateWidth) / double(candidateHeight) - targetAspect) / targetAspect;
++            return Candidate{ candidateWidth, candidateHeight, distance,
++                GetTextureRedefinePenalty(candidateWidth, candidateHeight), aspectError };
+         };
+         const auto alignDown = [](uint32_t value) { return value - (value % kSearchAlignment); };
+ 
+@@ -104,7 +111,8 @@ namespace EyeResolution {
+         for (uint32_t candidateWidth = searchStartWidth; candidateWidth <= searchEndWidth; candidateWidth += kSearchAlignment) {
+             for (uint32_t candidateHeight = searchStartHeight; candidateHeight <= searchEndHeight; candidateHeight += kSearchAlignment) {
+                 const Candidate candidate = evaluateCandidate(candidateWidth, candidateHeight);
+-                if (candidate.distance <= kPreferredMatchDistance && (candidate.penalty < bestNearbyMatch.penalty || (candidate.penalty == bestNearbyMatch.penalty && candidate.distance < bestNearbyMatch.distance))) {
++                if (candidate.distance <= kPreferredMatchDistance && candidate.aspectError <= kMaximumAspectError &&
++                    (candidate.penalty < bestNearbyMatch.penalty || (candidate.penalty == bestNearbyMatch.penalty && candidate.distance < bestNearbyMatch.distance))) {
+                     bestNearbyMatch = candidate;
+                 }
+             }
+@@ -142,7 +150,13 @@ namespace EyeResolution {
              for (const bool wide : { false, true }) {
                  const double height = double(eyeHeight) * preset.multiplier;
                  const double width = wide ? std::max(double(eyeWidth) * preset.multiplier, height * 16.0 / 9.0) : double(eyeWidth) * preset.multiplier;

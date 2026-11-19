@@ -5,11 +5,11 @@ Subject: [PATCH] PS5: BetterVR's stereo frames skip Cemu's 4K TV picture, Hmd2
  mirrors it; built, untested on console
 
 ---
- src/Cafe/HW/Latte/Core/LatteRenderTarget.cpp | 13 +++++++++++--
- 1 file changed, 11 insertions(+), 2 deletions(-)
+ src/Cafe/HW/Latte/Core/LatteRenderTarget.cpp | 14 ++++++++++++--
+ 1 file changed, 12 insertions(+), 2 deletions(-)
 
 diff --git a/src/Cafe/HW/Latte/Core/LatteRenderTarget.cpp b/src/Cafe/HW/Latte/Core/LatteRenderTarget.cpp
-index a6dbb816..f7656840 100644
+index a6dbb816..b1a034db 100644
 --- a/src/Cafe/HW/Latte/Core/LatteRenderTarget.cpp
 +++ b/src/Cafe/HW/Latte/Core/LatteRenderTarget.cpp
 @@ -23,6 +23,9 @@
@@ -22,7 +22,7 @@ index a6dbb816..f7656840 100644
  
  uint32 prevScissorX = 0;
  uint32 prevScissorY = 0;
-@@ -1214,9 +1217,15 @@ void LatteRenderTarget_copyToBackbuffer(LatteTextureView* textureView, bool isPa
+@@ -1214,9 +1217,16 @@ void LatteRenderTarget_copyToBackbuffer(LatteTextureView* textureView, bool isPa
  	if (HostModule::HasModules() && g_renderer->GetType() == RendererAPI::Vulkan)
  		VulkanRenderer::GetInstance()->HostModule_DeliverScanBuffer(textureView, isPadView);
  #endif
@@ -30,8 +30,9 @@ index a6dbb816..f7656840 100644
  #if defined(CEMU_PS5)
 -	if (!isPadView)
 +	// BetterVR stereo: Hmd2's social screen is the TV, and Cemu's 4K picture would only be scaled
-+	// there a second time. The gamepad's view and the app's overlays still go through.
-+	const bool ps5TvPicture = isPadView || !ps5vr::Stereo();
++	// there a second time; when Hmd2 did not take the mirror, Cemu draws the TV as before. The
++	// gamepad's view and the app's overlays still go through.
++	const bool ps5TvPicture = isPadView || !ps5vr::Stereo() || !ps5vr::Mirroring();
 +	if (ps5TvPicture)
 +#endif
 +		g_renderer->DrawBackbufferQuad(textureView, shader, filter==LatteTextureView::MagFilter::kLinear, imageX, imageY, imageWidth, imageHeight, isPadView, clearBackground);

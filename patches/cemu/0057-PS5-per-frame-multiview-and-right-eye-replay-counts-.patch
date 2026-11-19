@@ -5,10 +5,10 @@ Subject: [PATCH] PS5: per-frame multiview and right-eye replay counts and
  times, for the runtime's 5 s [draws] line; built, untested on console
 
 ---
- .../Renderer/Vulkan/VulkanRendererCore.cpp    | 29 ++++++++++++++++++
- .../Renderer/Vulkan/VulkanRendererView.cpp    | 30 +++++++++++++++++++
+ .../Renderer/Vulkan/VulkanRendererCore.cpp    | 29 ++++++++++++++++
+ .../Renderer/Vulkan/VulkanRendererView.cpp    | 34 +++++++++++++++++++
  .../Renderer/Vulkan/VulkanRendererView.h      |  3 ++
- 3 files changed, 62 insertions(+)
+ 3 files changed, 66 insertions(+)
 
 diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRendererCore.cpp b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRendererCore.cpp
 index 60a23f36..88b7ca8d 100644
@@ -60,10 +60,10 @@ index 60a23f36..88b7ca8d 100644
  		draw_execute_first(baseVertex, baseInstance, instanceCount, count, indexDataMPTR, indexType, drawcallContext);
  	else
 diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRendererView.cpp b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRendererView.cpp
-index c216232e..bfdbdedb 100644
+index c216232e..50bf02c5 100644
 --- a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRendererView.cpp
 +++ b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRendererView.cpp
-@@ -7,14 +7,38 @@
+@@ -7,14 +7,42 @@
  #include "Cafe/HW/Latte/Core/LatteView.h"
  #include "Cafe/HW/Latte/ISA/RegDefines.h"
  
@@ -87,22 +87,26 @@ index c216232e..bfdbdedb 100644
  
  void VulkanRenderer::view_setStereo(bool isStereo)
  {
++#if defined(CEMU_PS5)
++	// the left pass's span is the runtime's "record": draw_endRenderPass (which replays the right eye)
++	// comes after this stamp, so the replay is not counted in the record too
++	const bool ps5EndingStereo = !isStereo && m_view.isStereo && m_view.ps5StereoStartTsc;
++	const uint64 ps5StereoTsc = ps5EndingStereo ? __rdtsc() : 0;
++#endif
  	draw_endRenderPass();
 +#if defined(CEMU_PS5)
-+	// the left pass's span is the runtime's "record": it is where the right eye's commands are recorded,
-+	// and the replay that follows is timed on its own in view_flushRightPass
 +	if (isStereo && !m_view.isStereo)
 +		m_view.ps5StereoStartTsc = __rdtsc();
-+	else if (!isStereo && m_view.isStereo && m_view.ps5StereoStartTsc)
++	else if (ps5EndingStereo)
 +	{
-+		g_ps5RecordNs.fetch_add(ps5TscToNs(__rdtsc() - m_view.ps5StereoStartTsc), std::memory_order_relaxed);
++		g_ps5RecordNs.fetch_add(ps5TscToNs(ps5StereoTsc - m_view.ps5StereoStartTsc), std::memory_order_relaxed);
 +		m_view.ps5StereoStartTsc = 0;
 +	}
 +#endif
  	m_view.isStereo = isStereo;
  }
  
-@@ -521,6 +545,9 @@ void VulkanRenderer::view_flushRightPass()
+@@ -521,6 +549,9 @@ void VulkanRenderer::view_flushRightPass()
  	bool hasDraws = std::any_of(m_view.commands.begin(), m_view.commands.end(), [](const VulkanViewCommand& cmd) { return cmd.type == VulkanViewCommandType::Draw || cmd.type == VulkanViewCommandType::DrawIndexed; });
  	if (!hasDraws)
  		return;
@@ -112,7 +116,7 @@ index c216232e..bfdbdedb 100644
  
  	for (auto& seed : m_view.pendingSeeds)
  	{
-@@ -608,6 +635,9 @@ void VulkanRenderer::view_flushRightPass()
+@@ -608,6 +639,9 @@ void VulkanRenderer::view_flushRightPass()
  
  	HostModule_ResetCommandBufferState();
  	m_view.restoreBindings = true;
