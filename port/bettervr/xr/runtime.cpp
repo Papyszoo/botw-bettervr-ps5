@@ -3169,15 +3169,17 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
 		if (hudImage && !hudMips)
 			ImageBarrier(commands, hudImage, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
 				VK_ACCESS_SHADER_READ_BIT, 0, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
-		// the GPU wrote the buffer: visible to Hmd2 before the flip (HLA-PSVR2's barrier, as M2's)
-		VkBufferMemoryBarrier toHost{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
-		toHost.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT | (eyeCopy ? VK_ACCESS_TRANSFER_WRITE_BIT : 0);
-		toHost.dstAccessMask = VK_ACCESS_HOST_READ_BIT | VK_ACCESS_MEMORY_READ_BIT;
-		toHost.srcQueueFamilyIndex = toHost.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		toHost.buffer = session->eyeBuffers[index];
-		toHost.size = VK_WHOLE_SIZE;
+		// the GPU wrote the buffer: visible to Hmd2 before the flip (HLA-PSVR2's barrier, less its host
+		// half: Hmd2 samples the buffer on the GPU, nothing on the host reads it, and the host-read
+		// access only asks the barrier for a write-back to a reader that is not there)
+		VkBufferMemoryBarrier toHmd2{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
+		toHmd2.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT | (eyeCopy ? VK_ACCESS_TRANSFER_WRITE_BIT : 0);
+		toHmd2.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+		toHmd2.srcQueueFamilyIndex = toHmd2.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		toHmd2.buffer = session->eyeBuffers[index];
+		toHmd2.size = VK_WHOLE_SIZE;
 		vk.vkCmdPipelineBarrier(commands, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | (eyeCopy ? VK_PIPELINE_STAGE_TRANSFER_BIT : 0),
-			VK_PIPELINE_STAGE_HOST_BIT | VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 1, &toHost, 0, nullptr);
+			VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 1, &toHmd2, 0, nullptr);
 	});
 	if (!ok)
 	{
