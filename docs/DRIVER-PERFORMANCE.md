@@ -219,7 +219,7 @@ case unchanged, and stays off until it measures faster in a game. **PS5-ECAM nev
 
 From Cemu's Vulkan renderer at the pinned commit:
 
-- **Submissions:** every 300 draws (`cemuSubmitDraws` in `ps5cemu.json` changes it, below), within
+- **Submissions:** every 900 draws (`cemuSubmitDraws` in `ps5cemu.json` changes it, below; Cemu's own is 300), within
   10 draws of any occlusion query ending, on texture readbacks, and at each swap. Each waits on the previous one's semaphore and has a fence.
 - **Polling:** `vkGetFenceStatus` on the oldest unfinished command buffers after every submit.
 - **At swap:** a wait for the *previous* frame's last command buffer, so one frame is in flight.
@@ -302,7 +302,7 @@ GPU`, and says so if a flip ever goes to the thread instead.
 | 120 Hz output and frame pacing at 60 fps | Settings > Video | A late frame costs 8.3 ms instead of 16.7 ms, so "mostly 60" looks closer to 60; with the driver before `7b59ef2`, 120 Hz never reached a jailbroken process |
 | `RADV_PERFTEST=pswave32` | `radvEnvironment` | RADV recommends wave64 for pixel shaders; a quick check, low expectations |
 | `RADV_PS5_GPU_FLIP=1` (patch 0005) | `radvEnvironment` | The flip on the GPU behind the frame: compare FPS and how often a frame shows for two refreshes at 119.88 Hz with frame pacing off |
-| `cemuSubmitDraws` at 600, 1000 and 1500 | `ps5cemu.json` (a number; 0 is Cemu's 300) | Fewer submissions a frame, each a copy, an AGC submission, a state reset and an L2 write-back; too few delay the GPU's start on a frame. Read `count=` and `gpu_busy_pct` |
+| `cemuSubmitDraws` at 600, 1200 and 1800 | `ps5cemu.json` (a number; 0 is the port's 900, Cemu's own is 300) | Fewer submissions a frame, each a copy, an AGC submission, a state reset and an L2 write-back; too few delay the GPU's start on a frame. Read `count=` and `gpu_busy_pct` |
 
 ### 4. Driver changes proposed, not written
 
@@ -310,9 +310,9 @@ GPU`, and says so if a flip ever goes to the thread instead.
    whether VideoOut paces flips from the GPU with the flip rate, and what the flip thread cost.
 2. **Fewer AGC submissions per frame: a setting now.** Each one resets state, replays the preamble
    and empties the L2. Cemu's 300-draw threshold (`VulkanRenderer::SubmitCommandBuffer`) comes from
-   `cemuSubmitDraws` in `ps5cemu.json` (`patches/cemu` 0020, `port/app/emulator.cpp`; 0 keeps 300),
-   read when the app starts. Too few submissions delay the GPU's start on a frame, so it is a
-   measurement, not a default to change.
+   `cemuSubmitDraws` in `ps5cemu.json` (`patches/cemu` 0020, `port/app/emulator.cpp`; 0 keeps the
+   port's 900), read when the app starts. Too few submissions delay the GPU's start on a frame, so
+   it is a measurement.
 3. **Investigate the base PS5's late start (R68).** If each idle start of the GPU waits for a
    refresh on a base console, Cemu's many submissions are the worst case for it. A probe like R67's
    stamps, run on a base PS5 with several submissions per frame, would settle it.
@@ -384,7 +384,7 @@ Plateau tower.
    the other patches' own effect (`copy_ms`, `flush_ms` and FPS).
 5. `RADV_PS5_GPU_FLIP=1` at 4K, with the 4K60 column's settings: the boot log's `flips on the GPU`
    lines, FPS, and with frame pacing at 60 fps whether the pacing still holds.
-6. `cemuSubmitDraws` at 600, 1000 and 1500 at 4K, one per start of the app.
+6. `cemuSubmitDraws` at 600, 1200 and 1800 at 4K, one per start of the app.
 
 Reading the lines (per 10 s window):
 

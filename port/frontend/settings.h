@@ -302,7 +302,7 @@ namespace ps5settings
 		std::map<std::string, std::string> radvEnvironment;
 		// only in ps5cemu.json: how many draws Cemu records in a command buffer before it submits it,
 		// for the driver's performance experiments (docs/DRIVER-PERFORMANCE.md); 0, the default,
-		// keeps Cemu's own 300
+		// keeps the port's 900 (Cemu's own is 300)
 		int cemuSubmitDraws = 0;
 		// only in ps5cemu.json: how many frames the GPU may still be drawing as Cemu presents the next
 		// (Cemu patch 0038): 1, Cemu's own, waits at each swap for the previous frame; 2 for the one

@@ -113,8 +113,10 @@ namespace ps5emu
 		bool s_coreStarted = false; // Cemu's settings are loaded: this session is Cemu's
 		bool s_keepGameList = false; // Options::keepGameList, for LibraryInit
 		std::atomic<bool> s_exitAfterGame{false}; // SetExitAfterGame: read by the in-game menus' threads
-		// the draws Cemu records in a command buffer before it submits it (PS5Cemu_SubmitDraws)
-		constexpr uint32_t kCemuSubmitDraws = 300;
+		// the draws Cemu records in a command buffer before it submits it (PS5Cemu_SubmitDraws).
+		// 900: each submission costs a copy, an AGC submission, a state reset and a cache write-back,
+		// while Cemu's own 300 starts the GPU sooner on a frame
+		constexpr uint32_t kCemuSubmitDraws = 900;
 		std::atomic<uint32_t> s_submitDraws{kCemuSubmitDraws};
 		// the frames the GPU may still be drawing as the next is presented (PS5Cemu_FramesInFlight)
 		std::atomic<uint32_t> s_framesInFlight{1};

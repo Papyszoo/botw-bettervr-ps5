@@ -83,7 +83,7 @@ namespace ps5emu
 
 	// How many draws Cemu records in a command buffer before it submits it, from the process's start
 	// (ps5cemu.json's cemuSubmitDraws, a driver experiment: docs/DRIVER-PERFORMANCE.md); 0 keeps
-	// Cemu's own 300.
+	// the port's 900 (Cemu's own is 300).
 	void SetSubmitDraws(int draws);
 
 	// How many frames the GPU may still be drawing as the next is presented, from the process's start
