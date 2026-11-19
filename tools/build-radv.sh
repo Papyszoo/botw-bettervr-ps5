@@ -49,6 +49,13 @@ vulkan=$PS5CEMU_ROOT/.deps/PS5_Vulkan
 export PS5_PAYLOAD_SDK_FORK=${PS5_PAYLOAD_SDK_FORK:-$PS5CEMU_ROOT/.deps/PS5_PayloadSDK}
 [[ -d $PS5_PAYLOAD_SDK_FORK/platform ]] || { echo "$PS5_PAYLOAD_SDK_FORK is not the payload SDK fork: run make deps" >&2; exit 2; }
 export PS5_MESA_FORK=$PS5CEMU_ROOT/.deps/PS5_Mesa
+# PS5_Vulkan's setup builds its own zlib from zlib.net, which intermittently answers with a corrupt
+# archive. Give it the pinned GitHub copy that tools/deps.json fetches instead (same SHA-256).
+python3 -B "$PS5CEMU_ROOT/tools/deps.py" fetch zlib-source >/dev/null
+zlib_archive=$PS5CEMU_ROOT/.deps/ps5-native-app-boilerplate/.deps/native/zlib/zlib-1.3.2.tar.gz
+mkdir -p "$vulkan/.deps/native/zlib"
+rm -f "$vulkan/.deps/native/zlib/zlib-1.3.2.tar.gz"
+cp "$zlib_archive" "$vulkan/.deps/native/zlib/zlib-1.3.2.tar.gz"
 bash "$vulkan/tools/setup-native-dependencies.sh"
 bash "$vulkan/tools/build-radv.sh" release
 recipe=$vulkan/.deps/native/radv-release
