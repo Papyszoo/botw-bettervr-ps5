@@ -830,7 +830,14 @@ v06's, unchanged; 0055 is the only Cemu patch added. `VERSION` stays 0.5.0.
   forced to one, so the HUD is copied once, not twice.
 - **The depth copy is skipped.** The runtime does not offer `XR_KHR_composition_layer_depth`, so Hmd2 never reads a
   depth image; `Capture::On3DDepth` still accepts the depth capture (the frame must count as complete) but makes no
-  `CopyDepthToLayer`. The present pass still writes `gl_FragDepth` into its local attachment, which nothing reads.
+  `CopyDepthToLayer`. The present pass's full-screen depth store is gone too (`vk_backend.cpp` leaves
+  `depthWriteEnable` false), since the runtime's depth composition is off.
+- **1x is the eye's own 1984x2048.** The Graphics pack's texture-rule search preferred 2000x2040 at 1x, which the
+  compositor then scaled to 1984x2048 with a non-integer bilinear tap. The 1x preset now asks for the eye size exactly
+  (`utils/eye_resolution.h`), so its compose is 1:1; the other VR Resolution steps keep the rules-compatible search.
+- **A 4-tap box for higher presets.** `compose.comp` samples an eye image at its own source texels when it is
+  downscaled: the taps sit `(r - 1) / 2` texels out, which is the centre tap at 1x and a 2x2 box at 2x. Upscales below
+  1x keep one bilinear tap. The `shaders.h` SPIR-V is regenerated with `tools/render-shaders.sh`.
 
 ### Performance: packets, profile and VR Resolution
 
@@ -844,6 +851,23 @@ v06's, unchanged; 0055 is the only Cemu patch added. `VERSION` stays 0.5.0.
   timed in `xrEndFrame`. Off by default: one bool test a frame, nothing else. After Cemu loads the packs,
   `BetterVR_PS5_LogPresets` logs one `Graphics pack presets:` line with the active VR resolution, quality, AA,
   recording and shadow presets (their names carry the width and height).
+- **Cemu submits every 900 draws, not 300.** Each submission costs the driver a copy, an AGC submission, a state
+  reset and a cache write-back, so `cemuSubmitDraws`'s default is 900; the setting still overrides it (`0` keeps 900).
+- **A 5 s `[draws]` line.** Every five seconds the runtime logs
+  `[vr-xr] [draws] per frame: multiview N, replay N, total N | record X ms | replay Y ms | compose Z ms | xr end W ms`.
+  Cemu's draw path counts the draws that took multiview and those that fell back to the right-eye replay (patches/cemu
+  0057), and times the stereo pass (`record`) and the replay; the runtime times its compose fence wait and the whole
+  `xrEndFrame`. The line is always on, not behind `[frame]`'s `profile`.
+- **The 4K TV picture is skipped in stereo.** When BetterVR's stereo path runs, Hmd2's social screen is the TV, so
+  `LatteRenderTarget_copyToBackbuffer` does not draw Cemu's own 4K picture (patch/cemu 0056). The gamepad's view and
+  Cemu's app overlays still go through; the flat screen keeps its picture. The TV stays on Hmd2's mirror (`tv` in
+  `bettervr.json`).
+- **Why a draw still takes the replay.** `view_canDrawMultiview` needs every active shader compiled with view arrays;
+  a graphic pack's custom shader (BetterVR's Graphics pack has many) is compiled without them, so its draws replay.
+  It also replays streamout, a geometry shader when the device has no multiview geometry shader support, `RECTS`
+  without it, and a right uniform block the shader does not hold in its view array. A render target without the
+  second view layer, or with attachments of different depths, has no multiview FBO and replays too. None of these can
+  be widened without a shader or FBO that carries the right view, so this build only counts them.
 - **VR Resolution in BetterVR's menu.** On the PS5 the System page's "Graphic Packs: Open On Desktop" row (there is no
   window) is replaced by `VR Resolution`: 0.5x, 0.75x, 1x, 1.25x, 1.5x from the pack's "VR Resolution Multiplier"
   presets. It saves through Cemu's preset API and logs `VR resolution preset: ...`; the pack has texture rules, so
@@ -1086,9 +1110,11 @@ v06's, unchanged; 0055 is the only Cemu patch added. `VERSION` stays 0.5.0.
 
 ### Open
 
-Nothing here has run on a console. The mip chain's cost and the skipped passes need the `[frame]` line; the HUD
-quads' edges need a headset. The optional FSR/upscale for presets below 1x is not done; the compose still samples
-BetterVR's already-upscaled eye image. The depth write in the present shader is not removed. The Sense trigger
+Nothing here has run on a console. The mip chain's cost and the skipped passes need the `[draws]` and `[frame]` lines;
+the HUD quads' edges need a headset. The optional FSR/upscale for presets below 1x is not done; the compose boxes
+BetterVR's already-upscaled eye image. The compose fence wait still runs on Cemu's GPU thread: moving it off needs a
+worker with its own fence and submit, eye-buffer rotation while the compose is in flight, and a deferred
+`hmd2::submit`, which is more than a swap-time change. The Sense trigger
 payload, which of its two formats the firmware accepts, and its return-code meaning are unverified; the DualSense's
 pad handle is opened in vibration mode 2. The headset's
 `+0x2ae00` is from public tables, not our own dump; its test button is the proof. Explosions have settings but no

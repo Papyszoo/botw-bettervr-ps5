@@ -3,6 +3,23 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-19: v0.6 performance follow-up (900-draw batch, 1x 1984x2048 and a box compose, no 4K TV picture in stereo, `[draws]` line), built, untested on console
+
+Cemu now submits a command buffer every 900 draws instead of 300 (the setting still overrides it). 1x asks the
+Graphics pack for the headset's own 1984x2048 eye size, so the compose is 1:1, and a higher VR Resolution is
+downsampled with a 4-tap box instead of one bilinear tap. BetterVR stereo no longer draws Cemu's 4K TV picture,
+since Hmd2's social screen is the TV; the present pass no longer writes its full-screen depth. Every 5 s the runtime
+logs `[vr-xr] [draws] per frame: multiview N, replay N, total N | record X ms | replay Y ms | compose Z ms | xr end
+W ms`; Cemu's draw path counts and times the multiview/replay split. New patches: bettervr 0015-0016, cemu 0056-0057.
+The compose fence wait still runs on the GPU thread; moving it off needs a worker, eye-buffer rotation and a deferred
+Hmd2 submit.
+
+**Test request 54 (v0.6 performance, 13.60 console).** In VR at 1x, play 60 s in a village and 60 s on Hyrule Field,
+then set 1.5x and repeat; send the logs zip. Say whether the picture shimmers less at 1x, whether 1.5x is sharper,
+and what the TV shows while VR runs. From `/data/ps5cemu/logs/boot.log`, send every `[draws]` line (it says how much
+is still replayed), the `[frame]` lines, the `[perf]` fps lines, and `Graphics pack presets:` (1x must read
+`1984x2048`).
+
 ## 2026-11-19: the DualSense trigger setter binds on 13.60 (link-time import under its NID), built, untested on console
 
 The DualSense's adaptive triggers were bound with `sceKernelDlsym`, which matches libScePad's name
