@@ -1,0 +1,224 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ps5cemu <ps5cemu@localhost>
+Date: Thu, 19 Nov 2026 18:02:13 +0100
+Subject: [PATCH] PS5: the shadow cascades snap to whole texels, so their
+ dapple stops crawling; built, untested on console
+
+The game fits the cascaded shadow map to the record camera each frame; a few centimetres of head movement moves that fit by under a texel, and the 2x2 PCF taps then land on different texels, so light through a lattice re-forms every frame. Two native hooks now round the cascade matrices' x/y translation to whole shadow-map texels before the game stores them: ShadowPrePass slot 0 (the three near cascades' render matrices) and DepthShadowProj slot 17 (the per-cascade view-space to shadow-UV matrices). The texel size comes from the Graphics pack's active Shadows preset (High is 2x), frozen at the first frame so a preset saved for the next start cannot change this run's grid. The matrices keep their layout and only x/y move; z is untouched. The pack's asm calls the hooks before its existing capture. One boot log line: Shadow cascades: 1-texel snap on, Shadows "High (200%)" (2.00x).
+---
+ .../patch_RND_StereoReplay.asm                |  7 ++
+ src/CMakeLists.txt                            |  2 +
+ src/cemu/cemu_host.h                          |  3 +
+ src/cemu/host_module.cpp                      | 23 ++++++
+ src/game/botw/game.cpp                        |  2 +
+ src/game/botw/shadow_stabilizer.cpp           | 82 +++++++++++++++++++
+ src/game/botw/shadow_stabilizer.h             |  5 ++
+ 7 files changed, 124 insertions(+)
+ create mode 100644 src/game/botw/shadow_stabilizer.cpp
+ create mode 100644 src/game/botw/shadow_stabilizer.h
+
+diff --git a/resources/BreathOfTheWild_BetterVR/patch_RND_StereoReplay.asm b/resources/BreathOfTheWild_BetterVR/patch_RND_StereoReplay.asm
+index 836fd1e..bbb30f5 100644
+--- a/resources/BreathOfTheWild_BetterVR/patch_RND_StereoReplay.asm
++++ b/resources/BreathOfTheWild_BetterVR/patch_RND_StereoReplay.asm
+@@ -336,6 +336,10 @@ stw r0, 0x24(r1)
+ stw r3, 0x0C(r1)
+ stw r4, 0x10(r1)
+ stw r5, 0x14(r1)
++bl import.coreinit.hook_SnapShadowCascadeProj ; round the cascade fit to whole texels, see shadow_stabilizer.cpp
++lwz r3, 0x0C(r1)
++lwz r4, 0x10(r1)
++lwz r5, 0x14(r1)
+ bl hook_captureDepthShadowProj           ; (r3=shaderCtx, r4=cascade, r5=src)
+ lwz r3, 0x0C(r1)
+ lwz r4, 0x10(r1)
+@@ -364,6 +368,9 @@ stw r6, 0x18(r1)
+ stw r7, 0x1C(r1)
+ stw r8, 0x20(r1)
+ mr r4, r6                                ; hook args: r3=UB, r4=src
++bl import.coreinit.hook_SnapShadowCascadePrePass ; round the three cascade fits to whole texels
++lwz r3, 0x0C(r1)
++lwz r4, 0x18(r1)
+ bl hook_capturePrePassShadow
+ lwz r3, 0x0C(r1)
+ lwz r4, 0x10(r1)
+diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
+index 643f4b1..ade9ae2 100644
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
+@@ -58,6 +58,8 @@ add_library(BetterVR STATIC
+     game/botw/game_state.cpp
+     game/botw/game_utils.h
+     game/botw/pack_shared_memory.h
++    game/botw/shadow_stabilizer.h
++    game/botw/shadow_stabilizer.cpp
+     game/botw/camera/camera.h
+     game/botw/camera/camera.cpp
+     game/botw/camera/stereo_view.h
+diff --git a/src/cemu/cemu_host.h b/src/cemu/cemu_host.h
+index c129cc5..386122e 100644
+--- a/src/cemu/cemu_host.h
++++ b/src/cemu/cemu_host.h
+@@ -19,6 +19,9 @@ public:
+     // a new preset only applies after a restart
+     static std::vector<std::string> GetGraphicsPresets(std::string_view category);
+     static std::string GetGraphicsPreset(std::string_view category);
++    // the Shadows preset and the shadow map scale in its name ("High (200%)" is 2)
++    static std::string GetShadowPreset();
++    static float GetShadowResolutionScale();
+     static void SetGraphicsPreset(std::string_view category, std::string_view preset);
+     static void OpenGraphicPacksWindow();
+     static std::filesystem::path GetUserDataPath();
+diff --git a/src/cemu/host_module.cpp b/src/cemu/host_module.cpp
+index 42cde58..cf1a281 100644
+--- a/src/cemu/host_module.cpp
++++ b/src/cemu/host_module.cpp
+@@ -58,6 +58,29 @@ std::string CemuHost::GetGraphicsPreset(std::string_view category) {
+     return HostModule::GetGraphicPackPreset(s_graphicsPack, category);
+ }
+ 
++std::string CemuHost::GetShadowPreset() {
++    return HostModule::GetGraphicPackPreset(s_graphicsPack, "Shadows");
++}
++
++float CemuHost::GetShadowResolutionScale() {
++    // the preset names carry the scale, e.g. "High (200%)": reading it once keeps the map size the one the game
++    // started with, even if the menu saves another preset for the next start
++    static const float scale = [] {
++        const std::string preset = HostModule::GetGraphicPackPreset(s_graphicsPack, "Shadows");
++        const auto percent = preset.find('%');
++        const auto open = preset.rfind('(', percent);
++        if (percent == std::string::npos || open == std::string::npos || open > percent)
++            return 0.0f;
++        try {
++            return std::stof(preset.substr(open + 1, percent - open - 1)) / 100.0f;
++        }
++        catch (const std::exception&) {
++            return 0.0f;
++        }
++    }();
++    return scale;
++}
++
+ void CemuHost::SetGraphicsPreset(std::string_view category, std::string_view preset) {
+     if (!HostModule::SetGraphicPackPreset(s_graphicsPack, category, preset)) {
+         Log::print<WARNING>("Graphics pack has no preset {} in {}", preset, category);
+diff --git a/src/game/botw/game.cpp b/src/game/botw/game.cpp
+index 7a82e1a..562e33d 100644
+--- a/src/game/botw/game.cpp
++++ b/src/game/botw/game.cpp
+@@ -12,6 +12,7 @@
+ #include "game/botw/player/player.h"
+ #include "game/botw/player/roomscale.h"
+ #include "game/botw/player/skeleton.h"
++#include "game/botw/shadow_stabilizer.h"
+ #include "game/botw/player/weapon.h"
+ 
+ static constexpr std::array kTitles = {
+@@ -53,6 +54,7 @@ void Game::RegisterHooks() {
+     Roomscale::RegisterHooks();
+     Controls::RegisterHooks();
+     Interface::RegisterHooks();
++    ShadowStabilizer::RegisterHooks();
+     DebugHooks::RegisterHooks();
+ }
+ 
+diff --git a/src/game/botw/shadow_stabilizer.cpp b/src/game/botw/shadow_stabilizer.cpp
+new file mode 100644
+index 0000000..bd412fb
+--- /dev/null
++++ b/src/game/botw/shadow_stabilizer.cpp
+@@ -0,0 +1,82 @@
++#include "pch.h"
++#include "shadow_stabilizer.h"
++#include "cemu/cemu_host.h"
++#include "cemu/guest_memory.h"
++#include "utils/logger.h"
++
++// The game fits the cascaded shadow map to the record camera every frame. With a head that moves, the fit's origin
++// crawls by a fraction of a texel a frame, so the 2x2 PCF taps land on different texels and the dapple re-forms. The
++// matrices are written by the game just before the shadow pass and the receivers use the same ones: rounding their
++// translation to whole shadow-map texels moves the fit in visible steps of one texel instead.
++
++namespace {
++    // BreathOfTheWild_Graphics/rules.txt: the cascade render targets before $shadowRes (768x720, 720x720, 384x368,
++    // 384x360). The Graphics pack multiplies them by the Shadows preset's number.
++    constexpr std::array<int, 4> kCascadeWidth{768, 720, 384, 384};
++    constexpr std::array<int, 4> kCascadeHeight{720, 720, 368, 360};
++
++    // the ShadowPrePass slot 0 holds three cascade view-projection matrices; their output is clip space, so one
++    // texel is two units. The DepthShadowProj slot 17 matrices output shadow UV, where one texel is one unit.
++    void SnapTranslation(uint32_t matrix, int width, int height, float scale, bool clipSpace) {
++        const float unitsPerTexel = clipSpace ? 2.0f : 1.0f;
++        const float stepX = unitsPerTexel / (width * scale);
++        const float stepY = unitsPerTexel / (height * scale);
++
++        float x = 0.0f;
++        float y = 0.0f;
++        Guest::ReadBE(matrix + 12, &x);  // row 0's w, 3 floats in
++        Guest::ReadBE(matrix + 28, &y);  // row 1's w, 7 floats in
++        const float snappedX = std::round(x / stepX) * stepX;
++        const float snappedY = std::round(y / stepY) * stepY;
++        if (snappedX == x && snappedY == y)
++            return;
++        Guest::WriteBE(matrix + 12, &snappedX);
++        Guest::WriteBE(matrix + 28, &snappedY);
++    }
++
++    float ShadowScale() {
++        static const float scale = CemuHost::GetShadowResolutionScale();
++        static const bool logged = [] {
++            if (scale > 0.0f)
++                Log::print<INFO>("Shadow cascades: 1-texel snap on, Shadows \"{}\" ({:.2f}x)", CemuHost::GetShadowPreset(), scale);
++            else
++                Log::print<WARNING>("Shadow cascades: no Shadows preset scale, no texel snap");
++            return true;
++        }();
++        (void)logged;
++        return scale;
++    }
++
++    // DepthShadowProj[cascade], view space -> shadow UV: the sampling matrix of one cascade
++    void hook_SnapShadowCascadeProj(PPCInterpreter_t* hCPU) {
++        hCPU->instructionPointer = hCPU->sprNew.LR;
++
++        const uint32_t cascade = hCPU->gpr[4];
++        const uint32_t matrix = hCPU->gpr[5];
++        if (matrix == 0 || cascade >= kCascadeWidth.size())
++            return;
++        const float scale = ShadowScale();
++        if (scale <= 0.0f)
++            return;
++        SnapTranslation(matrix, kCascadeWidth[cascade], kCascadeHeight[cascade], scale, false);
++    }
++
++    // ShadowPrePass slot 0, the three near cascades' view-projection matrices used to render the map
++    void hook_SnapShadowCascadePrePass(PPCInterpreter_t* hCPU) {
++        hCPU->instructionPointer = hCPU->sprNew.LR;
++
++        const uint32_t matrices = hCPU->gpr[4];
++        if (matrices == 0)
++            return;
++        const float scale = ShadowScale();
++        if (scale <= 0.0f)
++            return;
++        for (uint32_t cascade = 0; cascade < 3; cascade++)
++            SnapTranslation(matrices + cascade * 64, kCascadeWidth[cascade], kCascadeHeight[cascade], scale, true);
++    }
++}
++
++void ShadowStabilizer::RegisterHooks() {
++    CemuHost::RegisterHook("hook_SnapShadowCascadeProj", &hook_SnapShadowCascadeProj);
++    CemuHost::RegisterHook("hook_SnapShadowCascadePrePass", &hook_SnapShadowCascadePrePass);
++}
+diff --git a/src/game/botw/shadow_stabilizer.h b/src/game/botw/shadow_stabilizer.h
+new file mode 100644
+index 0000000..a130425
+--- /dev/null
++++ b/src/game/botw/shadow_stabilizer.h
+@@ -0,0 +1,5 @@
++#pragma once
++
++namespace ShadowStabilizer {
++    void RegisterHooks();
++}
