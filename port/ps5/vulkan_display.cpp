@@ -2,6 +2,7 @@
 #include "vulkan_display.h"
 #include "display.h"
 #include "log.h"
+#include "notify.h"
 
 #include <algorithm>
 #include <vector>
@@ -127,6 +128,8 @@ namespace ps5vk
 		}
 		ps5display::SetOutputRefresh(chosen->parameters.refreshRate);
 		ps5log::Line("[vulkan] VideoOut surface {}x{} at {:.2f} Hz", width, height, chosen->parameters.refreshRate / 1000.0);
+		// the screen is ours again: what the app sent while the launcher was giving it up shows now
+		ps5notify::Release();
 		return surface;
 	}
 }

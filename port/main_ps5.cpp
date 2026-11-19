@@ -773,6 +773,8 @@ int main(int argc, char* argv[])
 			ps5log::Line("[main] the launcher could not start or stopped drawing");
 			// the splash goes, so the notification is seen, and it says why (as 3.0.0's did)
 			sceSystemServiceHideSplashScreen();
+			// no surface of ours will come to show what a handoff held: it shows now, with this
+			ps5notify::Release();
 			const std::string& why = ps5shell::LastFailure();
 			// tr: {0} is the app's data folder: /data/ps5cemu, or the PS5CEMU-HAR-data folder on the drive the app is installed on
 			ps5notify::Send(why.empty() ? ps5lang::TrF("The launcher could not start. The boot log in {0}/logs says why.", ps5paths::Root()) :

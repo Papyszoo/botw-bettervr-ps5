@@ -925,8 +925,6 @@ namespace ps5emu
 
 	void RunGame()
 	{
-		// tr: the PS5's notification as a Wii U game starts
-		ps5notify::Send(ps5lang::Tr("Touchpad click + Options: the in-game menu (screens, picture, volume, controls, the library)"));
 		uint64_t polls = 0;
 		LogMemory();
 		uint32_t loggedFrames = LatteGPUState.frameCounter;

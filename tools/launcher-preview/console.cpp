@@ -303,6 +303,8 @@ namespace ps5log
 
 namespace ps5notify
 {
+	void Hold() {}
+	void Release() {}
 	void Send(const std::string& message) { std::fprintf(stderr, "[notify] %s\n", message.c_str()); }
 }
 

@@ -23,7 +23,9 @@ keeps a short press from opening the world guide in third person; the bow aim ar
 off third person is unchanged. Bettervr 0013 logs the magnesis wrist twist (fixed flag, twist, requested angular
 velocity, the body's own turn, the reach ratio) and, when the held body's angular velocity stays at zero, turns the
 body's transform about its centre instead, capped at 6 rad/s; fixed objects are untouched. New patches: bettervr
-0007-0013, cemu 0055. Details: `UPDATE-1.0.md`, "v0.6", "v0.6 body, HUD and needle", "Snap turn in third person" and
+0007-0013, cemu 0055. The PS5's notification window no longer comes up at game start: the Wii U start's touchpad +
+Options hint is gone, and what the app posts while the launcher gives the screen up waits for the game's own VideoOut
+surface. Details: `UPDATE-1.0.md`, "v0.6", "v0.6 body, HUD and needle", "Snap turn in third person" and
 "Magnesis wrist twist".
 
 **Test request 53 (v0.6 combined).** One console run of this build (13.60), in VR, with `bettervr.json`
@@ -117,6 +119,13 @@ body's transform about its centre instead, capped at 6 rad/s; fixed objects are 
   `[magnesis] spin path: ...` line of each hold: `angular velocity (...)` means the game kept the spin, `transform
   (...)` means it had dropped it and this build turned the body itself. Say whether the crate spun both ways, whether
   its centre stayed put or slid away, and send the `reach=` values from standing still and from the middle of a twist.
+- (n) Notification window at start. From the library, start BotW fresh in VR: the PS5's notification window must not
+  appear at all (no panel with the console's older messages over the black screen), and the "BotW VR: Touchpad click +
+  Options: the in-game menu ..." hint must never show (the in-game menu is the long Options hold). If the console has
+  notifications for the account on, a toast must come only once the game's picture is up. Quit to the library and start
+  the game again: the same. Send, for each start, the `[ui] gfx: stopped` or `[ui] the new launcher is gone ...` line
+  and the `[vulkan] VideoOut surface WxH at N Hz` line that follows it, plus any `[cheevos]` line of that start; say
+  whether the window appeared at all and what it showed.
 
 ## 2026-11-18: console run 4 (37c6028, 13.60)
 

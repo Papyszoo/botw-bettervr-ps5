@@ -770,6 +770,19 @@ Cemu patch added. `VERSION` stays 0.5.0.
 - **No popup at start.** `DrawTutorialPromptAndControllerVerification` returns at once on the PS5, so the first-time
   setup card over the game is gone; the PS5 prompt text that patch 0004 added to `GetControllerModMenuPrompt` goes with
   it, as nothing draws it now.
+- **No system notification window at start either.** The PS5's notification window comes up over the screen with the
+  console's earlier notifications listed behind it, and in the handoff from the launcher to a game (about 0.85 s between
+  `[ui] gfx: stopped` and `[vulkan] VideoOut surface`) nothing of the app's is drawn: a notification posted then brings
+  that window up on a black screen, jailbreak messages and all. Two changes: the Wii U start's touchpad + Options hint
+  is gone (`app/emulator.cpp`, `RunGame`; BetterVR's menu is the long Options hold now), and what the app posts in the
+  handoff waits for the game's own surface: `ps5notify::Hold()` once the launcher gives the screen up
+  (`frontend/shell/shell.cpp`, just before `m_gfx.Stop()`), `ps5notify::Release()` when a VideoOut surface is made
+  (`ps5/vulkan_display.cpp`, `ps5vk::CreateDisplaySurface`), which sends what was held, in order, up to four. The other
+  systems' touchpad hints are unchanged: their screens are up before they are posted. A DS game's
+  "RetroAchievements: N of M achievements" notice is the one that used to land in the handoff and now shows after it.
+  No BetterVR or Cemu patch: this is the app's own code. What to check: that the notification window shows nothing at
+  start; send `[ui] gfx: stopped`, `[ui] the new launcher is gone ...` and the `[vulkan] VideoOut surface ...` line of
+  the start.
 - **Logs** (BetterVR's, mirrored to the boot log as `[bettervr] ...`): `[menu] Options down`, `[menu] Options up after
   N ms`, `[menu] long press -> open` or `closed` (or `[menu] long press ignored, the menu's overlay is not ready`),
   `[menu] release after the threshold -> hold` when the release itself ends a hold, `[menu] short press -> pause`, and

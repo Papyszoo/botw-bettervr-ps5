@@ -339,6 +339,9 @@ namespace ps5shell
 		m_feedback.Stop();
 		m_images->Stop();
 		const uint64_t memory = m_gfx.MemoryBytes();
+		// no surface of ours is on screen again until the game's own (v0.6): what the app sends in that
+		// handoff waits for it, rather than bringing the PS5's notification window up on a black screen
+		ps5notify::Hold();
 		m_gfx.Stop();
 		ps5log::Line("[ui] the new launcher is gone ({} frames, {} MiB of GPU memory freed)", m_frames, memory >> 20);
 		choice = m_choice;
