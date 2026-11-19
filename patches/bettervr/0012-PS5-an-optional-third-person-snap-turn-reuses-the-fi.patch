@@ -48,7 +48,7 @@ index bf41cca..73f0fe4 100644
  
  0x02BEEBCC = bla captureCameraTailStickYaw
 diff --git a/src/game/botw/camera/camera.cpp b/src/game/botw/camera/camera.cpp
-index 3c83cd9..76768ea 100644
+index 3c83cd9..875555d 100644
 --- a/src/game/botw/camera/camera.cpp
 +++ b/src/game/botw/camera/camera.cpp
 @@ -117,6 +117,26 @@ static int TryConsumePendingSnapTurnDirection() {
@@ -70,7 +70,7 @@ index 3c83cd9..76768ea 100644
 +    }
 +
 +    const int32_t snapAngle = GetSettings().GetSnapTurnAngle();
-+    Log::print<CONTROLS>("SnapTurn: turning {} degrees in third person", direction * snapAngle);
++    Log::print<INFO>("SnapTurn: turning {} degrees in third person", direction * snapAngle);
 +    // the game's yaw delta runs opposite the view's turn, as its own right-stick yaw does
 +    return (float)-direction * (float)snapAngle;
 +}
@@ -118,7 +118,7 @@ index 3c83cd9..76768ea 100644
      CemuHost::RegisterHook("hook_SnapTurnCameraPivot", &hook_SnapTurnCameraPivot);
      CemuHost::RegisterHook("hook_SnapTurnCameraTailPivot", &hook_SnapTurnCameraTailPivot);
 diff --git a/src/game/botw/input/controls.cpp b/src/game/botw/input/controls.cpp
-index e9d41df..a0e5511 100644
+index e9d41df..0a2165c 100644
 --- a/src/game/botw/input/controls.cpp
 +++ b/src/game/botw/input/controls.cpp
 @@ -166,30 +166,50 @@ static bool ShouldOverrideFirstPersonTurning(bool inGame) {
@@ -128,7 +128,7 @@ index e9d41df..a0e5511 100644
 -static void UpdateFirstPersonTurning(const XrActionStateVector2f& rightStickSource, bool inGame) {
 -    static bool s_snapTurnStickLatched = false;
 +static bool ShouldSnapTurnThirdPerson(bool inGame) {
-+    return inGame && GameState::IsThirdPerson() && GetSettings().ShouldSnapTurnInThirdPerson()
++    return inGame && GameState::IsThirdPerson() && !GameState::IsFlatCameraModeActive() && GetSettings().ShouldSnapTurnInThirdPerson()
 +        && GetSettings().GetSnapTurnAngle() > 0 && !Events::IsActive() && !Screens::IsVisible(ScreenId::AppCamera_00)
 +        && Camera::AppliesFirstPersonTurning();
 +}

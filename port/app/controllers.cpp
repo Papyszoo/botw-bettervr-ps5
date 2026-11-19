@@ -422,20 +422,35 @@ namespace ps5emu
 	{
 		if (player < 0 || player >= ps5pad::kMaxPlayers)
 			return;
+		const bool wasButton = s_touchpadClick[player] == 2;
 		s_touchpadClick[player] = setting;
 		const auto emulated = InputManager::instance().get_controller((size_t)player);
 		const EmulatedType type = TypeOf(emulated);
 		// automatic: the GamePad has a screen to touch, the others none
 		const bool button = setting == 2 || (setting == 0 && type != EmulatedType::GamePad && type != EmulatedType::None);
 		ps5pad::SetTouchpadButton(player, button);
-		if (!chosen || setting != 2)
-			return;
-		// chosen to be a button with nothing on it: - (Select), which #37 asked for there
 		const auto buttons = ButtonsOf(type);
 		const auto pad = PadOf(emulated);
 		if (!pad)
 			return;
 		const std::string touchpad = pad->get_button_name(InputId(PadInput::TouchPad));
+		if (setting != 2)
+		{
+			// leaving a button: - (Select) was on the click and no press reaches it now, so it goes back to Create
+			if (!wasButton)
+				return;
+			for (size_t i = 0; i < buttons.size(); i++)
+				if (std::string_view(buttons[i].label).starts_with("- ") || std::string_view(buttons[i].label) == "-")
+				{
+					if (emulated->get_mapping_name(buttons[i].id) == touchpad)
+						SetMapping(player, i, PadInput::Create);
+					return;
+				}
+			return;
+		}
+		if (!chosen)
+			return;
+		// chosen to be a button with nothing on it: - (Select), which #37 asked for there
 		for (const Button& b : buttons)
 			if (emulated->get_mapping_name(b.id) == touchpad)
 				return;

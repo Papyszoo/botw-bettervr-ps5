@@ -266,7 +266,8 @@ namespace ps5emu
 	// The touchpad's click as a button for this player (or a touch of the GamePad's screen): the
 	// DualSense's, as ps5pad::SetTouchpadButton; setting as ps5settings::Launcher::touchpadClick has it.
 	// Whether the emulated controller has a screen to touch decides when the setting is automatic (0).
-	// chosen: the player just made it a button, and with nothing on it, - (Select) moves to it (#37).
+	// chosen: the player just made it a button, and with nothing on it, - (Select) moves to it (#37);
+	// leaving the button setting puts - back on Create.
 	void ApplyTouchpadClick(int player, int setting, bool chosen = false);
 	int TouchpadClick(int player); // the setting ApplyTouchpadClick was last given
 	void ClearMapping(int player, size_t index);

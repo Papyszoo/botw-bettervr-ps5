@@ -294,7 +294,9 @@ namespace ps5pad
 				slot.clickedAt = now;
 				slot.chordUsed = slot.touched = false;
 			}
-			Shortcut shortcut = pressed(kOptions) ? Shortcut::Menu
+			// Options held when the click goes down, or pressed with it, is the same chord; either edge arms it once
+			const bool optionsChord = pressed(kOptions) || (!(previous & kTouchPad) && (buttons & kOptions));
+			Shortcut shortcut = optionsChord ? Shortcut::Menu
 				: pressed(kL1)					  ? Shortcut::SwapScreens
 				: pressed(kR1)					  ? Shortcut::CornerScreen
 												  : Shortcut::None;
