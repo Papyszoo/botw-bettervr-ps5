@@ -599,7 +599,8 @@ extern "C" int BetterVR_PS5_WriteSetting(const char* name, float value)
 	if (json.HasMember(name))
 		json.RemoveMember(name);
 	rapidjson::Value written;
-	if (value == 0.0f || value == 1.0f)
+	// the switch stays a JSON boolean, as it was when the key was written by hand; the format is a number
+	if (std::strcmp(name, "senseTriggers") == 0)
 		written.SetBool(value != 0.0f);
 	else
 		written.SetFloat(value);
