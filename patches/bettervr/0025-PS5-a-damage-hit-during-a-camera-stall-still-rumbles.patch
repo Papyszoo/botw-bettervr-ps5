@@ -1,0 +1,31 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ps5cemu <ps5cemu@localhost>
+Date: Thu, 19 Nov 2026 20:32:38 +0100
+Subject: [PATCH] PS5: a damage hit during a camera stall still rumbles, and
+ only a save load is skipped; built, untested on console
+
+The large-damage path tested GameState::IsInGame() at the hit, which is false whenever the camera has not updated for five frames; a Guardian beam or a long fall that landed in a streaming hitch was logged as the load call and played nothing. The first in-game frame is latched now (IsInGame() true once), so the load call at 0x02CAB32C is still skipped and every later hit plays, camera fresh or not.
+---
+ src/game/botw/player/player.cpp | 9 +++++++--
+ 1 file changed, 7 insertions(+), 2 deletions(-)
+
+diff --git a/src/game/botw/player/player.cpp b/src/game/botw/player/player.cpp
+index a5152eb..f99e3bb 100644
+--- a/src/game/botw/player/player.cpp
++++ b/src/game/botw/player/player.cpp
+@@ -144,8 +144,13 @@ static void PlayDamageRumble(uint32_t stateNamePtr, const char* path) {
+     };
+ 
+     // 0x02CAB32C also runs once while a save loads, before the first in-game frame: that is not a hit and the motor
+-    // must not buzz at boot; the line says which call this was.
+-    if (largeDamage && !GameState::IsInGame()) {
++    // must not buzz at boot; the line says which call this was. The first in-game frame is latched, not IsInGame()'s
++    // answer now: that also asks the camera, which a streaming hitch leaves a few frames stale (patch bettervr 0006),
++    // and a hit that lands in the hitch is still a hit.
++    static bool s_seenFirstInGameFrame = false;
++    if (!s_seenFirstInGameFrame && GameState::IsInGame())
++        s_seenFirstInGameFrame = true;
++    if (largeDamage && !s_seenFirstInGameFrame) {
+         say("none, before the first in-game frame (load)");
+         return;
+     }
