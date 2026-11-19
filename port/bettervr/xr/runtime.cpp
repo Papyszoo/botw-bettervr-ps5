@@ -96,6 +96,12 @@ extern std::atomic<uint64_t> g_ps5FrameVrEndNs;
 extern std::atomic<uint32_t> g_ps5FrameProfileSamples;
 extern std::atomic<uint64_t> g_ps5GpuBusyNs;
 extern bool g_ps5GpuTimestamps;
+// patches/cemu 0057: the 5 s [draws] line's counters, added by the Vulkan renderer's draw path
+extern std::atomic<uint64_t> g_ps5DrawsTotal;
+extern std::atomic<uint64_t> g_ps5DrawsMultiview;
+extern std::atomic<uint64_t> g_ps5DrawsReplay;
+extern std::atomic<uint64_t> g_ps5RecordNs;
+extern std::atomic<uint64_t> g_ps5ReplayNs;
 #endif
 
 // the port's (ps5/log.cpp): a line of the boot log
@@ -375,6 +381,10 @@ struct XrSession_T
 	uint64_t monoOnQuad = 0, planeQuads = 0; // frames whose mono picture rode the HUD quad, frames whose quad was drawn as a plane
 	// frames Hmd2's TV mirror took, and frames it was asked for but did not take
 	uint64_t tvShown = 0, tvSkipped = 0;
+	// the 5 s [draws] line: when its window began, xrEndFrame's own time and its compose fence wait
+	// in the window, and how many frames the window had. Draw counts and the stereo/replay times come
+	// from Cemu's counters (patches/cemu 0057), taken and cleared at each line.
+	uint64_t drawLogAt = 0, drawLogFrames = 0, drawLogEndUs = 0, drawLogFenceUs = 0;
 };
 
 namespace
@@ -1168,6 +1178,35 @@ namespace
 			Log("vkWaitForFences (compose) -> %d: VR stops here", (int)result);
 		session->gpuFailed = true;
 		return false;
+	}
+
+	// One xrEndFrame's time, and the 5 s line the draw path's counters add up to: per-frame draws
+	// through multiview and the right-eye replay, and the GPU thread's record, replay, compose wait
+	// and xrEndFrame times. The counters are per window, not per run.
+	void FrameEndedByDraws(XrSession_T* session, uint64_t started)
+	{
+		const uint64_t now = sceKernelGetProcessTime();
+		session->drawLogEndUs += now - started;
+		session->drawLogFrames++;
+		if (!session->drawLogAt)
+			session->drawLogAt = now;
+		if (now - session->drawLogAt < 5'000'000 || session->drawLogFrames == 0)
+			return;
+#if defined(__PROSPERO__)
+		const double frames = (double)session->drawLogFrames;
+		Log("[draws] per frame: multiview %.1f, replay %.1f, total %.1f | record %.2f ms | replay %.2f ms | compose %.2f ms | xr end %.2f ms (over %llu frames, %.1f s)",
+			(double)g_ps5DrawsMultiview.exchange(0, std::memory_order_relaxed) / frames,
+			(double)g_ps5DrawsReplay.exchange(0, std::memory_order_relaxed) / frames,
+			(double)g_ps5DrawsTotal.exchange(0, std::memory_order_relaxed) / frames,
+			(double)g_ps5RecordNs.exchange(0, std::memory_order_relaxed) / 1e6 / frames,
+			(double)g_ps5ReplayNs.exchange(0, std::memory_order_relaxed) / 1e6 / frames,
+			(double)session->drawLogFenceUs / 1000.0 / frames, (double)session->drawLogEndUs / 1000.0 / frames,
+			(unsigned long long)session->drawLogFrames, (double)(now - session->drawLogAt) / 1e6);
+#endif
+		session->drawLogAt = now;
+		session->drawLogFrames = 0;
+		session->drawLogEndUs = 0;
+		session->drawLogFenceUs = 0;
 	}
 
 	void ImageBarrier(VkCommandBuffer commands, VkImage image, VkImageAspectFlags aspect, VkImageLayout from, VkImageLayout to,
@@ -2527,6 +2566,13 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
 			Log("xrEndFrame found no open Hmd2 frame and BeginFrame gave none: the frame's picture is dropped (counted in the frame log)");
 		return XR_SUCCESS;
 	}
+	// every return from here adds this xrEndFrame to the 5 s [draws] window
+	struct EndFrameSample
+	{
+		XrSession_T* session;
+		uint64_t started;
+		~EndFrameSample() { FrameEndedByDraws(session, started); }
+	} endFrameSample{session, sceKernelGetProcessTime()};
 	// The last compose is still in flight (its wait timed out): look again, and leave the frame open for the next try
 	if (session->composePending)
 	{
@@ -2826,13 +2872,15 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
 	// timeline value Cemu's GPU thread signals in its next submit, and that thread takes s.lock in xrAcquireSwapchainImage
 	// and the like. Holding the lock here would make the wait cause its own timeout.
 	session->composeBusy = true;
-	const uint64_t fenceStarted = s.profile ? sceKernelGetProcessTime() : 0;
+	const uint64_t fenceStarted = sceKernelGetProcessTime();
 	lock.unlock();
 	const VkResult waited = vk.vkWaitForFences(session->device, 1, &session->composeFence, VK_TRUE, kGpuTimeoutNs);
 	lock.lock();
+	const uint64_t fenceEnded = sceKernelGetProcessTime();
 	session->composeBusy = false;
+	session->drawLogFenceUs += fenceEnded - fenceStarted;
 	if (s.profile)
-		s.profileFenceNs += (sceKernelGetProcessTime() - fenceStarted) * 1000;
+		s.profileFenceNs += (fenceEnded - fenceStarted) * 1000;
 	if (s.stopped || s.session != session)
 		return Lost();
 	if (!ComposeFenceResult(session, waited) || session->composePending)

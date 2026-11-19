@@ -1,0 +1,138 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ps5cemu <ps5cemu@localhost>
+Date: Thu, 19 Nov 2026 05:26:53 +0100
+Subject: [PATCH] PS5: per-frame multiview and right-eye replay counts and
+ times, for the runtime's 5 s [draws] line; built, untested on console
+
+---
+ .../Renderer/Vulkan/VulkanRendererCore.cpp    | 29 ++++++++++++++++++
+ .../Renderer/Vulkan/VulkanRendererView.cpp    | 30 +++++++++++++++++++
+ .../Renderer/Vulkan/VulkanRendererView.h      |  3 ++
+ 3 files changed, 62 insertions(+)
+
+diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRendererCore.cpp b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRendererCore.cpp
+index 60a23f36..88b7ca8d 100644
+--- a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRendererCore.cpp
++++ b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRendererCore.cpp
+@@ -14,8 +14,27 @@
+ #include "Cafe/GameProfile/GameProfile.h"
+ #include "util/helpers/helpers.h"
+ 
++#include <atomic>
++
+ extern bool hasValidFramebufferAttached;
+ 
++#if defined(CEMU_PS5)
++// The runtime's 5 s [draws] line (port/bettervr/xr/runtime.cpp): how many draws each frame took
++// through multiview or the right-eye replay, and the GPU thread's time in the stereo pass and the
++// replay. Atomics: the counters are read from the runtime while Cemu's GPU thread adds to them.
++extern uint64 _rdtscFrequency;
++std::atomic<uint64> g_ps5DrawsTotal{0};
++std::atomic<uint64> g_ps5DrawsMultiview{0};
++std::atomic<uint64> g_ps5DrawsReplay{0};
++std::atomic<uint64> g_ps5RecordNs{0};
++std::atomic<uint64> g_ps5ReplayNs{0};
++
++static uint64 ps5TscToNs(uint64 ticks)
++{
++	return _rdtscFrequency ? ticks * 1000000000ull / _rdtscFrequency : 0;
++}
++#endif
++
+ // includes only states that may change during minimal drawcalls
+ uint64 VulkanRenderer::draw_calculateMinimalGraphicsPipelineHash(const LatteFetchShader* fetchShader, const LatteContextRegister& lcr)
+ {
+@@ -1854,6 +1873,16 @@ void VulkanRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32
+ 	m_view.drawNeedsRight = m_view.isStereo && !m_state.drawSequenceSkip && view_drawNeedsRight();
+ 	if (LatteView_IsMultiviewRequested() && !m_state.drawSequenceSkip)
+ 		view_selectFBO(isFirst);
++#if defined(CEMU_PS5)
++	g_ps5DrawsTotal.fetch_add(1, std::memory_order_relaxed);
++	if (m_view.isStereo && !m_state.drawSequenceSkip)
++	{
++		if (m_view.isMultiviewFBO)
++			g_ps5DrawsMultiview.fetch_add(1, std::memory_order_relaxed);
++		else if (m_view.drawNeedsRight)
++			g_ps5DrawsReplay.fetch_add(1, std::memory_order_relaxed);
++	}
++#endif
+ 	if (isFirst)
+ 		draw_execute_first(baseVertex, baseInstance, instanceCount, count, indexDataMPTR, indexType, drawcallContext);
+ 	else
+diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRendererView.cpp b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRendererView.cpp
+index c216232e..bfdbdedb 100644
+--- a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRendererView.cpp
++++ b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRendererView.cpp
+@@ -7,14 +7,38 @@
+ #include "Cafe/HW/Latte/Core/LatteView.h"
+ #include "Cafe/HW/Latte/ISA/RegDefines.h"
+ 
++#include <atomic>
++
+ // in a stereo scope the draws get recorded and replayed for the right view once the left pass ends
+ 
+ float* VulkanRenderer_GetUniformData(uint32 shaderStageIndex);
+ 
++#if defined(CEMU_PS5)
++// the runtime's [draws] line (port/bettervr/xr/runtime.cpp): the counters live in VulkanRendererCore.cpp
++extern uint64 _rdtscFrequency;
++extern std::atomic<uint64> g_ps5RecordNs;
++extern std::atomic<uint64> g_ps5ReplayNs;
++
++static uint64 ps5TscToNs(uint64 ticks)
++{
++	return _rdtscFrequency ? ticks * 1000000000ull / _rdtscFrequency : 0;
++}
++#endif
+ 
+ void VulkanRenderer::view_setStereo(bool isStereo)
+ {
+ 	draw_endRenderPass();
++#if defined(CEMU_PS5)
++	// the left pass's span is the runtime's "record": it is where the right eye's commands are recorded,
++	// and the replay that follows is timed on its own in view_flushRightPass
++	if (isStereo && !m_view.isStereo)
++		m_view.ps5StereoStartTsc = __rdtsc();
++	else if (!isStereo && m_view.isStereo && m_view.ps5StereoStartTsc)
++	{
++		g_ps5RecordNs.fetch_add(ps5TscToNs(__rdtsc() - m_view.ps5StereoStartTsc), std::memory_order_relaxed);
++		m_view.ps5StereoStartTsc = 0;
++	}
++#endif
+ 	m_view.isStereo = isStereo;
+ }
+ 
+@@ -521,6 +545,9 @@ void VulkanRenderer::view_flushRightPass()
+ 	bool hasDraws = std::any_of(m_view.commands.begin(), m_view.commands.end(), [](const VulkanViewCommand& cmd) { return cmd.type == VulkanViewCommandType::Draw || cmd.type == VulkanViewCommandType::DrawIndexed; });
+ 	if (!hasDraws)
+ 		return;
++#if defined(CEMU_PS5)
++	const uint64 ps5ReplayStart = __rdtsc();
++#endif
+ 
+ 	for (auto& seed : m_view.pendingSeeds)
+ 	{
+@@ -608,6 +635,9 @@ void VulkanRenderer::view_flushRightPass()
+ 
+ 	HostModule_ResetCommandBufferState();
+ 	m_view.restoreBindings = true;
++#if defined(CEMU_PS5)
++	g_ps5ReplayNs.fetch_add(ps5TscToNs(__rdtsc() - ps5ReplayStart), std::memory_order_relaxed);
++#endif
+ }
+ 
+ void VulkanRenderer::view_restoreBindings(Renderer::INDEX_TYPE hostIndexType)
+diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRendererView.h b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRendererView.h
+index 1df8e17f..f3e402c9 100644
+--- a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRendererView.h
++++ b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRendererView.h
+@@ -90,6 +90,9 @@ struct VulkanViewUniformData
+ struct VulkanViewState
+ {
+ bool isStereo{};
++#if defined(CEMU_PS5)
++	uint64 ps5StereoStartTsc{}; // the start of the current stereo scope, for the runtime's [draws] line
++#endif
+ 	bool isRecording{};
+ 	bool drawNeedsRight{};
+ 	bool hasNoRightPass{};
