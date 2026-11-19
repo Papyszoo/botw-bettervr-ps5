@@ -9,6 +9,8 @@
 
 #include <fmt/format.h>
 #include <rapidjson/document.h>
+#include <rapidjson/stringbuffer.h>
+#include <rapidjson/writer.h>
 
 #include <cstdio>
 #include <filesystem>
@@ -574,6 +576,49 @@ extern "C" float BetterVR_PS5_Setting(const char* name, float fallback)
 	if (!json[name].IsNumber())
 		return fallback;
 	return json[name].GetFloat();
+}
+
+// The runtime's live menu rows (the Sense triggers) write their value back here: the rest of
+// bettervr.json (the keys added by the app or by hand) is kept. 1 on success.
+extern "C" int BetterVR_PS5_WriteSetting(const char* name, float value)
+{
+	const std::string path = ps5paths::Root() + "/bettervr.json";
+	std::FILE* file = std::fopen(path.c_str(), "rb");
+	std::string text;
+	if (file)
+	{
+		char chunk[4096];
+		for (size_t got; (got = std::fread(chunk, 1, sizeof(chunk), file)) > 0;)
+			text.append(chunk, got);
+		std::fclose(file);
+	}
+	rapidjson::Document json;
+	json.Parse(text.c_str());
+	if (json.HasParseError() || !json.IsObject())
+		json.SetObject();
+	if (json.HasMember(name))
+		json.RemoveMember(name);
+	rapidjson::Value written;
+	if (value == 0.0f || value == 1.0f)
+		written.SetBool(value != 0.0f);
+	else
+		written.SetFloat(value);
+	rapidjson::Value key(name, json.GetAllocator());
+	json.AddMember(key, written, json.GetAllocator());
+	rapidjson::StringBuffer buffer;
+	rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+	json.Accept(writer);
+	const std::string temporary = path + ".tmp";
+	file = std::fopen(temporary.c_str(), "wb");
+	if (!file)
+		return 0;
+	bool wrote = std::fwrite(buffer.GetString(), 1, buffer.GetSize(), file) == buffer.GetSize();
+	if (wrote)
+		wrote = std::fputc('\n', file) != EOF;
+	const bool closed = std::fclose(file) == 0;
+	std::error_code ec;
+	std::filesystem::rename(temporary, path, ec);
+	return wrote && closed && !ec ? 1 : 0;
 }
 
 // The runtime's frame profile (bettervr.json's "profile"): read once, so the per-frame check is a

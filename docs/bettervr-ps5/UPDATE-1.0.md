@@ -733,7 +733,10 @@ and for the eye.
 Branch `bettervr-1.0/v06-all`, from v0.5.0, combining the v0.6 tracks (`bettervr-1.0/v06`, `v06-perf`, `v06-vibration`,
 `v06-triggers`, `v06-eye`). Built only on CI; every result is "built, untested on console". Reported from the console
 on v0.5.0: the short press of Options was too easy to hit when the player meant to pause, the popup at game start was
-unwanted, Link flashed while strafing near grass, and the weapon wheel lacked its left and right arrows. New patch
+unwanted, Link flashed while strafing near grass, and the weapon wheel lacked its left and right arrows. The console
+run of build 93ac3d1 (13.60) then reported blurrier menu text, no damage rumble, gaze offered without the exports, and
+the Sense trigger switch buried in `bettervr.json`; the fixes are in the sections below and in "Firmware gates".
+New patch
 files: bettervr 0007 (performance), 0008 (vibration), 0009 (adaptive triggers), 0010 (eye tracking), 0011
 (body, HUD and the blue needle), 0012 (third-person snap turn) and 0013 (magnesis wrist twist); cemu 0055
 (the GPU thread's swap and VR frame end for the profile). Bettervr 0001-0006 are v06's, unchanged; 0055 is the only
@@ -810,11 +813,13 @@ Cemu patch added. `VERSION` stays 0.5.0.
   arrows vanished on the black buttons, and the minimap and clock looked faded. The compositor has one blend for the
   HUD and the menu quad, and it now blends premultiplied, `color.rgb = c.rgb + color.rgb * (1.0 - c.a)`;
   `port/bettervr/xr/shaders.h` is regenerated with `tools/render-shaders.sh` and committed.
-- **HUD mip chain and LOD-aware sampling** (`port/bettervr/xr/runtime.cpp`, `compose.comp`). Each frame the HUD image
-  is copied into a full mip chain (about 5.4 Mpx of copy and linear blits) and the compose samples it with
-  `textureGrad`, the gradients taken analytically from the quad's homography. The ~2.4x minification now picks a level
-  instead of one bilinear tap at level 0. The sampler is mipmap-linear; the eye images still use LOD 0. When the HUD
-  format has no linear blit the old single tap stays; the log says `HUD mip chain ...` only when the chain was made.
+- **HUD mip chain, two levels, LOD capped at 1.0** (`port/bettervr/xr/runtime.cpp`, `compose.comp`). Each frame the
+  HUD image is copied into level 0 and one linear blit makes level 1 (about 5.1 Mpx in all), and the compose samples
+  it with `textureGrad`, the gradients taken analytically from the quad's homography. The sampler's `maxLod` is 1.0,
+  so the ~2.4x minification takes the half-resolution level instead of one bilinear tap at level 0, and never reaches
+  the levels 2+ that blurred menu text in the first v0.6 build (v0.5.0 sampled level 0 only). The eye images still use
+  LOD 0. When the HUD format has no linear blit the old single tap stays; the log says `HUD mip chain ...` only when
+  the two levels were made.
 - **Compose without the eye pow chain.** The eye swapchain images get a UNORM view on the same image
   (`VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT`), so the compose reads the bytes as written; only the pixels under the HUD
   decode and encode again, to blend it in linear light. `toSrgb` no longer runs for all 8.13 Mpx.
@@ -876,8 +881,12 @@ Cemu patch added. `VERSION` stays 0.5.0.
   per-controller rumble percentage is not applied while VR drives the pad). `port/bettervr/xr/runtime.cpp` turns it on
   at `xrBeginSession` and off at `xrDestroySession` and `BetterVR_PS5_Stop`; one `[pad] rumble:` line says which side
   drives the pad. No Cemu patch was needed.
-- **Damage taken** uses the existing `PlayerNormal` damage-state hook (`player.cpp`): one falling rumble on both hands,
-  once per state change (300 ms apart at most), plus `[vib] damage state '...'` for the first six.
+- **Damage taken** uses both paths a hit can take (`player.cpp`, `camera.cpp`): the `PlayerNormal` damage-state hook
+  and `PlayerLargeDamage`'s own setup at `0x02CAB32C`, the site the pack already patches (a separate hook there
+  forwards to the float-param override). One falling rumble on both hands per hit; whichever path sees the hit first
+  wins and the other within 250 ms is dropped, so a blow cannot rumble twice. `[vib] damage state '...'` names the
+  first six events (`PlayerLargeDamage` for the large-damage path). Every `PlayerNormal` state is also logged once
+  with its hash at INFO, capped at 64 states, so the next run lists the states the game really uses.
 - **The game's rumble stays one category for now, with a learning log.** At the `VPADControlMotor`/`StopMotor` hooks
   (`controls.cpp`, at most 40 lines 150 ms apart, `HapticsLogPatterns` turns it off) it prints the caller LR, the
   playing state, the VPAD pattern bytes, and either the sead `PatternRumbleAddon`'s string at `+0x14` and its repeat
@@ -899,16 +908,20 @@ Cemu patch added. `VERSION` stays 0.5.0.
   `BetterVR_settings.ini` like every other row; and a System > **Adaptive Triggers** card with the toggle and the
   strength slider, shown while the toggle is on.
 - **The DualSense** (default on): `scePadSetTriggerEffect`, NID `2JgFB2n9oUM`, looked up by name in libScePad and
-  called on the handle the app's pad service holds for player 1 (`PS5Cemu_PadHandle`). The parameter is the 0x78-byte
+  called on the handle the app's pad service holds for player 1 (`PS5Cemu_PadHandle`). Where the library does not
+  export the setter (13.60 logs `scePadSetTriggerEffect not found`), the System card shows a **DualSense** row that
+  says **Unavailable** on this firmware; the Sense rows stay separate. The parameter is the 0x78-byte
   `ScePadTriggerEffectParam`: mask 0x3 (L2 and R2), the L2 command at +0x08, R2 at +0x40, each a u32 mode, four
   padding bytes and 0x30 data bytes. The layout and the builders are `port/bettervr/xr/triggers.h`, with a host test
   (`tools/tests/test-bettervr-triggers.sh`, run by the Tests workflow).
-- **The Sense controllers** (the experiment, `bettervr.json` `"senseTriggers": true`, default off):
-  `scePadVrControllerSetTriggerEffect(s)`, NIDs `6Cdc9bbjrRY`/`v8P+9PRqg10`, bound by name first and otherwise at
-  the 13.60 table's `0xa730` (both hands) behind the existing libScePad anchor. The VR payload is unpublished, so the
-  first effect tries the DualSense 0x78 layout on the both-hands call, and if that call fails one 0x38-byte command a
-  hand; the accepted one is used from then on. `"senseTriggerLayout": 1` or `2` forces one of the two for the next
-  run. `BetterVR_PS5_Setting` now also reads a JSON boolean, so `true` works.
+- **The Sense controllers** (the experiment, now the System card's **Sense Triggers** row, default off, saved in
+  `bettervr.json` as `senseTriggers`; a hand-written `true` still works): `scePadVrControllerSetTriggerEffect(s)`,
+  NIDs `6Cdc9bbjrRY`/`v8P+9PRqg10`, bound by name first and otherwise at the 13.60 table's `0xa730` (both hands) only
+  when its anchor sits exactly (see the firmware gates below). The notes name two plausible payloads, so the card has
+  a live test row **Sense trigger format** with Auto, 1 and 2: 1 is the DualSense 0x78 layout on the both-hands call,
+  2 is one 0x38-byte command a hand, and Auto tries 1 then 2 and keeps the one that answers. The choice is saved as
+  `senseTriggerLayout` and every send is logged; a format change resets the sent state so the next effect goes out at
+  once.
 - **Always off on the way out:** `xrDestroySession`, `BetterVR_PS5_Stop` and the failed-start path all send the off
   pair before the pad handles go; the effect lives in the controller's firmware and would otherwise outlive the game.
 - **Logs** (the boot log, each line starts `[trig]`): `Sense trigger effects on/off ...`, the binding lines from
@@ -919,25 +932,30 @@ Cemu patch added. `VERSION` stays 0.5.0.
 ### Eye tracking and the throw assist
 
 - **Gaze probe in hmd2.** `sceHmd2GazeGetResult`, `...ForFoveatedRendering`, `ActivateGazeTracking`,
-  `GetDeviceStatus` and `GetUserCalibrationStatus` are optional slots resolved with `sceKernelDlsym` only. No gaze
-  offset is added to `hmd2_exports.h`; a library that does not export a name logs which one and leaves eye tracking
-  off. After `sceHmd2Open` the probe calls `ActivateGazeTracking(1)`, then logs the device status and the user
-  calibration status. Status 0 means detected/calibrated; any other value is logged raw. A device status other than 0
-  says in the log that eye tracking is off in the PS5 settings (Settings > Accessories > PS VR2 > Eye Tracking) or
-  that the headset does not see the eyes; a calibration status other than 0 says the user is not calibrated and names
-  Adjust Eye Tracking. The status is re-checked every 2 s, so putting the headset on or changing the setting after VR
-  starts is seen.
+  `GetDeviceStatus` and `GetUserCalibrationStatus` are optional slots resolved with `sceKernelDlsym` only, in
+  libSceHmd2's own module handle rather than the opened headset's handle. No gaze offset is added to
+  `hmd2_exports.h`; a library that does not export them logs one line naming the first missing name and leaves eye
+  tracking off. A lazy probe binds them before the OpenXR instance is made, so the extension list can answer honestly;
+  after `sceHmd2Open` the probe calls `ActivateGazeTracking(1)`, then logs the device status and the user calibration
+  status. Status 0 means detected/calibrated; any other value is logged raw. A device status other than 0 says in the
+  log that eye tracking is off in the PS5 settings (Settings > Accessories > PS VR2 > Eye Tracking) or that the headset
+  does not see the eyes; a calibration status other than 0 says the user is not calibrated and names Adjust Eye
+  Tracking. The status is re-checked every 2 s, so putting the headset on or changing the setting after VR starts is
+  seen.
 - **The first 10 s.** At most once a second, the probe logs the full `0x38` result and the `0x18` foveated result as
   hex, then the parsed raw direction and both status fields. Every later status change is logged once (at most 20
   lines). A sample is exposed only when the device and calibration checks pass, both calls returned 0, the foveated
   (or, failing that, the full) result's status is 0 and its direction is finite and non-zero.
-- **OpenXR exposure.** The runtime offers `XR_EXT_eye_gaze_interaction`, accepts it in `xrCreateInstance`, fills
-  `XrSystemEyeGazeInteractionPropertiesEXT` when the application chains it, keeps the
-  `/interaction_profiles/ext/eye_gaze_interaction` profile's `/user/eyes_ext/input/gaze_ext/pose` binding, and marks
-  that action's space as the gaze space. `xrLocateSpace` returns an orientation-only pose (valid + tracked) while the
-  probe has a valid sample, and an untracked pose otherwise; `xrGetActionStatePose` reports the action active only
-  then. `xrGetSystemProperties` runs before `xrCreateSession`, so the property is advertised optimistically: only the
-  session's `hmd2::init` can ask the headset, and the pose is what is gated.
+- **OpenXR exposure is gated by the exports.** The runtime lists `XR_EXT_eye_gaze_interaction` only when
+  `hmd2::gaze_available()` says the five exports are bound; `xrCreateInstance` refuses the name otherwise, and
+  `xrGetSystemProperties` fills `XrSystemEyeGazeInteractionPropertiesEXT` with false, so BetterVR logs
+  `Supports Eye Tracking: No` on 13.60 instead of offering an action set that can never track. When the exports are
+  there, the profile's `/user/eyes_ext/input/gaze_ext/pose` binding and the gaze space are made as before.
+  `xrLocateSpace` returns an orientation-only pose (valid + tracked) while the probe has a valid sample and an
+  untracked pose otherwise; `xrGetActionStatePose` reports the action active only then. After the session starts, a
+  failed activation or calibration is logged once and the runtime says the gaze space stays untracked. The Controls >
+  Motion Controls **Gaze Throw Assist** row is drawn only while `BetterVR_PS5_EyeGazeAvailable()` is true (the code
+  stays; unavailable hardware just does not show it).
 - **Direction frame.** The firmware gives the foveated direction headset-relative with +z forward; the runtime applies
   PSVR2Toolkit's `{-x, y, -z}` conversion and rotates it by the frame's head pose into stage space. The first console
   run's hex and raw direction are what confirm the sign.
@@ -1011,12 +1029,27 @@ Cemu patch added. `VERSION` stays 0.5.0.
 
 - **Settings are BotW VR's alone.** The PayPal card is gone from About, which now has one licence line (Cemu and PS5-ECAM under the GPL, Crementif's BetterVR under MIT) and only the Wii U's paths; the backup, box art, recompiler and remote-screen texts no longer name other systems, and what is left is marked "ask" in the track's settings audit.
 
+### Firmware gates for libScePad and libSceHmd2
+
+- **Never a shifted offset.** The v0.5.1 hotfix is in this branch: `module_table()` and `resolve_module()` take a
+  `scan` flag, and a library whose code offsets are only right where its table's anchor string sits passes false. A
+  moved anchor therefore never moves a call into unknown code (the 12.40 console's signal 6 at the first Sense
+  vibration-mode call, issue #2). The Sense vibration exports already did this; the Sense trigger exports and the
+  headset motor now do too (`third_party/hmd2/hmd2.cpp`).
+- **One line, then VR continues.** Each of those optional binds is by name first and at the exact 13.60 table
+  otherwise. Where neither works, one line says
+  `Sense vibration off on this firmware (no verified libScePad table)`,
+  `Sense trigger effects off on this firmware (no verified libScePad table)` or
+  `sceHmd2SetVibration off on this firmware (no verified libSceHmd2 table), the headset stays still`; VR, tracking and
+  the game run on. The DualSense's setter and the five gaze names are name-only and never use a table.
+
 ### Open
 
 Nothing here has run on a console. The mip chain's cost and the skipped passes need the `[frame]` line; the HUD
 quads' edges need a headset. The optional FSR/upscale for presets below 1x is not done; the compose still samples
-BetterVR's already-upscaled eye image. The depth write in the present shader is not removed. The Sense trigger payload
-and its return-code meaning are unverified, and the DualSense's pad handle is opened in vibration mode 2. The headset's
+BetterVR's already-upscaled eye image. The depth write in the present shader is not removed. The Sense trigger
+payload, which of its two formats the firmware accepts, and its return-code meaning are unverified; the DualSense's
+pad handle is opened in vibration mode 2. The headset's
 `+0x2ae00` is from public tables, not our own dump; its test button is the proof. Explosions have settings but no
 event source. The five gaze names, the meaning of status 0 and the direction's sign wait for the console. The
 third-person snap step's direction, its pad/Sense merge and the release threshold wait for the console too. For the

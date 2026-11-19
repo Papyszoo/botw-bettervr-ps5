@@ -215,6 +215,12 @@ bool worn();
 // init() (returns invalid), and rate-limits its own first-10-s log.
 Gaze gaze();
 
+// Whether eye tracking can be offered: the five gaze exports are bound by name,
+// and after a session has started, ActivateGazeTracking(1) took and the device
+// and user calibration checks pass. Safe before init(); it loads libSceHmd2 to
+// bind the exports, so an OpenXR runtime can answer before its first session.
+bool gaze_available();
+
 // -- Sense controllers -----------------------------------------------------------------
 // Register one Sense controller's scePad handle with VrTracker2 so GetResult
 // reports its pose. `right_hand` picks the device id HLA-PSVR2 registers the
@@ -243,16 +249,16 @@ bool controller_pose(int tracker_handle, float pos[3], float quat[4]);
 
 // A Sense controller's vibration, through libScePad's own Sense exports (the DualSense setters
 // refuse a Sense handle with 0x80920003). `handle` is the scePadVrControllerReadState handle.
-// Resolved on first use by name, else at Ghost-VR's 13.60 offsets after an anchor check; other
-// firmware returns kSenseVibrationUnavailable and logs it once. Intensity 0 stops it.
-// UNVERIFIED on hardware.
+// Resolved on first use by name, else at Ghost-VR's 13.60 offsets only when the anchor sits exactly
+// where that table has it (never shifted); any other firmware returns kSenseVibrationUnavailable
+// and logs it once. Intensity 0 stops it. UNVERIFIED on hardware.
 constexpr int kSenseVibrationUnavailable = (int)0x80000001;
 int sense_set_vibration_mode(int handle, int mode);
 int sense_set_vibration(int handle, uint8_t intensity);
 
 // The PS VR2 headset's motor, sceHmd2SetVibration(int handle, uint32_t level): one motor with no direction, level
-// 0..25. Bound on first use by name, else at the 13.60 offset public PS VR2 tables give (+0x2ae00) and only after
-// libSceHmd2's own anchor string checked; the offset is not from our own dump, so the bind, the level and any
+// 0..25. Bound on first use by name, else at the 13.60 offset public PS VR2 tables give (+0x2ae00) only when
+// libSceHmd2's own anchor string sits exactly there (never shifted); the offset is not from our own dump, so the bind, the level and any
 // failure are logged and the Vibration page's test button is the proof. A library or firmware without it returns
 // kHmd2VibrationUnavailable (logged once) and the headset simply stays still: never fatal. UNVERIFIED on hardware.
 constexpr int kHmd2VibrationUnavailable = (int)0x80000001;
@@ -263,11 +269,15 @@ int set_vibration(int level);
 // scePadOpen handle. Other firmware returns kPadTriggerUnavailable and logs it once. UNVERIFIED on hardware.
 constexpr int kPadTriggerUnavailable = (int)0x80000001;
 int pad_set_trigger_effect(int handle, const void* param);
+// Whether scePadSetTriggerEffect (the DualSense's setter) is bound on this firmware. The menu asks
+// this to say Unavailable instead of offering a row that would do nothing; safe before init().
+bool pad_triggers_available();
 
 // A Sense controller's adaptive triggers, through libScePad's own Sense exports (the DualSense setter refuses a
 // Sense handle). `param` is 0x78 bytes when `_effects` takes both hands, a 0x38-byte command when `_effect` takes
-// one; the VR payload's layout is unpublished. Resolved by name, else at the 13.60 table's offsets after the
-// anchor check; other firmware returns kPadTriggerUnavailable and logs it once. UNVERIFIED on hardware.
+// one; the VR payload's layout is unpublished. Resolved by name, else at the 13.60 table's offsets only when the
+// anchor sits exactly there (never shifted); any other firmware returns kPadTriggerUnavailable and logs it once.
+// UNVERIFIED on hardware.
 int sense_set_trigger_effect(int handle, const void* param);
 int sense_set_trigger_effects(int left_handle, int right_handle, const void* param);
 

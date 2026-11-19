@@ -5,12 +5,12 @@ Subject: [PATCH] PS5: adaptive triggers follow the bow's draw on R2 and the
  shield on L2
 
 ---
- src/game/botw/input/controls.cpp | 20 +++++++++++++++++++-
- src/game/botw/player/bow.cpp     | 12 ++++++++++++
+ src/game/botw/input/controls.cpp | 20 ++++++++++++-
+ src/game/botw/player/bow.cpp     | 12 ++++++++
  src/game/botw/player/bow.h       |  2 ++
- src/rendering/imgui_menus.cpp    | 14 ++++++++++++++
- src/utils/mod_settings.h         |  4 ++++
- 5 files changed, 51 insertions(+), 1 deletion(-)
+ src/rendering/imgui_menus.cpp    | 50 ++++++++++++++++++++++++++++++++
+ src/utils/mod_settings.h         |  4 +++
+ 5 files changed, 87 insertions(+), 1 deletion(-)
 
 diff --git a/src/game/botw/input/controls.cpp b/src/game/botw/input/controls.cpp
 index fa2c596..052180c 100644
@@ -100,21 +100,64 @@ index ebe19e9..4c9543d 100644
 +    float GetDrawAmount();
  }
 diff --git a/src/rendering/imgui_menus.cpp b/src/rendering/imgui_menus.cpp
-index 3e66f4d..2d811b5 100644
+index 3e66f4d..c75f607 100644
 --- a/src/rendering/imgui_menus.cpp
 +++ b/src/rendering/imgui_menus.cpp
-@@ -1479,6 +1479,20 @@ void RND_Renderer::ImGuiOverlay::DrawSystemPage(bool* changed) {
+@@ -17,6 +17,15 @@
+ #include "supporters_generated.h"
+ #include "font_material_symbols.h"
+ 
++#if defined(__PROSPERO__)
++// port/bettervr/xr/runtime.cpp: the Sense triggers' rows, live and saved to bettervr.json
++extern "C" int BetterVR_PS5_SenseTriggersEnabled();
++extern "C" int BetterVR_PS5_SenseTriggerFormat();
++extern "C" void BetterVR_PS5_SetSenseTriggers(int on);
++extern "C" void BetterVR_PS5_SetSenseTriggerFormat(int format);
++extern "C" int BetterVR_PS5_PadTriggersAvailable();
++#endif
++
+ static constexpr ImVec4 kDescriptionColor = ImVec4(0.63f, 0.71f, 0.78f, 1.0f);
+ static constexpr ImVec4 kSectionCaptionColor = ImVec4(0.40f, 0.66f, 1.0f, 1.0f);
+ static constexpr ImVec4 kHighTierSupporterColor = ImVec4(0.78f, 0.53f, 1.0f, 1.0f);
+@@ -1479,6 +1488,47 @@ void RND_Renderer::ImGuiOverlay::DrawSystemPage(bool* changed) {
          EndCard();
      }
  
 +#if defined(__PROSPERO__)
 +    if (BeginCard("##AdaptiveTriggers", "Adaptive Triggers")) {
-+        DrawSetting(ICON_MS_STADIA_CONTROLLER, "Adaptive Triggers", "R2 firms up as the bow is drawn, L2 clicks while the shield is up.", [&]() {
-+            DrawToggle(settings.adaptiveTriggers, changed);
-+        });
++        const bool padTriggers = BetterVR_PS5_PadTriggersAvailable() != 0;
++        DrawSetting(ICON_MS_STADIA_CONTROLLER, "Adaptive Triggers",
++            padTriggers ? "DualSense: R2 firms up as the bow is drawn, L2 clicks while the shield is up."
++                        : "The Sense controllers' bow and shield effects. The DualSense's trigger setter is not available on this firmware.",
++            [&]() {
++                DrawToggle(settings.adaptiveTriggers, changed);
++            });
++        if (!padTriggers) {
++            DrawSetting(ICON_MS_STADIA_CONTROLLER, "DualSense", "Unavailable on this firmware: libScePad does not export scePadSetTriggerEffect.", [&]() {
++                ImGui::TextDisabled("Unavailable");
++            });
++        }
 +        if (settings.adaptiveTriggers) {
 +            DrawSetting(ICON_MS_SPORTS, "Strength", [&]() {
 +                DrawFloatSlider(settings.adaptiveTriggerStrength, 0.0f, 1.0f, [](float value) { return fmt::format("{:.0f}%", value * 100.0f); }, changed);
++            });
++        }
++        bool senseTriggers = BetterVR_PS5_SenseTriggersEnabled() != 0;
++        DrawSetting(ICON_MS_STADIA_CONTROLLER, "Sense Triggers", "The Sense controllers' own trigger effects. Off by default; saved in bettervr.json.", [&]() {
++            if (ToggleSwitch("SenseTriggersRow", &senseTriggers)) {
++                BetterVR_PS5_SetSenseTriggers(senseTriggers ? 1 : 0);
++                *changed = true;
++            }
++        });
++        if (senseTriggers) {
++            static constexpr const char* kSenseFormats[] = { "Auto", "1", "2" };
++            int format = BetterVR_PS5_SenseTriggerFormat();
++            int selected = format == 1 ? 1 : format == 2 ? 2 : 0;
++            DrawSetting(ICON_MS_SETTINGS, "Sense trigger format", "Test row: 1 is both hands 0x78, 2 is one hand 0x38; Auto tries 1 then 2. Each send is logged.", [&]() {
++                if (Segmented("SenseTriggerFormatRow", kSenseFormats, &selected)) {
++                    BetterVR_PS5_SetSenseTriggerFormat(selected);
++                    *changed = true;
++                }
 +            });
 +        }
 +        EndCard();

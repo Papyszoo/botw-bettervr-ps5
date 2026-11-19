@@ -6,9 +6,9 @@ Subject: [PATCH] PS5: a gaze throw assist bends a throw toward where the
 
 ---
  src/game/botw/input/controls.cpp | 53 +++++++++++++++++++++++++++++++-
- src/rendering/imgui_menus.cpp    |  3 ++
+ src/rendering/imgui_menus.cpp    |  6 ++++
  src/utils/mod_settings.h         |  3 ++
- 3 files changed, 58 insertions(+), 1 deletion(-)
+ 3 files changed, 61 insertions(+), 1 deletion(-)
 
 diff --git a/src/game/botw/input/controls.cpp b/src/game/botw/input/controls.cpp
 index 052180c..5d830b1 100644
@@ -82,16 +82,26 @@ index 052180c..5d830b1 100644
      }
      else {
 diff --git a/src/rendering/imgui_menus.cpp b/src/rendering/imgui_menus.cpp
-index 2d811b5..d7f6588 100644
+index c75f607..fccca47 100644
 --- a/src/rendering/imgui_menus.cpp
 +++ b/src/rendering/imgui_menus.cpp
-@@ -1161,6 +1161,9 @@ void RND_Renderer::ImGuiOverlay::DrawControlsPage(bool* changed) {
+@@ -23,6 +23,7 @@ extern "C" int BetterVR_PS5_SenseTriggersEnabled();
+ extern "C" int BetterVR_PS5_SenseTriggerFormat();
+ extern "C" void BetterVR_PS5_SetSenseTriggers(int on);
+ extern "C" void BetterVR_PS5_SetSenseTriggerFormat(int format);
++extern "C" int BetterVR_PS5_EyeGazeAvailable();
+ extern "C" int BetterVR_PS5_PadTriggersAvailable();
+ #endif
+ 
+@@ -1170,6 +1171,11 @@ void RND_Renderer::ImGuiOverlay::DrawControlsPage(bool* changed) {
              DrawSetting(ICON_MS_SWORDS, "Sword Swings", [&]() {
                  DrawEnumSegments(settings.swingSensitivity, swingChoices, changed);
              });
-+            DrawSetting(ICON_MS_EYE_TRACKING, "Gaze Throw Assist", "Bends a throw up to 15 degrees toward where you look; with eye tracking off, toward where you face. Off by default.", [&]() {
-+                DrawToggle(settings.eyeGazeThrowAssist, changed);
-+            });
++            if (VRManager::instance().XR->m_capabilities.supportsEyeGaze && BetterVR_PS5_EyeGazeAvailable() != 0) {
++                DrawSetting(ICON_MS_EYE_TRACKING, "Gaze Throw Assist", "Bends a throw up to 15 degrees toward where you look; with eye tracking off, toward where you face. Off by default.", [&]() {
++                    DrawToggle(settings.eyeGazeThrowAssist, changed);
++                });
++            }
              EndCard();
          }
      }

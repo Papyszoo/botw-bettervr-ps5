@@ -64,6 +64,8 @@ int scePadVrControllerReadState(int handle, void* state);
 int32_t PS5Cemu_PadHandle(int player);
 // port/bettervr/VrPS5.cpp: a number from bettervr.json, or fallback
 float BetterVR_PS5_Setting(const char* name, float fallback);
+// the same file: write one of bettervr.json's values back (the menu's Sense trigger rows)
+int BetterVR_PS5_WriteSetting(const char* name, float value);
 // port/bettervr/VrPS5.cpp: bettervr.json's "profile" (true/false or 1/0), read once
 bool BetterVR_PS5_Profile();
 // port/cemu/PS5PadController.cpp: the DualSense while a VR session runs (Cemu's own rumble output is held back,
@@ -1230,8 +1232,10 @@ namespace
 	}
 
 	// The HUD is a 2000x2040 image on a quad of about 836x487 eye pixels: a 2.4x minification, which
-	// one bilinear tap at level 0 turns into crawling edges. A full mip chain of the HUD, copied each
-	// frame, lets the compose pick the right level with textureGrad. About 5.4 Mpx of blits a frame.
+	// one bilinear tap at level 0 turns into crawling edges. Two levels, the most the compose's LOD
+	// clamp (1.0) reads, let textureGrad take the half-resolution level without averaging glyph detail
+	// away; levels 2+ of a full chain were what made v0.6's first build blurrier than v0.5.0. Only the
+	// levels used are built each frame (level 0's copy plus one blit).
 	bool EnsureHudMips(XrSession_T* session, const XrSwapchain_T* hud)
 	{
 		if (session->hudMip && session->hudMipWidth == hud->width && session->hudMipHeight == hud->height && session->hudMipFormat == hud->format)
@@ -1253,6 +1257,7 @@ namespace
 		uint32_t levels = 1;
 		while ((1u << levels) < std::max(hud->width, hud->height))
 			levels++;
+		levels = std::min(levels, 2u); // the compose clamps LOD to 1.0: levels 0 and 1 are all it reads
 		if (!MakeImage(session, hud->width, hud->height, hud->format,
 				VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, session->hudMip, session->hudMipMemory,
 				&session->hudMipView, levels))
@@ -1340,10 +1345,12 @@ namespace
 		VkSamplerCreateInfo samplerInfo{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
 		samplerInfo.magFilter = VK_FILTER_LINEAR;
 		samplerInfo.minFilter = VK_FILTER_LINEAR;
-		// linear between mip levels: the HUD is sampled with textureGrad, the eye images at LOD 0
+		// linear between mip levels: the HUD is sampled with textureGrad, the eye images at LOD 0.
+		// maxLod 1.0 caps the HUD at its half-resolution level, as v0.5.0's one tap kept level 0:
+		// it keeps the edge-shimmer gain without reaching the levels that blurred menu text.
 		samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
 		samplerInfo.addressModeU = samplerInfo.addressModeV = samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-		samplerInfo.maxLod = VK_LOD_CLAMP_NONE;
+		samplerInfo.maxLod = 1.0f;
 		result = vk.vkCreateSampler(session->device, &samplerInfo, nullptr, &session->sampler);
 		if (result != VK_SUCCESS)
 			return Fail("vkCreateSampler", result);
@@ -1672,6 +1679,78 @@ extern "C" void BetterVR_PS5_TestPad()
 	VibLog("test pad: level %d for 400 ms on the DualSense (player 1)", kPadTestLevel);
 }
 
+// The Sense triggers' rows in BetterVR's menu (rendering/imgui_menus.cpp). The values stay in
+// bettervr.json like the keys the track started with; a change is live and the writer keeps the
+// file's other keys.
+extern "C" int BetterVR_PS5_SenseTriggersEnabled()
+{
+	std::lock_guard lock(s.lock);
+	return s.senseTriggers ? 1 : 0;
+}
+
+extern "C" int BetterVR_PS5_SenseTriggerFormat()
+{
+	std::lock_guard lock(s.lock);
+	return s.triggerLayoutSetting;
+}
+
+// BetterVR's menu draws the Gaze Throw Assist row only while the runtime can offer eye tracking:
+// the exports are bound, and after a session ActivateGazeTracking(1) and the calibration checks
+// passed. The row's code stays; unavailable hardware just does not show it.
+extern "C" int BetterVR_PS5_EyeGazeAvailable()
+{
+	return hmd2::gaze_available() ? 1 : 0;
+}
+
+// The triggers page's DualSense row: unavailable where libScePad does not export its setter (13.60
+// logs "scePadSetTriggerEffect not found"), while the Sense row stays separate.
+extern "C" int BetterVR_PS5_PadTriggersAvailable()
+{
+	return hmd2::pad_triggers_available() ? 1 : 0;
+}
+
+extern "C" void BetterVR_PS5_SetSenseTriggers(int on)
+{
+	std::lock_guard lock(s.lock);
+	const bool enabled = on != 0;
+	if (s.senseTriggers == enabled)
+		return;
+	if (!enabled && s_triggerSent[1].valid && s.hands[0].handle >= 0 && s.hands[1].handle >= 0)
+	{
+		// the effect lives in the controller's firmware: clear the one it took before the row goes off
+		const ps5trig::Param off = ps5trig::Both(ps5trig::Off(), ps5trig::Off());
+		const int left = s.hands[0].handle, right = s.hands[1].handle;
+		int result = -1;
+		if (s_triggerLayout != 2)
+			result = hmd2::sense_set_trigger_effects(left, right, &off);
+		if (result != 0 || s_triggerLayout == 2)
+			Log("[trig] Sense off (the menu's Sense Triggers row), one hand -> 0x%08x / 0x%08x", (unsigned)hmd2::sense_set_trigger_effect(left, &off.l2),
+				(unsigned)hmd2::sense_set_trigger_effect(right, &off.r2));
+		else
+			Log("[trig] Sense off (the menu's Sense Triggers row), both hands -> 0x%08x", (unsigned)result);
+	}
+	s.senseTriggers = enabled;
+	s_triggerSent[1] = {};
+	s_triggerLayout = s.triggerLayoutSetting;
+	BetterVR_PS5_WriteSetting("senseTriggers", enabled ? 1.0f : 0.0f);
+	Log("[trig] Sense trigger effects %s (the menu's Sense Triggers row, saved to bettervr.json)", enabled ? "on" : "off");
+}
+
+extern "C" void BetterVR_PS5_SetSenseTriggerFormat(int format)
+{
+	std::lock_guard lock(s.lock);
+	format = format == 1 || format == 2 ? format : 0;
+	if (s.triggerLayoutSetting == format)
+		return;
+	s.triggerLayoutSetting = format;
+	s_triggerLayout = format;
+	s_triggerSent[1] = {};
+	BetterVR_PS5_WriteSetting("senseTriggerLayout", (float)format);
+	Log("[trig] Sense trigger format: %s (the menu's test row, saved to bettervr.json)",
+		format == 0 ? "Auto, the 0x78 both-hands layout first then 0x38 one hand" :
+		format == 1 ? "1, both hands 0x78" : "2, one hand 0x38");
+}
+
 // ==== the OpenXR functions ======================================================================
 extern "C" {
 
@@ -1686,13 +1765,20 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEnumerateInstanceExtensionProperties(const char
 	// XR_KHR_composition_layer_depth is not offered, as 7fbceeb allows: BetterVR then keeps its depth in a local attachment, and no
 	// depth swapchain (three 16 MB images for each eye) is made for a compositor that ignores depth. xrCreateInstance still
 	// accepts the name, for an application that asks without having looked.
-	*count = 2;
-	if (capacity < 2)
+	// Eye gaze is offered only when libSceHmd2's five gaze exports are bound: a library without them
+	// (13.60, the first console run) leaves the extension out, so the application logs No and does not
+	// build an action set whose poses could never be tracked. Activation is checked again at the session.
+	const bool gaze = hmd2::gaze_available();
+	*count = gaze ? 2u : 1u;
+	if (capacity < *count)
 		return capacity == 0 ? XR_SUCCESS : XR_ERROR_SIZE_INSUFFICIENT;
 	std::snprintf(props[0].extensionName, XR_MAX_EXTENSION_NAME_SIZE, "%s", XR_KHR_VULKAN_ENABLE_EXTENSION_NAME);
 	props[0].extensionVersion = XR_KHR_vulkan_enable_SPEC_VERSION;
-	std::snprintf(props[1].extensionName, XR_MAX_EXTENSION_NAME_SIZE, "%s", XR_EXT_EYE_GAZE_INTERACTION_EXTENSION_NAME);
-	props[1].extensionVersion = XR_EXT_eye_gaze_interaction_SPEC_VERSION;
+	if (gaze)
+	{
+		std::snprintf(props[1].extensionName, XR_MAX_EXTENSION_NAME_SIZE, "%s", XR_EXT_EYE_GAZE_INTERACTION_EXTENSION_NAME);
+		props[1].extensionVersion = XR_EXT_eye_gaze_interaction_SPEC_VERSION;
+	}
 	return XR_SUCCESS;
 }
 
@@ -1706,8 +1792,8 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateInstance(const XrInstanceCreateInfo* info
 	for (uint32_t i = 0; i < info->enabledExtensionCount; i++)
 	{
 		const char* name = info->enabledExtensionNames[i];
-		if (std::strcmp(name, XR_KHR_VULKAN_ENABLE_EXTENSION_NAME) != 0 && std::strcmp(name, XR_KHR_COMPOSITION_LAYER_DEPTH_EXTENSION_NAME) != 0 &&
-			std::strcmp(name, XR_EXT_EYE_GAZE_INTERACTION_EXTENSION_NAME) != 0)
+		const bool gaze = std::strcmp(name, XR_EXT_EYE_GAZE_INTERACTION_EXTENSION_NAME) == 0 && hmd2::gaze_available();
+		if (std::strcmp(name, XR_KHR_VULKAN_ENABLE_EXTENSION_NAME) != 0 && std::strcmp(name, XR_KHR_COMPOSITION_LAYER_DEPTH_EXTENSION_NAME) != 0 && !gaze)
 		{
 			Log("xrCreateInstance: extension %s is not offered", name);
 			return XR_ERROR_EXTENSION_NOT_PRESENT;
@@ -1782,20 +1868,22 @@ XRAPI_ATTR XrResult XRAPI_CALL xrGetSystemProperties(XrInstance, XrSystemId, XrS
 	std::snprintf(props->systemName, XR_MAX_SYSTEM_NAME_SIZE, "PlayStation VR2");
 	props->graphicsProperties = {kEyeWidth, kEyeHeight, 1};
 	props->trackingProperties = {XR_TRUE, XR_TRUE};
-	// The eye-gaze profile is offered optimistically: xrGetSystemProperties runs before xrCreateSession,
-	// and only the session's hmd2::init can ask the headset whether eye tracking is on and calibrated.
-	// xrLocateSpace then reports a pose only while the probe has a valid sample, and reports the space
-	// untracked otherwise, so BetterVR's gaze falls back to straight ahead as it does without a profile.
+	// The eye-gaze profile is offered only when hmd2 bound the five gaze exports. xrGetSystemProperties
+	// runs before xrCreateSession, so activation and calibration are checked again after hmd2::init: a
+	// session whose ActivateGazeTracking(1) failed leaves every gaze pose untracked, and the runtime
+	// says so once. Without the exports (13.60) the property is false and BetterVR logs No.
+	const bool gaze = hmd2::gaze_available();
 	bool chained = false;
 	for (auto* next = static_cast<XrBaseOutStructure*>(props->next); next; next = next->next)
 		if (next->type == XR_TYPE_SYSTEM_EYE_GAZE_INTERACTION_PROPERTIES_EXT)
 		{
-			reinterpret_cast<XrSystemEyeGazeInteractionPropertiesEXT*>(next)->supportsEyeGazeInteraction = XR_TRUE;
+			reinterpret_cast<XrSystemEyeGazeInteractionPropertiesEXT*>(next)->supportsEyeGazeInteraction = gaze ? XR_TRUE : XR_FALSE;
 			chained = true;
 		}
 	static bool logged = false;
 	if (!std::exchange(logged, true))
-		Log("gaze: XR_EXT_eye_gaze_interaction offered%s; a pose is reported only while the headset's calibrated eye tracking is on",
+		Log(gaze ? "gaze: XR_EXT_eye_gaze_interaction offered%s; a pose is reported only while the headset's calibrated eye tracking is on"
+				 : "gaze: XR_EXT_eye_gaze_interaction not offered: libSceHmd2 does not bind the gaze exports on this firmware%s",
 			chained ? "" : " (the application did not chain the system property)");
 	return XR_SUCCESS;
 }
@@ -1925,6 +2013,8 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateSession(XrInstance, const XrSessionCreate
 	}
 	s.sessionStartedAt = sceKernelGetProcessTime();
 	Log("VR start 3/5: the headset is up and the compositor is ready (%llu ms after the session)", (unsigned long long)((sceKernelGetProcessTime() - sessionBeganAt) / 1000));
+	if (s.instance->gaze && !hmd2::gaze_available())
+		Log("gaze: eye tracking did not activate or is not calibrated; the gaze space stays untracked and the throw assist uses the head direction");
 	s.gripPitch = BetterVR_PS5_Setting("gripPitch", 32.0f);
 	s.aimPitch = BetterVR_PS5_Setting("aimPitch", 0.0f);
 	s.gripYaw = BetterVR_PS5_Setting("gripYaw", 17.0f);

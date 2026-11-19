@@ -22,23 +22,39 @@ The game's own rumble also logs, at most 40 lines 150 ms apart, the caller and, 
 sead addon is reachable, its pattern string (+0x14), so one console run can tell which
 situations make which pattern.
 ---
- src/CMakeLists.txt               |   1 +
- src/game/botw/game_structs.h     |   3 +
- src/game/botw/input/controls.cpp | 130 ++++++++++++++----
- src/game/botw/player/player.cpp  |  31 +++++
- src/game/botw/player/weapon.cpp  |   2 +-
- src/rendering/haptic_types.h     |  26 ++++
- src/rendering/haptics.cpp        |  33 ++++-
- src/rendering/haptics.h          |  12 +-
- src/rendering/imgui_menus.cpp    | 145 ++++++++++++++++++++
- src/rendering/imgui_menus.h      |  19 +--
- src/rendering/renderer.h         |   1 +
- src/rendering/rumble.h           | 222 +++++++++++++++++++------------
- src/utils/mod_settings.cpp       |  60 +++++++++
- src/utils/mod_settings.h         |  46 +++++++
- 14 files changed, 607 insertions(+), 124 deletions(-)
+ .../BreathOfTheWild_BetterVR/patch_Misc.asm   |   2 +-
+ src/CMakeLists.txt                            |   1 +
+ src/game/botw/camera/camera.cpp               |   9 +
+ src/game/botw/game_structs.h                  |   3 +
+ src/game/botw/input/controls.cpp              | 130 +++++++---
+ src/game/botw/player/player.cpp               |  49 ++++
+ src/game/botw/player/player.h                 |   3 +
+ src/game/botw/player/weapon.cpp               |   2 +-
+ src/rendering/haptic_types.h                  |  26 ++
+ src/rendering/haptics.cpp                     |  33 ++-
+ src/rendering/haptics.h                       |  12 +-
+ src/rendering/imgui_menus.cpp                 | 145 ++++++++++++
+ src/rendering/imgui_menus.h                   |  19 +-
+ src/rendering/renderer.h                      |   1 +
+ src/rendering/rumble.h                        | 222 +++++++++++-------
+ src/utils/mod_settings.cpp                    |  60 +++++
+ src/utils/mod_settings.h                      |  46 ++++
+ 17 files changed, 638 insertions(+), 125 deletions(-)
  create mode 100644 src/rendering/haptic_types.h
 
+diff --git a/resources/BreathOfTheWild_BetterVR/patch_Misc.asm b/resources/BreathOfTheWild_BetterVR/patch_Misc.asm
+index 46fd0df..97d5e0f 100644
+--- a/resources/BreathOfTheWild_BetterVR/patch_Misc.asm
++++ b/resources/BreathOfTheWild_BetterVR/patch_Misc.asm
+@@ -32,7 +32,7 @@ moduleMatches = 0x6267BFD0
+ 0x02CAE078 = bla import.coreinit.hook_OverwriteFloatParam
+ 
+ ; neutralize PlayerLargeDamage movement for Link by overriding its speed, jump and impulse float params to 0.0f (NoRagdollTime at 0x02CAB5AC also left alone)
+-0x02CAB32C = bla import.coreinit.hook_OverwriteFloatParam
++0x02CAB32C = bla import.coreinit.hook_PlayerLargeDamage
+ 0x02CAB350 = bla import.coreinit.hook_OverwriteFloatParam
+ 0x02CAB374 = bla import.coreinit.hook_OverwriteFloatParam
+ 0x02CAB398 = bla import.coreinit.hook_OverwriteFloatParam
 diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
 index ee8d53e..643f4b1 100644
 --- a/src/CMakeLists.txt
@@ -51,6 +67,31 @@ index ee8d53e..643f4b1 100644
      rendering/haptics.h
      rendering/haptics.cpp
      rendering/tracking.h
+diff --git a/src/game/botw/camera/camera.cpp b/src/game/botw/camera/camera.cpp
+index dde1e68..ba3dddc 100644
+--- a/src/game/botw/camera/camera.cpp
++++ b/src/game/botw/camera/camera.cpp
+@@ -732,6 +732,14 @@ static void hook_OverwriteFloatParam(PPCInterpreter_t* hCPU) {
+     }
+ }
+ 
++// 0x02CAB32C is the first getStaticParam call in PlayerLargeDamage's own setup, the same site the pack
++// patches to neutralize its movement. It runs when the large-damage action starts, which is the hit path
++// PlayerNormal's state hook never saw in the console run; the first call of a hit drives the rumble.
++static void hook_PlayerLargeDamage(PPCInterpreter_t* hCPU) {
++    Player::OnLargeDamage();
++    hook_OverwriteFloatParam(hCPU);
++}
++
+ void Camera::RegisterHooks() {
+     CemuHost::RegisterHook("hook_UpdateCameraForGameplay", &hook_UpdateCameraForGameplay);
+     CemuHost::RegisterHook("hook_AdjustGameplayCameraPivot", &hook_AdjustGameplayCameraPivot);
+@@ -744,4 +752,5 @@ void Camera::RegisterHooks() {
+     CemuHost::RegisterHook("hook_SkipCameraCollision", &hook_SkipCameraCollision);
+     CemuHost::RegisterHook("hook_ReplaceCameraMode", &hook_ReplaceCameraMode);
+     CemuHost::RegisterHook("hook_OverwriteFloatParam", &hook_OverwriteFloatParam);
++    CemuHost::RegisterHook("hook_PlayerLargeDamage", &hook_PlayerLargeDamage);
+ }
 diff --git a/src/game/botw/game_structs.h b/src/game/botw/game_structs.h
 index 319d750..0d50ed7 100644
 --- a/src/game/botw/game_structs.h
@@ -382,7 +423,7 @@ index 01766bb..fa2c596 100644
  }
  
 diff --git a/src/game/botw/player/player.cpp b/src/game/botw/player/player.cpp
-index 61299a1..5df1f1a 100644
+index 61299a1..e08a818 100644
 --- a/src/game/botw/player/player.cpp
 +++ b/src/game/botw/player/player.cpp
 @@ -4,6 +4,7 @@
@@ -393,27 +434,40 @@ index 61299a1..5df1f1a 100644
  #include "rendering/tracking.h"
  #include "utils/render_utils.h"
  
-@@ -97,6 +98,32 @@ static bool ShouldBlockFirstPersonPlayerNormalState(uint32_t stateNamePtr) {
+@@ -97,6 +98,49 @@ static bool ShouldBlockFirstPersonPlayerNormalState(uint32_t stateNamePtr) {
      }
  }
  
-+// A damage reaction state is the frame a hit lands (vib.md, "Damage taken"): one falling rumble on both hands, once
-+// per state change, since the hook can fire again for the same hit. The state's name is also logged once each, as
-+// the first-person block below never reaches the state-change line.
-+static void PlayDamageRumble(uint32_t stateNamePtr) {
++// Every PlayerNormal state is logged once with its hash, whatever the first-person block below decides to do
++// with it: the console run that reported no damage rumble had no list of the states the game actually uses.
++// INFO so it is always there; capped, so a long session cannot fill the log with one line per state.
++static void LogPlayerNormalStateOnce(uint32_t stateNamePtr) {
++    static std::unordered_set<uint32_t> s_loggedStates;
++    constexpr size_t kMaxLoggedStates = 64;
++    if (s_loggedStates.size() >= kMaxLoggedStates || !s_loggedStates.insert(stateNamePtr).second)
++        return;
++    Log::print<INFO>("[vib] PlayerNormal state '{}' (0x{:08X})", Guest::CString(stateNamePtr), stateNamePtr);
++}
++
++// A damage event is one falling rumble on both hands. Two state machines can see the same hit (PlayerNormal's
++// damage reaction and PlayerLargeDamage, whose 0x02CAB32C setup the pack already patches), so the first one
++// within 250 ms wins and the other is dropped: one event per hit, never two rumbles for one blow. The name is
++// logged for the first six events only.
++static void PlayDamageRumble(uint32_t stateNamePtr, const char* source) {
 +    using clock = std::chrono::steady_clock;
 +    static clock::time_point s_lastPlayed{};
-+    static uint32_t s_lastState = 0;
 +    static int s_namesLogged = 0;
 +    const auto now = clock::now();
-+    if (stateNamePtr == s_lastState && now - s_lastPlayed < std::chrono::milliseconds(300))
++    if (now - s_lastPlayed < std::chrono::milliseconds(250))
 +        return;
-+    s_lastState = stateNamePtr;
 +    s_lastPlayed = now;
 +
 +    if (s_namesLogged < 6) {
 +        s_namesLogged++;
-+        Log::print<INFO>("[vib] damage state '{}' (0x{:08X})", Guest::CString(stateNamePtr), stateNamePtr);
++        if (stateNamePtr != 0)
++            Log::print<INFO>("[vib] damage state '{}' (0x{:08X}, {})", Guest::CString(stateNamePtr), stateNamePtr, source);
++        else
++            Log::print<INFO>("[vib] damage state 'PlayerLargeDamage' (0x02CAB32C, {})", source);
 +    }
 +
 +    constexpr RumbleParameters damageRumble = { true, 0, RumbleType::Falling, 0.5f, false, 0.4, 0.1f, 0.8f };
@@ -423,20 +477,38 @@ index 61299a1..5df1f1a 100644
 +    Haptics::Play(otherHand, HapticCategory::Damage);
 +}
 +
++void Player::OnLargeDamage() {
++    PlayDamageRumble(0, "large damage init");
++}
++
  static void hook_PlayerNormalChangeState(PPCInterpreter_t* hCPU) {
      hCPU->instructionPointer = orig_PlayerNormalChangeStateInnerChangeChildFuncAddr;
  
-@@ -105,6 +132,10 @@ static void hook_PlayerNormalChangeState(PPCInterpreter_t* hCPU) {
+@@ -105,6 +149,11 @@ static void hook_PlayerNormalChangeState(PPCInterpreter_t* hCPU) {
          return;
      }
  
++    LogPlayerNormalStateOnce(stateNamePtr);
 +    if (ShouldBlockFirstPersonPlayerNormalState(stateNamePtr)) {
-+        PlayDamageRumble(stateNamePtr);
++        PlayDamageRumble(stateNamePtr, "PlayerNormal");
 +    }
 +
      if (GameState::IsFirstPerson() && GetSettings().ShouldPreventFirstPersonRagdoll() && ShouldBlockFirstPersonPlayerNormalState(stateNamePtr)) {
          Log::print<PPC>("Suppressing PlayerNormal state '{}' in first person", Guest::CString(stateNamePtr));
          hCPU->instructionPointer = hCPU->sprNew.LR;
+diff --git a/src/game/botw/player/player.h b/src/game/botw/player/player.h
+index 16afdb0..8e88469 100644
+--- a/src/game/botw/player/player.h
++++ b/src/game/botw/player/player.h
+@@ -16,5 +16,8 @@ namespace Player {
+ 
+     bool TrackDamageFloatParam(uint32_t actionPtr, uint32_t destFloatPtr, std::string_view paramName);
+ 
++    // PlayerLargeDamage's own setup (0x02CAB32C): one damage event, deduplicated with PlayerNormal's
++    void OnLargeDamage();
++
+     void RequestHandThrow(const glm::fvec3& worldVelocity);
+ }
 diff --git a/src/game/botw/player/weapon.cpp b/src/game/botw/player/weapon.cpp
 index 0af8b47..cd88ea0 100644
 --- a/src/game/botw/player/weapon.cpp

@@ -48,7 +48,7 @@ index bf41cca..73f0fe4 100644
  
  0x02BEEBCC = bla captureCameraTailStickYaw
 diff --git a/src/game/botw/camera/camera.cpp b/src/game/botw/camera/camera.cpp
-index 8cf776d..34ddcc6 100644
+index 3c83cd9..76768ea 100644
 --- a/src/game/botw/camera/camera.cpp
 +++ b/src/game/botw/camera/camera.cpp
 @@ -117,6 +117,26 @@ static int TryConsumePendingSnapTurnDirection() {
@@ -108,7 +108,7 @@ index 8cf776d..34ddcc6 100644
  static void hook_CaptureClimbWallSurface(PPCInterpreter_t* hCPU) {
      hCPU->instructionPointer = hCPU->sprNew.LR;
  
-@@ -792,6 +835,8 @@ void Camera::RegisterHooks() {
+@@ -800,6 +843,8 @@ void Camera::RegisterHooks() {
      CemuHost::RegisterHook("hook_UpdateCameraForGameplay", &hook_UpdateCameraForGameplay);
      CemuHost::RegisterHook("hook_AdjustGameplayCameraPivot", &hook_AdjustGameplayCameraPivot);
      CemuHost::RegisterHook("hook_AddGameCameraStickYaw", &hook_AddGameCameraStickYaw);
@@ -209,10 +209,10 @@ index e9d41df..a0e5511 100644
      ProcessJoystickInput(state.previousStickHold, newXRStickHold, vpadStatus, leftStickSource, rightStickSource, disableRightStickHorizontalRotation);
  
 diff --git a/src/rendering/imgui_menus.cpp b/src/rendering/imgui_menus.cpp
-index d7f6588..369c54d 100644
+index fccca47..e384697 100644
 --- a/src/rendering/imgui_menus.cpp
 +++ b/src/rendering/imgui_menus.cpp
-@@ -948,6 +948,9 @@ void RND_Renderer::ImGuiOverlay::DrawPlaystylePage(bool* changed) {
+@@ -958,6 +958,9 @@ void RND_Renderer::ImGuiOverlay::DrawPlaystylePage(bool* changed) {
              DrawSetting(ICON_MS_ZOOM_OUT_MAP, "Camera Distance", [&]() {
                  DrawFloatSlider(settings.thirdPlayerDistance, 0.5f, 0.65f, [](float value) { return fmt::format("{:.2f}", value); }, changed);
              });
