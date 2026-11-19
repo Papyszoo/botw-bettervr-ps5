@@ -3,6 +3,30 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-19: v0.6 shadows (High 200% by default, and the cascades snap to whole texels), built, untested on console
+
+A fresh launcher starts the Graphics pack's Shadows preset on **High (200%)** (`$shadowRes = 2`): the near cascade's
+768x720 map becomes 1536x1440 and its 2x2 PCF taps cover 4 times the texels, so shadow edges lose their stair steps.
+A saved choice wins, and the preset names are unchanged, so Low, Medium, Ultra and Extreme apply as before. The game
+fits the cascades to the record camera every frame; with head movement the fit slid by a fraction of a texel a frame,
+so the 2x2 taps landed on different texels and the dapple re-formed. Two native hooks now round the fit's x/y
+translation to whole shadow-map texels before the game stores it: the `DepthShadowProj` lookup matrices (four cascade
+slots) and the `ShadowPrePass` render matrices (the three the game uploads in its one call). The fourth lookup's
+render fit is not written through that call, and the pack's fifth 360x360 map never gets a cascade index. The texel
+size comes from the active Shadows preset and is frozen at the first frame, so a preset saved for the next start
+cannot change this run's grid. One boot line: `Shadow cascades: 1-texel snap on, Shadows "High (200%)" (2.00x)`.
+New patches bettervr 0021 (High default) and 0022 (the snap); no Cemu change. The shadow investigation's item 3, the
+in-world NPC dialogue panel's own shadows, is deliberately **not** in this build: it is deferred to v0.7.
+
+**Test request 58 (shadows, 13.60 console).** With a fresh launcher (or Shadows saved as High), play 60 s on Hyrule
+Field and near the tower's lattice, then set Shadows to Medium and repeat after a restart. At High the near shadow
+edges must be visibly sharper than at Medium; with slow head movement the lattice dapples must step by whole texels
+instead of re-forming every frame, and no shadow may jump as a block. Walk between a village, grass and the plateau's
+ruins and say whether any cascade seam or new shadow acne appears at 200%. Send the
+`Shadow cascades: 1-texel snap on, Shadows "..." (N.NNx)` line from each start (it must name the preset and its
+scale), the `Graphics pack presets:` line (Shadows must read `High (200%)` on a fresh launcher), and the `[draws]` and
+`[perf]` lines from two minutes at each setting; say whether the frame time moved outside its usual spread.
+
 ## 2026-11-19: v0.6 compose follow-up (1x eyes copied, a HUD-only dispatch, the last barrier without a host read), built, untested on console
 
 At 1x the compose no longer runs its 8.13 Mpx compute pass over every eye pixel: each eye's swapchain image is the
