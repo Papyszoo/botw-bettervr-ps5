@@ -893,7 +893,8 @@ namespace
 	// goes out again 5 s later.
 	struct TriggerSent
 	{
-		bool valid = false; // this device's triggers were set since the session started
+		bool valid = false;    // the last accepted param is in param (a refusal clears it)
+		bool accepted = false; // an effect may be on the device: the off has not been sent since the last effect
 		ps5trig::Param param{};
 		uint64_t at = 0;      // sceKernelGetProcessTime, us
 		uint64_t retryAt = 0; // after a refusal, nothing is sent before this time
@@ -919,8 +920,8 @@ namespace
 
 	bool TriggerDue(const TriggerSent& sent, const ps5trig::Param& param, uint64_t now)
 	{
-		if (now < sent.retryAt)
-			return false; // libScePad refused the last one: wait before the next attempt
+		if (now < sent.retryAt && !(ps5trig::IsOff(param) && sent.accepted))
+			return false; // libScePad refused the last one: wait before the next attempt, but an off still clears an effect
 		if (sent.valid && ps5trig::Same(sent.param, param))
 			return false;
 		if (ps5trig::IsOff(param) && !sent.valid)
@@ -946,11 +947,14 @@ namespace
 		{
 			// not sent: the same effect must go out again, and a refusal is not retried at 20 Hz
 			sent.valid = false;
+			if (ps5trig::IsOff(param))
+				sent.accepted = false; // an off was attempted; an effect is cleared on the way out regardless
 			sent.retryAt = now + kTriggerRetryUs;
 			return;
 		}
 		sent.param = param;
 		sent.valid = true;
+		sent.accepted = !ps5trig::IsOff(param);
 		sent.at = now;
 		sent.retryAt = 0;
 	}
@@ -966,6 +970,7 @@ namespace
 		char l2[48], r2[48];
 		DescribeTrigger(param.l2, l2, sizeof l2);
 		DescribeTrigger(param.r2, r2, sizeof r2);
+		bool applied = false;
 		if (s_triggerLayout == 0)
 		{
 			// the first run's experiment: the DualSense's 0x78 layout on the both-hands setter, then one 0x38
@@ -973,7 +978,10 @@ namespace
 			const int both = hmd2::sense_set_trigger_effects(left, right, &param);
 			Log("[trig] Sense both hands (0x78, %zu bytes) L2 %s, R2 %s -> 0x%08x", sizeof param, l2, r2, (unsigned)both);
 			if (both == 0)
+			{
 				s_triggerLayout = 1;
+				applied = true;
+			}
 			else
 			{
 				const int oneLeft = hmd2::sense_set_trigger_effect(left, &param.l2);
@@ -981,6 +989,7 @@ namespace
 				Log("[trig] Sense one hand (0x38, %zu bytes) L2 %s -> 0x%08x, R2 %s -> 0x%08x", sizeof(ps5trig::Command), l2,
 					(unsigned)oneLeft, r2, (unsigned)oneRight);
 				s_triggerLayout = oneLeft == 0 && oneRight == 0 ? 2 : -1;
+				applied = s_triggerLayout > 0;
 			}
 			if (s_triggerLayout > 0)
 				Log("[trig] Sense payload: %s accepted; the other layout is tried only if this one is not felt",
@@ -992,14 +1001,19 @@ namespace
 		{
 			const int result = hmd2::sense_set_trigger_effects(left, right, &param);
 			Log("[trig] Sense both hands (0x78) L2 %s, R2 %s -> 0x%08x", l2, r2, (unsigned)result);
-			if (result != 0)
+			if (result == 0)
+				applied = true;
+			else
 			{
 				// the accepted layout is no guarantee for the next payload: try the one-hand form once more
 				const int oneLeft = hmd2::sense_set_trigger_effect(left, &param.l2);
 				const int oneRight = hmd2::sense_set_trigger_effect(right, &param.r2);
 				Log("[trig] Sense one hand (0x38) L2 %s -> 0x%08x, R2 %s -> 0x%08x", l2, (unsigned)oneLeft, r2, (unsigned)oneRight);
 				if (oneLeft == 0 && oneRight == 0)
+				{
 					s_triggerLayout = 2;
+					applied = true;
+				}
 			}
 		}
 		else
@@ -1007,23 +1021,36 @@ namespace
 			const int oneLeft = hmd2::sense_set_trigger_effect(left, &param.l2);
 			const int oneRight = hmd2::sense_set_trigger_effect(right, &param.r2);
 			Log("[trig] Sense left L2 %s -> 0x%08x, right R2 %s -> 0x%08x", l2, (unsigned)oneLeft, r2, (unsigned)oneRight);
+			applied = oneLeft == 0 && oneRight == 0;
+		}
+		if (!applied)
+		{
+			// not sent: the same effect must go out again, and a refusal is not retried at 20 Hz
+			sent.valid = false;
+			if (ps5trig::IsOff(param))
+				sent.accepted = false; // an off was attempted; an effect is cleared on the way out regardless
+			sent.retryAt = now + kTriggerRetryUs;
+			return;
 		}
 		sent.param = param;
 		sent.valid = true;
+		sent.accepted = !ps5trig::IsOff(param);
 		sent.at = now;
+		sent.retryAt = 0;
 	}
 
-	// Always send off: the effect lives in the controller's firmware and outlives the game. s.lock is held.
+	// Always send off: the effect lives in the controller's firmware and outlives the game. The DualSense is cleared
+	// whatever it last took; the Sense controllers when an effect of theirs may still be on. s.lock is held.
 	void ResetTriggersLocked(const char* why)
 	{
 		const ps5trig::Param off = ps5trig::Both(ps5trig::Off(), ps5trig::Off());
 		const int dualSense = PS5Cemu_PadHandle(0);
-		if (dualSense >= 0 && s_triggerSent[0].valid)
+		if (dualSense >= 0)
 		{
 			const int result = hmd2::pad_set_trigger_effect(dualSense, &off);
 			Log("[trig] DualSense off (%s) -> 0x%08x", why, (unsigned)result);
 		}
-		if (s.senseTriggers && s_triggerSent[1].valid && s.hands[0].handle >= 0 && s.hands[1].handle >= 0)
+		if (s.senseTriggers && s_triggerSent[1].accepted && s.hands[0].handle >= 0 && s.hands[1].handle >= 0)
 		{
 			const int left = s.hands[0].handle, right = s.hands[1].handle;
 			// the layout that was in use, then the other one if it fails: off must reach whichever call applied it
@@ -1626,6 +1653,7 @@ namespace
 		int wanted = 0; // the mixer's last level (headset 0..25, pad 0..255)
 		int sent = -1;  // what the device last took; -1 none yet
 		bool capped = false;
+		int cappedLevel = -1; // the level the 2 s cap cut, so it stays off until the level changes
 		XrTime sameAt = 0;
 		XrTime testUntil = 0;
 	};
@@ -1646,20 +1674,30 @@ namespace
 		const XrTime now = Now();
 		const bool testing = now < s_headset.testUntil;
 		const int wanted = testing ? kHeadsetTestLevel : s_headset.wanted;
+		if (!testing && s_headset.capped && wanted == s_headset.cappedLevel)
+			return 0; // the hold was cut at 2 s: stay off until the level changes, not 2 s on and 16 ms off
 		if (wanted == 0 && s_headset.sent <= 0)
 		{
-			// nothing to stop and the export has not been proven yet: VR start must not be its first call. The
-			// Vibration page's test button is the first one, as the brief asks.
+			// nothing to stop: VR start must not call the motor with zero; the first event or the page's test
+			// button is its first call
 			s_headset.sent = 0;
+			s_headset.capped = false;
+			s_headset.cappedLevel = -1;
 			return 0;
 		}
 		if (wanted == s_headset.sent)
 		{
-			if (!testing && wanted > 0 && !s_headset.capped && now - s_headset.sameAt >= kHeadsetHoldCap)
+			if (wanted == 0)
+			{
+				s_headset.capped = false;
+				s_headset.cappedLevel = -1; // a new rise may buzz again
+			}
+			else if (!testing && !s_headset.capped && now - s_headset.sameAt >= kHeadsetHoldCap)
 			{
 				SendHeadsetLevel(0);
 				s_headset.sent = 0;
 				s_headset.capped = true;
+				s_headset.cappedLevel = wanted;
 				VibLog("headset held at %d for 2 s: off until the level changes", wanted);
 			}
 			return 0;
@@ -1670,6 +1708,7 @@ namespace
 			s_headset.sent = wanted;
 			s_headset.sameAt = now;
 			s_headset.capped = false;
+			s_headset.cappedLevel = -1;
 		}
 		else
 			s_headset.sent = -1;
@@ -1713,6 +1752,7 @@ extern "C" void BetterVR_PS5_TestHeadset()
 	s_headset.sent = rc == 0 ? kHeadsetTestLevel : -1;
 	s_headset.sameAt = now;
 	s_headset.capped = false;
+	s_headset.cappedLevel = -1;
 	s_headset.testUntil = rc == 0 ? now + kDeviceTestHold : now;
 	VibLog("test headset: level %d -> 0x%08x (%s)", kHeadsetTestLevel, (unsigned)rc,
 		rc == 0 ? "took it, 400 ms" : rc == hmd2::kHmd2VibrationUnavailable ? "sceHmd2SetVibration is not bound on this firmware" : "refused");
