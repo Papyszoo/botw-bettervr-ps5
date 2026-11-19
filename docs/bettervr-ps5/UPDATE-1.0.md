@@ -1029,6 +1029,40 @@ Cemu patch added. `VERSION` stays 0.5.0.
 
 - **Settings are BotW VR's alone.** The PayPal card is gone from About, which now has one licence line (Cemu and PS5-ECAM under the GPL, Crementif's BetterVR under MIT) and only the Wii U's paths; the backup, box art, recompiler and remote-screen texts no longer name other systems, and what is left is marked "ask" in the track's settings audit.
 
+### The audio click every half second
+
+- **What the recording showed.** In idle play a click lands every 0.500 s (24,000 samples at 48 kHz, 60 of 60 points in
+  30 s): a 2-8 sample impulse, up to 28 dB over the >6 kHz floor, with no zero gap and no repeated buffer. The console's
+  audio path is `port/cemu/PS5AudioAPI.cpp` only, since Cemu's other audio APIs are unsupported here.
+- **The cause.** Cemu hands over 576-frame blocks (12 ms, `AXOut_init`), AudioOut plays 256-frame grains (5.33 ms), and
+  `OutputThread` padded every grain that was short with silence (`PS5AudioAPI.cpp`, the fill after the mix). The queue's
+  refill target was Cemu's `audio_delay`, 2 blocks = 24 ms, inside the block and grain jitter and only four and a half
+  grains deep, so a few frames short at a grain boundary became the padded tail: the click's 2-8 samples, once per
+  crossing of the stream's clock and the console's. `FeedBlock` could also drop a whole 576-frame block (12 ms of sound)
+  when the 288 ms queue filled.
+- **The fix.** `port/cemu/PS5AudioQueue.h` keeps whole blocks, and the output thread plays a grain only when a whole one
+  is queued: a short grain is waited for, never padded. The target is `max(audio_delay, 4)` blocks (48 ms) with eight
+  blocks of room, so a hitch drains the queue without leaving a grain short; a stall that fills it gives up the oldest
+  sound and keeps the newest. The output thread now asks for priority 384, as the other ports' sound threads do. No
+  Cemu file changed, so no patch file is added.
+- **Logs.** At most one line every 10 s, and only when something happened:
+  `PS5 AudioOut: dropped blocks N, padded grains M since the last line (queue K ms)`. In steady play it never appears.
+- **Host test.** `tools/tests/test-audio-queue.cpp`, in the Tests workflow, runs Cemu's 3 ms and 2.9 ms producer against
+  the 256-frame consumer: 30 s exactly matched, a 30 ms hitch (the old 24 ms target pads a grain, four blocks do not),
+  and two minutes 300 ppm apart, with no block dropped and no grain padded.
+
+### Settings follow-ups for one game
+
+- **The folder row is gone.** Settings > Game files no longer has "A folder for each system" (`settings.cpp`), and the
+  launcher no longer offers it at start (`shell.cpp`); an install already in separate folders is still read as it is
+  (`ps5reorganize::Look` and the goback guard stay), and the row's action is removed with it. The folder and file names
+  (`/data/ps5cemu`, `ps5cemu.json`, `backups`, `mods`) are unchanged.
+- **Box art reads for one game.** "No box art yet" / "Downloaded", "The game's cover, from GameTDB.", "Download the box
+  art" and "Download the box art again", with the descriptions singular: no "every game on this side".
+- **No guide links.** The mods help texts no longer end with "The guide on GitHub, docs/GUIDE.md, has more."
+- **Strings.** Every change is through `Tr`/`TrF`/`TrP`, and every language table has the new strings: `tools/lang.py
+  check` passes and `qps.po` is regenerated.
+
 ### Firmware gates for libScePad and libSceHmd2
 
 - **Never a shifted offset.** The v0.5.1 hotfix is in this branch: `module_table()` and `resolve_module()` take a

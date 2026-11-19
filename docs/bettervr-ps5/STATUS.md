@@ -26,7 +26,13 @@ velocity, the body's own turn, the reach ratio) and, when the held body's angula
 body's transform about its centre instead, capped at 6 rad/s; fixed objects are untouched. New patches: bettervr
 0007-0013, cemu 0055. The PS5's notification window no longer comes up at game start: the Wii U start's touchpad +
 Options hint is gone, and what the app posts while the launcher gives the screen up waits for the game's own VideoOut
-surface. Details: `UPDATE-1.0.md`, "v0.6", "v0.6 body, HUD and needle", "Snap turn in third person" and
+surface. This build also removes the click heard exactly every half second in idle play: Cemu's 12 ms blocks and
+AudioOut's 256-frame grains left grains a few frames short at the queue's 24 ms target, and `OutputThread` padded them
+with silence. A grain is now played only when a whole one is queued, four blocks (48 ms) wait with room for eight, and
+`PS5 AudioOut: dropped blocks N, padded grains M since the last line (queue K ms)` is written at most once in 10 s and
+only when something happened. Settings are done for one game: the folder-per-system row and its startup offer are gone
+(an install already in separate folders is still read), the Box art texts read for one game, and the mods help no longer
+names `docs/GUIDE.md`. Details: `UPDATE-1.0.md`, "v0.6", "v0.6 body, HUD and needle", "Snap turn in third person" and
 "Magnesis wrist twist".
 
 **Test request 53 (v0.6 combined).** One console run of this build (13.60), in VR, with `bettervr.json`
@@ -140,6 +146,16 @@ surface. Details: `UPDATE-1.0.md`, "v0.6", "v0.6 body, HUD and needle", "Snap tu
   effects` or `sceHmd2SetVibration` and ends `off on this firmware`; each must be one line and VR, tracking, the game
   and the DualSense must keep working. If you can run a 12.40 console, the same build must not abort at the first
   Sense vibration call: the Sense rows may be off there, but the session must start and play.
+- (p) The audio click. Stand still in the overworld with the game idle and listen for half a minute: the click that came
+  exactly every half second (a short tick in the music and ambience) must be gone. Then walk, fight and open the
+  inventory, and say whether any new click, pop or dropout appears. Send every `PS5 AudioOut:` line: `output thread
+  priority`, the GamePad speaker's open line, and any `dropped blocks N, padded grains M ... (queue K ms)`. In steady
+  play the dropped/padded line must not appear at all; if it does, send each line and what the game was doing.
+- (q) Settings follow-ups. Settings > Game files must have no **A folder for each system** row, and a fresh start must
+  not offer to move the folders; an install already in `/data/ps5cemu/cemu`, `azahar`, `melonds` and `eden` must still
+  start and play (the boot log's `[reorganize]` lines, if any). Settings > Online: the Box art rows must read for one
+  game (no "every game on this side"), and the mods help cards must not name `docs/GUIDE.md`. Send a photo of the Game
+  files page and of the Box art sub-page.
 
 
 ## 2026-11-18: console run 4 (37c6028, 13.60)
