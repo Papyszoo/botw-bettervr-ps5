@@ -1,0 +1,146 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ps5cemu <ps5cemu@localhost>
+Date: Thu, 19 Nov 2026 16:00:14 +0100
+Subject: [PATCH] PS5: Options held for a second recenters the view, and the
+ menu opens on Square or a touchpad tap; built, untested on console
+
+- ProcessOptionsButton no longer opens the menu: a hold of a second is the runtime's recenter
+  (port/bettervr/xr/runtime.cpp, one seat pose for the head and both hands), and the release that ends
+  a hold sends nothing, so a hold never pauses. A release before the second is still the game's +
+  tap, one press, always VPAD_BUTTON_PLUS, and + stays out of the game's hold while the button is down.
+- BetterVR_PS5_ToggleModMenu is the port's: the DualSense's touchpad click with an Options tap opens
+  BetterVR's menu, and the port falls back to its own menu where no VR session runs. The left
+  Square's long press is unchanged.
+- GetControllerModMenuPrompt names the PS5's own inputs (no card draws it on the console).
+---
+ src/game/botw/input/controls.cpp | 47 ++++++++++++++++++--------------
+ src/rendering/imgui_menus.cpp    |  6 ++++
+ 2 files changed, 32 insertions(+), 21 deletions(-)
+
+diff --git a/src/game/botw/input/controls.cpp b/src/game/botw/input/controls.cpp
+index 0a2165c..93566bd 100644
+--- a/src/game/botw/input/controls.cpp
++++ b/src/game/botw/input/controls.cpp
+@@ -1047,20 +1047,25 @@ static void ProcessInputPrevention(ControlState& state, std::chrono::steady_cloc
+ // the runtime's: whether Options on the right Sense controller is down (port/bettervr/xr/runtime.cpp)
+ extern "C" bool BetterVR_PS5_OptionsDown();
+ 
+-// Options on the right Sense controller, or the + on the pad (VPAD channel 0, the DualSense): held for 700 ms it opens
+-// or closes the menu at that moment, and its release then does nothing; released earlier it is the game's + (the pause
+-// screen), sent as one tap, as a short press of the right stick click sends it. The Touch profile gives the Sense's
+-// button no action, so that one is read from the runtime. The left X (Square) long press below still works.
+-static void ToggleOptionsMenu(std::atomic_bool& isMenuOpen) {
+-    RND_Renderer* renderer = VRManager::instance().XR->GetRenderer();
++// The DualSense's touchpad + Options tap (port/ps5/pad.cpp): BetterVR's menu, as the left Square's long press opens
++// it. The port calls this, so it can run with no VR session: what it returns is whether there was a menu to toggle.
++extern "C" bool BetterVR_PS5_ToggleModMenu() {
++    RND_Renderer* renderer = VRManager::instance().XR ? VRManager::instance().XR->GetRenderer() : nullptr;
+     if (renderer == nullptr || !renderer->m_imguiOverlay) {
+-        Log::print<INFO>("[menu] long press ignored, the menu's overlay is not ready");
+-        return;
++        Log::print<INFO>("[menu] touchpad + Options tap ignored, the menu's overlay is not ready");
++        return false;
+     }
+-    isMenuOpen = !isMenuOpen;
+-    Log::print<INFO>("[menu] long press -> {}", isMenuOpen.load() ? "open" : "closed");
++    ImGuiMenus::g_isOpen = !ImGuiMenus::g_isOpen.load();
++    Log::print<INFO>("[menu] touchpad + Options tap -> {}", ImGuiMenus::g_isOpen.load() ? "open" : "closed");
++    return true;
+ }
+ 
++// Options on the right Sense controller, or the + on the pad (VPAD channel 0, the DualSense): held for a second the
++// runtime recenters the view (port/bettervr/xr/runtime.cpp) and nothing is sent to the game, so a hold never pauses;
++// released earlier it is the game's + (the pause screen), sent as one tap, as a short press of the right stick click
++// sends it. The Touch profile gives the Sense's button no action, so that one is read from the runtime. The left X
++// (Square) long press below still opens BetterVR's menu, and on the DualSense the touchpad's click with it does.
++
+ // one input's Options state: the Sense's and the pad's are independent, so one cannot swallow the other's press
+ struct OptionsButtonState {
+     bool wasDown = false;
+@@ -1071,8 +1076,8 @@ struct OptionsButtonState {
+ static OptionsButtonState s_senseOptions;
+ static OptionsButtonState s_padOptions;
+ 
+-static void ProcessOptionsButton(std::atomic_bool& isMenuOpen, uint32_t& buttonHold, ControlState& state, bool down, OptionsButtonState& s) {
+-    constexpr auto kLongPress = std::chrono::milliseconds(700);
++static void ProcessOptionsButton(uint32_t& buttonHold, ControlState& state, bool down, OptionsButtonState& s) {
++    constexpr auto kLongPress = std::chrono::milliseconds(1000);
+     const auto now = std::chrono::steady_clock::now();
+     if (down && !s.wasDown) {
+         s.wasDown = true;
+@@ -1083,7 +1088,7 @@ static void ProcessOptionsButton(std::atomic_bool& isMenuOpen, uint32_t& buttonH
+     }
+     if (down && !s.longPressDone && now - s.downAt >= kLongPress) {
+         s.longPressDone = true;
+-        ToggleOptionsMenu(isMenuOpen);
++        Log::print<INFO>("[menu] Options held for 1 s: the view recenters, no pause");
+         return;
+     }
+     if (down || !s.wasDown)
+@@ -1093,15 +1098,14 @@ static void ProcessOptionsButton(std::atomic_bool& isMenuOpen, uint32_t& buttonH
+     Log::print<INFO>("[menu] Options up after {} ms", (long long)heldMs);
+     if (s.longPressDone)
+         return;
+-    // a stall can hide the threshold from every game frame: the release still decides, with the measured time
++    // a stall can hide the second from every game frame: the release still decides, with the measured time
+     if (now - s.downAt >= kLongPress) {
+-        Log::print<INFO>("[menu] release after the threshold -> hold");
+-        ToggleOptionsMenu(isMenuOpen);
++        Log::print<INFO>("[menu] release after the second: no pause");
+         return;
+     }
+     // the menu's overlay holds the game's input: no pause behind it. A tap within the game menu's 400 ms input block
+     // still reaches the game, as the physical + did: that block follows the game's own menu state, not this button.
+-    if (isMenuOpen || ImGuiMenus::BlocksGameInput()) {
++    if (ImGuiMenus::g_isOpen || ImGuiMenus::BlocksGameInput()) {
+         Log::print<INFO>("[menu] short press ignored, game input is blocked");
+         return;
+     }
+@@ -1199,7 +1203,7 @@ static void UpdateGuide(const OpenXR::InputState& inputs, bool menuOpen) {
+         return;
+ #if defined(__PROSPERO__)
+     // a short press is the game's pause on the PS5 (ProcessOptionsButton); it opens no help card over the
+-    // game, whichever controller sent it. A hold still opens BetterVR's own menu.
++    // game, whichever controller sent it. A hold is the runtime's recenter, and opens no menu either.
+     if (s_modMenuButton.lastEvent == ButtonState::Event::ShortPress)
+         Log::print<INFO>("[guide] short press ignored on the PS5, no help popup");
+     return;
+@@ -1584,10 +1588,11 @@ static void hook_InjectXRInput(PPCInterpreter_t* hCPU) {
+     auto& isMenuOpen = ImGuiMenus::g_isOpen;
+     ProcessModMenuInput(isMenuOpen, inputs, vpadStatus, leftStickSource, rightStickSource);
+ #if defined(__PROSPERO__)
+-    // the pad's + is the same Options press: the game never sees it while it is held, so no pause opens behind the menu
++    // the pad's + is the same Options press: the game never sees it while it is held, so a hold never pauses (the
++    // recenter is the runtime's) and the release sends the tap
+     vpadStatus.hold = vpadStatus.hold.getLE() & ~static_cast<uint32_t>(VPAD_BUTTON_PLUS);
+-    ProcessOptionsButton(isMenuOpen, newXRBtnHold, state, BetterVR_PS5_OptionsDown(), s_senseOptions);
+-    ProcessOptionsButton(isMenuOpen, newXRBtnHold, state, (physicalHold & VPAD_BUTTON_PLUS) != 0, s_padOptions);
++    ProcessOptionsButton(newXRBtnHold, state, BetterVR_PS5_OptionsDown(), s_senseOptions);
++    ProcessOptionsButton(newXRBtnHold, state, (physicalHold & VPAD_BUTTON_PLUS) != 0, s_padOptions);
+ #endif
+     UpdateGuide(inputs, isMenuOpen);
+     HandGestureState leftGesture = {};
+diff --git a/src/rendering/imgui_menus.cpp b/src/rendering/imgui_menus.cpp
+index ee0f038..2a78e05 100644
+--- a/src/rendering/imgui_menus.cpp
++++ b/src/rendering/imgui_menus.cpp
+@@ -1743,6 +1743,11 @@ void RND_Renderer::ImGuiOverlay::DrawCreditsPage() {
+ }
+ 
+ static const char* GetControllerModMenuPrompt() {
++#if defined(__PROSPERO__)
++    // the PS5's own inputs (patches/bettervr 0020, the runtime's recenter): the left Square is the mod menu's, and the
++    // DualSense opens it with a touchpad click and Options tap; no card draws this on the PS5
++    return "Hold the " ICON_KI_BUTTON_X " button on your left controller for 1 second to open the mod menu.\nAlternatively, on the DualSense, tap the touchpad's click with " ICON_KI_BUTTON_START ".";
++#else
+     auto& caps = VRManager::instance().XR->m_capabilities;
+     switch (caps.activeControllerType) {
+         case ControllerType::OculusTouch:
+@@ -1757,6 +1762,7 @@ static const char* GetControllerModMenuPrompt() {
+         default:
+             return "Hold the " ICON_KI_BUTTON_START " button on your gamepad from Cemu's input settings for 1 second to open the mod menu.";
+     }
++#endif
+ }
+ 
+ struct MenuNavGlyphs {

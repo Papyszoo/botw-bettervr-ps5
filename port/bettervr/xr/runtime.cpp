@@ -11,7 +11,9 @@
 //                      host-visible eye buffers on that device, handed to hmd2::init as
 //                      Config::external, as M2 does (port/bettervr/VrPS5.cpp)
 //   spaces             VIEW, LOCAL and STAGE are hmd2's tracker space (+y up, -z forward, metres, as
-//                      OpenXR's); VIEW follows the head. Action spaces locate nothing yet (M4).
+//                      OpenXR's); VIEW follows the head. Options held for 1 s on the right Sense or the
+//                      DualSense recenters the view: one seat (a yaw and an x/z offset, never a height)
+//                      moves the head and both hands, so the app and the game need no change.
 //   views              xrLocateViews: hmd2's predicted head pose for the time, its eyes' offsets from
 //                      the frame's own result (else half a 63 mm IPD each side), and its FOV tangents
 //   swapchains         three Vulkan images each (one 2D layer: 1.0.0's stereo is two swapchains), on Cemu's device. A released colour image is left in
@@ -60,6 +62,8 @@ int scePadOpen(int user, int type, int index, const void* parameters);
 int scePadGetHandle(int user, int type, int index);
 int scePadClose(int handle);
 int scePadVrControllerReadState(int handle, void* state);
+// the DualSense's sample, for the recenter's Options (port/ps5/pad.h's ps5pad::Data)
+int scePadReadState(int handle, void* data);
 // port/ps5/pad.cpp: player 1's open DualSense handle, for the adaptive triggers (-1: none)
 int32_t PS5Cemu_PadHandle(int player);
 // port/bettervr/VrPS5.cpp: a number from bettervr.json, or fallback
@@ -158,6 +162,17 @@ namespace
 	void HmdLog(const char* line)
 	{
 		PS5Cemu_LogLine(std::string("[vr-xr] ") + line);
+	}
+
+	// The recenter's own lines: "[recenter] ..." in the boot log, one a hold, with the yaw and the offset
+	void RecenterLog(const char* format, ...)
+	{
+		char text[512];
+		va_list args;
+		va_start(args, format);
+		std::vsnprintf(text, sizeof(text), format, args);
+		va_end(args);
+		PS5Cemu_LogLine(std::string("[recenter] ") + text);
 	}
 
 	// The in-game menu's probe (BetterVR_PS5_MenuProbe): how often the headset's frame loop turns, whole-run
@@ -480,11 +495,12 @@ namespace
 		// pair (BetterVR's submit thread shows the last one again) keeps the render pose it was published with
 		static constexpr bool monoQuad = false, quadPlane = true, poseKeep = true;
 		// The render pose of the picture the submit thread is showing again: the left view it was
-		// rendered from and the head it was located with, so a pair re-shown beyond the ring still
-		// reprojects from where it was rendered instead of from the live head.
+		// rendered from and the tracker's head pose it was located with (not the seated one, which is
+		// the game's frame), so a pair re-shown beyond the ring still reprojects from where it was rendered
+		// instead of from the live head.
 		bool shownKnown = false, poseKeepLogged = false;
 		Vec3 shownEye{};
-		Pose shownHead{};
+		Pose shownHead{}; // the tracker's pose of the pair the compositor shows again, for Hmd2
 		uint64_t shownAtFrame = 0;
 		bool reproject = true; // bettervr.json's "reproject": 0 submits every frame as rendered from the display time's pose
 		bool tv = true; // bettervr.json's "tv": 0 keeps the TV dark while VR runs
@@ -509,15 +525,28 @@ namespace
 		hmd2::Fov fov{1.0f, 1.0f, 1.0f, 1.0f};
 		Vec3 eyeOffset[2] = {{-kHalfIpd, 0, 0}, {kHalfIpd, 0, 0}}; // in the head's frame
 		// the head pose each pair of located views was computed from: xrEndFrame submits with the one
-		// whose left eye is the submitted left view
+		// whose left eye is the submitted left view. `trackerHead` is the tracker's own pose, which is what
+		// Hmd2 reprojects from: the seat belongs to the game's frame, not to the room the headset measures.
 		struct Located
 		{
 			Vec3 leftEye;
-			Pose head;
+			Pose trackerHead;
 		};
 		Located located[256]; // BetterVR's pose thread locates at 250 Hz: 32 held only 128 ms
 		int nextLocated = 0;
 		Pose lastHead;
+		// -- the view's recenter (Options held 1 s) --
+		// The seat is the tracker pose the view's forward and horizontal origin were moved to: a turn about y
+		// and an x/z offset, never a height, so BetterVR's seated stage height is unchanged. Compose(seat, pose)
+		// is where a tracker pose appears once seated, for the head and both hands; the spaces' own offsets stay
+		// as they are, which is what moves the world under them.
+		Pose seat;
+		// one Options input's hold: which second it started at, and the hold already spent
+		struct OptionsHold
+		{
+			bool down = false, ignored = false, fired = false; // ignored: it began as the touchpad's chord
+			XrTime at = 0;
+		} senseOptions, padOptions;
 	} s;
 
 	void QueueState(XrSessionState state)
@@ -600,6 +629,9 @@ namespace
 	constexpr uint32_t kIntercepted = 0x80000000u; // the system menu has the pads
 	constexpr uint32_t kCreate = 0x1, kL3 = 0x2, kR3 = 0x4, kOptions = 0x8, kL1 = 0x400, kR1 = 0x800, kTriangle = 0x1000,
 					   kCircle = 0x2000, kCross = 0x4000, kSquare = 0x8000;
+	// the DualSense's own bits (port/ps5/pad.h): its touchpad's click arms the app's chord, and the system menu's bit
+	// means nothing there is down
+	constexpr uint32_t kPadTouchpad = 0x00100000, kPadIntercepted = 0x80000000;
 	constexpr XrDuration kPadRetry = 2'000'000'000; // as photo-splat-vr and HLA-PSVR2: every 2 s
 	constexpr int kVibrationModeCompatible = 2;			 // the mode Ghost-VR sets on the Sense before its first vibration
 
@@ -740,6 +772,86 @@ namespace
 			const uint64_t display = hmd2::display_time_us();
 			SampleHand(hand, pose, display != 0 ? (XrTime)display * 1000 : now);
 		}
+	}
+
+	// -- the view's recenter (Options held 1 s) ----------------------------------------------------
+	// The DualSense's button word, through the handle its triggers use; false when there is no pad or no sample.
+	// Its 120 bytes are libScePad's ScePadData, of which the first word and the connected flag at 0x4c are read
+	// (port/ps5/pad.h).
+	bool PadButtons(uint32_t& buttons)
+	{
+		const int handle = PS5Cemu_PadHandle(0);
+		if (handle < 0)
+			return false;
+		struct PadState
+		{
+			uint32_t buttons;
+			uint8_t reserved[72];
+			int32_t connected; // 0x4c
+			uint8_t rest[40];
+		};
+		static_assert(sizeof(PadState) == 120);
+		PadState state{};
+		if (scePadReadState(handle, &state) < 0 || !state.connected)
+			return false;
+		buttons = state.buttons;
+		return true;
+	}
+
+	// The view's new seat: the head's forward becomes -z and its horizontal position the origin, at its height
+	// (y is kept: BetterVR's stage offset is the height's own, so a seated calibration stays valid). One seat for
+	// the head and both hands, below the app and the game.
+	void Recenter(const Pose& head, const char* source)
+	{
+		const Vec3 forward = Rotate(head.q, {0, 0, -1});
+		const float yaw = std::atan2(forward.x, -forward.z) * (180.0f / 3.14159265f);
+		// a turn about +y by the heading itself, not its negative: it is what brings that forward to -z
+		const Quat turn = AxisAngle(0, 1, 0, yaw);
+		const Vec3 offset = Rotate(turn, head.p);
+		s.seat = {turn, {-offset.x, 0.0f, -offset.z}};
+		RecenterLog("%s: yaw %.1f deg, offset %.2f %.2f m (the head was at %.2f %.2f %.2f)", source, yaw, s.seat.p.x, s.seat.p.z, head.p.x,
+			head.p.y, head.p.z);
+	}
+
+	// One Options input's hold: a press that began with the touchpad clicked is the app's chord (its second opens
+	// the app's own menu), a release before the second is the game's pause (BetterVR's), and a second held is the
+	// recenter, once a hold.
+	void PollOptions(State::OptionsHold& hold, bool down, bool chord, const char* source)
+	{
+		const XrTime now = Now();
+		if (down && !hold.down)
+		{
+			hold.at = now;
+			hold.fired = false;
+			hold.ignored = chord;
+		}
+		hold.down = down;
+		if (chord && down)
+			hold.ignored = true; // the touchpad joined the press: this hold is the chord's, not a recenter
+		if (!down || hold.ignored || hold.fired || now - hold.at < 1'000'000'000)
+			return;
+		hold.fired = true;
+		if (s.session == XR_NULL_HANDLE || !s.session->hmdUp)
+			return;
+		const hmd2::Pose sample = hmd2::predicted_pose((uint64_t)(now / 1000));
+		if (!sample.tracked)
+		{
+			RecenterLog("%s: the headset has no pose, nothing moved", source);
+			return;
+		}
+		Recenter(FromHmd(sample), source);
+	}
+
+	void PollRecenter()
+	{
+		// the right Sense's Options: the Touch profile gives it no action, so it is read from its state word here
+		const State::Hand& right = s.hands[1];
+		PollOptions(s.senseOptions, right.connected && (right.buttons & kOptions) != 0, false, "right Sense");
+		// the DualSense's Options; the touchpad's click is the app's chord and never a recenter
+		uint32_t buttons = 0;
+		const bool read = PadButtons(buttons);
+		const bool chord = read && (buttons & kPadTouchpad) != 0;
+		PollOptions(s.padOptions, read && (buttons & (kOptions | kPadIntercepted)) == kOptions, chord, "DualSense");
 	}
 
 	// One bound input's value now: a button as 0 or 1, an axis as itself
@@ -1072,7 +1184,7 @@ namespace
 	}
 
 	// the head in tracker space at a time, with hmd2's prediction; the last one when it has none
-	Pose HeadAt(XrTime time)
+	Pose TrackerHeadAt(XrTime time)
 	{
 		if (s.session == XR_NULL_HANDLE || !s.session->hmdUp)
 			return s.lastHead;
@@ -1082,7 +1194,14 @@ namespace
 		return s.lastHead;
 	}
 
-	// a space's own pose in tracker space at a time
+	// the head where the view shows it: the tracker's pose, seated by the last recenter
+	Pose HeadAt(XrTime time)
+	{
+		return Compose(s.seat, TrackerHeadAt(time));
+	}
+
+	// a space's own pose at a time: the pose the app gave it, in the reference frame's own coordinates, or the
+	// seated head for VIEW
 	Pose SpacePose(const XrSpace_T* space, XrTime time)
 	{
 		if (space->type == XR_REFERENCE_SPACE_TYPE_VIEW)
@@ -2085,6 +2204,10 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateSession(XrInstance, const XrSessionCreate
 	session->device = binding->device;
 	session->family = binding->queueFamilyIndex;
 	s.session = session;
+	// a new session starts unseated: only Options moves the view's seat
+	s.seat = {};
+	s.senseOptions = {};
+	s.padOptions = {};
 	if (!vk.Load(binding->instance, binding->device))
 	{
 		Log("the driver lacks a function the compositor needs");
@@ -2324,7 +2447,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrLocateSpace(XrSpace space, XrSpace base, XrTime
 		const Pose turn{AxisAngle(0, 1, 0, mirror * s.gripYaw), {}};
 		const Pose tilt{AxisAngle(1, 0, 0, s.gripPitch + (aim ? s.aimPitch : 0.0f)), {}};
 		const Pose roll{AxisAngle(0, 0, 1, mirror * s.gripRoll), {}};
-		spacePose = Compose(Compose(Compose(Compose(hand->pose, turn), tilt), roll), space->offset);
+		spacePose = Compose(Compose(Compose(Compose(Compose(s.seat, hand->pose), turn), tilt), roll), space->offset);
 		// for the first 20 s, every 2 s: the grip's rotation against the head, which reads about 0/0/0 when the
 		// controller points straight ahead
 		static XrTime handsStart = 0, handsLogged[2] = {0, 0};
@@ -2341,13 +2464,15 @@ XRAPI_ATTR XrResult XRAPI_CALL xrLocateSpace(XrSpace space, XrSpace base, XrTime
 				std::asin(std::max(-1.0f, std::min(1.0f, fwd.y))) * deg, std::atan2(right.y, up.y) * deg);
 		}
 		const Pose toBase = Inverse(SpacePose(base, time));
+		// the velocity is the hand's in the tracker's frame: into the base's, and through the seat, as its pose is
+		const Quat toBaseSeated = Mul(toBase.q, s.seat.q);
 		for (auto* next = static_cast<XrBaseOutStructure*>(location->next); next; next = next->next)
 			if (next->type == XR_TYPE_SPACE_VELOCITY)
 			{
 				// the hand was found above, so its pose is valid: publish both parts even on the first
 				// sample (zero) or after a hitch, so a zero velocity never means "the flags were left off"
 				auto* velocity = reinterpret_cast<XrSpaceVelocity*>(next);
-				const Vec3 linear = Rotate(toBase.q, hand->linear), angular = Rotate(toBase.q, hand->angular);
+				const Vec3 linear = Rotate(toBaseSeated, hand->linear), angular = Rotate(toBaseSeated, hand->angular);
 				velocity->linearVelocity = {linear.x, linear.y, linear.z};
 				velocity->angularVelocity = {angular.x, angular.y, angular.z};
 				velocity->velocityFlags = XR_SPACE_VELOCITY_LINEAR_VALID_BIT | XR_SPACE_VELOCITY_ANGULAR_VALID_BIT;
@@ -2378,7 +2503,8 @@ XRAPI_ATTR XrResult XRAPI_CALL xrLocateViews(XrSession session, const XrViewLoca
 		return XR_SUCCESS;
 	if (capacity < 2)
 		return XR_ERROR_SIZE_INSUFFICIENT;
-	const Pose head = HeadAt(info->displayTime);
+	const Pose trackerHead = TrackerHeadAt(info->displayTime);
+	const Pose head = Compose(s.seat, trackerHead);
 	const Pose base = SpacePose(info->space, info->displayTime);
 	const Pose toBase = Inverse(base);
 	const float out = std::atan(s.fov.out), in = std::atan(s.fov.in), up = std::atan(s.fov.top), down = std::atan(s.fov.bottom);
@@ -2390,7 +2516,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrLocateViews(XrSession session, const XrViewLoca
 		views[eye].fov = eye == 0 ? XrFovf{-out, in, up, -down} : XrFovf{-in, out, up, -down};
 		if (eye == 0)
 		{
-			s.located[s.nextLocated] = {eyePose.p, head};
+			s.located[s.nextLocated] = {eyePose.p, trackerHead};
 			s.nextLocated = (s.nextLocated + 1) % (int)(sizeof(s.located) / sizeof(s.located[0]));
 		}
 	}
@@ -2640,8 +2766,9 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
 			quad = reinterpret_cast<const XrCompositionLayerQuad*>(info->layers[i]);
 	}
 
-	// the pose to submit: the head pose the submitted left view was located from
-	Pose renderHead = HeadAt(info->displayTime);
+	// the pose to submit: the tracker's head pose the submitted left view was located from, unseated, as
+	// Hmd2 compares it with the headset's own pose for reprojection. The seat is the game's frame only.
+	Pose renderHead = TrackerHeadAt(info->displayTime);
 	struct
 	{
 		int32_t eyeSize[2];
@@ -2704,10 +2831,10 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
 			for (const auto& located : s.located)
 				if (s.reproject && sameEye(located.leftEye, eyePoses[0].p))
 				{
-					renderHead = located.head;
+					renderHead = located.trackerHead;
 					found = true;
 					s.shownEye = eyePoses[0].p;
-					s.shownHead = located.head;
+					s.shownHead = located.trackerHead;
 					s.shownKnown = true;
 					s.shownAtFrame = session->frames;
 					s.poseKeepLogged = false;
@@ -3155,6 +3282,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrSyncActions(XrSession, const XrActionsSyncInfo*
 		info->activeActionSets[i].actionSet->active = true;
 	ReadHands();
 	s.syncTime = Now();
+	PollRecenter();
 	for (int i = 0; i < 2; i++)
 	{
 		auto& hand = s.hands[i];

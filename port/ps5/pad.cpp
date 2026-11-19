@@ -70,6 +70,9 @@ namespace ps5pad
 			// GamePad's screen, and until when a short click's tap lasts
 			uint64_t clickedAt = 0, tapUntil = 0;
 			bool chordUsed = false, touched = false;
+			// the touchpad click with Options: when it began (0: none), and whether its hold opened the app's menu
+			uint64_t chordAt = 0;
+			bool chordMenu = false;
 			uint64_t loadAt = 0; // Triangle pressed with the click, for the load state shortcut: when (0: none)
 			uint64_t filteredAt = 0; // the last sample FilterShortcuts saw (KeepShortcuts)
 		};
@@ -279,6 +282,9 @@ namespace ps5pad
 		constexpr uint64_t kTouchDelayUs = 150000; // a shortcut's button within this is no touch
 		constexpr uint64_t kTapUs = 80000;		   // how long a shorter click touches, once released
 		constexpr uint64_t kLoadHoldUs = 600000;   // Triangle held this long loads: a load loses what was played since
+		// the touchpad's click with Options: held this long it opens the app's own in-game menu, released sooner
+		// BetterVR's (the runtime's app, when no VR session runs)
+		constexpr uint64_t kMenuHoldUs = 1000000;
 		const uint64_t now = sceKernelGetProcessTime();
 		std::lock_guard lock(s_mutex);
 		Slot& slot = s_slots[std::clamp(player, 0, kMaxPlayers - 1)];
@@ -296,10 +302,9 @@ namespace ps5pad
 			}
 			// Options held when the click goes down, or pressed with it, is the same chord; either edge arms it once
 			const bool optionsChord = pressed(kOptions) || (!(previous & kTouchPad) && (buttons & kOptions));
-			Shortcut shortcut = optionsChord ? Shortcut::Menu
-				: pressed(kL1)					  ? Shortcut::SwapScreens
-				: pressed(kR1)					  ? Shortcut::CornerScreen
-												  : Shortcut::None;
+			if (optionsChord && !slot.chordAt)
+				slot.chordAt = now;
+			Shortcut shortcut = pressed(kL1) ? Shortcut::SwapScreens : pressed(kR1) ? Shortcut::CornerScreen : Shortcut::None;
 			if (s_stateShortcuts)
 			{
 				if (shortcut == Shortcut::None && pressed(kSquare))
@@ -323,6 +328,24 @@ namespace ps5pad
 				s_pendingShortcut = shortcut;
 				slot.chordUsed = true;
 			}
+			// the chord owns the click: no touch while it lasts, a second held opens the app's own menu, and let go
+			// sooner (Options first, or with the click) it opens BetterVR's on the next frame
+			if (slot.chordAt)
+			{
+				slot.chordUsed = true;
+				if (!slot.chordMenu && now - slot.chordAt >= kMenuHoldUs)
+				{
+					s_pendingShortcut = Shortcut::Menu;
+					slot.chordMenu = true;
+				}
+				if (!(buttons & kOptions))
+				{
+					if (!slot.chordMenu)
+						s_pendingShortcut = Shortcut::ModMenu;
+					slot.chordAt = 0;
+					slot.chordMenu = false;
+				}
+			}
 			result.buttons &= ~(kOptions | kL1 | kR1);
 			result.touch = !slot.chordUsed && now - slot.clickedAt >= kTouchDelayUs;
 			slot.touched |= result.touch;
@@ -330,6 +353,13 @@ namespace ps5pad
 		else
 		{
 			slot.loadAt = 0;
+			if (slot.chordAt)
+			{
+				if (!slot.chordMenu)
+					s_pendingShortcut = Shortcut::ModMenu;
+				slot.chordAt = 0;
+				slot.chordMenu = false;
+			}
 			if ((previous & kTouchPad) && !slot.chordUsed && !slot.touched)
 				slot.tapUntil = now + kTapUs;
 		}

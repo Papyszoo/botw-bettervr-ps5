@@ -3,6 +3,28 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-19: v0.6 recenter (Options held 1 s, and the menu on Square or a touchpad tap), built, untested on console
+
+Options on the right Sense and on the DualSense is now two things: held for about a second it recenters the
+view as a PS VR2 game does, and released sooner it is the game's "+" (pause). The recenter lives in the
+runtime (`port/bettervr/xr/runtime.cpp`): one seat pose, a yaw and an x/z offset, latched from the head's
+own pose at the second and applied to the head and both hands in VIEW, LOCAL and STAGE, so BetterVR and the
+game need no change. Hmd2 still reprojects from the tracker's own head pose, not the seat. The height is
+kept: BetterVR's stage offset is a pure y shift for the seated eye height, so its seated calibration stays
+valid. One `[recenter] <input>: yaw N deg, offset X Z m (the head was at ...)` line a hold. BetterVR's menu
+no longer opens on Options: it opens on the left Sense's Square (unchanged) or on a DualSense touchpad click
++ Options tap, and that chord held for a second is the app's own in-game menu, as before (`port/ps5/pad.cpp`,
+the app calls `BetterVR_PS5_ToggleModMenu`). New patch bettervr 0020; no Cemu change.
+
+**Test request 56 (recenter and the new menu controls, 13.60 console).** In VR, stand facing away from the
+room's forward and hold Options on the right Sense for about a second: the view must turn to face forward and
+its horizontal position must reset under you, with no pause and no menu; a short tap must still open the
+inventory. Repeat with the DualSense's Options, and again with both Sense controllers off. Say whether the
+seated eye height stayed the same across each recenter. Then say how the menus open: the left Sense's Square
+held opens BetterVR's menu; a DualSense touchpad click + Options tap opens it; that chord held for a second
+opens the app's in-game menu; a short Options press never opens either. Send every `[recenter]` line, every
+`[menu]` line and the `Seated height calibrated` line.
+
 ## 2026-11-19: a damage hit takes its hand from any other rumble and logs every event; built, untested on console
 
 The ef87231 logs do hold damage events: the 13:00 process logged `[vib] damage state '小ダメージ'`
@@ -62,7 +84,8 @@ below now expects the triggers to work and the row to read Available.
 ## 2026-11-19: v0.6 combined (Options hold, stall tolerance, performance, Vibration, triggers, eye tracking, third-person snap turn), built, untested on console
 
 Branch `bettervr-1.0/v06-all`, from v0.5.0, combining the v0.6 tracks. Options on the right Sense and on the
-DualSense now opens BetterVR's menu on a 700 ms hold and is the game's "+" (pause) on a shorter press; the start popup
+DualSense recenters the view on a 1 s hold and is the game's "+" (pause) on a shorter press (reworked by the entry
+above); the start popup
 is gone. A camera stall shorter than 250 ms keeps first person, so strafing near grass no longer flashes Link's body,
 and the compositor blends the HUD premultiplied, so the weapon wheel's arrows, the minimap and the clock keep their
 alpha and the HUD stops shimmering (two mip levels, `textureGrad`, LOD capped at 1.0). The frame end does fewer
@@ -96,16 +119,17 @@ names `docs/GUIDE.md`. Details: `UPDATE-1.0.md`, "v0.6", "v0.6 body, HUD and nee
 `"profile": true` and the Sense controllers charged; send the logs zip and the lines named under each letter.
 
 - (a) Options, Sense and DualSense. On the right Sense, tap Options once (the game's pause/inventory opens) and tap
-  again straight away, well inside the next 400 ms (it closes); hold it about a second (BetterVR's menu opens while the
-  button is still held, no pause behind it) and hold again (it closes). Repeat with the DualSense's Options, with the
-  Sense controllers off and third person set in Settings > VR, and move through the pages and rows with the
-  DualSense's left and right stick. When the Sense is connected but has no pose, the pad's sticks must not also move
-  the cursor. With both inputs ready, hold one Options and tap the other before the hold reaches 700 ms: the hold must
-  open BetterVR's menu and the tap must reach the game. A tap after the menu is open is dropped on purpose
-  (`short press ignored, game input is blocked`). Say whether any help card or popup still appears over the game at
-  start. Send every
-  `[menu]` line (`Options down`, `Options up after N ms`, `long press -> open`/`closed`, `release after the
-  threshold -> hold`, `short press -> pause`, `short press ignored, game input is blocked`).
+  again straight away, well inside the next 400 ms (it closes); hold it about a second (the view recenters, with no
+  pause and no menu; Test request 56 above has the detail). Repeat with the DualSense's Options, with the Sense
+  controllers off and third person set in Settings > VR, and move through BetterVR's menu (left Square held, or a
+  touchpad + Options tap) with the DualSense's left and right stick. When the Sense is connected but has no pose, the
+  pad's sticks must not also move the cursor. With both inputs ready, hold one Options and tap the other before the
+  hold reaches 1 s: the hold must recenter and the tap must reach the game. A tap after the menu is open is dropped on
+  purpose (`short press ignored, game input is blocked`). Say whether any help card or popup still appears over the
+  game at start. Send every
+  `[menu]` line (`Options down`, `Options up after N ms`, `Options held for 1 s: the view recenters, no pause`,
+  `release after the second: no pause`, `short press -> pause`, `short press ignored, game input is blocked`,
+  `touchpad + Options tap -> open`/`closed`) and every `[recenter]` line.
 - (b) Body facing and the strafe flash. Walk forward, back up and strafe left and right in first person, and look
   down: Link's body must face the way you look, not the opposite way (a 0.6.0 build turned it 180 degrees). Then
   strafe near grass and say whether the body still flashes for a frame. Send the `[pose] a short camera stall kept
@@ -118,7 +142,7 @@ names `docs/GUIDE.md`. Details: `UPDATE-1.0.md`, "v0.6", "v0.6 body, HUD and nee
   lines from two minutes in the overworld at 1x, every `[capture] held the first 2D capture after a screen change ...`
   line, and the `[camera] first frame after a screen: source=...` lines from opening and closing the wheel; say whether
   the bright first wheel frame and the 2-frame world shift on closing are still there.
-- (d) Vibration page. Hold Options and open the new **Vibration** page between Controls and Display; say whether it
+- (d) Vibration page. Open BetterVR's menu (left Square held, or a touchpad + Options tap) and open the new **Vibration** page between Controls and Display; say whether it
   draws (master switch, headset cap, three test buttons, nine category rows with On / Strength / Hands / Headset /
   DualSense). **Press Headset first, alone, before taking any damage**, so its test line comes before a hit: a Damage
   Taken or Explosions event can also call the motor (both default to the headset). It is never called at VR start. Then
@@ -165,8 +189,9 @@ names `docs/GUIDE.md`. Details: `UPDATE-1.0.md`, "v0.6", "v0.6 body, HUD and nee
   looking right; say which way each throw went and send the `[Throw] gaze assist bent N degrees toward the gaze` lines
   (or `toward the head`). With the setting off, the same throw must not bend.
 - (i) Touchpad click. With the DualSense in game, a click of the touchpad opens the Slate (`-`) and Create opens it as
-  well; moving a finger on the touchpad still moves the GamePad's cursor; touchpad + Options opens only the port's
-  in-game menu, not the Slate. Start once with an older `/data/botwvr/launcher/ps5cemu.json` (no
+  well; moving a finger on the touchpad still moves the GamePad's cursor; touchpad + Options let go sooner opens only
+  BetterVR's menu, and the same chord held a second only the port's in-game menu, not the Slate. Start once with an
+  older `/data/botwvr/launcher/ps5cemu.json` (no
   `touchpadClickMigrated`): `touchpadClick` must read `[2, 2, 2, 2]` afterwards. Set player 1's Touchpad click to
   Automatic in Settings, restart, and say it is still Automatic. Send the `[controls]` lines that name each player's
   mappings.
@@ -199,7 +224,8 @@ names `docs/GUIDE.md`. Details: `UPDATE-1.0.md`, "v0.6", "v0.6 body, HUD and nee
   its centre stayed put or slid away, and send the `reach=` values from standing still and from the middle of a twist.
 - (n) Notification window at start. From the library, start BotW fresh in VR: the PS5's notification window must not
   appear at all (no panel with the console's older messages over the black screen), and the "BotW VR: Touchpad click +
-  Options: the in-game menu ..." hint must never show (the in-game menu is the long Options hold). If the console has
+  Options: the in-game menu ..." hint must never show (the in-game menu is the touchpad + Options hold, and BetterVR's is
+  the left Square's). If the console has
   notifications for the account on, a toast must come only once the game's picture is up. Quit to the library and start
   the game again: the same. Send, for each start, the `[ui] gfx: stopped` or `[ui] the new launcher is gone ...` line
   and the `[vulkan] VideoOut surface WxH at N Hz` line that follows it, plus any `[cheevos]` line of that start; say

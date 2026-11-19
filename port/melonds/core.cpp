@@ -1148,6 +1148,7 @@ namespace ps5melonds
 			switch (shortcut)
 			{
 			case ps5pad::Shortcut::Menu:
+			case ps5pad::Shortcut::ModMenu: // the click with Options let go sooner: there is no VR menu here
 				ps5ingame3ds::ToggleMenu();
 				break;
 			case ps5pad::Shortcut::SwapScreens:

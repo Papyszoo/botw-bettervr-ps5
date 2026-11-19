@@ -91,6 +91,8 @@ extern "C" float BetterVR_PS5_Setting(const char* name, float fallback); // bett
 #if defined(__PROSPERO__)
 extern "C" void BetterVR_PS5_LogPresets(); // patches/bettervr 0007: the pack presets, once Cemu loaded them
 #endif
+// patches/bettervr: the DualSense's touchpad + Options tap opens BetterVR's menu; false when no VR session runs
+extern "C" bool BetterVR_PS5_ToggleModMenu();
 // patches/cemu 0038: frames longer than 20, 34 and 50 ms, and the longest (LatteRenderTarget.cpp),
 // and the GPU thread's waits on the GPU by what it waits for, in TSC ticks (VulkanRenderer.cpp)
 extern std::atomic<uint32> g_ps5FramesOver[3];
@@ -1041,6 +1043,12 @@ namespace ps5emu
 			{
 			case ps5pad::Shortcut::Menu:
 				ps5ingame::ToggleMenu();
+				break;
+			case ps5pad::Shortcut::ModMenu:
+				// the touchpad's click with Options, let go before the second: BetterVR's menu; on the TV, where
+				// there is no VR session, the app's own menu as the click's tap always opened it
+				if (!BetterVR_PS5_ToggleModMenu())
+					ps5ingame::ToggleMenu();
 				break;
 			case ps5pad::Shortcut::SwapScreens:
 				ps5ingame::SwapScreens();

@@ -201,7 +201,9 @@ Optional settings in `/data/botwvr/launcher/bettervr.json`, with any build:
 | `"gripPitch": 30`, `"aimPitch": 30` | Tilt the controllers' poses, in degrees, if Link's hands point the wrong way (`gripPitch` default 32, `aimPitch` default 0). |
 | `"gripYaw": 30`, `"gripRoll": 30` | Turn the controllers' poses about their vertical axis and their long axis, in degrees (left hand +, right hand -; defaults 17 and 30; `gripPitch` defaults to 32). Tune by editing `bettervr.json`. |
 
-The in-game menu opens with a short press of Options.
+The in-game menu opens with a touchpad click + Options held for about a second. BetterVR's menu opens with a long
+press of Square on the left Sense, or with a tap of touchpad click + Options. Hold Options on the right Sense or the
+DualSense for about a second to recenter the view; a short press is the game's pause.
 
 Version 0.5.0 details: the VR resolution is fixed at 1x (BetterVR's Graphics pack is added only at Play in
 VR, so it is not in the launcher's list of graphic packs). The Extended Memory pack is off by default. Sense

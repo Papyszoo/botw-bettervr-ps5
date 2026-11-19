@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // PS5Cemu: what the port shows and decides over a running game (ingame.cpp):
-//   - its menu (touchpad + Options), a panel down the left (side_menu.h) with the game's box art,
+//   - its menu (touchpad + Options, held a second), a panel down the left (side_menu.h) with the game's box art,
 //     name, publisher and year at its top: the screens, the picture and Cemu's graphics settings,
 //     the volume, amiibo, the controllers, back to the library;
 //   - the GamePad's screen, the TV's unless the player makes it the main one or puts it in a corner;

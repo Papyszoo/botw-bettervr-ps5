@@ -610,7 +610,7 @@ namespace ps5libretro
 				}
 			}
 			const ps5pad::Shortcut shortcut = ps5pad::TakeShortcut();
-			if (shortcut == ps5pad::Shortcut::Menu)
+			if (shortcut == ps5pad::Shortcut::Menu || shortcut == ps5pad::Shortcut::ModMenu)
 				ps5ingame3ds::ToggleMenu();
 			else if (shortcut == ps5pad::Shortcut::SaveState || shortcut == ps5pad::Shortcut::LoadState)
 			{

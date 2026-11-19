@@ -739,17 +739,22 @@ the Sense trigger switch buried in `bettervr.json`; the fixes are in the section
 New patch
 files: bettervr 0007 (performance), 0008 (vibration), 0009 (adaptive triggers), 0010 (eye tracking), 0011
 (body, HUD and the blue needle), 0012 (third-person snap turn), 0013 (magnesis wrist twist) and 0014 (the
-DualSense trigger row); cemu 0055 (the GPU thread's swap and VR frame end for the profile). Bettervr 0001-0006 are
+DualSense trigger row), 0020 (Options: the view's recenter, and the menu on Square or a touchpad tap); cemu 0055 (the
+GPU thread's swap and VR frame end for the profile). Bettervr 0001-0006 are
 v06's, unchanged; 0055 is the only Cemu patch added. `VERSION` stays 0.5.0.
 
-### Options on the Sense and the DualSense, and the start popup
+### Options, the view's recenter, and the start popup
 
-- **The menu takes a hold.** Options on the right Sense held for 700 ms opens BetterVR's menu when the threshold is
-  reached, not on the release; holding it again for 700 ms closes it, and the release that ends either hold does
-  nothing. If a stall kept every game frame from seeing the threshold, the release compares the measured time itself:
-  700 ms or more toggles the menu and sends nothing, so a hold is not lost to a hitch. The threshold is one constant
-  (`kLongPress` in `ProcessOptionsButton`, `controls.cpp`, patch bettervr 0004).
-- **A short press is the game's pause.** Released before 700 ms, Options is the Wii U "+" that opens the inventory and
+- **Recenter: Options held for 1 s.** Holding Options for about a second on the right Sense or on the DualSense
+  re-seats the view as a PS VR2 game does: the head's forward becomes the stage's -z and its horizontal position the
+  origin, and the head and both hands follow in VIEW, LOCAL and STAGE, so BetterVR and the game need no change. The
+  height stays: BetterVR's stage offset is a pure y shift for the seated eye height, so its seated calibration is not
+  disturbed. The seat is one pose in the runtime (`Recenter`, `port/bettervr/xr/runtime.cpp`), latched from the head's
+  own pose when the second is reached and reset to identity at each session. Hmd2 still reprojects each frame from the
+  tracker's own head pose (`Located::trackerHead`), not the seat: the seat is the game's frame, the room stays the
+  headset's. It fires once a hold and its release does nothing. One line a recenter:
+  `[recenter] right Sense: yaw -12.3 deg, offset 0.15 -0.42 m (the head was at ...)`.
+- **A short press is the game's pause.** Released before 1 s, Options is the Wii U "+" that opens the inventory and
   pause screens: one tap on the frame of the release, always `VPAD_BUTTON_PLUS`. The earlier build sent
   `VPAD_BUTTON_MINUS` while `state.mapOpen` said the map was open, as the right stick click is read in the menus, but
   that flag is only written by the stick click: closing the map with B left it set, so the next Options tap opened the
@@ -757,17 +762,22 @@ v06's, unchanged; 0055 is the only Cemu patch added. `VERSION` stays 0.5.0.
   path. The tap reaches the game unless BetterVR's menu is over it or the overlay blocks the keyboard
   (`ImGuiMenus::BlocksGameInput`); then the release is logged and nothing is sent, so no pause screen opens behind
   the overlay. The game's own 400 ms input block after a menu change no longer drops it: a tap within that window
-  reaches the game as the physical "+" did. A hold sends nothing (no pause),
-  a tap opens no menu, and the "+" stays on the right stick click; the stick click still picks `VPAD_BUTTON_MINUS` in
-  the map through `state.mapOpen`.
-- **The pad's Options is the same button.** The DualSense's Options is VPAD channel 0's +, and it now feeds the same
-  `ProcessOptionsButton`: held for 700 ms it opens or closes BetterVR's menu at that moment and the release then does
-  nothing, a shorter release sends the game one + tap, and + is removed from the game's hold while the button is down,
-  so no pause opens behind the menu; upstream's 500 ms `ToggleModMenuOnLongStartPress` no longer runs on the PS5, and
-  the port's own touchpad+Options overlay is unchanged. The Sense's Options and the pad's + keep their own state (two
-  instances of the same machine), so one does not swallow the other's press: a tap of the one still reaches the game
-  while the other is held below 700 ms. Once a hold has opened the menu, a tap from the other is dropped on purpose,
-  with `[menu] short press ignored, game input is blocked`.
+  reaches the game as the physical "+" did. A hold sends nothing (no pause), a tap opens no menu, and the "+" stays on
+  the right stick click; the stick click still picks `VPAD_BUTTON_MINUS` in the map through `state.mapOpen`.
+- **The menu no longer takes Options.** The hold is the recenter now, so BetterVR's menu opens on the left Sense's
+  Square (a hold, unchanged) or on a DualSense touchpad + Options **tap**. The chord held for about a second is the
+  app's own in-game menu, as before. The app's pad reader (`port/ps5/pad.cpp`) holds the chord for the second
+  (`kMenuHoldUs`) and reports `Shortcut::Menu` or `Shortcut::ModMenu`; the app calls `BetterVR_PS5_ToggleModMenu`
+  (`controls.cpp`, patch bettervr 0020) on the tap, and opens its own menu where no VR session runs. The runtime
+  ignores Options while the touchpad is clicked, so the chord never recenters. The threshold is one constant a side
+  (`kLongPress` in `ProcessOptionsButton` and the runtime's `PollOptions`).
+- **The pad's Options is the same button.** The DualSense's Options is VPAD channel 0's +, and it feeds the same
+  `ProcessOptionsButton`: a hold reaches the runtime's recenter and the release does nothing, a shorter release sends
+  the game one + tap, and + is removed from the game's hold while the button is down, so a hold never pauses;
+  upstream's 500 ms `ToggleModMenuOnLongStartPress` no longer runs on the PS5. The Sense's Options and the pad's +
+  keep their own state (two instances of the same machine), so one does not swallow the other's press: a tap of the
+  one still reaches the game while the other is held. Once BetterVR's menu is up, a tap from the other is dropped on
+  purpose, with `[menu] short press ignored, game input is blocked`.
 - **The pad moves the menu cursor.** When no Sense controller is connected (the runtime's connection state, not
   whether a hand has a pose), the VPAD's left and right stick are added to the mod menu's navigation, so a
   DualSense-only player can move through the pages and rows with either stick; the Sense path is unchanged (upstream
@@ -779,7 +789,8 @@ v06's, unchanged; 0055 is the only Cemu patch added. `VERSION` stays 0.5.0.
   console's earlier notifications listed behind it, and in the handoff from the launcher to a game (about 0.85 s between
   `[ui] gfx: stopped` and `[vulkan] VideoOut surface`) nothing of the app's is drawn: a notification posted then brings
   that window up on a black screen, jailbreak messages and all. Two changes: the Wii U start's touchpad + Options hint
-  is gone (`app/emulator.cpp`, `RunGame`; BetterVR's menu is the long Options hold now), and what the app posts in the
+  is gone (`app/emulator.cpp`, `RunGame`; BetterVR's menu is the left Square's hold, or a touchpad + Options tap), and
+  what the app posts in the
   handoff waits for the game's own surface: `ps5notify::Hold()` once the launcher gives the screen up
   (`frontend/shell/shell.cpp`, just before `m_gfx.Stop()`), `ps5notify::Release()` when a VideoOut surface is made
   (`ps5/vulkan_display.cpp`, `ps5vk::CreateDisplaySurface`), which sends what was held, in order, up to four. The other
@@ -789,9 +800,11 @@ v06's, unchanged; 0055 is the only Cemu patch added. `VERSION` stays 0.5.0.
   start; send `[ui] gfx: stopped`, `[ui] the new launcher is gone ...` and the `[vulkan] VideoOut surface ...` line of
   the start.
 - **Logs** (BetterVR's, mirrored to the boot log as `[bettervr] ...`): `[menu] Options down`, `[menu] Options up after
-  N ms`, `[menu] long press -> open` or `closed` (or `[menu] long press ignored, the menu's overlay is not ready`),
-  `[menu] release after the threshold -> hold` when the release itself ends a hold, `[menu] short press -> pause`, and
-  `[menu] short press ignored, game input is blocked` for a tap BetterVR's menu or the overlay keeps from the game.
+  N ms`, `[menu] Options held for 1 s: the view recenters, no pause`, `[menu] release after the second: no pause` when
+  the release itself ends a hold, `[menu] short press -> pause`, `[menu] touchpad + Options tap -> open` or `closed`
+  (or `[menu] touchpad + Options tap ignored, the menu's overlay is not ready`), and `[menu] short press ignored, game
+  input is blocked` for a tap BetterVR's menu or the overlay keeps from the game; the runtime's one `[recenter] ...`
+  line a hold.
 
 ### First person through a camera stall
 

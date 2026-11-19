@@ -93,7 +93,7 @@ namespace ps5pad
 	int32_t Handle(int player);
 
 	// The port's shortcuts, the same from every controller: the touchpad clicked, then
-	//   Options: the in-game menu (app/ingame.h)
+	//   Options: BetterVR's menu (its tap), or the in-game menu held a second (app/ingame.h)
 	//   L1: the TV or the GamePad as the main screen
 	//   R1: the other screen in a corner, or not
 	//   Square: a save state to the in-game menu's slot, and Triangle held a moment: a load from it,
@@ -103,7 +103,8 @@ namespace ps5pad
 	enum class Shortcut
 	{
 		None,
-		Menu,
+		Menu,	 // the touchpad click with Options, held a second: the app's in-game menu
+		ModMenu, // the click with Options, let go sooner: BetterVR's menu (the app's own when no VR session runs)
 		SwapScreens,
 		CornerScreen,
 		SaveState,
