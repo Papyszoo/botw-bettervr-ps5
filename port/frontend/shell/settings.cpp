@@ -389,8 +389,7 @@ namespace ps5shell
 			m_feedback.Play(ui::Cue::Denied);
 			OpenHelp(Tr("No mods on your drives"),
 				Tr("Copy each mod's folder into a ps5cemu/mods folder on a USB drive and plug it in. A mod is a Cemu graphic pack (a "
-				   "folder with a rules.txt), or a folder with content and aoc folders in it for the files it replaces. The guide on "
-				   "GitHub, docs/GUIDE.md, has more."));
+				   "folder with a rules.txt), or a folder with content and aoc folders in it for the files it replaces."));
 			return;
 		}
 		ps5mods::Start(drives, titleId, name);
@@ -1132,35 +1131,13 @@ namespace ps5shell
 					Tr("Copies the mods in a USB drive's ps5cemu/mods folder into the app's graphic packs, where each shows on its game's "
 					   "Graphic packs page, off until you turn it on. A mod is a Cemu graphic pack (a folder with a rules.txt), or, for one "
 					   "shared without it, a folder with content and aoc folders, in a folder named by its game's title ID. A game's menu "
-					   "has Add mods from USB as well, which gives such mods that game. The guide on GitHub, docs/GUIDE.md, has more.")));
+					   "has Add mods from USB as well, which gives such mods that game.")));
 				endSub();
 			}
 			else if (Is3ds())
 				action(Kind::Link, "installcia", Tr("Install a CIA file"), "", Tr("A game, an update or DLC."),
 					Tr("Installs a CIA into the 3DS's storage, as Azahar's Install CIA does: an update or DLC goes with its game, and a game joins "
 					"the library. Circle cancels while it runs."));
-			// an install from before: a folder for each system (app/reorganize.h), and back as before, which
-			// Go back to an earlier version needs
-			if (!m_layout.separate.empty() || !m_layout.separated.empty())
-			{
-				const bool back = m_layout.separate.empty();
-				const bool blocked = !m_layout.blocked.empty();
-				Row* row = action(Kind::Hold, back ? "putback" : "separate", Tr("A folder for each system"),
-					blocked ? std::string(Tr("Cannot move")) : m_message.empty() ? std::string(Tr("Hold Cross")) : m_message,
-					// tr: {0} is a file or folder already where one would be moved to
-					blocked ? TrF("In the way: {0}", m_layout.blocked) :
-					back	? Tr("Each system's files are in a folder of their own.") :
-							  Tr("Your files from before into a folder for each system."),
-					back ? TrF("Puts each system's files back into {0}, where they were before. Going back to an earlier version needs them "
-							   "there, as it looks for them there. BotW VR starts again to do it.",
-							   ps5paths::Root()) :
-						   // tr: {0} is the app's data folder, /data/ps5cemu; {1} lists the four folders: /data/cemu, /data/azahar, ...
-						   TrF("Moves each system's files from {0} into a folder of its own: {1}. They are renamed on the same drive, never "
-							   "copied, so it takes a moment whatever their size, and nothing is deleted. BotW VR starts again to do it; a "
-							   "system that cannot move stays as it was. This row puts them back.",
-							   ps5paths::Root(), SystemFolders()));
-				row->dimmed = blocked;
-			}
 		}
 		else if (page == "saves")
 		{
@@ -1283,34 +1260,33 @@ namespace ps5shell
 		}
 		else if (page == "online")
 		{
-			// downloading the covers now: the missing ones, or every one again
-			int missing = 0;
+			// downloading the cover now: the missing one, or the one that is wrong
+			bool missing = false;
 			for (const Game& game : m_games)
-				missing += !game.entry.game.gameId.empty() && game.boxArt.empty();
+				missing = missing || (!game.entry.game.gameId.empty() && game.boxArt.empty());
 			const size_t pending = ps5boxart::Pending();
-			const std::string status = pending ? TrP((long long)pending, "Downloading: {0} left", "Downloading: {0} left") :
+			const std::string status = pending ? Tr("Downloading…") :
 				ps5boxart::Answered() == 0 ? std::string(Tr("GameTDB did not answer: is the PS5 online?")) :
-				missing				   ? TrP(missing, "{0} game without box art", "{0} games without box art") :
-										 std::string(Tr("Every game has box art"));
-			// tr: Settings > Online: a row that opens the box art's settings (GameTDB on or off, downloading the covers again)
-			sub("boxart", Tr("Box art"), settings.boxArt || pending ? status : std::string(Tr("Off")), Tr("Covers for the library, from GameTDB."),
+				missing				   ? Tr("No box art yet") :
+										 std::string(Tr("Downloaded"));
+			// tr: Settings > Online: a row that opens the box art's settings (GameTDB on or off, downloading the cover again)
+			sub("boxart", Tr("Box art"), settings.boxArt || pending ? status : std::string(Tr("Off")), Tr("The game's cover, from GameTDB."),
 				Tr("Whether the cover is downloaded from GameTDB (art.gametdb.com), and downloaded again when it is missing or wrong."));
 			// (a Switch game's ID is the game GameTDB has by its name: port/eden/library.h)
-			toggle("boxart", Tr("Box art from GameTDB"), settings.boxArt, Tr("Covers for the library, downloaded once."),
-				Tr("The first time a game shows up, its cover is downloaded from GameTDB (art.gametdb.com) by the ID on its box. Off: nothing "
+			toggle("boxart", Tr("Box art from GameTDB"), settings.boxArt, Tr("The game's cover, downloaded once."),
+				Tr("The first time the game shows up, its cover is downloaded from GameTDB (art.gametdb.com) by the ID on its box. Off: nothing "
 				"more is downloaded."));
 			// the Switch side's covers: GameTDB's box art, or each game's own icon, as the Switch's home menu has them
 			if (IsSwitch())
 				choice("nx-covers", Tr("Switch covers"), {Tr("Box art"), Tr("Game icons")}, hand.nxCovers, Tr("GameTDB's box art, or each game's own icon."),
 					Tr("Box art is GameTDB's, found by each game's name. Game icons are the games' own, read from their files, as the Switch's "
 					   "home menu shows them. A picture beside a game (Game.png or Game.jpg) is its cover either way."));
-			action(Kind::Action, "boxartmissing", Tr("Download missing box art"), status, Tr("Tries again for every game without a cover."),
-				Tr("Asks GameTDB again for the cover of every game on this side that has none, including games it had no cover for "
-				   "before. Covers are downloaded in the background while you use the launcher."));
-			action(Kind::Hold, "boxartall", Tr("Download all box art again"), m_message.empty() ? Tr("Hold Cross") : m_message,
-				Tr("Replaces every cover on this side with a fresh download."),
-				Tr("Downloads the cover of every game on this side again, replacing the ones you have. Useful when a cover is wrong or "
-				   "looks broken."));
+			action(Kind::Action, "boxartmissing", Tr("Download the box art"), status, Tr("Tries again if the cover is missing."),
+				Tr("Asks GameTDB again for the game's cover, including when it had none before. The cover is downloaded in the background "
+				   "while you use the launcher."));
+			action(Kind::Hold, "boxartall", Tr("Download the box art again"), m_message.empty() ? Tr("Hold Cross") : m_message,
+				Tr("Replaces the cover with a fresh download."),
+				Tr("Downloads the game's cover again, replacing the one you have. Useful when the cover is wrong or looks broken."));
 			endSub();
 			// Artic Base's page (pages.cpp): a game played from a 3DS on the network
 			if (Is3ds())
@@ -1415,7 +1391,7 @@ namespace ps5shell
 				if (!m_layout.separated.empty())
 				{
 					goback->dimmed = true;
-					goback->description = Tr("Put each system's files back first: Settings > Game files > A folder for each system.");
+					goback->description = Tr("The systems' files are in folders of their own: a version from before would not find them.");
 				}
 			}
 		}
@@ -2843,26 +2819,6 @@ namespace ps5shell
 			ChangeSetting(Row{Row::Kind::Action, "boxartall"}, 0, true);
 			// tr: a held row's result: the covers are on their way
 			m_message = Tr("Downloading in the background");
-		}
-		else if (id == "separate" || id == "putback")
-		{
-			// a folder for each system, or back as before: written down, and made as the app starts again
-			if (!m_layout.blocked.empty())
-			{
-				m_feedback.Play(ui::Cue::Denied);
-				return;
-			}
-			const auto request = id == "separate" ? ps5reorganize::Request::Separate : ps5reorganize::Request::PutBack;
-			if (!ps5reorganize::Ask(ps5paths::Root(), request))
-			{
-				m_message = TrF("BotW VR cannot write to {0}. Is the HEN loaded?", ps5paths::Root());
-				return;
-			}
-			ps5log::Line("[reorganize] {} asked for in Settings: as the app starts again", id == "separate" ? "a folder for each system" : "putting back");
-			ps5update::Restart();
-			m_message = ps5update::GetStatus().message; // back only when the PS5 did not start it again
-			if (m_message.empty())
-				m_message = Tr("Close BotW VR and start it again from the home screen: the folders move as it starts.");
 		}
 		else if (id == "goback")
 		{

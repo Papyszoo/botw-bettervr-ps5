@@ -266,14 +266,11 @@ namespace ps5shell
 					"to USB.",
 					names));
 		}
-		// a folder for each system: what this start did, said once, or else offered to an install from
-		// before at a fresh start, unless Later was chosen less than a week ago (Settings > Game files has it)
+		// a folder for each system: what this start did, said once. The row that asked for it is gone
+		// (a launcher for one game); an install that already moved its files is still read as they are
 		m_layout = ps5reorganize::Look(ps5paths::Root(), ps5paths::kDefaultRoot);
 		if (!m_status.reorganized.moved.empty())
 			Toast(Tr("The folders have moved"));
-		else if (!returning && !firstStart && m_status.autoLaunch.empty() && !m_layout.separate.empty() && m_layout.blocked.empty() &&
-				 Today() >= m_settings.ui.reorganizeAsked + 7)
-			m_reorganize.offer = true;
 		ps5log::Line("[ui] the new launcher is up in {:.0f} ms", (host.clock() - started) * 1000);
 
 		while (!m_done && !m_failed)
