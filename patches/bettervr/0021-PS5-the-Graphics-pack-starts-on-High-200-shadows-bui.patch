@@ -1,0 +1,47 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ps5cemu <ps5cemu@localhost>
+Date: Thu, 19 Nov 2026 17:58:12 +0100
+Subject: [PATCH] PS5: the Graphics pack starts on High (200%) shadows; built,
+ untested on console
+
+The Shadows preset a fresh launcher selects is High, $shadowRes = 2, so the near cascade's 768x720 map becomes 1536x1440 and its 2x2 PCF taps cover 4 times the texels. A saved choice wins: the preset names are unchanged, so Low, Medium, Ultra and Extreme keep applying as before. The community copy ships the same default.
+---
+ resources/BreathOfTheWild_Graphics/rules.txt              | 2 +-
+ resources/graphicPacks/BreathOfTheWild/Graphics/rules.txt | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/resources/BreathOfTheWild_Graphics/rules.txt b/resources/BreathOfTheWild_Graphics/rules.txt
+index c8cd452..ae07a3b 100644
+--- a/resources/BreathOfTheWild_Graphics/rules.txt
++++ b/resources/BreathOfTheWild_Graphics/rules.txt
+@@ -220,12 +220,12 @@ $shadowRes = 0.5
+ 
+ [Preset]
+ name = Medium (100%, Default)
+-default = 1
+ category = Shadows
+ condition = $qualityPreset > 0
+ 
+ [Preset]
+ name = High (200%)
++default = 1
+ category = Shadows
+ condition = $qualityPreset > 0
+ $shadowRes = 2
+diff --git a/resources/graphicPacks/BreathOfTheWild/Graphics/rules.txt b/resources/graphicPacks/BreathOfTheWild/Graphics/rules.txt
+index 80e6ce1..90439a3 100644
+--- a/resources/graphicPacks/BreathOfTheWild/Graphics/rules.txt
++++ b/resources/graphicPacks/BreathOfTheWild/Graphics/rules.txt
+@@ -546,11 +546,11 @@ $shadowRes = 0.5
+ 
+ [Preset]
+ name = Medium (100%, Default)
+-default = 1
+ category = Shadows
+ 
+ [Preset]
+ name = High (200%)
++default = 1
+ category = Shadows
+ $shadowRes = 2
+ 
