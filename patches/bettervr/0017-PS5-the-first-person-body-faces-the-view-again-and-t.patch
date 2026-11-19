@@ -1,0 +1,205 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ps5cemu <ps5cemu@localhost>
+Date: Thu, 19 Nov 2026 10:33:01 +0100
+Subject: [PATCH] PS5: the first-person body faces the view again, and the root
+ latch only fills a skipped frame; built, untested on console
+
+The camera hook built a player matrix from the camera's own rotation, so the headset's model-space yaw lost the player model's axis, and ExtractPlayerBodyYaw's fixed 180 left Skl_Root 180 degrees from the view: on the console the body faced away while walking. Skl_Root is posed from the live player matrix and the fresh reference matrix again, as in 0.5.0. The last good root is still written on a frame whose actor, model, hand pose or bone is skipped, and its once-a-second line stays.
+---
+ src/game/botw/camera/camera.cpp   | 41 ++-----------------------------
+ src/game/botw/camera/camera.h     |  9 -------
+ src/game/botw/player/skeleton.cpp | 40 +++++-------------------------
+ 3 files changed, 8 insertions(+), 82 deletions(-)
+
+diff --git a/src/game/botw/camera/camera.cpp b/src/game/botw/camera/camera.cpp
+index 875555d..89e0821 100644
+--- a/src/game/botw/camera/camera.cpp
++++ b/src/game/botw/camera/camera.cpp
+@@ -18,23 +18,6 @@ static constexpr float hardcodedClimbWallClearance = 0.35f;
+ static std::atomic_uint32_t s_framesSinceLastUpdate = 0;
+ static std::atomic<glm::mat4> s_referenceMtx = glm::mat4(1.0f);
+ 
+-// written on the game thread by hook_UpdateCameraForGameplay, read by the same thread's bone pass
+-static Camera::FirstPersonBodyPose s_firstPersonBodyPose;
+-static std::chrono::steady_clock::time_point s_firstPersonBodySkipLastLog{};
+-
+-bool Camera::GetFirstPersonBodyPose(FirstPersonBodyPose& pose) {
+-    pose = s_firstPersonBodyPose;
+-    return pose.valid;
+-}
+-
+-static void LogFirstPersonBodySkip(const char* reason) {
+-    const auto now = std::chrono::steady_clock::now();
+-    if (now - s_firstPersonBodySkipLastLog < std::chrono::seconds(1))
+-        return;
+-    s_firstPersonBodySkipLastLog = now;
+-    Log::print<INFO>("[pose] camera hook kept the last first-person body pose ({})", reason);
+-}
+-
+ static glm::fvec3 s_wsCameraPosition = glm::fvec3();
+ static glm::fquat s_wsCameraRotation = glm::identity<glm::fquat>();
+ static glm::fvec3 s_lastGameplayCameraTarget = glm::fvec3();
+@@ -484,9 +467,6 @@ static void hook_UpdateCameraForGameplay(PPCInterpreter_t* hCPU) {
+     s_wsCameraPosition = oldCameraPosition;
+     s_wsCameraRotation = gameplayRotation;
+ 
+-    glm::mat4 firstPersonPlayerMtx = glm::identity<glm::mat4>();
+-    bool hasFirstPersonPlayerMtx = false;
+-
+     // rebase the rotation to the player position
+     if (firstPerson && Player::GetAddress() != 0) {
+         const PlayerMoveBitFlags moveBits = Player::GetMoveFlags();
+@@ -499,21 +479,16 @@ static void hook_UpdateCameraForGameplay(PPCInterpreter_t* hCPU) {
+         UpdateClimbWallCameraOffset(views, playerPos, gameplayRotation);
+         playerPos += s_climbWallCameraOffset;
+ 
+-        firstPersonPlayerMtx = glm::translate(glm::identity<glm::mat4>(), playerPos) * glm::mat4(gameplayRotation);
+-        hasFirstPersonPlayerMtx = true;
+-        existingGameMtx = glm::inverse(firstPersonPlayerMtx);
++        existingGameMtx = glm::inverse(glm::translate(glm::identity<glm::mat4>(), playerPos) * glm::mat4(gameplayRotation));
+     }
+ 
+     Camera::UpdateDebugEyeViews(views, s_wsCameraPosition, s_wsCameraRotation);
+ 
+     if (!views.has_value()) {
+         Log::print<ERROR>("hook_UpdateCameraForGameplay: No views available for the middle pose.");
+-        if (firstPerson)
+-            LogFirstPersonBodySkip("no head views");
+         return;
+     }
+-    const glm::mat4 appliedHeadset = GetAppliedHeadsetPose(views->MiddlePose());
+-    glm::mat4 finalPose = glm::inverse(existingGameMtx) * appliedHeadset;
++    glm::mat4 finalPose = glm::inverse(existingGameMtx) * GetAppliedHeadsetPose(views->MiddlePose());
+ 
+     glm::fvec3 camPos = glm::fvec3(finalPose[3]);
+     glm::fvec3 forward = -glm::normalize(glm::fvec3(finalPose[2]));
+@@ -521,23 +496,11 @@ static void hook_UpdateCameraForGameplay(PPCInterpreter_t* hCPU) {
+     glm::fvec3 target = camPos + forward * oldCameraDistance;
+ 
+     if (!TryUpdateGameplayCameraTarget(camPos, target, up)) {
+-        if (firstPerson)
+-            LogFirstPersonBodySkip("no finite camera target");
+         return;
+     }
+ 
+     Camera::UpdateReferenceMtx(s_wsCameraPosition, s_wsCameraRotation);
+ 
+-    if (hasFirstPersonPlayerMtx) {
+-        s_firstPersonBodyPose.valid = true;
+-        s_firstPersonBodyPose.playerMtx = firstPersonPlayerMtx;
+-        s_firstPersonBodyPose.cameraMtx = Camera::GetReferenceMtx();
+-        s_firstPersonBodyPose.headsetMtx = appliedHeadset;
+-    }
+-    else if (firstPerson) {
+-        LogFirstPersonBodySkip("no player matrix");
+-    }
+-
+     actCam.finalCamMtx.pos = camPos;
+     actCam.finalCamMtx.target = target;
+     actCam.finalCamMtx.up = up;
+diff --git a/src/game/botw/camera/camera.h b/src/game/botw/camera/camera.h
+index 599e344..c434c3d 100644
+--- a/src/game/botw/camera/camera.h
++++ b/src/game/botw/camera/camera.h
+@@ -9,15 +9,6 @@ namespace Camera {
+     glm::mat4 GetReferenceMtx();
+     void SetReferenceMtx(const glm::mat4& referenceMtx);
+ 
+-    // the head and player pose the camera hook used for the view this frame; the skeleton poses Skl_Root
+-    // from it, so the body and the eye cannot disagree about this frame's turn
+-    struct FirstPersonBodyPose {
+-        bool valid = false;
+-        glm::mat4 playerMtx = glm::identity<glm::mat4>();
+-        glm::mat4 cameraMtx = glm::identity<glm::mat4>();
+-        glm::mat4 headsetMtx = glm::identity<glm::mat4>();
+-    };
+-    bool GetFirstPersonBodyPose(FirstPersonBodyPose& pose);
+     // the reference matrix is still from the previous frame during the actor calc jobs
+     // that also reads the live player matrix has to re-resolve it or it mixes two simulation steps
+     glm::mat4 GetFreshReferenceMtx();
+diff --git a/src/game/botw/player/skeleton.cpp b/src/game/botw/player/skeleton.cpp
+index eeb8da5..1f83738 100644
+--- a/src/game/botw/player/skeleton.cpp
++++ b/src/game/botw/player/skeleton.cpp
+@@ -470,8 +470,8 @@ static bool IsThirdPersonForPose(bool rootBone) {
+     return thirdPerson;
+ }
+ 
+-// What the last first-person frame put in Skl_Root. The view was built from the camera hook's pose, so a frame
+-// whose actor, model or hand pose is skipped must still draw that root, not the game's stale anim pose.
++// What the last first-person frame put in Skl_Root: a frame whose actor, model or hand pose is skipped must
++// still draw that root, not the game's stale anim pose.
+ struct LatchedBodyRoot {
+     bool valid = false;
+     glm::vec3 position = glm::vec3(0.0f);
+@@ -480,7 +480,6 @@ struct LatchedBodyRoot {
+     float bodyViewYawDelta = 0.0f;
+ };
+ static LatchedBodyRoot s_latchedBodyRoot;
+-static std::chrono::steady_clock::time_point s_bodyRootLastDeltaLog{};
+ static std::chrono::steady_clock::time_point s_bodyRootLastSkipLog{};
+ static uint32_t s_bodyRootSkips = 0;
+ static const char* s_bodyRootFirstSkip = nullptr;
+@@ -518,17 +517,6 @@ static void LogBodyRootSkip(const char* reason, bool wroteLast, float gameYawDel
+     s_bodyRootFirstSkip = nullptr;
+ }
+ 
+-static void LogBodyRootDelta(float yawDelta) {
+-    // a pending skip says more than the delta, and its line carries the last latched delta too
+-    if (s_bodyRootSkips > 0)
+-        return;
+-    const auto now = std::chrono::steady_clock::now();
+-    if (now - s_bodyRootLastDeltaLog < std::chrono::seconds(1))
+-        return;
+-    s_bodyRootLastDeltaLog = now;
+-    Log::print<INFO>("[pose] first-person body-view yaw delta {:.1f} deg", yawDelta);
+-}
+-
+ static void WriteLatchedBodyRoot(const std::string& boneName, uint32_t matrixPtr, uint32_t scalePtr, const char* reason) {
+     if (boneName != "Skl_Root" || IsThirdPersonForPose(true))
+         return;
+@@ -633,19 +621,8 @@ static void hook_ModifyBoneMatrix(PPCInterpreter_t* hCPU) {
+ 
+     glm::fvec3 boneScale = Guest::Get<BEVec3>(scalePtr).getLE();
+ 
+-    // the camera hook's own head and player sample, so Skl_Root and the view turn together this frame
+-    Camera::FirstPersonBodyPose bodyPose;
+-    const bool hasBodyPose = Camera::GetFirstPersonBodyPose(bodyPose);
+-    glm::fmat4 playerMtx4;
+-    glm::mat4 cameraMtx;
+-    if (hasBodyPose) {
+-        playerMtx4 = glm::fmat4(bodyPose.playerMtx);
+-        cameraMtx = bodyPose.cameraMtx;
+-    }
+-    else {
+-        playerMtx4 = glm::fmat4(Guest::Get<BEMatrix34>(Player::GetMtxAddress()).getLEMatrix());
+-        cameraMtx = Camera::GetFreshReferenceMtx();
+-    }
++    const glm::fmat4 playerMtx4 = glm::fmat4(Guest::Get<BEMatrix34>(Player::GetMtxAddress()).getLEMatrix());
++    const glm::mat4 cameraMtx = Camera::GetFreshReferenceMtx();
+ 
+     const OpenXR::InputState& inputs = s_skeletonPassInputs;
+     if (!inputs.shared.pose[side].isActive) {
+@@ -669,11 +646,8 @@ static void hook_ModifyBoneMatrix(PPCInterpreter_t* hCPU) {
+     glm::mat4 calculatedLocalMat = s_skeleton.GetBone(boneIndex)->localMatrix;
+ 
+     if (boneName == "Skl_Root") {
+-        glm::mat4 headsetMtx;
+-        if (hasBodyPose)
+-            headsetMtx = bodyPose.headsetMtx;
+-        else
+-            headsetMtx = Tracking::HeadPose().value_or(ToMat4(glm::fvec3(0)));
++        auto headsetPose = Tracking::HeadPose();
++        glm::mat4 headsetMtx = headsetPose.value_or(ToMat4(glm::fvec3(0)));
+ 
+         // headset in model space
+         glm::mat4 headsetModel = glm::inverse(playerMtx4) * cameraMtx * headsetMtx;
+@@ -856,8 +830,6 @@ static void hook_ModifyBoneMatrix(PPCInterpreter_t* hCPU) {
+         // the root the game writes and this latch are in model space; the camera's world yaw is not
+         s_latchedBodyRoot.viewYaw = ExtractPlayerBodyYaw(headsetModel);
+         s_latchedBodyRoot.bodyViewYawDelta = YawDeltaDegrees(yawRot, s_latchedBodyRoot.viewYaw);
+-        if (std::abs(s_latchedBodyRoot.bodyViewYawDelta) >= 0.5f)
+-            LogBodyRootDelta(s_latchedBodyRoot.bodyViewYawDelta);
+ 
+         writeBoneQuat(targetPos, yawRot, boneScale);
+         return;

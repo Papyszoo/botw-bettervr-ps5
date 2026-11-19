@@ -48,8 +48,9 @@ headset's motor and the DualSense. The bow's draw firms R2 and the shield's guar
 Sense controllers behind the System card's **Sense Triggers** row, saved as `senseTriggers`), and Damage Taken also
 follows the large-damage state machine, once per hit. The PS VR2 gaze exports are probed, `XR_EXT_eye_gaze_interaction`
 is exposed only where they bind, and an optional `Gaze Throw Assist` bends a throw up to 15 degrees toward where the
-player looks. Bettervr 0011 latches the first-person body root from the camera hook's own head and player pose and
-gives the HUD background its own premultiplied ImGui pipeline, holds the first 2D frame after a screen change, and
+player looks. Bettervr 0011 keeps the last good first-person body root for a frame whose pose pass is skipped (the
+root is posed from the live player matrix, as in 0.5.0) and gives the HUD background its own premultiplied ImGui
+pipeline, holds the first 2D frame after a screen change, and
 keeps a short press from opening the world guide in third person; the bow aim arc needs a real draw there. Bettervr
 0012 adds an optional **Snap Turn (third person)** that reuses the first-person snap angle and threshold, and with it
 off third person is unchanged. Bettervr 0013 logs the magnesis wrist twist (fixed flag, twist, requested angular
@@ -80,11 +81,11 @@ names `docs/GUIDE.md`. Details: `UPDATE-1.0.md`, "v0.6", "v0.6 body, HUD and nee
   start. Send every
   `[menu]` line (`Options down`, `Options up after N ms`, `long press -> open`/`closed`, `release after the
   threshold -> hold`, `short press -> pause`, `short press ignored, game input is blocked`).
-- (b) Strafe flash. Strafe left and right with the left stick near grass and say whether Link's body still flashes for
-  a frame. Send the `[pose] a short camera stall kept first person (N frames)` lines (at most one a second), the new
-  `[pose] first-person body-view yaw delta N deg` lines, every `[pose] first-person body root ...` line (they name
-  the skip: actor missing, model mismatch, hand pose inactive, bone missing), and any `[pose] camera hook kept the
-  last first-person body pose (...)` line; say whether the frame rate held.
+- (b) Body facing and the strafe flash. Walk forward, back up and strafe left and right in first person, and look
+  down: Link's body must face the way you look, not the opposite way (a 0.6.0 build turned it 180 degrees). Then
+  strafe near grass and say whether the body still flashes for a frame. Send the `[pose] a short camera stall kept
+  first person (N frames)` lines (at most one a second) and every `[pose] first-person body root ...` line (they name
+  the skip: actor missing, model mismatch, hand pose inactive, bone missing); say whether the frame rate held.
 - (c) Weapon wheel and HUD. Open the weapon wheel: the left and right arrows must be visible on the black buttons, and
   the minimap and clock must not look faded or black. Turn your head slowly while looking at the HUD and at menu text,
   menu open and closed: say whether the edges still crawl or shimmer, whether menu text is as sharp as v0.5.0 or still

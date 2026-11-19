@@ -1139,12 +1139,13 @@ Test request 53 in `STATUS.md`.
 
 Done, one new patch (bettervr 0011; no Cemu patch was needed):
 
-- **The strafe flash.** `hook_UpdateCameraForGameplay` (`camera.cpp`) now latches one first-person body pose from the
-  same player and head sample it builds the view from (`Camera::FirstPersonBodyPose`, `GetFirstPersonBodyPose`).
-  `hook_ModifyBoneMatrix` (`skeleton.cpp`) poses `Skl_Root` from that pose instead of the live player matrix, and a
-  frame whose actor, model, hand pose or bone is skipped writes the last good root before it returns; the game's stale
-  anim root can no longer put the gear in front of the eyes for that frame. Logs at most once a second:
-  `[pose] first-person body-view yaw delta N deg` and `[pose] first-person body root kept the last good frame (...)`.
+- **The strafe flash.** A frame whose actor, model, hand pose or bone is skipped now writes the last good first-person
+  `Skl_Root` before it returns (`WriteLatchedBodyRoot`, `skeleton.cpp`), so the game's stale anim root can no longer
+  put the gear in front of the eyes for that frame. The root itself is still posed from the live player matrix
+  (`Player::GetMtxAddress`) and `Camera::GetFreshReferenceMtx`, as in 0.5.0: a 0.6.0 build posed it from a player
+  matrix the camera hook built from the camera's own rotation, which is not the player model's matrix, and
+  `ExtractPlayerBodyYaw`'s fixed 180 then left the body facing away from the view. Log at most once a second:
+  `[pose] first-person body root kept the last good frame (...)`.
 - **The HUD's squared alpha.** The ImGui background draw now binds a second, premultiplied pipeline
   (`dependencies/imgui_impl_vulkan.cpp`, `ImGui_ImplVulkan_PremultipliedBlendCallback`) for the HUD image only, so the
   game's premultiplied HUD is written `rgb + dst*(1-a)` instead of `rgb*a²`; menu text, menu quads and the 3D
@@ -1164,5 +1165,6 @@ Done, one new patch (bettervr 0011; no Cemu patch was needed):
 Open: built only on CI; nothing in this section has run on a console. The HUD pipeline is a second pipeline object
 (one more pipeline at ImGui init), and the 2D hold is one skipped capture per screen opening.
 
-Next step: Test request 53 (b), (c) and (k) in `STATUS.md`: the new `[pose]`, `[capture]`, `[camera]`, `[guide]` and
-`[bow]` lines, and whether the flash, the wheel's first frame, the close shift and the needle are gone.
+Next step: Test request 53 (b), (c) and (k) in `STATUS.md`: the `[pose]`, `[capture]`, `[camera]`, `[guide]` and
+`[bow]` lines, whether the body faces the view again when walking, and whether the flash, the wheel's first frame,
+the close shift and the needle are gone.
