@@ -553,6 +553,9 @@ namespace
 			bool down = false, ignored = false, fired = false; // ignored: it began as the touchpad's chord
 			XrTime at = 0;
 		} senseOptions, padOptions;
+		// whether the press became the recenter, one per input: BetterVR's controls.cpp reads it on the release
+		// (BetterVR_PS5_OptionsRecentered), so this clock alone decides between the recenter and the game's pause
+		std::atomic<bool> senseOptionsRecentered{false}, padOptionsRecentered{false};
 	} s;
 
 	void QueueState(XrSessionState state)
@@ -700,7 +703,7 @@ namespace
 	}
 
 	// once a frame (xrSyncActions): buttons, stick, trigger and pose of each hand
-	// Whether Options on the right Sense is down, as of the last sync: BetterVR's menu toggle reads it
+	// Whether Options on the right Sense is down, as of the last sync: BetterVR's controls.cpp reads it
 	// (BetterVR_PS5_OptionsDown), as the Touch profile gives that button no action
 	std::atomic<bool> s_optionsDown{false};
 
@@ -822,7 +825,7 @@ namespace
 	// One Options input's hold: a press that began with the touchpad clicked is the app's chord (its second opens
 	// the app's own menu), a release before the second is the game's pause (BetterVR's), and a second held is the
 	// recenter, once a hold.
-	void PollOptions(State::OptionsHold& hold, bool down, bool chord, const char* source)
+	void PollOptions(State::OptionsHold& hold, std::atomic<bool>& recentered, bool down, bool chord, const char* source)
 	{
 		const XrTime now = Now();
 		if (down && !hold.down)
@@ -835,8 +838,12 @@ namespace
 		if (chord && down)
 			hold.ignored = true; // the touchpad joined the press: this hold is the chord's, not a recenter
 		if (!down || hold.ignored || hold.fired || now - hold.at < 1'000'000'000)
+		{
+			recentered.store(hold.fired, std::memory_order_release);
 			return;
+		}
 		hold.fired = true;
+		recentered.store(true, std::memory_order_release);
 		if (s.session == XR_NULL_HANDLE || !s.session->hmdUp)
 			return;
 		const hmd2::Pose sample = hmd2::predicted_pose((uint64_t)(now / 1000));
@@ -852,12 +859,12 @@ namespace
 	{
 		// the right Sense's Options: the Touch profile gives it no action, so it is read from its state word here
 		const State::Hand& right = s.hands[1];
-		PollOptions(s.senseOptions, right.connected && (right.buttons & kOptions) != 0, false, "right Sense");
+		PollOptions(s.senseOptions, s.senseOptionsRecentered, right.connected && (right.buttons & kOptions) != 0, false, "right Sense");
 		// the DualSense's Options; the touchpad's click is the app's chord and never a recenter
 		uint32_t buttons = 0;
 		const bool read = PadButtons(buttons);
 		const bool chord = read && (buttons & kPadTouchpad) != 0;
-		PollOptions(s.padOptions, read && (buttons & (kOptions | kPadIntercepted)) == kOptions, chord, "DualSense");
+		PollOptions(s.padOptions, s.padOptionsRecentered, read && (buttons & (kOptions | kPadIntercepted)) == kOptions, chord, "DualSense");
 	}
 
 	// One bound input's value now: a button as 0 or 1, an axis as itself
@@ -2267,6 +2274,8 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateSession(XrInstance, const XrSessionCreate
 	s.seat = {};
 	s.senseOptions = {};
 	s.padOptions = {};
+	s.senseOptionsRecentered.store(false, std::memory_order_release);
+	s.padOptionsRecentered.store(false, std::memory_order_release);
 	if (!vk.Load(binding->instance, binding->device))
 	{
 		Log("the driver lacks a function the compositor needs");
@@ -3711,6 +3720,14 @@ extern "C" void BetterVR_PS5_AdaptiveTriggers(float bowDraw, int shieldGuarding,
 	const uint64_t now = sceKernelGetProcessTime();
 	SendDualSenseTriggers(param, now);
 	SendSenseTriggers(param, now);
+}
+
+// BetterVR's controls.cpp: whether this Options press became the runtime's recenter (patches/bettervr 0024), on
+// the input the caller names (true: the DualSense). The runtime's clock and threshold are the only ones, so a
+// release that ends a recenter sends the game no pause, and a shorter release does.
+extern "C" bool BetterVR_PS5_OptionsRecentered(bool pad)
+{
+	return (pad ? s.padOptionsRecentered : s.senseOptionsRecentered).load(std::memory_order_acquire);
 }
 
 // BetterVR's mod menu (patches/bettervr): Options on the right Sense controller, as of the last xrSyncActions
