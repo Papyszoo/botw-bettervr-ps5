@@ -3,14 +3,18 @@
 //
 // Cemu hands over blocks of 16-bit samples (stereo, or 5.1 for the TV if configured). A worker
 // thread feeds AudioOut 256-frame stereo grains at 48 kHz; sceAudioOutOutput blocks until the
-// previous grain is playing, which paces the thread. Missing samples play as silence, and surround
-// streams are mixed down to stereo, the format every PS5 audio output accepts. The GamePad's
-// sound goes to player 1's DualSense speaker instead (its own port, one channel).
+// previous grain is playing, which paces the thread. A grain is played only once a whole one is
+// queued: a short one padded with silence is a splice, heard as a click every time the stream's
+// clock and the console's cross (the 2 Hz click of v0.6). Surround streams are mixed down to
+// stereo, the format every PS5 audio output accepts. The GamePad's sound goes to player 1's
+// DualSense speaker instead (its own port, one channel).
 
 #include "PS5AudioAPI.h"
 
 #include <algorithm>
 #include <array>
+#include <chrono>
+#include <string>
 
 #include "util/helpers/helpers.h"
 #include "../ps5/pad.h"
@@ -22,6 +26,9 @@ extern "C"
 	int sceAudioOutClose(int handle);
 	int sceAudioOutOutput(int handle, const void* samples);
 	int sceAudioOutSetVolume(int handle, int flags, const int* volumes);
+	void* scePthreadSelf();
+	int scePthreadGetprio(void* thread, int* priority);
+	int scePthreadSetprio(void* thread, int priority);
 }
 
 namespace
@@ -34,6 +41,18 @@ namespace
 	constexpr uint32 kFormatStereoS16 = 1, kFormatMonoS16 = 0;
 	constexpr int kVolumeFlagsLeftRight = 3;
 	constexpr int kVolume0dB = 32768;
+	// Cemu's blocks that wait for AudioOut: 4 blocks are 48 ms, nine grains, so a hitch in the game's
+	// audio thread never leaves a grain short. The old 2 blocks (24 ms) sat in the grain and block
+	// jitter itself, where the fast refill kept crossing it.
+	constexpr uint32 kTargetBlocks = 4;
+	constexpr uint32 kMaxTargetBlocks = 12; // the audio_delay setting's ceiling here: 144 ms
+	constexpr uint32 kSpareBlocks = 8;	   // room for the drift and a burst before the oldest block gives way
+	// as the other ports' sound threads: above the emulation's, so a busy CPU does not leave
+	// AudioOut without its next grain (256 the highest, 767 the lowest, threads start at 700)
+	constexpr int kAudioPriority = 384;
+	// a producer this late is not coming back for this grain (Cemu's own audio timeout is 216 ms):
+	// silence plays and is counted, rather than the thread waiting forever
+	constexpr int kPadTimeoutMs = 250;
 }
 
 bool PS5AudioAPI::InitializeStatic()
@@ -69,8 +88,10 @@ PS5AudioAPI::PS5AudioAPI(bool padSpeaker, uint32 samplerate, uint32 channels, ui
 		throw std::runtime_error(fmt::format("PS5 AudioOut: sceAudioOutOpen failed ({:#x})", (uint32)m_port));
 	const std::array<int, 8> volumes{kVolume0dB, kVolume0dB, kVolume0dB, kVolume0dB, kVolume0dB, kVolume0dB, kVolume0dB, kVolume0dB};
 	sceAudioOutSetVolume(m_port, kVolumeFlagsLeftRight, volumes.data());
-	m_queueCapacity = (size_t)samples_per_block * channels * kBlockCount;
-	m_queue.reserve(m_queueCapacity);
+	// Cemu's own target, but never less than four blocks: the output takes 256-frame grains, and a
+	// target inside the block and grain jitter is what left grains short (see PS5AudioQueue.h)
+	const uint32 target = std::clamp<uint32>(GetAudioDelay(), kTargetBlocks, kMaxTargetBlocks) * samples_per_block;
+	m_queue = PS5AudioQueue(channels, samples_per_block, kGrain, target, target + kSpareBlocks * samples_per_block);
 	m_thread = std::thread(&PS5AudioAPI::OutputThread, this);
 }
 
@@ -93,16 +114,17 @@ PS5AudioAPI::~PS5AudioAPI()
 bool PS5AudioAPI::NeedAdditionalBlocks() const
 {
 	std::lock_guard lock(m_mutex);
-	return m_queue.size() < (size_t)GetAudioDelay() * m_samplesPerBlock * m_channels;
+	return m_queue.NeedsMore();
 }
 
 bool PS5AudioAPI::FeedBlock(sint16* data)
 {
-	std::lock_guard lock(m_mutex);
-	const size_t count = (size_t)m_samplesPerBlock * m_channels;
-	if (m_queue.size() + count > m_queueCapacity)
-		return false; // too far ahead: drop it, as the other backends do
-	m_queue.insert(m_queue.end(), data, data + count);
+	{
+		std::lock_guard lock(m_mutex);
+		m_queue.Push(data);
+	}
+	// the output thread may be waiting for a whole grain
+	m_wake.notify_all();
 	return true;
 }
 
@@ -118,12 +140,14 @@ bool PS5AudioAPI::Stop()
 {
 	std::lock_guard lock(m_mutex);
 	m_playing = false;
+	m_queue.Clear(); // the pause's sound is not the sound of where play goes on
 	return true;
 }
 
 void PS5AudioAPI::OutputThread()
 {
 	SetThreadName("PS5AudioOut");
+	RaisePriority();
 	std::array<sint16, kGrain * 2> grain{};
 	const uint32 channels = m_channels;
 	for (;;)
@@ -133,12 +157,25 @@ void PS5AudioAPI::OutputThread()
 			m_wake.wait(lock, [this] { return m_quit || m_playing; });
 			if (m_quit)
 				return;
+			if (!m_queue.HasGrain())
+			{
+				// a grain short by a few frames would be padded with silence: a splice, heard as a
+				// click every time the stream's clock and AudioOut's cross. Wait for a whole one: the
+				// four blocks of target make that a hitch, not a dropout, in steady play.
+				if (!m_wake.wait_for(lock, std::chrono::milliseconds(kPadTimeoutMs),
+						[this] { return m_quit || !m_playing || m_queue.HasGrain(); }))
+					m_queue.CountPaddedGrain();
+				if (m_quit)
+					return;
+				if (!m_playing)
+					continue;
+			}
 			const float volume = std::clamp(m_volume, 0, 100) / 100.0f;
-			const size_t available = m_queue.size() / channels;
+			const size_t available = m_queue.Frames();
 			const size_t frames = std::min<size_t>(available, kGrain);
 			for (size_t frame = 0; frame < frames; frame++)
 			{
-				const sint16* in = &m_queue[frame * channels];
+				const sint16* in = &m_queue.Data()[frame * channels];
 				float left, right;
 				if (channels == 1)
 					left = right = in[0];
@@ -168,7 +205,8 @@ void PS5AudioAPI::OutputThread()
 				}
 			}
 			std::fill(grain.begin() + frames * (m_padSpeaker ? 1 : 2), grain.end(), (sint16)0);
-			m_queue.erase(m_queue.begin(), m_queue.begin() + frames * channels);
+			m_queue.Consume(frames);
+			LogCountsLocked();
 		}
 		if (sceAudioOutOutput(m_port, grain.data()) < 0)
 		{
@@ -176,4 +214,33 @@ void PS5AudioAPI::OutputThread()
 			return;
 		}
 	}
+}
+
+void PS5AudioAPI::RaisePriority()
+{
+	void* self = scePthreadSelf();
+	int was = 0;
+	scePthreadGetprio(self, &was);
+	if (was > 0 && was <= kAudioPriority)
+		return;
+	const int result = scePthreadSetprio(self, kAudioPriority);
+	cemuLog_log(LogType::Force, "PS5 AudioOut: output thread priority {} -> {}{}", was, kAudioPriority,
+		result == 0 ? std::string() : fmt::format(" refused ({:#x}): it stays", (uint32)result));
+}
+
+// at most one line every 10 s, and only when a block was dropped or a grain padded since the last
+// one: in steady play neither happens, and the log stays quiet
+void PS5AudioAPI::LogCountsLocked()
+{
+	const uint32 dropped = m_queue.DroppedBlocks(), padded = m_queue.PaddedGrains();
+	if (dropped == m_loggedDropped && padded == m_loggedPadded)
+		return;
+	const auto now = std::chrono::steady_clock::now();
+	if (m_lastCountLog != std::chrono::steady_clock::time_point{} && now - m_lastCountLog < std::chrono::seconds(10))
+		return;
+	cemuLog_log(LogType::Force, "PS5 AudioOut: dropped blocks {}, padded grains {} since the last line (queue {} ms)",
+		dropped - m_loggedDropped, padded - m_loggedPadded, m_queue.Milliseconds(kRate));
+	m_loggedDropped = dropped;
+	m_loggedPadded = padded;
+	m_lastCountLog = now;
 }

@@ -206,4 +206,6 @@ with `pkg-config` and `libfmt-dev`),
 `test-catalog.sh` (the library's `library.json`: every side's games, games in archives, play time),
 `test-screens.sh` (where the DS's screens go: every layout, swap, quarter turn and gap),
 `test-saves.sh` (Back up to USB and Restore from USB, into a writable `/mnt/usb0`, with `libfmt-dev`),
+`test-audio-queue.cpp` (Cemu's audio queue on a PC: no block dropped and no grain padded in steady play,
+a hitch and a 300 ppm clock difference; `clang++ -std=c++20 -Iport/cemu`),
 and the remote touch screen's tests above. The same commands run them on your own PC.

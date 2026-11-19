@@ -138,6 +138,11 @@ jobs:
       - name: Frame capture buffer
         run: bash tools/tests/test-frame-capture.sh
 
+      - name: Cemu's audio queue keeps whole grains
+        run: |
+          clang++-18 -std=c++20 -Wall -Wextra -Werror -Iport/cemu -o test-audio-queue tools/tests/test-audio-queue.cpp
+          ./test-audio-queue
+
       - name: BetterVR adaptive triggers
         run: bash tools/tests/test-bettervr-triggers.sh
 

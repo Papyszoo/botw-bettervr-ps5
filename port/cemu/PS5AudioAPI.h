@@ -5,11 +5,12 @@
 #pragma once
 
 #include "IAudioAPI.h"
+#include "PS5AudioQueue.h"
 
+#include <chrono>
 #include <condition_variable>
 #include <mutex>
 #include <thread>
-#include <vector>
 
 class PS5AudioAPI : public IAudioAPI
 {
@@ -42,6 +43,8 @@ public:
 
 private:
 	void OutputThread();
+	void RaisePriority();
+	void LogCountsLocked();
 
 	int m_port = -1;
 	bool m_padSpeaker = false; // one channel, on the DualSense
@@ -50,6 +53,7 @@ private:
 
 	mutable std::mutex m_mutex;
 	std::condition_variable m_wake;
-	std::vector<sint16> m_queue; // interleaved samples at the stream's channel count
-	size_t m_queueCapacity = 0;
+	PS5AudioQueue m_queue; // interleaved samples at the stream's channel count
+	uint32 m_loggedDropped = 0, m_loggedPadded = 0;
+	std::chrono::steady_clock::time_point m_lastCountLog{};
 };
