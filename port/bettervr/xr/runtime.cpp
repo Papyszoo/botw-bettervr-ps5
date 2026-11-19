@@ -877,17 +877,21 @@ namespace
 
 	// -- adaptive triggers ------------------------------------------------------------------------------------
 	// The bridge is BetterVR_PS5_AdaptiveTriggers below (patches/bettervr's controls.cpp, once an input frame): the
-	// bow's live draw on R2 and the shield's guard on L2. The DualSense's effect is public and defaults on; the
-	// Sense controllers' payload is unpublished, so it is the experiment behind bettervr.json's "senseTriggers".
+	// bow's live draw on R2 and the shield's guard on L2. The DualSense's setter is a libScePad import under its NID
+	// (third_party/hmd2/hmd2.cpp), and its effect defaults on; the Sense controllers' payload is unpublished, so it
+	// is the experiment behind bettervr.json's "senseTriggers". A refused effect is not marked sent: the same value
+	// goes out again 5 s later.
 	struct TriggerSent
 	{
 		bool valid = false; // this device's triggers were set since the session started
 		ps5trig::Param param{};
-		uint64_t at = 0; // sceKernelGetProcessTime, us
+		uint64_t at = 0;      // sceKernelGetProcessTime, us
+		uint64_t retryAt = 0; // after a refusal, nothing is sent before this time
 	};
 	TriggerSent s_triggerSent[2]; // 0 the DualSense, 1 the two Sense controllers
 	int s_triggerLayout = 0;	  // the Sense payload: 0 not tried, 1 both hands 0x78, 2 one hand 0x38, -1 none accepted
 	constexpr uint64_t kTriggerIntervalUs = 50000; // firmware effect updates are slow: at most 20 a second
+	constexpr uint64_t kTriggerRetryUs = 5000000;  // a refused effect is tried again 5 s later (AstroBotVR2's rule)
 
 	void DescribeTrigger(const ps5trig::Command& command, char* out, size_t size)
 	{
@@ -905,6 +909,8 @@ namespace
 
 	bool TriggerDue(const TriggerSent& sent, const ps5trig::Param& param, uint64_t now)
 	{
+		if (now < sent.retryAt)
+			return false; // libScePad refused the last one: wait before the next attempt
 		if (sent.valid && ps5trig::Same(sent.param, param))
 			return false;
 		if (ps5trig::IsOff(param) && !sent.valid)
@@ -926,9 +932,17 @@ namespace
 		DescribeTrigger(param.l2, l2, sizeof l2);
 		DescribeTrigger(param.r2, r2, sizeof r2);
 		Log("[trig] DualSense (handle %d) L2 %s, R2 %s -> 0x%08x", handle, l2, r2, (unsigned)result);
+		if (result != 0)
+		{
+			// not sent: the same effect must go out again, and a refusal is not retried at 20 Hz
+			sent.valid = false;
+			sent.retryAt = now + kTriggerRetryUs;
+			return;
+		}
 		sent.param = param;
 		sent.valid = true;
 		sent.at = now;
+		sent.retryAt = 0;
 	}
 
 	void SendSenseTriggers(const ps5trig::Param& param, uint64_t now)
@@ -1702,8 +1716,8 @@ extern "C" int BetterVR_PS5_EyeGazeAvailable()
 	return hmd2::gaze_available() ? 1 : 0;
 }
 
-// The triggers page's DualSense row: unavailable where libScePad does not export its setter (13.60
-// logs "scePadSetTriggerEffect not found"), while the Sense row stays separate.
+// The triggers page's DualSense row: available with the link-time import of scePadSetTriggerEffect
+// (third_party/hmd2/hmd2.cpp), while the Sense rows stay separate.
 extern "C" int BetterVR_PS5_PadTriggersAvailable()
 {
 	return hmd2::pad_triggers_available() ? 1 : 0;

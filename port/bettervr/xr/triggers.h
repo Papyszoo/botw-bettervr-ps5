@@ -49,7 +49,10 @@ namespace ps5trig
 		Command l2;
 		Command r2;
 	};
+	static_assert(sizeof(Command) == 0x38, "ScePadTriggerEffectCommand is 0x38 bytes");
+	static_assert(offsetof(Command, mode) == 0x00 && offsetof(Command, data) == 0x08, "a command's mode is at 0x00 and its data at 0x08");
 	static_assert(sizeof(Param) == 0x78, "ScePadTriggerEffectParam is 0x78 bytes");
+	static_assert(offsetof(Param, mask) == 0x00, "the trigger mask is at 0x00");
 	static_assert(offsetof(Param, l2) == 0x08 && offsetof(Param, r2) == 0x40, "the commands sit at 0x08 and 0x40");
 
 	inline Command Off()

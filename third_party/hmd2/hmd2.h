@@ -264,13 +264,14 @@ int sense_set_vibration(int handle, uint8_t intensity);
 constexpr int kHmd2VibrationUnavailable = (int)0x80000001;
 int set_vibration(int level);
 
-// A DualSense's adaptive triggers, through libScePad's scePadSetTriggerEffect (a public export, resolved on first
-// use). `param` is the 0x78-byte ScePadTriggerEffectParam (port/bettervr/xr/triggers.h); `handle` is the pad's own
-// scePadOpen handle. Other firmware returns kPadTriggerUnavailable and logs it once. UNVERIFIED on hardware.
+// A DualSense's adaptive triggers, through libScePad's scePadSetTriggerEffect, imported at link time under its NID
+// 2JgFB2n9oUM (the loader binds it from libScePad, so sceKernelDlsym's name table is not involved). `param` is the
+// 0x78-byte ScePadTriggerEffectParam (port/bettervr/xr/triggers.h); `handle` is the pad's own scePadOpen handle.
+// UNVERIFIED on hardware.
 constexpr int kPadTriggerUnavailable = (int)0x80000001;
 int pad_set_trigger_effect(int handle, const void* param);
-// Whether scePadSetTriggerEffect (the DualSense's setter) is bound on this firmware. The menu asks
-// this to say Unavailable instead of offering a row that would do nothing; safe before init().
+// Whether scePadSetTriggerEffect (the DualSense's setter) is bound. The setter is an import, so this is true once the
+// bind line has been logged; the menu asks this before offering its row. Safe before init().
 bool pad_triggers_available();
 
 // A Sense controller's adaptive triggers, through libScePad's own Sense exports (the DualSense setter refuses a

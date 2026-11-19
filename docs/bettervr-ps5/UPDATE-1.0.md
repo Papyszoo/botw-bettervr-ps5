@@ -738,9 +738,9 @@ run of build 93ac3d1 (13.60) then reported blurrier menu text, no damage rumble,
 the Sense trigger switch buried in `bettervr.json`; the fixes are in the sections below and in "Firmware gates".
 New patch
 files: bettervr 0007 (performance), 0008 (vibration), 0009 (adaptive triggers), 0010 (eye tracking), 0011
-(body, HUD and the blue needle), 0012 (third-person snap turn) and 0013 (magnesis wrist twist); cemu 0055
-(the GPU thread's swap and VR frame end for the profile). Bettervr 0001-0006 are v06's, unchanged; 0055 is the only
-Cemu patch added. `VERSION` stays 0.5.0.
+(body, HUD and the blue needle), 0012 (third-person snap turn), 0013 (magnesis wrist twist) and 0014 (the
+DualSense trigger row); cemu 0055 (the GPU thread's swap and VR frame end for the profile). Bettervr 0001-0006 are
+v06's, unchanged; 0055 is the only Cemu patch added. `VERSION` stays 0.5.0.
 
 ### Options on the Sense and the DualSense, and the start popup
 
@@ -901,19 +901,24 @@ Cemu patch added. `VERSION` stays 0.5.0.
   below 2 % draw. L2 (the shield) is feedback mode 1, position 2, strength 3-5 across the setting, while
   `state.isShieldGuarding`; off otherwise. Both are off when BetterVR's menu is open, on the pause and inventory
   screens (`GameState::IsShowingMenu()`), and outside the game. The effect is sent on change, at most 20 times a
-  second; an off pair goes out at once.
+  second; an off pair goes out at once. A call libScePad refuses is not marked sent: the same effect is tried again
+  5 s later, so a failure cannot hide a value until it changes (the rule is AstroBotVR2's).
 - **BetterVR's side** (patch bettervr 0009): `Bow::GetDrawAmount()` (bow.cpp/bow.h); one call each input frame in
   `hook_InjectXRInput` (controls.cpp), and an off call when the input sample is not ready; the PS5-only `ModSettings`
   rows `AdaptiveTriggers` (default true) and `AdaptiveTriggerStrength` (0-1, default 1), which save to
   `BetterVR_settings.ini` like every other row; and a System > **Adaptive Triggers** card with the toggle and the
   strength slider, shown while the toggle is on.
-- **The DualSense** (default on): `scePadSetTriggerEffect`, NID `2JgFB2n9oUM`, looked up by name in libScePad and
-  called on the handle the app's pad service holds for player 1 (`PS5Cemu_PadHandle`). Where the library does not
-  export the setter (13.60 logs `scePadSetTriggerEffect not found`), the System card shows a **DualSense** row that
-  says **Unavailable** on this firmware; the Sense rows stay separate. The parameter is the 0x78-byte
-  `ScePadTriggerEffectParam`: mask 0x3 (L2 and R2), the L2 command at +0x08, R2 at +0x40, each a u32 mode, four
-  padding bytes and 0x30 data bytes. The layout and the builders are `port/bettervr/xr/triggers.h`, with a host test
-  (`tools/tests/test-bettervr-triggers.sh`, run by the Tests workflow).
+- **The DualSense** (default on): `scePadSetTriggerEffect`, NID `2JgFB2n9oUM`, imported at link time. The packaging
+  tool turns the SDK stub's symbol into an import under that NID, and the loader binds it from libScePad, so the name
+  table `sceKernelDlsym` reads is not involved; that lookup cannot see the export on 13.60, which is why the setter
+  used to stay unbound. The call goes to the handle the app's pad service holds for player 1 (`PS5Cemu_PadHandle`).
+  The System card's **DualSense** row reads **Available** once the bind line has been logged, and **Unavailable** only
+  if it was not; the Sense rows stay separate. The import cannot be missing on a supported firmware: libScePad exports
+  this NID from 5.50 through 13.60 (AstroBotVR2's profiles and the public NID tables), and a title with a missing
+  import would not load. The parameter is the 0x78-byte `ScePadTriggerEffectParam`: mask 0x3 (L2 and R2), the L2
+  command at +0x08, R2 at +0x40, each a u32 mode, four padding bytes and 0x30 data bytes. The layout and the builders
+  are `port/bettervr/xr/triggers.h`, with static asserts on the command and parameter sizes and offsets, and a host
+  test (`tools/tests/test-bettervr-triggers.sh`, run by the Tests workflow).
 - **The Sense controllers** (the experiment, now the System card's **Sense Triggers** row, default off, saved in
   `bettervr.json` as `senseTriggers`; a hand-written `true` still works): `scePadVrControllerSetTriggerEffect(s)`,
   NIDs `6Cdc9bbjrRY`/`v8P+9PRqg10`, bound by name first and otherwise at the 13.60 table's `0xa730` (both hands) only
@@ -925,9 +930,10 @@ Cemu patch added. `VERSION` stays 0.5.0.
 - **Always off on the way out:** `xrDestroySession`, `BetterVR_PS5_Stop` and the failed-start path all send the off
   pair before the pad handles go; the effect lives in the controller's firmware and would otherwise outlive the game.
 - **Logs** (the boot log, each line starts `[trig]`): `Sense trigger effects on/off ...`, the binding lines from
-  hmd2 (`DualSense trigger effects bound`, `Sense trigger effects bound`), one line per effect call with both
-  commands and libScePad's answer (`DualSense (handle N) L2 feedback 2 5, R2 slope 0-9 1-6 -> 0x00000000`), the
-  Sense layout experiment's results and the chosen payload, and `DualSense off (...)` / `Sense off (...)`.
+  hmd2 (`DualSense trigger effects bound by NID 2JgFB2n9oUM (link-time import, ...)`, `Sense trigger effects bound`),
+  one line per effect call with both commands and libScePad's answer
+  (`DualSense (handle N) L2 feedback 2 5, R2 slope 0-9 1-6 -> 0x00000000`), the Sense layout experiment's results and
+  the chosen payload, and `DualSense off (...)` / `Sense off (...)`.
 
 ### Eye tracking and the throw assist
 
@@ -1075,7 +1081,8 @@ Cemu patch added. `VERSION` stays 0.5.0.
   `Sense vibration off on this firmware (no verified libScePad table)`,
   `Sense trigger effects off on this firmware (no verified libScePad table)` or
   `sceHmd2SetVibration off on this firmware (no verified libSceHmd2 table), the headset stays still`; VR, tracking and
-  the game run on. The DualSense's setter and the five gaze names are name-only and never use a table.
+  the game run on. The DualSense's setter is a link-time import under its NID (no name lookup, no table) and the five
+  gaze names are name-only and never use a table.
 
 ### Open
 

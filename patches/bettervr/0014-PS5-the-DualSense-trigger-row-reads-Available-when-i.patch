@@ -1,0 +1,41 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ps5cemu <ps5cemu@localhost>
+Date: Thu, 19 Nov 2026 04:28:55 +0100
+Subject: [PATCH] PS5: the DualSense trigger row reads Available when its
+ setter is bound
+
+The row used to be drawn only to say Unavailable, with a reason that named a missing
+libScePad export. The setter is an import under its NID now, so the row is always there
+and says Available, or Unavailable when the bind did not take; built, untested on
+console.
+---
+ src/rendering/imgui_menus.cpp | 12 ++++++------
+ 1 file changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/src/rendering/imgui_menus.cpp b/src/rendering/imgui_menus.cpp
+index e384697..fa1fa52 100644
+--- a/src/rendering/imgui_menus.cpp
++++ b/src/rendering/imgui_menus.cpp
+@@ -1501,16 +1501,16 @@ void RND_Renderer::ImGuiOverlay::DrawSystemPage(bool* changed) {
+     if (BeginCard("##AdaptiveTriggers", "Adaptive Triggers")) {
+         const bool padTriggers = BetterVR_PS5_PadTriggersAvailable() != 0;
+         DrawSetting(ICON_MS_STADIA_CONTROLLER, "Adaptive Triggers",
+-            padTriggers ? "DualSense: R2 firms up as the bow is drawn, L2 clicks while the shield is up."
+-                        : "The Sense controllers' bow and shield effects. The DualSense's trigger setter is not available on this firmware.",
++            "The bow on R2 and the shield on L2, on the DualSense and on the Sense controllers.",
+             [&]() {
+                 DrawToggle(settings.adaptiveTriggers, changed);
+             });
+-        if (!padTriggers) {
+-            DrawSetting(ICON_MS_STADIA_CONTROLLER, "DualSense", "Unavailable on this firmware: libScePad does not export scePadSetTriggerEffect.", [&]() {
+-                ImGui::TextDisabled("Unavailable");
++        DrawSetting(ICON_MS_STADIA_CONTROLLER, "DualSense",
++            padTriggers ? "R2 firms up as the bow is drawn, L2 clicks while the shield is up."
++                        : "Unavailable: the DualSense's trigger setter could not be bound on this firmware.",
++            [&]() {
++                ImGui::TextDisabled(padTriggers ? "Available" : "Unavailable");
+             });
+-        }
+         if (settings.adaptiveTriggers) {
+             DrawSetting(ICON_MS_SPORTS, "Strength", [&]() {
+                 DrawFloatSlider(settings.adaptiveTriggerStrength, 0.0f, 1.0f, [](float value) { return fmt::format("{:.0f}%", value * 100.0f); }, changed);

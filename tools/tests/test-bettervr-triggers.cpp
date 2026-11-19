@@ -15,7 +15,9 @@ int main()
 {
 	using namespace ps5trig;
 	Check(sizeof(Command) == 0x38, "a trigger command is 0x38 bytes");
-	Check(sizeof(Param) == 0x78 && offsetof(Param, l2) == 0x08 && offsetof(Param, r2) == 0x40, "the parameter is 0x78 bytes with L2 at 0x08 and R2 at 0x40");
+	Check(offsetof(Command, mode) == 0x00 && offsetof(Command, data) == 0x08, "a command's mode is at 0x00 and its data at 0x08");
+	Check(sizeof(Param) == 0x78 && offsetof(Param, mask) == 0x00 && offsetof(Param, l2) == 0x08 && offsetof(Param, r2) == 0x40,
+		"the parameter is 0x78 bytes with the mask at 0x00, L2 at 0x08 and R2 at 0x40");
 
 	const Param off = Both(Off(), Off());
 	Check(off.mask == kMaskBoth && off.l2.mode == kOff && off.r2.mode == kOff, "off updates both triggers and leaves both commands off");

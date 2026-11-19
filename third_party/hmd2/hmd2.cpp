@@ -32,6 +32,10 @@ const char *sceKernelGetFsSandboxRandomWord(void);
 int sceKernelLoadStartModule(const char *path, size_t argc, const void *argv, uint32_t flags,
                              void *opt, int *res);
 int sceKernelDlsym(int handle, const char *name, void **addr);
+// The DualSense's adaptive-trigger setter: a libScePad export imported at link time. The packaging tool turns the
+// stub's symbol into its NID (2JgFB2n9oUM), and the loader binds that from libScePad, so the name table
+// sceKernelDlsym reads is not involved (it cannot see the name on 13.60).
+int scePadSetTriggerEffect(int handle, const void *param);
 int sceKernelGetModuleList(int32_t *handles, size_t num, size_t *actual);
 int sceKernelGetModuleInfo(int handle, void *info);
 int sceKernelAllocateDirectMemory(int64_t start, int64_t end, size_t len, size_t align, int type,
@@ -833,14 +837,18 @@ bool bind_sense_vibration() {
 }
 
 // -- adaptive triggers --------------------------------------------------------
-// The DualSense's setter is a public export of libScePad and is looked up by name only. The Sense controllers' own
-// setters are not published (NIDs 6Cdc9bbjrRY and v8P+9PRqg10): by name when the library exports them, else at
-// HLA-PSVR2's 13.60 offset after the same anchor check the vibration above uses. The VR payload is unpublished.
-int (*scePadSetTriggerEffect)(int handle, const void *param) = nullptr;
+// The DualSense's setter is a public libScePad export, imported at link time: the packaging tool turns the stub's
+// symbol into its NID (2JgFB2n9oUM), which the loader binds from libScePad at load. That is the same NID AstroBotVR2
+// resolves at runtime, and the reason to use it here: sceKernelDlsym matches the name table, which on 13.60 does not
+// see this export. The import cannot be missing on a firmware the app runs on: libScePad has exported the DualSense
+// setter at this NID from 5.50 through 13.60 (AstroBotVR2's profiles and the public NID tables), and a title with a
+// missing import would not load at all. The Sense controllers' own setters are not published (NIDs 6Cdc9bbjrRY and
+// v8P+9PRqg10): by name when the library exports them, else at HLA-PSVR2's 13.60 offset after the same anchor check
+// the vibration above uses. The VR payload is unpublished.
 int (*scePadVrControllerSetTriggerEffect)(int handle, const void *param) = nullptr;
 int (*scePadVrControllerSetTriggerEffects)(int left_handle, int right_handle, const void *param) = nullptr;
-int g_pad_trigger = 0;   // 0 not tried, 1 bound, -1 unavailable
-int g_sense_trigger = 0; // the same
+int g_pad_trigger = 0;   // 0 not logged yet, 1 the link-time import is in use
+int g_sense_trigger = 0; // 0 not tried, 1 bound, -1 unavailable
 
 const Slot kSenseTriggerSlots[] = {
     {"scePadVrControllerSetTriggerEffect", reinterpret_cast<void **>(&scePadVrControllerSetTriggerEffect)},
@@ -854,21 +862,12 @@ const export_table_t kTables_libScePadTriggers[] = {
 };
 
 bool bind_pad_trigger() {
-    if (g_pad_trigger != 0)
-        return g_pad_trigger > 0;
-    g_pad_trigger = -1;
-    const int handle = load_sysmodule(0, "libScePad");
-    if (handle >= 0) {
-        void *address = nullptr;
-        if (sceKernelDlsym(handle, "scePadSetTriggerEffect", &address) == 0 && address != nullptr) {
-            scePadSetTriggerEffect = reinterpret_cast<decltype(scePadSetTriggerEffect)>(address);
-            g_pad_trigger = 1;
-            logf("hmd2: DualSense trigger effects bound (%p)", address);
-        }
-    }
-    if (g_pad_trigger < 0)
-        logf("hmd2: scePadSetTriggerEffect not found on this firmware, DualSense trigger effects stay off");
-    return g_pad_trigger > 0;
+    if (g_pad_trigger > 0)
+        return true;
+    g_pad_trigger = 1;
+    logf("hmd2: DualSense trigger effects bound by NID 2JgFB2n9oUM (link-time import, %p)",
+         reinterpret_cast<void *>(scePadSetTriggerEffect));
+    return true;
 }
 
 bool bind_sense_triggers() {

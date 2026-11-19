@@ -3,6 +3,20 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-19: the DualSense trigger setter binds on 13.60 (link-time import under its NID), built, untested on console
+
+The DualSense's adaptive triggers were bound with `sceKernelDlsym`, which matches libScePad's name
+table; on 13.60 that lookup fails and the setter never reached the firmware. `scePadSetTriggerEffect`
+is now imported at link time: the packaging tool turns the SDK stub's symbol into its NID
+`2JgFB2n9oUM`, and the loader binds that from libScePad, the same NID AstroBotVR2 resolves at runtime.
+The app already imports libScePad (pads, Sense reads), and the NID is exported from 5.50 through
+13.60, so a missing symbol cannot stop the title loading; there is no name lookup and no table. The
+bind logs one line, `hmd2: DualSense trigger effects bound by NID 2JgFB2n9oUM (link-time import, ...)`,
+and the System page's **DualSense** row now reads **Available**. A refused effect is no longer marked
+sent: it is retried 5 s later, and the trigger payload's command and parameter sizes and offsets are
+static asserts in `port/bettervr/xr/triggers.h`. New patch: bettervr 0014 (the row). Test request 53(f)
+below now expects the triggers to work and the row to read Available.
+
 ## 2026-11-19: v0.6 combined (Options hold, stall tolerance, performance, Vibration, triggers, eye tracking, third-person snap turn), built, untested on console
 
 Branch `bettervr-1.0/v06-all`, from v0.5.0, combining the v0.6 tracks. Options on the right Sense and on the
@@ -80,14 +94,16 @@ names `docs/GUIDE.md`. Details: `UPDATE-1.0.md`, "v0.6", "v0.6 body, HUD and nee
   the arrow flies. Guard with the shield on the left hand: L2 must click around a third of its pull while guarding,
   none after lowering it. Open BetterVR's menu and the game's pause screen: both must go soft at once; quit to the
   library: nothing may stay firm. In the System page, turn Adaptive Triggers off and on and change Strength: live and
-  kept after a restart; with the DualSense's setter missing (13.60), that card must show a **DualSense** row reading
-  **Unavailable**. Turn the new **Sense Triggers** row on: it must save to `/data/botwvr/launcher/bettervr.json` as
-  `"senseTriggers": true`, and off must clear any effect the Sense controllers still hold. Repeat the bow and shield
-  on the Sense controllers, then switch the **Sense trigger format** test row between Auto, 1 and 2 while the bow is
-  held. Send every `[trig]` line: the `DualSense (handle N) L2 ... R2 ... -> 0x...` calls, `Sense trigger effects
-  on/off`, `Sense trigger format: ...`, the `Sense both hands (0x78 ...)` and/or `Sense one hand (0x38 ...)` results,
-  `Sense payload ... accepted`, and the `DualSense off` / `Sense off` lines. Say which of formats 1 and 2 was felt, if
-  either, and send the lines of a restart to show the row and format came back.
+  kept after a restart; the **DualSense** row must read **Available**, not Unavailable. Turn the new **Sense Triggers**
+  row on: it must save to `/data/botwvr/launcher/bettervr.json` as `"senseTriggers": true`, and off must clear any
+  effect the Sense controllers still hold. Repeat the bow and shield on the Sense controllers, then switch the **Sense
+  trigger format** test row between Auto, 1 and 2 while the bow is held. Send every `[trig]` line: the
+  `hmd2: DualSense trigger effects bound by NID 2JgFB2n9oUM (link-time import, ...)` line, the
+  `DualSense (handle N) L2 ... R2 ... -> 0x...` calls, `Sense trigger effects on/off`, `Sense trigger format: ...`, the
+  `Sense both hands (0x78 ...)` and/or `Sense one hand (0x38 ...)` results, `Sense payload ... accepted`, and the
+  `DualSense off` / `Sense off` lines. Say which of formats 1 and 2 was felt, if either, and send the lines of a
+  restart to show the row and format came back. If the setter refuses, send the first five `DualSense (handle N)`
+  lines and say roughly how far apart they were (a refusal is retried no sooner than 5 s).
 - (g) VR Resolution. BetterVR's menu > System > VR Resolution: choose 0.5x, then 1x, then 1.25x. Each choice must log
   `VR resolution preset: ...` and show the restart notice. After 0.5x, restart and send the `view configuration`,
   `Found rendering resolution`, `Graphics pack presets` and `VR Resolution Multiplier` lines: the eye size must be
