@@ -74,8 +74,10 @@ names `docs/GUIDE.md`. Details: `UPDATE-1.0.md`, "v0.6", "v0.6 body, HUD and nee
   button is still held, no pause behind it) and hold again (it closes). Repeat with the DualSense's Options, with the
   Sense controllers off and third person set in Settings > VR, and move through the pages and rows with the
   DualSense's left and right stick. When the Sense is connected but has no pose, the pad's sticks must not also move
-  the cursor. With both inputs ready, hold one Options and tap the other: the hold must open BetterVR's menu and the
-  tap must still reach the game. Say whether any help card or popup still appears over the game at start. Send every
+  the cursor. With both inputs ready, hold one Options and tap the other before the hold reaches 700 ms: the hold must
+  open BetterVR's menu and the tap must reach the game. A tap after the menu is open is dropped on purpose
+  (`short press ignored, game input is blocked`). Say whether any help card or popup still appears over the game at
+  start. Send every
   `[menu]` line (`Options down`, `Options up after N ms`, `long press -> open`/`closed`, `release after the
   threshold -> hold`, `short press -> pause`, `short press ignored, game input is blocked`).
 - (b) Strafe flash. Strafe left and right with the left stick near grass and say whether Link's body still flashes for
@@ -92,9 +94,10 @@ names `docs/GUIDE.md`. Details: `UPDATE-1.0.md`, "v0.6", "v0.6 body, HUD and nee
   the bright first wheel frame and the 2-frame world shift on closing are still there.
 - (d) Vibration page. Hold Options and open the new **Vibration** page between Controls and Display; say whether it
   draws (master switch, headset cap, three test buttons, nine category rows with On / Strength / Hands / Headset /
-  DualSense). **Press Headset first, alone, before taking any damage**: that is the first call to the motor's
-  unverified offset and the design keeps it from being called at VR start. Then press Sense Controllers and DualSense
-  and say which buzzed. Send `[vib] test headset: level 25 -> 0x...`, `[vib] test hands`, `[vib] test pad`, and the
+  DualSense). **Press Headset first, alone, before taking any damage**, so its test line comes before a hit: a Damage
+  Taken or Explosions event can also call the motor (both default to the headset). It is never called at VR start. Then
+  press Sense Controllers and DualSense and say which buzzed. Send `[vib] test headset: level 25 -> 0x...`, `[vib]
+  test hands`, `[vib] test pad`, and the
   `hmd2: headset vibration bound ...` line (or `hmd2: sceHmd2SetVibration off on this firmware (no verified
   libSceHmd2 table), the headset stays still`).
 - (e) Vibration categories. At 0 % (or Off) a sword swing, a weapon/gear equip, a bow draw, a shield raise and the
@@ -124,7 +127,7 @@ names `docs/GUIDE.md`. Details: `UPDATE-1.0.md`, "v0.6", "v0.6 body, HUD and nee
 - (g) VR Resolution. BetterVR's menu > System > VR Resolution: choose 0.5x, then 1x, then 1.25x. Each choice must log
   `VR resolution preset: ...` and show the restart notice. After 0.5x, restart and send the `view configuration`,
   `Found rendering resolution`, `Graphics pack presets` and `VR Resolution Multiplier` lines: the eye size must be
-  smaller; after 1x it must be back to 2000x2040.
+  smaller; after 1x it must be back to 1984x2048.
 - (h) Eye tracking and throw assist. In the PS5 settings turn on Settings > Accessories > PS VR2 > Eye Tracking and run
   Adjust Eye Tracking, then play in VR. On 13.60 the runtime must not offer the extension now: send `gaze:
   XR_EXT_eye_gaze_interaction not offered ...`, the one `[gaze] libSceHmd2 does not export ...` line, and say whether

@@ -765,7 +765,9 @@ v06's, unchanged; 0055 is the only Cemu patch added. `VERSION` stays 0.5.0.
   nothing, a shorter release sends the game one + tap, and + is removed from the game's hold while the button is down,
   so no pause opens behind the menu; upstream's 500 ms `ToggleModMenuOnLongStartPress` no longer runs on the PS5, and
   the port's own touchpad+Options overlay is unchanged. The Sense's Options and the pad's + keep their own state (two
-  instances of the same machine), so holding one while tapping the other still opens the menu and sends the tap.
+  instances of the same machine), so one does not swallow the other's press: a tap of the one still reaches the game
+  while the other is held below 700 ms. Once a hold has opened the menu, a tap from the other is dropped on purpose,
+  with `[menu] short press ignored, game input is blocked`.
 - **The pad moves the menu cursor.** When no Sense controller is connected (the runtime's connection state, not
   whether a hand has a pose), the VPAD's left and right stick are added to the mod menu's navigation, so a
   DualSense-only player can move through the pages and rows with either stick; the Sense path is unchanged (upstream
@@ -897,8 +899,9 @@ v06's, unchanged; 0055 is the only Cemu patch added. `VERSION` stays 0.5.0.
   level)`, 0-25, one motor. `sceKernelDlsym` first; otherwise the 13.60 table's `+0x2ae00` only behind libSceHmd2's
   anchor check. Other firmware leaves it unbound (one `hmd2:` line) and VR continues. The runtime sends on change, caps
   a continuous hold at 2 s, maps 0..1 to 0..25 and logs the first calls and every failure. It is not called with a zero
-  level at VR start: the page's Headset test is its first call, so an unproven offset cannot crash a session that never
-  uses the motor. The page's Headset button logs `[vib] test headset: level 25 -> 0x...`.
+  level at VR start. Its first call is whichever comes first: the page's Headset test, or a Damage Taken or Explosions
+  event (both default to the headset); the motor was felt on 13.60, so that path is not an unverified offset. The page's
+  Headset button remains the way to call it on purpose and logs `[vib] test headset: level 25 -> 0x...`.
 - **The DualSense is taken over while VR runs.** `port/cemu/PS5PadController.cpp` gains `PS5Pad_SetExternalRumble`
   (Cemu's own `start_rumble`/`stop_rumble` return at once, and both motors are cleared when the mode changes) and
   `PS5Pad_ExternalRumble` (the mixer's level; the launcher's Vibration row stays the outer switch, and Cemu's own
@@ -937,9 +940,15 @@ v06's, unchanged; 0055 is the only Cemu patch added. `VERSION` stays 0.5.0.
   table `sceKernelDlsym` reads is not involved; that lookup cannot see the export on 13.60, which is why the setter
   used to stay unbound. The call goes to the handle the app's pad service holds for player 1 (`PS5Cemu_PadHandle`).
   The System card's **DualSense** row reads **Available** once the bind line has been logged, and **Unavailable** only
-  if it was not; the Sense rows stay separate. The import cannot be missing on a supported firmware: libScePad exports
-  this NID from 5.50 through 13.60 (AstroBotVR2's profiles and the public NID tables), and a title with a missing
-  import would not load. The parameter is the 0x78-byte `ScePadTriggerEffectParam`: mask 0x3 (L2 and R2), the L2
+  if it was not; the Sense rows stay separate. The import cannot be missing on a firmware the app runs on, and the
+  export is not new: it is the DualSense's launch feature (the `ScePadTriggerEffectParam` header is Copyright 2019, and
+  Astro's Playroom, installed on every PS5 from launch, is the trigger demo), and the NID is the name hash the packaging
+  tool computes, not a per-firmware guess, so the same export has the same NID on every firmware. The public NID tables
+  list it for 5.50 through 13.60 without a gap, and AstroBotVR2 resolves it on 13.60. A weak import cannot make it
+  optional: the packaging tool (`PS5_Vulkan`'s `tooling/native/sce_module_writer.cpp`) turns every undefined symbol that
+  an SDK stub exports into a required import, with no weak form, and `tools/link.sh` drops undefined weak symbols
+  (`-z nodynamic-undefined-weak`); a weak declaration either still becomes a required import or leaves the call null.
+  The strong import stays. The parameter is the 0x78-byte `ScePadTriggerEffectParam`: mask 0x3 (L2 and R2), the L2
   command at +0x08, R2 at +0x40, each a u32 mode, four padding bytes and 0x30 data bytes. The layout and the builders
   are `port/bettervr/xr/triggers.h`, with static asserts on the command and parameter sizes and offsets, and a host
   test (`tools/tests/test-bettervr-triggers.sh`, run by the Tests workflow).
