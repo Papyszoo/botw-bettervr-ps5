@@ -294,7 +294,7 @@ namespace ps5eden
 			return {};
 		}
 		ps5log::Line("[switch] Eden never took its launch request ({}), and has no trace since: the console did not run "
-					 "eden/eboot.bin and started this app again instead (boot.prev.log has the LoadExec it was asked for)",
+					 "eden/eboot.bin and started this app again instead (boot.1.log has the LoadExec it was asked for)",
 			request);
 		return ps5lang::Tr("The console did not start Eden. The boot log says what it answered.");
 	}

@@ -98,11 +98,11 @@ extern "C" int32_t sceKernelGetSystemSwVersion(SceKernelSwVersion* version);
 
 namespace
 {
-	// The session before this one's first crash report (ps5/crash.h, Cemu's handler: boot.prev.log's
+	// The session before this one's first crash report (ps5/crash.h, Cemu's handler: boot.1.log's
 	// first "[crash] " line, without it), or empty when it ended without one
 	std::string LastCrash()
 	{
-		std::ifstream log(ps5paths::Logs() + "/boot.prev.log");
+		std::ifstream log(ps5paths::Logs() + "/boot.1.log");
 		std::string line;
 		while (std::getline(log, line))
 			if (line.rfind("[crash] ", 0) == 0)

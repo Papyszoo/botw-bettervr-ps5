@@ -727,8 +727,8 @@ drive: [below](#everything-on-the-apps-drive)). Your game files are wherever you
     ├── covers/                     game icons and box art (boxart/)
     ├── music/                      your own launcher music (.mp3, .wav)
     ├── themes/                     your own launcher themes (.json)
-    └── logs/                       app logs: boot.log, and boot.prev.log to boot.4.log for the
-                                    four sessions before, each with its Cemu log (cemu.prev.txt...)
+    └── logs/                       app logs: boot.log, and boot.1.log to boot.4.log for the
+                                    four runs before, each with its Cemu log (cemu.1.txt...)
 ```
 
 **An install from before** keeps everything where it was, all in `/data/ps5cemu`: Cemu's files at

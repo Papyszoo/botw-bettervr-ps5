@@ -137,7 +137,7 @@ namespace ps5actions
 		std::vector<std::string> files = {logs + "/boot.log", ps5paths::CemuRoot() + "/log.txt", ps5paths::Azahar() + "/log/azahar_log.txt",
 			ps5paths::Azahar() + "/log/azahar_log.old.txt", ps5paths::LauncherSettings(), ps5paths::CemuRoot() + "/settings.xml"};
 		// the sessions before, each with Cemu's log of it (port/ps5/log.cpp)
-		for (const char* age : {"prev", "2", "3", "4"})
+		for (const char* age : {"1", "2", "3", "4"})
 		{
 			files.push_back(fmt::format("{}/boot.{}.log", logs, age));
 			files.push_back(fmt::format("{}/cemu.{}.txt", logs, age));

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "log.h"
 #include "kernel.h"
+#include "../app/own_status.h"
 #include "../app/paths.h"
 
 #include <pthread.h>
@@ -12,6 +13,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <fcntl.h>
+#include <filesystem>
 #include <mutex>
 #include <string>
 #include <sys/stat.h>
@@ -44,23 +46,23 @@ namespace
 	std::string s_path;
 	std::string s_pending; // lines from before /data was reachable
 
-	// The last few sessions are kept, so a crash's log survives the restarts after it: newest is
-	// <stem>.prev<ext>, then <stem>.2<ext> up to <stem>.<kKept - 1><ext>
+	// The last five runs are kept, so the lines of the runs before a crash or a restart survive it:
+	// boot.log itself, then boot.1.log (the run before) up to boot.4.log
 	constexpr int kKept = 5;
 
 	std::string Older(const std::string& folder, const char* stem, const char* ext, int age)
 	{
-		return age == 1 ? fmt::format("{}/{}.prev{}", folder, stem, ext) : fmt::format("{}/{}.{}{}", folder, stem, age, ext);
+		return fmt::format("{}/{}.{}{}", folder, stem, age, ext);
 	}
 
 	void Rotate(const std::string& current, const std::string& folder, const char* stem, const char* ext)
 	{
-		struct stat st{};
-		if (stat(current.c_str(), &st) != 0)
+		std::error_code ec;
+		if (ps5files::OwnStatus(current, ec).type() == std::filesystem::file_type::not_found || ec)
 			return;
 		for (int age = kKept - 1; age > 1; age--)
-			rename(Older(folder, stem, ext, age - 1).c_str(), Older(folder, stem, ext, age).c_str());
-		rename(current.c_str(), Older(folder, stem, ext, 1).c_str());
+			std::filesystem::rename(Older(folder, stem, ext, age - 1), Older(folder, stem, ext, age), ec);
+		std::filesystem::rename(current, Older(folder, stem, ext, 1), ec);
 	}
 
 	void WriteAll(int fd, const char* data, size_t size)
