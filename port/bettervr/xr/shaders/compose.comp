@@ -6,7 +6,8 @@
 //
 // The eye images are sampled through UNORM views on their sRGB swapchain images, so the bytes are
 // already encoded and the pass writes them out without the sRGB pow chain. Only the pixels the HUD
-// covers decode and encode again, to blend it in linear light.
+// covers decode and encode again, to blend it in linear light. 1x renders at the eye's own size and
+// takes one tap; a higher preset is downsampled with a 4-tap box instead of one bilinear tap.
 // Compiled by tools/render-shaders.sh into port/bettervr/xr/shaders.h.
 #version 450
 layout(local_size_x = 8, local_size_y = 8) in;
@@ -34,6 +35,24 @@ vec3 toLinear(vec3 c) {
 vec3 toSrgb(vec3 c) {
 	c = clamp(c, 0.0, 1.0);
 	return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), c));
+}
+
+// One eye's pixel from its image, sampled at uv from 0 to 1 across the image's rect. A 4-tap box
+// covers a downscaled source's pixel footprint (the taps sit (r - 1) / 2 source texels out, which
+// is the centre tap at 1x and a 2x2 box at 2x); an upscale keeps one bilinear tap.
+vec3 sampleEye(int eye, vec2 uv) {
+	const vec4 s = p.source[eye];
+	const vec2 mapped = mix(s.xy, s.zw, uv);
+	const vec2 sourceSize = vec2(textureSize(eyeImage[eye], 0));
+	const vec2 ratio = sourceSize * (s.zw - s.xy) / vec2(p.eyeSize);
+	if (ratio.x <= 1.0 && ratio.y <= 1.0)
+		return textureLod(eyeImage[eye], mapped, 0.0).rgb;
+	const vec2 texel = (s.zw - s.xy) / sourceSize;
+	const vec2 offset = (ratio - 1.0) * 0.5 * texel;
+	return (textureLod(eyeImage[eye], mapped + vec2(-offset.x, -offset.y), 0.0).rgb
+		+ textureLod(eyeImage[eye], mapped + vec2(offset.x, -offset.y), 0.0).rgb
+		+ textureLod(eyeImage[eye], mapped + vec2(-offset.x, offset.y), 0.0).rgb
+		+ textureLod(eyeImage[eye], mapped + vec2(offset.x, offset.y), 0.0).rgb) * 0.25;
 }
 
 void main() {
@@ -64,8 +83,7 @@ void main() {
 			color = textureLod(eyeImage[0], mix(s.xy, s.zw, h), 0.0).rgb;
 		}
 	} else if ((p.flags & (1u << eye)) != 0u) {
-		const vec4 s = p.source[eye];
-		color = textureLod(eyeImage[eye], mix(s.xy, s.zw, uv), 0.0).rgb;
+		color = sampleEye(eye, uv);
 	}
 	if (inQuad) {
 		// the HUD's mip chain (runtime.cpp) is sampled with the homography's own gradients, so the
