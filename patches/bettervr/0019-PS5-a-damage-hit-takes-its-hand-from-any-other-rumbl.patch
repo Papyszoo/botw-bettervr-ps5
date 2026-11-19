@@ -1,0 +1,243 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ps5cemu <ps5cemu@localhost>
+Date: Thu, 19 Nov 2026 15:05:07 +0100
+Subject: [PATCH] PS5: a damage hit takes its hand from any other rumble, and
+ every damage event logs once; built, untested on console
+
+Damage Taken shares the mixer's two hands with swings, guards and the weapon and gear release
+rumbles, and the old priority check dropped a hit taken while one of those was still running; the
+release rumbles are Falling like the hit, so the same-type check could drop it too. A Damage
+request now replaces whatever its hand is playing, so no input rumble can swallow a hit.
+
+One [vib] line per damage event, under HapticsLogPatterns like the game's pattern lines, names the
+path (PlayerNormal's damage state or PlayerLargeDamage's 0x02CAB32C setup), the state's hash, and
+the hands and headset levels the Damage Taken row asks for, or why nothing was played. The
+0x02CAB32C site also runs once while a save loads; that call is named and no longer buzzes at
+boot. The cross-path 250 ms dedupe only drops the other path, so two states of one path stay two
+hits.
+---
+ src/game/botw/camera/camera.cpp |  3 +-
+ src/game/botw/player/player.cpp | 75 ++++++++++++++++++++++++++-------
+ src/game/botw/player/player.h   |  3 +-
+ src/rendering/haptics.cpp       |  7 +--
+ src/rendering/haptics.h         |  6 ++-
+ src/rendering/rumble.h          | 20 ++++++---
+ 6 files changed, 86 insertions(+), 28 deletions(-)
+
+diff --git a/src/game/botw/camera/camera.cpp b/src/game/botw/camera/camera.cpp
+index 89e0821..4e58816 100644
+--- a/src/game/botw/camera/camera.cpp
++++ b/src/game/botw/camera/camera.cpp
+@@ -796,7 +796,8 @@ static void hook_OverwriteFloatParam(PPCInterpreter_t* hCPU) {
+ 
+ // 0x02CAB32C is the first getStaticParam call in PlayerLargeDamage's own setup, the same site the pack
+ // patches to neutralize its movement. It runs when the large-damage action starts, which is the hit path
+-// PlayerNormal's state hook never saw in the console run; the first call of a hit drives the rumble.
++// PlayerNormal's state hook never saw in the console run; the first call of a hit drives the rumble. The
++// same site runs once while a save loads, which Player::OnLargeDamage skips (not a hit).
+ static void hook_PlayerLargeDamage(PPCInterpreter_t* hCPU) {
+     Player::OnLargeDamage();
+     hook_OverwriteFloatParam(hCPU);
+diff --git a/src/game/botw/player/player.cpp b/src/game/botw/player/player.cpp
+index e08a818..a5152eb 100644
+--- a/src/game/botw/player/player.cpp
++++ b/src/game/botw/player/player.cpp
+@@ -109,36 +109,81 @@ static void LogPlayerNormalStateOnce(uint32_t stateNamePtr) {
+     Log::print<INFO>("[vib] PlayerNormal state '{}' (0x{:08X})", Guest::CString(stateNamePtr), stateNamePtr);
+ }
+ 
++// "hands+headset+pad" for the damage line: what the Damage Taken row asked for when the hit arrived
++static std::string DescribeDamageDevices(uint32_t devices) {
++    std::string text;
++    if (devices & HapticDeviceSense)
++        text = "hands";
++    if (devices & HapticDeviceHeadset)
++        text += text.empty() ? "headset" : "+headset";
++    if (devices & HapticDevicePad)
++        text += text.empty() ? "pad" : "+pad";
++    return text.empty() ? "none" : text;
++}
++
+ // A damage event is one falling rumble on both hands. Two state machines can see the same hit (PlayerNormal's
+-// damage reaction and PlayerLargeDamage, whose 0x02CAB32C setup the pack already patches), so the first one
+-// within 250 ms wins and the other is dropped: one event per hit, never two rumbles for one blow. The name is
+-// logged for the first six events only.
+-static void PlayDamageRumble(uint32_t stateNamePtr, const char* source) {
++// damage reaction and PlayerLargeDamage's setup at 0x02CAB32C), so the other path within 250 ms is dropped: one
++// event per hit, never two rumbles for one blow. Two states from the same path are two hits.
++// With HapticsLogPatterns on, like the game's pattern lines, one [vib] line per call says which path saw the hit,
++// which state, and what the Damage Taken row asked for, whatever the outcome: a console run can tell a hit the game
++// never reported from one the row's devices or the mixer dropped.
++static void PlayDamageRumble(uint32_t stateNamePtr, const char* path) {
+     using clock = std::chrono::steady_clock;
++    constexpr RumbleParameters damageRumble = { true, 0, RumbleType::Falling, 0.5f, false, 0.4, 0.1f, 0.8f };
+     static clock::time_point s_lastPlayed{};
+-    static int s_namesLogged = 0;
++    static std::string_view s_lastPath{};
+     const auto now = clock::now();
+-    if (now - s_lastPlayed < std::chrono::milliseconds(250))
++    const bool largeDamage = stateNamePtr == 0;
++    const bool log = GetSettings().hapticsLogPatterns;
++    const std::string state = largeDamage ? "PlayerLargeDamage" : Guest::CString(stateNamePtr);
++    const std::string site = largeDamage ? std::string("0x02CAB32C") : fmt::format("0x{:08X}", stateNamePtr);
++
++    auto say = [&](std::string_view result) {
++        if (log)
++            Log::print<INFO>("[vib] damage path={} state='{}' ({}) -> {}", path, state, site, result);
++    };
++
++    // 0x02CAB32C also runs once while a save loads, before the first in-game frame: that is not a hit and the motor
++    // must not buzz at boot; the line says which call this was.
++    if (largeDamage && !GameState::IsInGame()) {
++        say("none, before the first in-game frame (load)");
++        return;
++    }
++
++    if (!s_lastPath.empty() && s_lastPath != path && now - s_lastPlayed < std::chrono::milliseconds(250)) {
++        say(fmt::format("none, the same hit as {} {} ms ago", s_lastPath,
++            std::chrono::duration_cast<std::chrono::milliseconds>(now - s_lastPlayed).count()));
+         return;
++    }
+     s_lastPlayed = now;
++    s_lastPath = path;
+ 
+-    if (s_namesLogged < 6) {
+-        s_namesLogged++;
+-        if (stateNamePtr != 0)
+-            Log::print<INFO>("[vib] damage state '{}' (0x{:08X}, {})", Guest::CString(stateNamePtr), stateNamePtr, source);
+-        else
+-            Log::print<INFO>("[vib] damage state 'PlayerLargeDamage' (0x02CAB32C, {})", source);
++    ModSettings& settings = GetSettings();
++    const float gain = settings.GetHapticsGain(HapticCategory::Damage);
++    if (gain <= 0.0f) {
++        say("none, Damage Taken is off or at 0% in the Vibration page");
++        return;
+     }
+ 
+-    constexpr RumbleParameters damageRumble = { true, 0, RumbleType::Falling, 0.5f, false, 0.4, 0.1f, 0.8f };
+-    Haptics::Play(damageRumble, HapticCategory::Damage);
++    const float hands = damageRumble.amplitude * gain;
++    const uint32_t devices = settings.GetHapticsDeviceMask(HapticCategory::Damage);
++    const float headsetLevel = std::min(1.0f, hands * settings.GetHapticsHeadsetLimit());
++    const int headset = (devices & HapticDeviceHeadset) ? (int)std::lround(headsetLevel * 25.0f) : 0;
++    const bool queued = Haptics::Play(damageRumble, HapticCategory::Damage);
+     RumbleParameters otherHand = damageRumble;
+     otherHand.hand = 1;
+     Haptics::Play(otherHand, HapticCategory::Damage);
++    if (queued) {
++        const float handsLevel = (devices & HapticDeviceSense) ? hands : 0.0f;
++        say(fmt::format("hands {:.2f}, headset {}/25, Damage Taken {}% [{}]", handsLevel, headset,
++            (unsigned)settings.HapticsStrength(HapticCategory::Damage).load(), DescribeDamageDevices(devices)));
++    }
++    else
++        say("none, no vibration mixer (VR is not running)");
+ }
+ 
+ void Player::OnLargeDamage() {
+-    PlayDamageRumble(0, "large damage init");
++    PlayDamageRumble(0, "PlayerLargeDamage");
+ }
+ 
+ static void hook_PlayerNormalChangeState(PPCInterpreter_t* hCPU) {
+diff --git a/src/game/botw/player/player.h b/src/game/botw/player/player.h
+index 8e88469..c2b0e47 100644
+--- a/src/game/botw/player/player.h
++++ b/src/game/botw/player/player.h
+@@ -16,7 +16,8 @@ namespace Player {
+ 
+     bool TrackDamageFloatParam(uint32_t actionPtr, uint32_t destFloatPtr, std::string_view paramName);
+ 
+-    // PlayerLargeDamage's own setup (0x02CAB32C): one damage event, deduplicated with PlayerNormal's
++    // PlayerLargeDamage's own setup (0x02CAB32C): one damage event, deduplicated with PlayerNormal's, and skipped
++    // when the same site runs while a save loads
+     void OnLargeDamage();
+ 
+     void RequestHandThrow(const glm::fvec3& worldVelocity);
+diff --git a/src/rendering/haptics.cpp b/src/rendering/haptics.cpp
+index 248fb16..f99eccc 100644
+--- a/src/rendering/haptics.cpp
++++ b/src/rendering/haptics.cpp
+@@ -13,15 +13,16 @@ static RumbleManager* GetRumbleManager() {
+     return xr ? xr->GetRumbleManager() : nullptr;
+ }
+ 
+-void Haptics::Play(const RumbleParameters& rumble, HapticCategory category) {
++bool Haptics::Play(const RumbleParameters& rumble, HapticCategory category) {
+     // the strength and the on/off are read again for each frame of the envelope (RumbleManager::updateHaptics), so the
+     // page's changes are live; a request made while the category is off is dropped here
+     if (GetSettings().GetHapticsGain(category) <= 0.0f)
+-        return;
++        return false;
+     RumbleParameters tagged = rumble;
+     tagged.category = category;
+     if (RumbleManager* manager = GetRumbleManager())
+-        manager->enqueueInputsRumbleCommand(tagged);
++        return manager->enqueueInputsRumbleCommand(tagged);
++    return false;
+ }
+ 
+ void Haptics::Stop(int hand, RumbleType rumbleType) {
+diff --git a/src/rendering/haptics.h b/src/rendering/haptics.h
+index ae71dc1..c2a8df3 100644
+--- a/src/rendering/haptics.h
++++ b/src/rendering/haptics.h
+@@ -2,9 +2,11 @@
+ 
+ #include "rendering/haptic_types.h"
+ 
+-// requests from any hook get queued and played by the rumble manager's 60 Hz mixer
++// requests from any hook get queued and played by the rumble manager's 60 Hz mixer; Play returns false when the
++// request was not queued (the Vibration page has the category off, no VR session is running, or another request was
++// already waiting for that hand)
+ namespace Haptics {
+-    void Play(const RumbleParameters& rumble, HapticCategory category);
++    bool Play(const RumbleParameters& rumble, HapticCategory category);
+     void Stop(int hand, RumbleType rumbleType);
+     void Update();
+ 
+diff --git a/src/rendering/rumble.h b/src/rendering/rumble.h
+index d25e599..b0f1dba 100644
+--- a/src/rendering/rumble.h
++++ b/src/rendering/rumble.h
+@@ -68,15 +68,18 @@ public:
+         }
+     }
+ 
+-    void enqueueInputsRumbleCommand(const RumbleParameters& rumbleParameters) {
++    bool enqueueInputsRumbleCommand(const RumbleParameters& rumbleParameters) {
+         std::scoped_lock lock(m_inputs_rumble_mutex);
+         if (rumbleParameters.prioritizeThisRumble) {
+             m_inputs_rumble_queue.push(rumbleParameters);
+-            return;
++            return true;
+         }
+ 
+-        if (m_inputs_rumble_queue.empty())
++        if (m_inputs_rumble_queue.empty()) {
+             m_inputs_rumble_queue.push(rumbleParameters);
++            return true;
++        }
++        return false;
+     }
+ 
+     // called once per game frame: takes the queued requests and computes each hand's envelope, never sends
+@@ -87,11 +90,16 @@ public:
+ 
+         while (!m_inputs_rumble_queue.empty()) {
+             RumbleParameters cmd = m_inputs_rumble_queue.front();
+-            auto& state = m_hapticStates[cmd.hand]; 
++            auto& state = m_hapticStates[cmd.hand];
++
++            // Damage Taken is the game saying the player was hurt, not an input gesture: it takes the hand even
++            // when a swing, a guard or a release rumble is still running, so none of them can swallow a hit. The
++            // release rumbles are Falling too, which is what the same-type check would otherwise match.
++            const bool damage = cmd.category == HapticCategory::Damage;
+ 
+             // Priority Check: Don't overwrite if a high-priority rumble or the same rumble is still running
+-            bool sameRumble = state.active && state.params.rumbleType == cmd.rumbleType && now < state.endTime;
+-            bool highPriorityRumble = state.active && state.inputRumble && (!cmd.prioritizeThisRumble || now < state.endTime);
++            bool sameRumble = !damage && state.active && state.params.rumbleType == cmd.rumbleType && now < state.endTime;
++            bool highPriorityRumble = !damage && state.active && state.inputRumble && (!cmd.prioritizeThisRumble || now < state.endTime);
+             if ( sameRumble || highPriorityRumble) {
+                 m_inputs_rumble_queue.pop();
+                 continue;

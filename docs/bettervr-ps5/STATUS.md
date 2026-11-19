@@ -3,6 +3,31 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-19: a damage hit takes its hand from any other rumble and logs every event; built, untested on console
+
+The ef87231 logs do hold damage events: the 13:00 process logged `[vib] damage state '小ダメージ'`
+(0x101E0940) at 13:06:16 and `'中ダメージ'` (0x101E0930) twice at 12:59, and the 13:14 `boot.log` shows the
+headset motor taking levels 12, 11, 9, 8, 7, 6 from that process's load-time large-damage call (a plain
+`grep` calls the log binary and prints nothing, so `grep -a` is needed). What could swallow a hit was the
+mixer (`rendering/rumble.h`): `updateHaptics` drops a request while its hand still plays a prioritized
+rumble, and swings, guard and the weapon/gear releases all ask for that; the releases are `Falling` like the
+hit, so the same-type check dropped it too. With both hands busy, nothing reached the headset. A Damage
+request now replaces its hand. The `0x02CAB32C` call that runs once while a save loads is no longer played
+as a hit. One `[vib] damage path=... state='...' (...) -> ...` line per event, under `HapticsLogPatterns`
+like the game's pattern lines, names the path, the state and the hands and headset levels, or why nothing
+played. New patch bettervr 0019; no Cemu change. Details: `UPDATE-1.0.md`, "Vibration: one page and one mixer".
+
+**Test request 55 (Damage Taken, 13.60 console).** In VR with `HapticsLogPatterns` on, press the Vibration
+page's **Headset** test once, alone, before any hit. Then take a Bokoblin hit, a hit from a fall of a few
+hearts, and fire damage; then a large one (a Guardian beam, a long fall or a bomb at your feet). Each hit must
+give one rumble on both hands and one on the headset, per the Damage Taken row (100 %, Hands and Headset
+ticked): one `[vib] damage` line per hit must show `hands 0.80` and a non-zero `headset N/25`, and the large
+hit must say `path=PlayerLargeDamage` while the ordinary ones say `path=PlayerNormal` with a state hash. At
+0 % (or Off) the same hits must stay still and the line must say `none, Damage Taken is off or at 0% in the
+Vibration page`. Report whether a single hit rumbles twice, and send every `[vib] damage` line, the one
+`[vib] damage path=PlayerLargeDamage ... before the first in-game frame (load)` line at start (the motor must
+be still there), every `[vib] PlayerNormal state` line, and `[vib] test headset: ...`.
+
 ## 2026-11-19: v0.6 performance follow-up (900-draw batch, 1x 1984x2048 and a box compose, no 4K TV picture in stereo, `[draws]` line), built, untested on console
 
 Cemu now submits a command buffer every 900 draws instead of 300 (the setting still overrides it). 1x asks the

@@ -910,10 +910,16 @@ v06's, unchanged; 0055 is the only Cemu patch added. `VERSION` stays 0.5.0.
   drives the pad. No Cemu patch was needed.
 - **Damage taken** uses both paths a hit can take (`player.cpp`, `camera.cpp`): the `PlayerNormal` damage-state hook
   and `PlayerLargeDamage`'s own setup at `0x02CAB32C`, the site the pack already patches (a separate hook there
-  forwards to the float-param override). One falling rumble on both hands per hit; whichever path sees the hit first
-  wins and the other within 250 ms is dropped, so a blow cannot rumble twice. `[vib] damage state '...'` names the
-  first six events (`PlayerLargeDamage` for the large-damage path). Every `PlayerNormal` state is also logged once
-  with its hash at INFO, capped at 64 states, so the next run lists the states the game really uses.
+  forwards to the float-param override). One falling rumble on both hands per hit; the other path within 250 ms is
+  dropped, so a blow cannot rumble twice, while two states from one path are two hits. A Damage request takes its
+  hand even while a swing, a guard or a release rumble is still running (patch bettervr 0019): the mixer's priority
+  check used to drop it, and the release rumbles are Falling too, the same type the same-rumble check matches.
+  `0x02CAB32C` also runs once while a save loads, before the first in-game frame; that call is logged and plays
+  nothing. One `[vib] damage path=... state='...' (...) -> hands 0.80, headset 12/25, Damage Taken 100% [...]` line
+  per event, under `HapticsLogPatterns` like the game's pattern lines, names the path (`PlayerNormal` or
+  `PlayerLargeDamage`), the state's hash and what the Damage Taken row asked for, or `none, ...` and why. Every
+  `PlayerNormal` state is also logged once with its hash at INFO, capped at 64 states, so the next run lists the
+  states the game really uses.
 - **The game's rumble stays one category for now, with a learning log.** At the `VPADControlMotor`/`StopMotor` hooks
   (`controls.cpp`, at most 40 lines 150 ms apart, `HapticsLogPatterns` turns it off) it prints the caller LR, the
   playing state, the VPAD pattern bytes, and either the sead `PatternRumbleAddon`'s string at `+0x14` and its repeat
