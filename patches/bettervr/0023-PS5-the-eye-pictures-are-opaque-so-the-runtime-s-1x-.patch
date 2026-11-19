@@ -1,0 +1,26 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ps5cemu <ps5cemu@localhost>
+Date: Thu, 19 Nov 2026 19:02:11 +0100
+Subject: [PATCH] PS5: the eye pictures are opaque, so the runtime's 1x copy of
+ them keeps the compose's alpha; built, untested on console
+
+---
+ resources/shaders/present_depth.frag | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/resources/shaders/present_depth.frag b/resources/shaders/present_depth.frag
+index e1f2acf..6df89b9 100644
+--- a/resources/shaders/present_depth.frag
++++ b/resources/shaders/present_depth.frag
+@@ -53,6 +53,10 @@ void main() {
+     vec3 finalFadeColor = gameFade >= customFade ? gameFadeColor : customFadeCol;
+ 
+     vec3 color = mix(colorTexture.rgb, finalFadeColor, finalFade);
+-    outColor = vec4(settings.srgbEncode > 0.5 ? EncodeSrgb(color) : color, colorTexture.a);
++    // The eye pictures are opaque. This pipeline is the 3D scene's, which is a projection layer:
++    // its alpha is not composited, and the runtime over Hmd2 copies these pixels into the headset's
++    // eye buffer at 1x, where a fixed alpha keeps every write of it byte for byte the same. The
++    // flat screen's picture keeps its source alpha (present.frag), since that one is a quad layer.
++    outColor = vec4(settings.srgbEncode > 0.5 ? EncodeSrgb(color) : color, 1.0);
+     gl_FragDepth = depthTexture;
+ }

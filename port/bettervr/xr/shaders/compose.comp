@@ -25,6 +25,8 @@ layout(push_constant) uniform Params {
 	vec4 source[2];  // each eye's image rect in its image, as UVs (u0, v0, u1, v1)
 	float quad[2][9]; // where the HUD quad falls in each eye: eye UV (u, v, 1) dotted with rows 0-2, 3-5 and 6-8
 	                  // gives the quad UV's two numerators and the divisor (a homography); a divisor <= 0 is nowhere
+	ivec2 origin;    // the output pixel this dispatch's first invocation sits at: the eyes are copied at 1x, so
+	                 // only the HUD's box is dispatched, at that box's corner
 } p;
 
 vec3 toLinear(vec3 c) {
@@ -56,7 +58,7 @@ vec3 sampleEye(int eye, vec2 uv) {
 }
 
 void main() {
-	const ivec2 at = ivec2(gl_GlobalInvocationID.xy);
+	const ivec2 at = ivec2(gl_GlobalInvocationID.xy) + p.origin;
 	if (at.x >= 2 * p.eyeSize.x || at.y >= p.eyeSize.y)
 		return;
 	const int eye = at.x >= p.eyeSize.x ? 1 : 0;

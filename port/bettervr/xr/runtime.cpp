@@ -131,6 +131,9 @@ namespace
 	constexpr uint32_t kEyeHeight = 2048;
 	constexpr int kEyeBuffers = 3;
 	constexpr int kSwapchainImages = 3;
+	// the compose shader's push constants: the eye size, the flags, the two source rects, the HUD's
+	// two homographies and the first output pixel of the dispatch (see compose.comp)
+	constexpr uint32_t kComposeParamsBytes = 128;
 	constexpr XrDuration kFramePeriod = 16'666'667; // ns: a frame every two of Hmd2's 120 Hz refreshes
 	constexpr float kHalfIpd = 0.0315f;
 	constexpr uint64_t kGpuTimeoutNs = 2'000'000'000ull;
@@ -394,6 +397,8 @@ struct XrSession_T
 	// frames whose re-shown pair kept the render pose it was published with (poseKeep)
 	uint64_t poseKept = 0;
 	uint64_t monoOnQuad = 0, planeQuads = 0; // frames whose mono picture rode the HUD quad, frames whose quad was drawn as a plane
+	// the 1x compose's eye copy has said so once (see xrEndFrame's copy path)
+	bool eyeCopyLogged = false;
 	// frames Hmd2's TV mirror took, and frames it was asked for but did not take
 	uint64_t tvShown = 0, tvSkipped = 0;
 	// the 5 s [draws] line: when its window began, xrEndFrame's own time and its compose fence wait
@@ -417,6 +422,7 @@ namespace
 	X(vkUpdateDescriptorSets) X(vkCreateCommandPool) X(vkDestroyCommandPool) X(vkAllocateCommandBuffers)                    \
 	X(vkResetCommandBuffer) X(vkBeginCommandBuffer) X(vkEndCommandBuffer) X(vkCmdPipelineBarrier) X(vkCmdBindPipeline)     \
 	X(vkCmdBindDescriptorSets) X(vkCmdPushConstants) X(vkCmdDispatch) X(vkCmdCopyImage) X(vkCmdBlitImage)            \
+	X(vkCmdCopyImageToBuffer)                                                                                          \
 	X(vkQueueSubmit) X(vkCreateFence) X(vkDestroyFence) X(vkWaitForFences) X(vkResetFences) X(vkDeviceWaitIdle)
 #define VK_MEMBER(name) PFN_##name name = nullptr;
 		VK_FUNCTIONS(VK_MEMBER)
@@ -1565,7 +1571,7 @@ namespace
 		result = vk.vkCreateDescriptorSetLayout(session->device, &setInfo, nullptr, &session->setLayout);
 		if (result != VK_SUCCESS)
 			return Fail("vkCreateDescriptorSetLayout", result);
-		const VkPushConstantRange push{VK_SHADER_STAGE_COMPUTE_BIT, 0, 120};
+		const VkPushConstantRange push{VK_SHADER_STAGE_COMPUTE_BIT, 0, kComposeParamsBytes};
 		VkPipelineLayoutCreateInfo layoutInfo{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
 		layoutInfo.setLayoutCount = 1;
 		layoutInfo.pSetLayouts = &session->setLayout;
@@ -1747,6 +1753,59 @@ namespace
 		numerator(down, out + 3);
 		row(n, out + 6);
 		return true;
+	}
+
+	// The part of one eye a quad covers, in that eye's pixels: the eye's unit square clipped by the
+	// quad's homography (its four edges, and the half-space in front of the eye), then widened to
+	// whole pixels. False when the quad is nowhere in this eye. A pixel or two conservative, so the
+	// compose's HUD-only dispatch can never miss one the shader would blend the HUD into.
+	bool QuadBox(const float q[9], int32_t width, int32_t height, int32_t box[4])
+	{
+		struct Point
+		{
+			float u, v;
+		};
+		// the shader's inQuad as five half-planes a*u + b*v + c >= 0: nx >= 0, den - nx >= 0,
+		// ny >= 0, den - ny >= 0, and den >= 0 (the quad in front of the eye)
+		const float planes[5][3] = {{q[0], q[1], q[2]},
+			{q[6] - q[0], q[7] - q[1], q[8] - q[2]},
+			{q[3], q[4], q[5]},
+			{q[6] - q[3], q[7] - q[4], q[8] - q[5]},
+			{q[6], q[7], q[8]}};
+		Point polygon[16] = {{0.0f, 0.0f}, {1.0f, 0.0f}, {1.0f, 1.0f}, {0.0f, 1.0f}};
+		int count = 4;
+		for (const auto& plane : planes)
+		{
+			Point clipped[16];
+			int kept = 0;
+			for (int i = 0; i < count; i++)
+			{
+				const Point& a = polygon[i];
+				const Point& b = polygon[(i + 1) % count];
+				const float da = plane[0] * a.u + plane[1] * a.v + plane[2];
+				const float db = plane[0] * b.u + plane[1] * b.v + plane[2];
+				if (da >= 0.0f)
+					clipped[kept++] = a;
+				if ((da >= 0.0f) != (db >= 0.0f))
+				{
+					const float t = da / (da - db);
+					clipped[kept++] = {a.u + (b.u - a.u) * t, a.v + (b.v - a.v) * t};
+				}
+			}
+			std::copy(clipped, clipped + kept, polygon);
+			count = kept;
+			if (!count)
+				return false;
+		}
+		float u0 = 1.0f, v0 = 1.0f, u1 = 0.0f, v1 = 0.0f;
+		for (int i = 0; i < count; i++)
+			u0 = std::min(u0, polygon[i].u), u1 = std::max(u1, polygon[i].u),
+			v0 = std::min(v0, polygon[i].v), v1 = std::max(v1, polygon[i].v);
+		box[0] = std::clamp<int32_t>((int32_t)std::floor(u0 * width), 0, width);
+		box[1] = std::clamp<int32_t>((int32_t)std::floor(v0 * height), 0, height);
+		box[2] = std::clamp<int32_t>((int32_t)std::ceil(u1 * width), 0, width);
+		box[3] = std::clamp<int32_t>((int32_t)std::ceil(v1 * height), 0, height);
+		return box[2] > box[0] && box[3] > box[1];
 	}
 
 	XrResult Lost()
@@ -2776,9 +2835,13 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
 		uint32_t pad;
 		float source[2][4];
 		float quad[2][9]; // per eye, eye UV (u, v, 1) to quad UV: the numerators of x and y, then the divisor
-	} params{{(int32_t)kEyeWidth, (int32_t)kEyeHeight}, 0, 0, {}, {}};
+		int32_t origin[2]; // the output pixel the dispatch's first invocation sits at (a HUD-only dispatch)
+	} params{{(int32_t)kEyeWidth, (int32_t)kEyeHeight}, 0, 0, {}, {}, {}};
+	static_assert(sizeof(params) == kComposeParamsBytes, "the compose shader's push constants changed size");
 	VkImageView eyeViews[2] = {session->dummyView, session->dummyView};
 	VkImage eyeImages[2] = {};
+	// the swapchains the eye images came from, for the 1x copy path's size, format and rect
+	const XrSwapchain_T* eyeSwapchains[2] = {};
 	Pose eyePoses[2];
 	XrFovf eyeFov[2] = {};
 	bool monoViews = false;
@@ -2803,6 +2866,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
 			// the UNORM view reads the bytes as they were written; the sRGB view is only for rendering
 			eyeViews[eye] = swapchain->sampleViews[swapchain->released] ? swapchain->sampleViews[swapchain->released] : swapchain->views[swapchain->released];
 			eyeImages[eye] = swapchain->images[swapchain->released];
+			eyeSwapchains[eye] = swapchain;
 			const XrRect2Di& r = view.subImage.imageRect;
 			params.source[eye][0] = (float)r.offset.x / swapchain->width;
 			params.source[eye][1] = (float)r.offset.y / swapchain->height;
@@ -2935,6 +2999,36 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
 	if ((params.flags & 7u) == 0)
 		session->emptyFrames++;
 
+	// 1x: each eye's image is the eye's own pixels and rect, in the byte order Hmd2's buffer takes, so
+	// the copy engine can fill the two halves and the shader only has to blend the HUD's box over
+	// them. A higher VR Resolution keeps the shader's scaled sample, and the mono picture keeps the
+	// black outside its quad. These bytes are the same ones the shader wrote before, alpha included:
+	// the 3D present writes the eye pictures opaque (patch bettervr 0023).
+	bool eyeCopy = !(params.flags & 16u) && (params.flags & 3u) == 3u && eyeImages[0] && eyeImages[0] != eyeImages[1]
+		&& (!hudImage || (hudImage != eyeImages[0] && hudImage != eyeImages[1]));
+	for (int eye = 0; eye < 2 && eyeCopy; eye++)
+	{
+		const XrSwapchain_T* swapchain = eyeSwapchains[eye];
+		const float* source = params.source[eye];
+		eyeCopy = swapchain && swapchain->width == kEyeWidth && swapchain->height == kEyeHeight
+			&& (swapchain->format == VK_FORMAT_R8G8B8A8_SRGB || swapchain->format == VK_FORMAT_R8G8B8A8_UNORM)
+			&& source[0] == 0.0f && source[1] == 0.0f && source[2] == 1.0f && source[3] == 1.0f;
+	}
+	// the HUD's own pixels, the only ones a dispatch has to touch over a copied frame
+	int32_t hudBox[2][4] = {};
+	int32_t hudPixels[2] = {};
+	if (eyeCopy && (params.flags & 4u))
+		for (int eye = 0; eye < 2; eye++)
+			if (QuadBox(params.quad[eye], (int32_t)kEyeWidth, (int32_t)kEyeHeight, hudBox[eye]))
+				hudPixels[eye] = (hudBox[eye][2] - hudBox[eye][0]) * (hudBox[eye][3] - hudBox[eye][1]);
+	const bool hudDispatch = hudPixels[0] > 0 || hudPixels[1] > 0;
+	if (eyeCopy && !session->eyeCopyLogged)
+	{
+		session->eyeCopyLogged = true;
+		Log("the 1x compose copies each eye into hmd2's buffer and dispatches only the HUD's box (%d and %d pixels this frame)",
+			hudPixels[0], hudPixels[1]);
+	}
+
 	// a mip chain of the HUD image, so the 2.4x minification through the quad picks a level
 	bool hudMips = false;
 	if (hudImage && hudSwapchain && hudImage != eyeImages[0] && hudImage != eyeImages[1] && EnsureHudMips(session, hudSwapchain))
@@ -2968,12 +3062,49 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
 	VkImage sampledEyes[2] = {eyeImages[0], eyeImages[1]};
 	if (sampledEyes[1] == sampledEyes[0])
 		sampledEyes[1] = VK_NULL_HANDLE;
+	// where the eye images are taken before the shader reads them and where they are when it is done:
+	// the copy path takes them through TRANSFER_SRC, the copy engine's own layout
+	const VkImageLayout eyeStart = eyeCopy ? VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	const VkImageLayout eyeEnd = eyeCopy && !hudDispatch ? VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 	const bool ok = SubmitCompose(session, [&](VkCommandBuffer commands) {
 		for (VkImage image : sampledEyes)
 			if (image)
-				ImageBarrier(commands, image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-					VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-					VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+				ImageBarrier(commands, image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, eyeStart,
+					VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT,
+					eyeStart == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL ? VK_ACCESS_TRANSFER_READ_BIT : VK_ACCESS_SHADER_READ_BIT,
+					VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+					eyeStart == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL ? VK_PIPELINE_STAGE_TRANSFER_BIT : VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+		if (eyeCopy)
+		{
+			// the buffer's rows are the side-by-side image's own; each eye's copy fills half of every row
+			for (int eye = 0; eye < 2; eye++)
+			{
+				VkBufferImageCopy copy{};
+				copy.bufferOffset = (VkDeviceSize)(eye * kEyeWidth) * 4;
+				copy.bufferRowLength = 2 * kEyeWidth;
+				copy.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+				copy.imageExtent = {kEyeWidth, kEyeHeight, 1};
+				vk.vkCmdCopyImageToBuffer(commands, eyeImages[eye], VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, session->eyeBuffers[index], 1, &copy);
+			}
+			if (hudDispatch)
+			{
+				// the copies' writes land before the shader writes the HUD's box over them, and the
+				// box itself still samples the eye image under it
+				VkBufferMemoryBarrier copied{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
+				copied.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+				copied.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+				copied.srcQueueFamilyIndex = copied.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+				copied.buffer = session->eyeBuffers[index];
+				copied.size = VK_WHOLE_SIZE;
+				vk.vkCmdPipelineBarrier(commands, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 1, &copied,
+					0, nullptr);
+				for (VkImage image : sampledEyes)
+					if (image)
+						ImageBarrier(commands, image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+							VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_TRANSFER_READ_BIT, VK_ACCESS_SHADER_READ_BIT,
+							VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+			}
+		}
 		if (hudImage && hudMips)
 		{
 			// the HUD as the game wrote it, into level 0, then each level down from the one above; the
@@ -3011,24 +3142,42 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
 				VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
 		vk.vkCmdBindPipeline(commands, VK_PIPELINE_BIND_POINT_COMPUTE, session->pipeline);
 		vk.vkCmdBindDescriptorSets(commands, VK_PIPELINE_BIND_POINT_COMPUTE, session->pipelineLayout, 0, 1, &session->set, 0, nullptr);
-		vk.vkCmdPushConstants(commands, session->pipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(params), &params);
-		vk.vkCmdDispatch(commands, (2 * kEyeWidth + 7) / 8, (kEyeHeight + 7) / 8, 1);
+		if (!eyeCopy)
+		{
+			vk.vkCmdPushConstants(commands, session->pipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(params), &params);
+			vk.vkCmdDispatch(commands, (2 * kEyeWidth + 7) / 8, (kEyeHeight + 7) / 8, 1);
+		}
+		else if (hudDispatch)
+		{
+			// one dispatch an eye, each over the pixels its HUD quad touches; the copies wrote the rest
+			for (int eye = 0; eye < 2; eye++)
+			{
+				if (!hudPixels[eye])
+					continue;
+				params.origin[0] = hudBox[eye][0] + eye * (int32_t)kEyeWidth;
+				params.origin[1] = hudBox[eye][1];
+				vk.vkCmdPushConstants(commands, session->pipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(params), &params);
+				vk.vkCmdDispatch(commands, (hudBox[eye][2] - hudBox[eye][0] + 7) / 8, (hudBox[eye][3] - hudBox[eye][1] + 7) / 8, 1);
+			}
+		}
 		for (VkImage image : sampledEyes)
 			if (image)
-				ImageBarrier(commands, image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-					VK_ACCESS_SHADER_READ_BIT, 0, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
+				ImageBarrier(commands, image, VK_IMAGE_ASPECT_COLOR_BIT, eyeEnd, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+					eyeEnd == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL ? VK_ACCESS_TRANSFER_READ_BIT : VK_ACCESS_SHADER_READ_BIT, 0,
+					eyeEnd == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL ? VK_PIPELINE_STAGE_TRANSFER_BIT : VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+					VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
 		if (hudImage && !hudMips)
 			ImageBarrier(commands, hudImage, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
 				VK_ACCESS_SHADER_READ_BIT, 0, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
 		// the GPU wrote the buffer: visible to Hmd2 before the flip (HLA-PSVR2's barrier, as M2's)
 		VkBufferMemoryBarrier toHost{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
-		toHost.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+		toHost.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT | (eyeCopy ? VK_ACCESS_TRANSFER_WRITE_BIT : 0);
 		toHost.dstAccessMask = VK_ACCESS_HOST_READ_BIT | VK_ACCESS_MEMORY_READ_BIT;
 		toHost.srcQueueFamilyIndex = toHost.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 		toHost.buffer = session->eyeBuffers[index];
 		toHost.size = VK_WHOLE_SIZE;
-		vk.vkCmdPipelineBarrier(commands, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_HOST_BIT | VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0,
-			nullptr, 1, &toHost, 0, nullptr);
+		vk.vkCmdPipelineBarrier(commands, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | (eyeCopy ? VK_PIPELINE_STAGE_TRANSFER_BIT : 0),
+			VK_PIPELINE_STAGE_HOST_BIT | VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 1, &toHost, 0, nullptr);
 	});
 	if (!ok)
 	{
