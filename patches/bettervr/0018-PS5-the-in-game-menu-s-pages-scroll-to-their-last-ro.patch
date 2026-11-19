@@ -1,0 +1,66 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ps5cemu <ps5cemu@localhost>
+Date: Thu, 19 Nov 2026 12:26:03 +0100
+Subject: [PATCH] PS5: the in-game menu's pages scroll to their last row and
+ the note under it; built, untested on console
+
+---
+ src/rendering/imgui_menus.cpp | 17 ++++++++++++++---
+ 1 file changed, 14 insertions(+), 3 deletions(-)
+
+diff --git a/src/rendering/imgui_menus.cpp b/src/rendering/imgui_menus.cpp
+index fa1fa52..ee0f038 100644
+--- a/src/rendering/imgui_menus.cpp
++++ b/src/rendering/imgui_menus.cpp
+@@ -53,6 +53,19 @@ static void DrawNavScrollStop(const char* id) {
+     ImGui::PopStyleColor();
+ }
+ 
++// A page whose content runs past the pane ends with an invisible focus stop of its own: the pad's down
++// then moves to it and scrolls the rest (the last row, any note under it) into view. A page that fits
++// gets none, so down on its last row leaves the focus where it is.
++static void DrawPageScrollEnd() {
++    const ImGuiWindow* window = ImGui::GetCurrentWindow();
++    // the content's height as the window will measure it at its next begin, not last frame's
++    const float contentHeight = window->DC.CursorMaxPos.y - window->DC.CursorStartPos.y;
++    if (contentHeight + ImGui::GetStyle().WindowPadding.y * 2.0f <= window->InnerRect.GetHeight()) {
++        return;
++    }
++    DrawNavScrollStop("##PageEnd");
++}
++
+ static void DrawPageHeader(const char* icon, const char* title) {
+     DrawNavScrollStop("##PageTop");
+     ImGui::Spacing();
+@@ -1579,7 +1592,6 @@ void RND_Renderer::ImGuiOverlay::DrawSystemPage(bool* changed) {
+     ImGui::Dummy(ImVec2(0.0f, 10.0f));
+     DrawBetterVRProfiler(true);
+ #endif
+-    DrawNavScrollStop("##SystemBottom");
+ }
+ 
+ static void DrawLogToggle(const char* label, BoolSetting& setting, bool* changed) {
+@@ -1677,7 +1689,6 @@ static void DrawSteamFrameControlsPage() {
+     }
+ 
+     DrawPageNote("Swing to attack and raise your shield to guard. The next pages show where your gear sits on your body.");
+-    DrawNavScrollStop("##FrameControlsBottom");
+ }
+ 
+ void RND_Renderer::ImGuiOverlay::DrawGuidePage(size_t helpImageIndex) {
+@@ -1729,7 +1740,6 @@ void RND_Renderer::ImGuiOverlay::DrawCreditsPage() {
+     ImGui::Text("");
+ 
+     ImGui::Dummy(ImVec2(0.0f, 10.0f));
+-    DrawNavScrollStop("##CreditsBottom");
+ }
+ 
+ static const char* GetControllerModMenuPrompt() {
+@@ -2081,6 +2091,7 @@ bool RND_Renderer::ImGuiOverlay::DrawHelpMenu() {
+                 case ImGuiMenus::DEBUG_PAGE: DrawDebugPage(&changed); break;
+                 default: break;
+             }
++            DrawPageScrollEnd();
+         }
+         ImGui::EndChild();
+         const float panesBottom = ImGui::GetItemRectMax().y;
