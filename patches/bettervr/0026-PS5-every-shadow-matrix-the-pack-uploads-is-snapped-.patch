@@ -1,0 +1,51 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ps5cemu <ps5cemu@localhost>
+Date: Thu, 19 Nov 2026 20:32:38 +0100
+Subject: [PATCH] PS5: every shadow matrix the pack uploads is snapped on one
+ grid; built, untested on console
+
+ShadowPrePass slot 0 carries the cascade fits, and the game uploads three matrices in its one setData_ call; the count is now read from the call instead of a hardcoded three, so the render fits and the four DepthShadowProj lookups stay on one grid if the game ever sends another. The size table stays the four cascades: the pack's fifth 360x360 map never gets a DepthShadowProj index and has no fit to snap.
+---
+ src/game/botw/shadow_stabilizer.cpp | 13 +++++++++----
+ 1 file changed, 9 insertions(+), 4 deletions(-)
+
+diff --git a/src/game/botw/shadow_stabilizer.cpp b/src/game/botw/shadow_stabilizer.cpp
+index bd412fb..883d1fb 100644
+--- a/src/game/botw/shadow_stabilizer.cpp
++++ b/src/game/botw/shadow_stabilizer.cpp
+@@ -10,8 +10,10 @@
+ // translation to whole shadow-map texels moves the fit in visible steps of one texel instead.
+ 
+ namespace {
+-    // BreathOfTheWild_Graphics/rules.txt: the cascade render targets before $shadowRes (768x720, 720x720, 384x368,
+-    // 384x360). The Graphics pack multiplies them by the Shadows preset's number.
++    // BreathOfTheWild_Graphics/rules.txt: the shadow maps before $shadowRes. The four cascades are 768x720, 720x720,
++    // 384x368 and 384x360, the only sizes DepthShadowProj gives an index (0-3). The pack's fifth map, 360x360, never
++    // gets a cascade slot, so it has no fit or lookup matrix to snap. The Graphics pack multiplies these by the
++    // Shadows preset's number.
+     constexpr std::array<int, 4> kCascadeWidth{768, 720, 384, 384};
+     constexpr std::array<int, 4> kCascadeHeight{720, 720, 368, 360};
+ 
+@@ -61,17 +63,20 @@ namespace {
+         SnapTranslation(matrix, kCascadeWidth[cascade], kCascadeHeight[cascade], scale, false);
+     }
+ 
+-    // ShadowPrePass slot 0, the three near cascades' view-projection matrices used to render the map
++    // ShadowPrePass slot 0, the cascades' view-projection matrices used to render the map. The game uploads three in
++    // one call; the call's own count is used, so every matrix it carries is snapped and the lookups above and these
++    // fits always share one grid.
+     void hook_SnapShadowCascadePrePass(PPCInterpreter_t* hCPU) {
+         hCPU->instructionPointer = hCPU->sprNew.LR;
+ 
+         const uint32_t matrices = hCPU->gpr[4];
++        const uint32_t count = hCPU->gpr[8] / 16; // setData_'s vec4 elements, four to a matrix
+         if (matrices == 0)
+             return;
+         const float scale = ShadowScale();
+         if (scale <= 0.0f)
+             return;
+-        for (uint32_t cascade = 0; cascade < 3; cascade++)
++        for (uint32_t cascade = 0; cascade < count && cascade < kCascadeWidth.size(); cascade++)
+             SnapTranslation(matrices + cascade * 64, kCascadeWidth[cascade], kCascadeHeight[cascade], scale, true);
+     }
+ }
