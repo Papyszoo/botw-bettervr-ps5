@@ -551,12 +551,11 @@ Done:
   `hand_aim.cpp` and `link_skeleton.cpp` (90, -90, 30 degrees on Z, ...), which 0.9.23 had with the same values
   (`2e06b31:src/hooking/skeleton.cpp:690-697`), so the correction is not doubled and the result should equal
   build24-27's.
-- **Menu**: patches/bettervr 0004. `ProcessModMenuInput` (`controls.cpp`) takes `BetterVR_PS5_OptionsDown()` (the
-  runtime's, set at each `xrSyncActions` from the right Sense's Options bit, false when the hand is gone or the
-  system has the pad) and toggles `ImGuiMenus::g_isOpen` on a press released within 1 s (a hold does nothing; no
-  combination, no 3 s hold). Logs: `[menu] Options down`, `[menu] Options up after N ms`, `[menu] toggle -> open/closed`,
-  `[menu] toggle ignored, the menu's overlay is not ready`. On by default: no `bettervr.json` switch. 1.0.0's own left
-  Square long press stays. The first-run prompt names Options on the PS5. The overlay is 1.0.0's own: drawn into the
+- **Menu**: patches/bettervr 0004, reworked by 0020. Options no longer opens it: a short press is the game's pause
+  and a hold is the runtime's recenter. BetterVR's menu opens on 1.0.0's own left Square long press (unchanged) or
+  on a DualSense touchpad + Options tap (`port/ps5/pad.cpp`'s chord, `BetterVR_PS5_ToggleModMenu`); the chord held
+  for a second is the app's own in-game menu. On by default: no `bettervr.json` switch.
+  The first-run prompt names the PS5's own inputs. The overlay is 1.0.0's own: drawn into the
   HUD layer the runtime shows (`capture.cpp` `Draw3DLayerAsBackground`), its font upload under the queue lock from
   stage 2. Create on the left (the recording button) is not used.
 - **Vibration**: 1.0.0's rumble calls `xrApplyHapticFeedback` (`rumble.h`), the runtime sets the Sense's vibration
@@ -769,8 +768,9 @@ v06's, unchanged; 0055 is the only Cemu patch added. `VERSION` stays 0.5.0.
   app's own in-game menu, as before. The app's pad reader (`port/ps5/pad.cpp`) holds the chord for the second
   (`kMenuHoldUs`) and reports `Shortcut::Menu` or `Shortcut::ModMenu`; the app calls `BetterVR_PS5_ToggleModMenu`
   (`controls.cpp`, patch bettervr 0020) on the tap, and opens its own menu where no VR session runs. The runtime
-  ignores Options while the touchpad is clicked, so the chord never recenters. The threshold is one constant a side
-  (`kLongPress` in `ProcessOptionsButton` and the runtime's `PollOptions`).
+  ignores Options while the touchpad is clicked, so the chord never recenters. The threshold is one clock, in the
+  runtime's `PollOptions`: `ProcessOptionsButton` reads that decision, so a press is a recenter or a pause, never
+  both.
 - **The pad's Options is the same button.** The DualSense's Options is VPAD channel 0's +, and it feeds the same
   `ProcessOptionsButton`: a hold reaches the runtime's recenter and the release does nothing, a shorter release sends
   the game one + tap, and + is removed from the game's hold while the button is down, so a hold never pauses;
@@ -1189,7 +1189,8 @@ Done, one new patch (bettervr 0011; no Cemu patch was needed):
   first frames after a screen change: `[camera] first frame after a screen: source=cached|game (...)`. No fix: the
   log has to say which source the two frames took before a change is justified.
 - **The blue needle in third person.** A short press no longer opens the world guide on the PS5 (`UpdateGuide`,
-  `controls.cpp`): it is only the game's pause, whichever controller sent it, and a hold still opens BetterVR's menu.
+  `controls.cpp`): it is only the game's pause, whichever controller sent it; a hold is the runtime's recenter
+  (`runtime.cpp`), and BetterVR's menu opens on the left Square's hold or a touchpad + Options tap.
   The bow aim arc (`Bow::QueueAimingArcPreview`, `bow.cpp`) is cleared in third person below a 5 % draw, so a resting
   bow no longer draws it. Logs at most once a second: `[guide] world guide ribbon drawn in third person ...` and
   `[bow] bow aim arc drawn in third person (draw=..., engaged=...)`.
