@@ -596,8 +596,11 @@ const export_table_t *module_table(int handle, const char *file, const export_ta
             return &tables[k];
         }
     }
-    logf("hmd2: %s: no export table for this firmware (base %p)", file,
-         reinterpret_cast<void *>(*base));
+    // A caller that never scans gets its one "... off on this firmware" line instead: an exact
+    // mismatch here is expected on other firmware, not a diagnostic to repeat.
+    if (scan)
+        logf("hmd2: %s: no export table for this firmware (base %p)", file,
+             reinterpret_cast<void *>(*base));
     // Only a library with a single known build is scanned, and only when its caller allows it:
     // with several tables a shifted match could pick the wrong firmware's offsets.
     return scan && tables_n == 1 ? module_table_scan(&info, file, tables, tables_n, base) : nullptr;
