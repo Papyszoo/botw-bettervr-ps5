@@ -142,7 +142,8 @@ names `docs/GUIDE.md`. Details: `UPDATE-1.0.md`, "v0.6", "v0.6 body, HUD and nee
   lines from two minutes in the overworld at 1x, every `[capture] held the first 2D capture after a screen change ...`
   line, and the `[camera] first frame after a screen: source=...` lines from opening and closing the wheel; say whether
   the bright first wheel frame and the 2-frame world shift on closing are still there.
-- (d) Vibration page. Open BetterVR's menu (left Square held, or a touchpad + Options tap) and open the new **Vibration** page between Controls and Display; say whether it
+- (d) Vibration page. Open BetterVR's menu (left Square held, or a touchpad + Options tap) and open the new
+  **Vibration** page between Controls and Display; say whether it
   draws (master switch, headset cap, three test buttons, nine category rows with On / Strength / Hands / Headset /
   DualSense). **Press Headset first, alone, before taking any damage**, so its test line comes before a hit: a Damage
   Taken or Explosions event can also call the motor (both default to the headset). It is never called at VR start. Then
@@ -224,8 +225,8 @@ names `docs/GUIDE.md`. Details: `UPDATE-1.0.md`, "v0.6", "v0.6 body, HUD and nee
   its centre stayed put or slid away, and send the `reach=` values from standing still and from the middle of a twist.
 - (n) Notification window at start. From the library, start BotW fresh in VR: the PS5's notification window must not
   appear at all (no panel with the console's older messages over the black screen), and the "BotW VR: Touchpad click +
-  Options: the in-game menu ..." hint must never show (the in-game menu is the touchpad + Options hold, and BetterVR's is
-  the left Square's). If the console has
+  Options: the in-game menu ..." hint must never show (the in-game menu is the touchpad + Options hold, and
+  BetterVR's is the left Square's). If the console has
   notifications for the account on, a toast must come only once the game's picture is up. Quit to the library and start
   the game again: the same. Send, for each start, the `[ui] gfx: stopped` or `[ui] the new launcher is gone ...` line
   and the `[vulkan] VideoOut surface WxH at N Hz` line that follows it, plus any `[cheevos]` line of that start; say
