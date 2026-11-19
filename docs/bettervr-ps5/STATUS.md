@@ -3,6 +3,28 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-19: v0.6 compose follow-up (1x eyes copied, a HUD-only dispatch, the last barrier without a host read), built, untested on console
+
+At 1x the compose no longer runs its 8.13 Mpx compute pass over every eye pixel: each eye's swapchain image is the
+eye's own 1984x2048 with its whole rect, so the runtime copies both halves into Hmd2's side-by-side eye buffer
+(`vkCmdCopyImageToBuffer`, the buffer's rows already 3968 pixels wide) and dispatches only the HUD quad's box (the
+eye rect clipped by the quad's homography, a pixel or two wider; a normal frame's two boxes are about 0.8 Mpx). The
+mono picture on the quad, a higher VR Resolution and an image that is not R8G8B8A8 keep the previous full dispatch.
+The 3D present now writes the eye pictures opaque (patch bettervr 0023), so the copied alpha is 255, exactly what the
+shader wrote before, and the copy is byte for byte the old output; the flat screen's quad keeps its source alpha,
+which it blends by. The compose buffer's last barrier no longer asks for a host read: Hmd2 samples the buffer on the
+GPU and nothing on the host reads it. The `[draws]` line's compose time is the same fence wait as before. One
+`[vr-xr] the 1x compose copies each eye into hmd2's buffer and dispatches only the HUD's box (N and N pixels this
+frame)` line says when the path first runs. New patch bettervr 0023; no Cemu change. Details: `UPDATE-1.0.md`,
+"Performance: packets, profile and VR Resolution".
+
+**Test request 57 (the 1x compose, 13.60 console).** At 1x, play 60 s in a village and 60 s on Hyrule Field, then
+open and close the pause menu, the map and the scope; look at the HUD's edges (minimap, hearts, the clock) and the
+weapon wheel's dimmed arrows against the previous build, then set 1.5x and repeat. The picture must be the same at
+every step: no offset, no stretch, no missing HUD, the same HUD blending. Send every `[draws]` line, the
+`the 1x compose copies ...` line, and `Graphics pack presets:` (1x must read `1984x2048`). Say whether the 1x
+compose time in `[draws]` fell, and whether the HUD moved or faded differently at either step.
+
 ## 2026-11-19: v0.6 recenter (Options held 1 s, and the menu on Square or a touchpad tap), built, untested on console
 
 Options on the right Sense and on the DualSense is now two things: held for about a second it recenters the

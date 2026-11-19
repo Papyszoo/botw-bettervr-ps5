@@ -891,6 +891,19 @@ v06's, unchanged; 0055 is the only Cemu patch added. `VERSION` stays 0.5.0.
 - **CI zlib.** `tools/deps.json` now puts zlib 1.3.2's archive where the boilerplate's setup expects it, from the
   GitHub release (same SHA-256 as zlib.net's); `tools/deps.py` verifies file items by hash instead of their name, so a
   short or corrupt download is fetched again instead of used.
+- **The 1x compose copies the eyes and dispatches only the HUD's box.** At 1x each eye's swapchain image is the
+  eye's own 1984x2048 with its whole rect, so `xrEndFrame` copies both halves into Hmd2's side-by-side eye buffer
+  (`vkCmdCopyImageToBuffer`; the buffer's rows are already 3968 pixels wide) and dispatches the compute shader only
+  over the HUD quad's box in each eye: the eye rect clipped by the quad's homography, a pixel or two wider than what
+  the shader blends. A higher VR Resolution, the mono picture on the quad and an image that is not R8G8B8A8 keep the
+  full dispatch. The 3D present writes the eye pictures opaque (patch bettervr 0023), so the copied bytes, alpha
+  included, are the ones the shader wrote before; the flat screen's picture keeps its source alpha, since that quad
+  blends by it. The shader takes the dispatch's first output pixel in its push constants (`origin`, 128 bytes now),
+  so the box blends exactly as the full frame did. One `[vr-xr] the 1x compose copies each eye into hmd2's buffer and
+  dispatches only the HUD's box (N and N pixels this frame)` line says when the path first runs.
+- **The compose buffer's last barrier has no host half.** Hmd2 samples the side-by-side buffer on the GPU (its
+  texture descriptor points at the mapped image) and nothing on the host reads those pixels, so the barrier asks only
+  for memory reads at the end of all commands instead of a host-read write-back.
 
 ### Vibration: one page and one mixer
 
