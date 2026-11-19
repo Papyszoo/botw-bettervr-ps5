@@ -40,6 +40,9 @@ namespace ps5vr
 
 	// Whether bettervr.json turns VR on (read once). False after the headset failed to start.
 	bool Enabled();
+	// Whether the stereo path is the one running (not the flat screen): Hmd2's social screen is the
+	// TV then, so Cemu's own TV picture is not what the player sees.
+	bool Stereo();
 	// True: a headset frame was begun and its copy recorded into frame.commands; call Submit once those
 	// commands have run. False: nothing recorded (VR off, Hmd2 not ready, or no frame slot this time).
 	bool Record(const Frame& frame);

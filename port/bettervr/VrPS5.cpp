@@ -427,6 +427,13 @@ namespace ps5vr
 		return s_mode != Mode::Off; // frame generation and ReShade off in either mode
 	}
 
+	bool Stereo()
+	{
+		std::lock_guard lock(s_lock);
+		Wanted();
+		return s_mode == Mode::BetterVR;
+	}
+
 	bool Record(const Frame& frame)
 	{
 		BetterVR_PS5_TvPresent(); // the in-game menu's probe counts the TV's frames

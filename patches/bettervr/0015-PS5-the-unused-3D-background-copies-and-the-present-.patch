@@ -1,0 +1,46 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ps5cemu <ps5cemu@localhost>
+Date: Thu, 19 Nov 2026 05:21:47 +0100
+Subject: [PATCH] PS5: the unused 3D background copies and the present pass's
+ depth write; built, untested on console
+
+---
+ src/cemu/capture.cpp         | 4 ++++
+ src/rendering/vk_backend.cpp | 5 ++++-
+ 2 files changed, 8 insertions(+), 1 deletion(-)
+
+diff --git a/src/cemu/capture.cpp b/src/cemu/capture.cpp
+index dcb783e..7f7dffa 100644
+--- a/src/cemu/capture.cpp
++++ b/src/cemu/capture.cpp
+@@ -151,7 +151,11 @@ void Capture::On3DColor(const FrameState& state, VkCommandBuffer commandBuffer,
+         return;
+     }
+ 
++#if !defined(__PROSPERO__)
++    // The PS5 has no Cemu window: Hmd2's social screen is the TV. The copy only filled the desktop
++    // ImGui pass's background, so both eye captures skip it there.
+     renderer->m_imguiOverlay->Draw3DLayerAsBackground(commandBuffer, surface.image, frameIdx);
++#endif
+ 
+     // clear the image to be transparent to allow for the HUD to be rendered on top of it which results in a transparent HUD layer
+     Release(commandBuffer, surface, ClearValue(false));
+diff --git a/src/rendering/vk_backend.cpp b/src/rendering/vk_backend.cpp
+index 649c9f6..90a08fc 100644
+--- a/src/rendering/vk_backend.cpp
++++ b/src/rendering/vk_backend.cpp
+@@ -583,10 +583,13 @@ void RND_VkBackend::PresentPipeline<depth>::RecreatePipeline() {
+         .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT
+     };
+ 
++    // The runtime offers no depth composition, so the present's full-screen quad only reads the
++    // game's depth for its own test; writing it back to the local attachment cost a full-screen
++    // depth store that nothing else reads.
+     const VkPipelineDepthStencilStateCreateInfo depthStencilState = {
+         .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+         .depthTestEnable = depth ? VK_TRUE : VK_FALSE,
+-        .depthWriteEnable = depth ? VK_TRUE : VK_FALSE,
++        .depthWriteEnable = VK_FALSE,
+         .depthCompareOp = VK_COMPARE_OP_ALWAYS
+     };
+ 
