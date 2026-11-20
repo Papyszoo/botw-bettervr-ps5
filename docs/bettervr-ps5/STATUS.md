@@ -5,20 +5,21 @@ tested.
 
 ## 2026-11-20: a mono or cutscene frame is the 2D quad alone, never an eye picture across both eyes; built, untested on console
 
-The RC's rune pickup (`Demo003_0`, `boot.log` 273.7-310.8) and its new-area screens run with
-`[draws] ... multiview 0.0, record 0.00 ms` (`boot.log` 303.458, 588.759): the game draws one picture, not a
-stereo pair. From 300.119 to the end of the session the `[vr-xr]` frame line counts `kept 233` and nothing
-else, and the one `render pose kept for a re-shown pair` line is at 300.119: BetterVR's submit thread
-re-shows the last pair, and from about a second into the hold the located ring no longer holds the pose that
-pair was rendered with. The runtime kept that pose and composed the pair into both eyes anyway: a picture
-more than a second old, stretched across both eyes, with Hmd2 reprojecting it from where it was rendered.
-That is the frozen background; the rune panel (BetterVR's 2D quad) is the only layer that drew correctly.
+The RC's rune pickup (`Demo003_0`, `boot.log` 273.7-310.8) and the 60 fps stretch from 274 to 607 s are
+mono/cutscene frames: `[draws] ... multiview 0.0, record 0.00 ms` (`boot.log` 303.458, 588.759) says the
+game draws one picture, not a stereo pair. The `[vr-xr]` frame line's `kept` count stops at 233 by 308.395
+and never moves again, and the one `render pose kept for a re-shown pair` line is at 300.119: BetterVR's
+submit thread re-shows the last pair, and from that frame the located ring no longer holds the pose the pair
+was rendered with. The runtime kept that pose and composed the pair into both eyes anyway: a picture more
+than a second old, stretched across both eyes, with Hmd2 reprojecting it from where it was rendered. That is
+the frozen background; the rune panel (BetterVR's 2D quad) is the only layer that drew correctly, and the
+report says a new map area shows the same thing.
 
 Why `monoQuad` was off (a412839): 1.0.0 dropped the 0.9.23 mod's presentation switches (`monoQuad`,
 `menuLock`, the proof counters), and the runtime carried the three that still mattered as fixed values. The
-mono-on-quad path was left `false` because 1.0.0 has its own 2D layer instead of the old shared-pose mono
-projection, so the compare-and-copy of a mono projection across each eye was never exercised: the
-"doubled Link" case that `compose.comp`'s flag 16 exists for.
+mono-on-quad path was left `false`: 1.0.0 presents a mono frame as its own 2D layer, a quad with the picture
+in it, not as the 0.9.23 shared-pose mono projection the flag-16 path was written for, so the path had no
+frame of that shape to run on and a mono projection was copied across each eye instead.
 
 The compositor now has two modes, and a switch between them logs one line. **Stereo** is both eyes'
 pictures with the HUD quad over them, unchanged: a fresh pair is found in the located ring as before, so
@@ -55,8 +56,8 @@ M4. **Menus and the map.** Open the inventory for 10 s, turn your head, then ope
 different from the RC?
 
 M5. **Send** `LC_ALL=C grep -a "compose mode" boot.log`, then `LC_ALL=C grep -a "render pose kept\|\[draws\]"
-boot.log` and the `[vr-xr] ... frames, ... fps submitted ...` lines from the sessions of M1-M3, plus the
-[bettervr] `Event '...' started/ended` lines for M2 and M3. Say which mode line came at which step.
+boot.log`, the `LC_ALL=C grep -a "frames, .* fps submitted" boot.log` lines from M1-M3, plus the [bettervr]
+`Event '...' started/ended` lines for M2 and M3. Say which mode line came at which step.
 
 **Expected if it works:** `compose mode stereo` at VR start and through M1 and M4. At M2 and M3 the line
 becomes `compose mode mono ...` with `a re-shown pair the located ring no longer holds` (or `one mono picture
