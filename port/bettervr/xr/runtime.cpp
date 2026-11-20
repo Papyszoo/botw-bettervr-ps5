@@ -22,8 +22,11 @@
 //                      second, each shown for two of its 120 Hz refreshes). xrEndFrame composes the
 //                      projection layer and the HUD quad into the frame's eye buffer in one compute
 //                      pass (shaders/compose.comp), on the binding's queue, waits for it, and submits
-//                      it with the head pose the submitted views were rendered from. Hmd2's social
-//                      screen shows that view on the TV when bettervr.json's tv is on (default).
+//                      it with the head pose the submitted views were rendered from. A mono/cutscene
+//                      frame (no stereo render: a rune or map screen, a cutscene) is the 2D picture
+//                      alone in front of the player, black around it, never an eye picture stretched
+//                      across both eyes. Hmd2's social screen shows that view on the TV when
+//                      bettervr.json's tv is on (default).
 //   actions            (M4) the PS VR2 Sense controllers as the Oculus Touch profile BetterVR binds:
 //                      left Square/Triangle = X/Y, right Cross/Circle = A/B, L1/R1 = squeeze,
 //                      L3/R3 = thumbstick click, the stick, the trigger (the larger of its two bytes),
@@ -139,6 +142,17 @@ namespace
 	constexpr uint64_t kGpuTimeoutNs = 2'000'000'000ull;
 	// a compose that has not finished this long after its first 2 s timeout ends the VR run (the VR-failed path)
 	constexpr uint64_t kGpuGiveUpUs = 30'000'000ull;
+
+	// How the compositor draws a frame. Stereo is both eyes' pictures with the HUD quad over them, the
+	// frame BetterVR renders in play. MonoQuad is the 2D picture alone in front of the player with black
+	// around it: a mono/cutscene frame (no stereo render, a black-bar or third-person cutscene, a rune or
+	// map screen), which must not be a stale or mono eye picture stretched across both eyes.
+	enum class ComposeMode
+	{
+		Unknown,
+		Stereo,
+		MonoQuad,
+	};
 
 	void Log(const char* format, ...)
 	{
@@ -497,9 +511,12 @@ namespace
 		} hands[2];
 		float gripYaw = 17, gripPitch = 32, gripRoll = 30, aimPitch = 0; // degrees: the grip and aim poses' turn, bettervr.json's keys
 		// How a frame is composed, fixed (1.0.0 has no use for the 0.9.23 mod's presentation switches): a mono
-		// picture (identical views) stays across each eye, the HUD quad is drawn as the plane it is, and a re-shown
-		// pair (BetterVR's submit thread shows the last one again) keeps the render pose it was published with
-		static constexpr bool monoQuad = false, quadPlane = true, poseKeep = true;
+		// picture (identical views) rides the HUD quad with black around it, the HUD quad is drawn as the plane it
+		// is, and a re-shown pair (BetterVR's submit thread shows the last one again) keeps the render pose it was
+		// published with while the room still holds it
+		static constexpr bool monoQuad = true, quadPlane = true, poseKeep = true;
+		// the mode the last composed frame used, so a switch between stereo and mono-quad is logged once
+		ComposeMode composeMode = ComposeMode::Unknown;
 		// The render pose of the picture the submit thread is showing again: the left view it was
 		// rendered from and the tracker's head pose it was located with (not the seated one, which is
 		// the game's frame), so a pair re-shown beyond the ring still reprojects from where it was rendered
@@ -2876,6 +2893,8 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
 	// whether the submitted views' render pose is known: a mono picture is head-locked, a stereo
 	// pair is found in the located ring or kept from when it was published
 	bool found = true;
+	// a re-shown pair the ring no longer holds: the picture is stale, not a render of this frame
+	bool kept = false;
 	if (projection && projection->viewCount >= 2)
 	{
 		const Pose base = SpacePose(projection->space, info->displayTime);
@@ -2932,16 +2951,17 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
 					s.poseKeepLogged = false;
 					break;
 				}
-			// poseKeep: only when the ring cannot answer, a pair the submit thread shows again keeps
-			// the render pose it was published with, so the frozen picture stays in the room and a
-			// head-locked HUD drawn in that pose stays on the head. Without it the picture is
-			// presented from the live head (glued to the face) and the HUD drifts against it. This is
-			// the rune window's case, a hold of seconds that outlives the ring; ordinary play finds
-			// its pair in the ring, so it neither counts nor logs a kept frame.
+			// poseKeep: only when the ring cannot answer, a pair the submit thread shows again is a
+			// hold that outlives the ring (the rune window's case, a cutscene's frozen frame). The
+			// compose below leaves such a pair's eye pictures out and draws the frame's 2D quad
+			// instead, black around it; with no quad the kept render pose still reprojects the pair
+			// from where it was drawn instead of from the live head. Ordinary play finds its pair in
+			// the ring, so it neither counts nor logs a kept frame.
 			if (!found && s.reproject && s.poseKeep && s.shownKnown && sameEye(s.shownEye, eyePoses[0].p))
 			{
 				renderHead = s.shownHead;
 				found = true;
+				kept = true;
 				if (!s.poseKeepLogged)
 				{
 					s.poseKeepLogged = true;
@@ -2964,6 +2984,14 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
 			eyeFov[eye] = eye == 0 ? XrFovf{-out, in, up, -down} : XrFovf{-in, out, up, -down};
 		}
 	}
+	// A re-shown pair the located ring no longer holds is the last picture the submit thread shows
+	// again, not a render of this frame. When the frame also carries a 2D quad, the quad is the
+	// frame's picture: the eye pictures are left out below, and the quad is placed with the live
+	// eyes and Hmd2 given the live head, so the picture is in front of the player and stable there.
+	const bool quadUsable = quad && quad->subImage.swapchain && quad->subImage.swapchain->released >= 0 && quad->subImage.swapchain->color;
+	const bool stalePair = projection && kept && quadUsable;
+	if (stalePair)
+		renderHead = TrackerHeadAt(info->displayTime);
 	// The HUD quad is placed with the real eyes, not with the projection's shared view: for a mono
 	// picture both views carry the left eye's pose/FOV, and using that for QuadInEye put the right
 	// eye's HUD at the left eye's position (the scope/menu HUD offset). A stereo pair whose render
@@ -2971,7 +2999,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
 	// not be drawn in a different frame from the one it reprojects.
 	Pose hudPoses[2] = {eyePoses[0], eyePoses[1]};
 	XrFovf hudFov[2] = {eyeFov[0], eyeFov[1]};
-	if (monoViews || (s.poseKeep && !found))
+	if (monoViews || stalePair || (s.poseKeep && !found))
 	{
 		const Pose head = HeadAt(info->displayTime);
 		const float out = std::atan(s.fov.out), in = std::atan(s.fov.in), up = std::atan(s.fov.top), down = std::atan(s.fov.bottom);
@@ -3013,10 +3041,10 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
 				params.flags |= 8u;
 			if (s.quadPlane)
 				session->planeQuads++;
-			// A mono menu/scope picture rides the HUD quad, as one 16:9 screen in both eyes, not
-			// across each eye: the compositor shows a view's pixels 1:1 whatever the view's FOV, and
-			// the two eyes' FOVs are mirrored, so across the eye the one picture fell ~1/3 of the
-			// eye apart (the doubled Link). Outside the quad is black.
+			// A mono picture rides the HUD quad, as one screen in both eyes, not across each eye: the
+			// compositor shows a view's pixels 1:1 whatever the view's FOV, and the two eyes' FOVs are
+			// mirrored, so across the eye the one picture fell ~1/3 of the eye apart (the doubled
+			// Link). Outside the quad is black.
 			if (monoViews && s.monoQuad && (params.flags & 1u))
 			{
 				params.flags |= 16u;
@@ -3026,6 +3054,32 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
 	}
 	if ((params.flags & 7u) == 0)
 		session->emptyFrames++;
+
+	// A mono/cutscene frame is the 2D picture in front of the player, black around it, never an eye
+	// picture stretched across both eyes: the mono picture rides the HUD quad (compose.comp's flag
+	// 16), a stale re-shown pair's eye pictures are left out, and a frame with no projection keeps
+	// its quad alone.
+	const bool monoOnQuad = (params.flags & 16u) != 0u;
+	if (stalePair)
+		params.flags &= ~3u;
+	const ComposeMode compose = (params.flags & 3u) && !monoOnQuad ? ComposeMode::Stereo : ComposeMode::MonoQuad;
+	if (compose != s.composeMode)
+	{
+		s.composeMode = compose;
+		if (compose == ComposeMode::MonoQuad)
+		{
+			const char* why = "no projection layer or eye picture this frame";
+			if (monoOnQuad)
+				why = "one mono picture in both views, on the HUD quad";
+			else if (stalePair)
+				why = "a re-shown pair the located ring no longer holds";
+			Log("compose mode mono (frame %llu): %s; the 2D picture alone in front of the player, black outside it",
+				(unsigned long long)session->frames + 1, why);
+		}
+		else
+			Log("compose mode stereo (frame %llu): both eyes' pictures with the HUD quad over them",
+				(unsigned long long)session->frames + 1);
+	}
 
 	// 1x: each eye's image is the eye's own pixels and rect, in the byte order Hmd2's buffer takes, so
 	// the copy engine can fill the two halves and the shader only has to blend the HUD's box over
