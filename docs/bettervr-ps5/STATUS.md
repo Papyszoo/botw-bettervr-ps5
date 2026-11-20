@@ -3,10 +3,10 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
-## 2026-11-20: a recenter turns the 2D panel with the world and takes the display time's pose; built, untested on console
+## 2026-11-20: a recenter puts the 2D panel on the seat's forward and takes the display time's pose; built, untested on console
 
 The RC's six holds (boot.log 555, 565, 1292, 1298, 1311, 1318; `[menu] Options up after 1172-1434 ms`) each
-recentered; the report's loading-screen panel then ended up a few degrees off to one side. Two things were
+recentered; the report's loading-screen panel then ended up a few degrees off to one side. Three things were
 wrong, and they are separate.
 
 **Where the panel is.** BetterVR's `Layer2D::FinishRendering` (`renderer.cpp:919`) builds one quad:
@@ -21,11 +21,12 @@ wrong, and they are separate.
   offset (a y floor shift): **the seat does not reach the quad**, by design, because the app authored the
   pose in `D`. `p` is the eye midpoint, so the panel is measured from the head's centre, not from an eye.
 
-So the panel is a world-locked object in `D`: a recenter turns the world under the head (the head's seated
-forward becomes -z, the game camera turns with it, `xrLocateViews` moves both eyes) and the panel stays
-where it was. Right after a seat its heading is (the heading the screen opened at) − (the seat's yaw) while
-the head's forward is 0, so the error is the turn made since the panel's screen first appeared: a few
-degrees for the reported case, tens after a long screen. An in-game HUD does not hold it: that branch of
+So the panel is a world-locked object in `D`: a recenter turns the head and the game camera inside that
+world, and the panel does not move. Write `h` for the head's heading at the moment the screen appeared and
+`h_head` for its heading now: the panel stands `h − h_head` from the head before a recenter and `h` right
+after one, never 0. The recenter moves the head's forward, not the panel, so the panel keeps the heading
+the player had when the screen appeared (a few degrees when they were looking near straight ahead, tens if
+not): that is the "a little to the left". An in-game HUD does not hold it: that branch of
 `FinishRendering` re-lays the panel from the head's position every frame, so only a locked full screen
 keeps the error. The display time's pose matters too, but less: the seat was latched from
 `hmd2::predicted_pose(Now())`, the CPU clock, about 28 ms behind the display (0.5-1.1° at 20-40°/s), and
@@ -55,9 +56,9 @@ One line a recenter, from `xrEndFrame`, when it can say where the panel went:
 `[recenter] right Sense: head yaw 8.6 -> 0.0 deg, the 2D panel is 0.0 deg right of it; the seat moved -0.05 -0.09 m (the head was at 0.04 0.96 0.10)`.
 `head yaw` is the tracker head's heading before the seat (positive: to the right), the second number is the
 seated head's heading of the frame (the seat's forward is -z, so it reads 0), and the panel's number is the
-panel centre's heading from the head's centre in the same frame (0: straight ahead; `-8.6` would be the old
-behaviour, the panel left in the world the seat turned away from). `port/bettervr/xr/runtime.cpp` and
-bettervr patch 0030; no Cemu change, no shader change.
+panel centre's heading from the head's centre in the same frame (0: straight ahead; in the old build it was
+`h`, the heading the screen appeared at, because the panel stayed where the seat did not reach).
+`port/bettervr/xr/runtime.cpp` and bettervr patch 0030; no Cemu change, no shader change.
 
 **Test request 63 (v0.6 recenter and the 2D panel, 13.60 console).** Install the `BotW-VR-v...zip` from this
 head's green "BetterVR build" run and start Breath of the Wild in VR. Use the right Sense's Options or the
@@ -86,15 +87,15 @@ and the `Seated height calibrated` line if it appears.
 
 **Expected if it works:** one `[recenter]` line a hold, in the shape above, at the moment the view moved.
 `head yaw B -> A` with `A` within 0.5° of 0 (that is the seat landing on the display time's pose), and `the
-2D panel is P deg right of it` with `|P|` at most 1° in R1-R3, both signs of turn. Before this build `P`
-was about `-B` (the panel kept the pre-seat heading), so a line with `P` near `-B` means the panel did not
-take the new frame's views.
+2D panel is P deg right of it` with `|P|` at most 1° in R1-R3, at both signs of turn. `P` is what the fix is
+for: it is 0 when the panel is on the head's forward, and in this build's shape it is the panel's heading in
+the frame the seat just made.
 
 **What it decides:** `P` at 0 with the panel straight in R1-R3 closes the report. `P` at 0 but the panel
 still off to one side means the picture on the headset is not that quad (a mono-projection frame drawn
 through the flag-16 path, not the 2D layer) and the next step is the compose's mono path, not the panel.
-`P` near `-B` means `Layer2D` did not see the new generation (a build without patch 0030, or a path that
-places the quad elsewhere), and the patch is the next step. A panel that is right at the recenter and then
+A `P` that is not 0 means the panel is still locked to the world (a build without patch 0030, or a frame
+placed elsewhere than `Layer2D`), and that is the next step. A panel that is right at the recenter and then
 drifts is `hudDistance`/`DoesUIFollowGaze`, not this.
 
 ## 2026-11-20: a mono or cutscene frame is the 2D quad alone, never an eye picture across both eyes; built, untested on console
