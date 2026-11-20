@@ -1,0 +1,268 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ps5cemu <ps5cemu@localhost>
+Date: Fri, 20 Nov 2026 14:10:11 +0100
+Subject: [PATCH] PS5: an explosion plays from the blast actor's move, once per
+ detonation; built, untested on console
+
+---
+ src/game/botw/player/player.cpp | 182 +++++++++++++++++++-------------
+ 1 file changed, 108 insertions(+), 74 deletions(-)
+
+diff --git a/src/game/botw/player/player.cpp b/src/game/botw/player/player.cpp
+index d3ac565..8985974 100644
+--- a/src/game/botw/player/player.cpp
++++ b/src/game/botw/player/player.cpp
+@@ -246,20 +246,32 @@ static void UpdateLifeScan() {
+     ResolveLifeProbe(frame);
+ }
+ 
+-constexpr size_t kExplosiveCap = 64;
++constexpr size_t kExplosionActorCap = 4;
+ constexpr float kExplosionRange = 30.0f; // nothing at 30 m
+ constexpr float kExplosionFull = 3.0f; // full strength at 3 m or less
+-constexpr size_t kExplosionMassRemoval = 4; // 4 or more gone in one frame is an unload, not a blast
+-
+-struct ExplosiveActor {
++constexpr float kExplosionMove = 0.5f; // the blast actor's move: shorter drift is not a detonation
++constexpr auto kExplosionQuiet = std::chrono::seconds(1); // a load's own placement is not a blast
++constexpr auto kExplosionRepeatGap = std::chrono::milliseconds(150); // two blast actors for one blast land together
++constexpr float kExplosionRepeatRange = 2.0f;
++
++// The game keeps a resident "Explode" actor (ResidentActors.byml, only_res false: an instance, not just the
++// resource) and places it at each detonation, where its BombExplode action runs for 15 frames. Its move is therefore
++// the moment and the place of the explosion; a new instance, should the game make one, is the same signal. A nocked,
++// spent or despawned arrow never moves it, so a removal, a recycle or an actor's state is not one: the old state >= 3
++// test was a live idle state, and the arrow stayed in the list and fired again on every actor-creation pass.
++struct ExplosionActor {
+     uint32_t ptr = 0;
+-    uint32_t id = 0;
+-    std::string name;
+     glm::fvec3 pos = {};
+     bool hasPos = false;
++    bool stale = false; // a load happened while this pointer was known: its next spot is a baseline
+ };
+-static std::vector<ExplosiveActor> s_explosives;
+-static uint32_t s_explosivePlayer = UINT32_MAX;
++static std::vector<ExplosionActor> s_explosions;
++static uint32_t s_explosionPlayer = UINT32_MAX;
++static std::chrono::steady_clock::time_point s_explosionQuietUntil;
++static std::chrono::steady_clock::time_point s_explosionLastCheck;
++static std::chrono::steady_clock::time_point s_lastExplosionAt;
++static glm::fvec3 s_lastExplosionPos = {};
++static bool s_hasLastExplosion = false;
+ 
+ static bool PlayerPosition(glm::fvec3& pos) {
+     const uint32_t mtxAddress = Player::GetMtxAddress();
+@@ -277,17 +289,21 @@ static bool ActorPosition(uint32_t actorPtr, glm::fvec3& pos) {
+     return glm::all(glm::isfinite(pos));
+ }
+ 
+-static bool IsExplosiveName(const char* name) {
+-    return strstr(name, "Bomb") != nullptr || strstr(name, "Barrel") != nullptr || strstr(name, "Explo") != nullptr ||
+-           strstr(name, "Chuchu") != nullptr || strstr(name, "Beam") != nullptr;
++static bool IsExplosionActorName(const char* name) {
++    return strcmp(name, "Explode") == 0; // the blast actor, not the things that explode
++}
++
++static bool IsPlacedPosition(const glm::fvec3& pos) {
++    // the resident actor waits at the world origin; no detonation lands exactly there
++    return glm::length2(pos) > 0.0001f;
+ }
+ 
+ static std::string DescribeDevices(uint32_t devices);
+ 
+-// The Explosions category, one event per actor that went within 30 m: full at 3 m, then straight to nothing at 30 m.
+-// A remote bomb the player picks up or cancels also disappears; nothing in the actor says which it was, so the
+-// console check counts those separately.
+-static void PlayExplosionRumble(const std::string& name, float distance) {
++// The Explosions category, one event per detonation within 30 m: full at 3 m, then straight to nothing at 30 m.
++// The delay is the frame the blast actor's move was seen: the move happens in the game's frame, so the rumble is at
++// most one game frame after the detonation.
++static void PlayExplosionRumble(const std::string& name, float distance, int delayMs) {
+     const float strength = std::clamp((kExplosionRange - distance) / (kExplosionRange - kExplosionFull), 0.0f, 1.0f);
+     ModSettings& settings = GetSettings();
+     const float gain = settings.GetHapticsGain(HapticCategory::Explosion);
+@@ -312,90 +328,108 @@ static void PlayExplosionRumble(const std::string& name, float distance) {
+         }
+     }
+     if (settings.hapticsLogPatterns) {
+-        Log::print<INFO>("[vib] explosion {} {:.1f} m -> {}", name, distance, result);
++        Log::print<INFO>("[vib] explosion {} {:.1f} m +{} ms -> {}", name, distance, delayMs, result);
+     }
+ }
+ 
+-static void NoteExplosiveActor(uint32_t actorPtr, const char* actorName) {
+-    if (!IsExplosiveName(actorName)) {
++// runs from the actor list's creation pass, like EntityDebugger::TrackActor: the resident blast actor is already in
++// the list, so this only ever adds its record once; the move queues nothing and is read each game frame below.
++static void NoteExplosionActor(uint32_t actorPtr, const char* actorName) {
++    if (!IsExplosionActorName(actorName)) {
+         return;
+     }
+-    for (const ExplosiveActor& known : s_explosives) {
++    for (const ExplosionActor& known : s_explosions) {
+         if (known.ptr == actorPtr) {
+             return; // the list is walked again for every creation; one record each
+         }
+     }
+-    if (s_explosives.size() >= kExplosiveCap) {
++    if (s_explosions.size() >= kExplosionActorCap) {
+         return;
+     }
+-
+-    ExplosiveActor actor;
++    ExplosionActor actor;
+     actor.ptr = actorPtr;
+-    actor.id = Guest::Get<uint32_t>(actorPtr + offsetof(BaseProc, id)).getLE();
+-    actor.name = actorName;
+-    actor.hasPos = ActorPosition(actorPtr, actor.pos);
+-    s_explosives.push_back(std::move(actor));
++    s_explosions.push_back(actor);
++}
++
++static void ClearExplosionPositions() {
++    for (ExplosionActor& actor : s_explosions) {
++        actor.hasPos = false;
++        actor.stale = true; // the load's own placement is the baseline, not a move, even after the quiet second
++    }
+ }
+ 
+-static void UpdateExplosives() {
++static void UpdateExplosions() {
++    using clock = std::chrono::steady_clock;
++    const clock::time_point now = clock::now();
++    int checkMs = 0;
++    if (s_explosionLastCheck.time_since_epoch().count() != 0) {
++        checkMs = std::clamp<int>((int)std::chrono::duration_cast<std::chrono::milliseconds>(
++            now - s_explosionLastCheck).count(), 0, 1000);
++    }
++    s_explosionLastCheck = now;
++
++    // A load starts with a loading screen or a new Link (or none yet) and ends with the next actor list; the game
++    // places the resident blast actor for the new scene, which is not a detonation. BetterVR's own load signals
++    // drive this, not a count of removals, and the quiet second covers a placement after the screen is gone.
+     if (Screens::IsLoadingVisible() || s_playerAddress == 0) {
+-        // a load frees the old scene's actors and creates its own: neither removal is a blast
+-        s_explosivePlayer = s_playerAddress;
+-        s_explosives.clear();
++        s_explosionPlayer = s_playerAddress;
++        s_explosionQuietUntil = now + kExplosionQuiet;
++        ClearExplosionPositions();
+         return;
+     }
+-    if (s_explosivePlayer != s_playerAddress) {
+-        s_explosivePlayer = s_playerAddress;
+-        s_explosives.clear(); // a load keeps no old scene's records
++    if (s_explosionPlayer != s_playerAddress) {
++        s_explosionPlayer = s_playerAddress;
++        s_explosionQuietUntil = now + kExplosionQuiet;
++        ClearExplosionPositions();
+         return;
+     }
+ 
+     glm::fvec3 player;
+-    const bool havePlayer = PlayerPosition(player);
+-    std::vector<ExplosiveActor> gone;
+-    for (size_t i = 0; i < s_explosives.size();) {
+-        ExplosiveActor& actor = s_explosives[i];
+-        const uint32_t id = Guest::Get<uint32_t>(actor.ptr + offsetof(BaseProc, id)).getLE();
+-        const uint8_t state = Guest::Get<uint8_t>(actor.ptr + offsetof(BaseProc, state)).getLE();
+-        const bool recycled = actor.id != 0 && id != actor.id;
+-        if (!recycled) {
+-            if (actor.id == 0) {
+-                actor.id = id; // a just-created actor may not have its id yet
+-            }
+-            glm::fvec3 pos;
+-            if (ActorPosition(actor.ptr, pos)) {
+-                actor.pos = pos;
+-                actor.hasPos = true;
+-            }
+-            if (state < 3) {
+-                ++i;
+-                continue;
+-            }
+-        }
+-        gone.push_back(std::move(actor));
+-        if (i + 1 != s_explosives.size()) {
+-            actor = std::move(s_explosives.back());
+-        }
+-        s_explosives.pop_back();
+-    }
+-
+-    if (gone.empty()) {
++    if (!PlayerPosition(player)) {
+         return;
+     }
+-    if (gone.size() >= kExplosionMassRemoval) {
+-        if (GetSettings().hapticsLogPatterns) {
+-            Log::print<INFO>("[vib] explosion: {} gone in one frame, ignored (area unload)", gone.size());
++    const bool quiet = now < s_explosionQuietUntil;
++
++    for (size_t i = 0; i < s_explosions.size();) {
++        ExplosionActor& actor = s_explosions[i];
++        const auto name = Guest::Get<sead::FixedSafeString40>(actor.ptr + offsetof(ActorWiiU, name));
++        if (strncmp(name.data, "Explode", sizeof("Explode")) != 0) {
++            // the actor list freed the slot and something else took it: this record is not a blast actor any more
++            actor = std::move(s_explosions.back());
++            s_explosions.pop_back();
++            continue;
+         }
+-        return;
+-    }
+-    for (const ExplosiveActor& actor : gone) {
+-        if (!havePlayer || !actor.hasPos) {
++
++        glm::fvec3 pos;
++        if (!ActorPosition(actor.ptr, pos) || !IsPlacedPosition(pos)) {
++            actor.hasPos = false; // the resident actor's waiting spot is the origin or not a matrix yet
++            ++i;
++            continue;
++        }
++        const bool moved = actor.stale ? false : (!actor.hasPos || glm::distance(actor.pos, pos) > kExplosionMove);
++        actor.stale = false;
++        actor.pos = pos;
++        actor.hasPos = true;
++        if (!moved || quiet) {
++            ++i;
++            continue;
++        }
++
++        const float distance = glm::distance(player, pos);
++        if (distance > kExplosionRange) {
++            ++i;
+             continue;
+         }
+-        const float distance = glm::distance(player, actor.pos);
+-        if (distance <= kExplosionRange) {
+-            PlayExplosionRumble(actor.name, distance);
++        // one blast lands one actor; a second record at the same spot in the same moment is the same detonation
++        const bool repeat = s_hasLastExplosion && now - s_lastExplosionAt < kExplosionRepeatGap &&
++                            glm::distance(s_lastExplosionPos, pos) <= kExplosionRepeatRange;
++        if (!repeat) {
++            s_lastExplosionAt = now;
++            s_lastExplosionPos = pos;
++            s_hasLastExplosion = true;
++            PlayExplosionRumble("Explode", distance, checkMs);
+         }
++        ++i;
+     }
+ }
+ 
+@@ -414,7 +448,7 @@ static void hook_UpdateActorList(PPCInterpreter_t* hCPU) {
+     if (actorNamePtr != 0) {
+         const char* actorName = Guest::CString(actorNamePtr);
+         EntityDebugger::TrackActor(listIndex, actorPtr, actorName);
+-        NoteExplosiveActor(actorPtr, actorName);
++        NoteExplosionActor(actorPtr, actorName);
+ 
+         if (strcmp(actorName, "GameROMPlayer") == 0) {
+             s_playerAddress = actorPtr;
+@@ -655,7 +689,7 @@ void Player::OnGameFrame() {
+         s_gameFramesSinceLadderClimb++;
+     }
+     UpdateLifeScan();
+-    UpdateExplosives();
++    UpdateExplosions();
+     ApplyStoredActionFloatParamOverrides();
+ }
+ 

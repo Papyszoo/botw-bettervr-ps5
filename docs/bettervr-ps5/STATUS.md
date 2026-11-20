@@ -3,6 +3,84 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-20: an explosion plays from the blast actor's move, once per real detonation; built, untested on console
+
+The RC7 report: explosion rumble felt delayed, two bomb arrows seemed to vibrate twice each, and a save load a few
+seconds after the second arrow vibrated the headset on the loading screen.
+
+**The lifecycle the old code was reading.** BotW's actor set has two kinds of resident actor (`ResidentActors.byml`):
+`Explode` is `only_res: false`, i.e. one blast *instance* lives for the whole session and the game moves it to each
+detonation; `BombArrow_A` and the four `RemoteBomb*` names are `only_res: true`, so only their resources are resident
+and the game creates an instance per nocked arrow, per arrow in flight, per stuck arrow, per held bomb. The play4
+start-of-session lines show the first load creating those names and the next actor list replacing them 1.4 s later.
+
+- A nocked bomb arrow is a held `BombArrow_A` actor at the bow; on release the game drops that hold and creates the
+  projectile actor, which flies with a moving matrix.
+- On impact the projectile's AI ends and the actor stays in the list as a stuck arrow; its `BaseProc::state`
+  (the byte at `BaseProc.state`) is the idle/not-calculating value **3 or more**, and it stays there: state 3 is not
+  "being deleted". A real removal is the actor leaving the game's actor list, which the old code never watched.
+- A detonation places the resident `Explode` actor: the game moves that one instance to the blast spot and runs its
+  `BombExplode` action for 15 frames (a new instance, if the game makes one, is the same signal). The bomb or arrow
+  itself is then freed or hidden, 1-N frames later.
+- A save/area load frees a scene's actors as a batch, but the batch can arrive in ones and twos before the four-or-more
+  frame, and it re-creates the resident set; the player actor (and `s_playerAddress`) goes away during it.
+
+**Why the same actor fired repeatedly and twice per frame.** `UpdateExplosives` called `state >= 3` "gone" and removed
+the record. `hook_UpdateActorList` walks the whole actor list on *every actor creation* and re-added the stuck arrow,
+so the next frame saw state 3 again and played the row again: 14.6 m at 396.326 and 396.345, then 399.558, then twice
+in one frame at 400.853 and again at 400.866. Two stuck arrows re-armed together give the two-in-a-row the report
+heard. The mass-removal guard only caught the frame with five removals (407.797), not the 1.6 m one 0.6 s earlier
+(407.209), which is the load rumble. A remote bomb picked up, a cancelled bomb and an un-nocked arrow all looked the
+same.
+
+**The fix.** The Explosions row now follows only the game's blast actor, `Explode`: `NoteExplosionActor` records its
+pointer once, and each game frame `UpdateExplosions` reads its matrix. A move of more than 0.5 m (or the first placed
+spot of a new record) within 30 m of Link is one detonation and plays one rumble; the same spot twice within 150 ms is
+one blast, which covers a second blast actor placed for the same explosion. Removals, ids and actor states are no
+longer read, so a nocked, spent or despawned arrow cannot fire. A loading screen, a missing player actor or a new
+player actor clears the recorded spots and starts a one-second quiet window (BetterVR's own load signals, not a
+removal count), so the load's own placement and the resident actor's re-creation cannot fire. The strength is
+unchanged: full at 3 m, straight to nothing at 30 m. One line per event, under `HapticsLogPatterns`:
+`[vib] explosion Explode 14.6 m +17 ms -> hands 0.57, ...`; the `+N ms` is the frame interval in which the move was
+seen, so it is at most one game frame after the detonation.
+
+New patch bettervr 0033 (`player.cpp` only); no Cemu change.
+
+**Test request 67 (v0.6 explosion timing and dedupe, 13.60 console).** Install the `BotW-VR-v...zip` from this
+head's green "BetterVR build" run and start Breath of the Wild in VR with both Sense controllers and the headset.
+Keep `HapticsLogPatterns` on and the Vibration page's Explosions row at 100 % with Hands and Headset ticked.
+
+1. **One remote bomb at three distances.** In a quiet spot with no enemies, detonate a round remote bomb at about
+   3 m, then about 10 m, then about 25 m. Each must pulse once, as the visual blast starts (not after it), at
+   `hands 1.00`, weaker, weaker still, and log one line each.
+2. **Two bomb arrows, about 2 s apart,** into a wall about 10 m away. Exactly two pulses, one per impact, not at
+   the draw, the release or the nock. This is the report's double; say whether any impact pulsed twice.
+3. **A bomb arrow nocked and cancelled.** Draw a bomb arrow and put it away without firing (switch arrow type or
+   lower the bow). No pulse and no `[vib] explosion` line.
+4. **A remote bomb recalled.** Throw a bomb, then press the rune to recall/cancel it without detonating. No pulse
+   and no line.
+5. **A barrel about 10 m away.** Ignite an explosive barrel. One pulse, one line.
+6. **A save load.** Save, then load the save (or fast travel), a few seconds after a blast. No pulse on the loading
+   screen, during the load, or in the first second after it; no `[vib] explosion` line there.
+7. **Quit** to the library and use Settings > Diagnostics > Copy logs to USB. Send, from
+   `/data/ps5cemu/logs/boot.log`:
+   - `LC_ALL=C grep -a "\[vib\] explosion" boot.log`
+   - `LC_ALL=C grep -a "\[vib\] damage\|\[vib\] life:" boot.log`
+   - the `Event '` and `compose mode mono` lines with timestamps from 10 s before to 10 s after the load
+
+**Expected if it works:** one `[vib] explosion Explode <dist> m +<n> ms -> ...` line per real detonation, `n` at most
+one frame (about 17 ms at 60 fps, more during a hitch); two arrow lines for two arrows; no line for steps 3-5 except
+the barrel; no line at the load; strength full at 3 m and nothing past 30 m.
+
+**What it decides:** a blast with no line means the game did not move the resident actor (or the record was not
+found), and the next signal is the actor's scale/opacity or its `BombExplode` action state; send the lines. A line at
+a throw or a draw means the actor is placed before the detonation and the signal needs the action state. Two lines
+for one blast mean two records or a stepped placement; their positions and gaps say which. A line at the load means
+the quiet window missed it; the timestamps against the `Event '` lines say where.
+
+Test request 67 replaces steps 6 and 7 of test request 65: the cancelled bomb and the load are expected to be silent
+now.
+
 ## 2026-11-20: the rune-download panel is the 2D layer alone for the whole event; built, untested on console
 
 The RC's rune sequence kept a bad 3D picture behind BetterVR's 2D panel for 29 s of a 39 s `Demo003_0` event

@@ -967,15 +967,19 @@ v06's, unchanged; 0055 is the only Cemu patch added. `VERSION` stays 0.5.0.
   load cannot fire. One `[vib] damage path=life <before>-><after> quarter hearts -> ...` line per drop says what the
   row asked for or why it played nothing; one `[vib] life: player+0x540 is the life field ...` line says when the
   field took over.
-- **Explosions are the actor list's own removals.** The hook records names containing `Bomb`, `Barrel`, `Explo`,
-  `Chuchu` or `Beam` as they are created and follows the actor's id and state each game frame. When one goes (its id
-  is recycled or its state reaches 3) within 30 m of Link, the Explosions row
-  plays one falling rumble on both hands, full at 3 m and straight to nothing at 30 m; the headset follows through
-  the mixer's own level. Removals while a loading screen is up or the player actor is gone are discarded, as are four
-  or more in one frame (an area unload, not a blast): that frame logs one `[vib] explosion: N gone in one frame,
-  ignored (area unload)`. One `[vib] explosion <name> <dist> m -> ...` line per actor says what the row asked for or
-  why it played nothing. A remote bomb that is picked up or cancelled also disappears and cannot be told from a
-  detonation; the console check counts those separately.
+- **Explosions are the game's blast actor, once per real detonation.** BotW's `ResidentActors.byml` keeps one
+  `Explode` instance (`only_res: false`) and the game places it at the blast spot, where its `BombExplode` action runs
+  for 15 frames (a new instance, if the game makes one, is the same signal). The actor-list hook records that pointer
+  once and each game frame reads its matrix; a move over 0.5 m (or the first placed spot of a new record) within 30 m
+  of Link plays one falling rumble on both hands, full at 3 m and straight to nothing at 30 m, with the headset
+  following through the mixer's level. A second blast actor at the same spot within 150 ms is the same detonation and
+  plays nothing. A loading screen, a missing player actor or a new player actor clears the recorded spots and starts a
+  one-second quiet window, so a load's placement, the resident actor's re-creation and a save's first frame cannot
+  fire. Removals, ids and `BaseProc::state` are no longer read: state 3 is a live idle state (a stuck arrow sits
+  there), so the old test re-armed the same arrow on every actor-creation pass, and a nocked, spent, recalled or
+  despawned explosive could not be told from a blast. One `[vib] explosion Explode <dist> m +<n> ms -> ...` line per
+  event says what the row asked for or why it played nothing; `n` is the frame interval in which the move was seen, at
+  most one game frame after the detonation.
 - **The game's rumble stays one category for now, with a learning log.** At the `VPADControlMotor`/`StopMotor` hooks
   (`controls.cpp`, at most 40 lines 150 ms apart, `HapticsLogPatterns` turns it off) it prints the caller LR, the
   playing state, the VPAD pattern bytes, and either the sead `PatternRumbleAddon`'s string at `+0x14` and its repeat
