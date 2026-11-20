@@ -1,0 +1,448 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ps5cemu <ps5cemu@localhost>
+Date: Fri, 20 Nov 2026 03:10:08 +0100
+Subject: [PATCH] PS5: the headset's motor takes a speed in Hz, Damage Taken
+ kicks and holds it, and two diagnostics name the life field and explosive
+ actors; built, untested on console
+
+The RC logs sent the headset 12 and then 11, 10, ... 7 from a hit, and nothing was felt, while the page's
+25-for-400 ms test is. The value is the motor's speed in Hz, not an amplitude (10-25; 1-9 run at 10, 0 stops):
+12 Hz is about 23 % of the force at 25 Hz, and the falling envelope only made the hit weaker. Every level the
+runtime sends now goes through one mapping, 25*sqrt(a), off below a = 0.08; the Vibration page's Headset test
+stays at 25 Hz.
+
+Damage Taken calls BetterVR_PS5_HeadsetPulse: a 60 ms kick at 25 Hz, then the hit's mapped level held for
+300 ms, scaled by the Damage Taken row and the Headset Limit. The hands keep their 0.4 s falling pattern.
+
+The report's life-value scan and explosive actor log are added as read-only, capped diagnostics: offsets,
+values, distances and times only, never game code or instruction words. The V208 store decode is not included.
+No Cemu change.
+---
+ src/game/botw/player/player.cpp | 346 +++++++++++++++++++++++++++++++-
+ src/rendering/rumble.h          |   6 +-
+ 2 files changed, 348 insertions(+), 4 deletions(-)
+
+diff --git a/src/game/botw/player/player.cpp b/src/game/botw/player/player.cpp
+index f99e3bb..9cb7b89 100644
+--- a/src/game/botw/player/player.cpp
++++ b/src/game/botw/player/player.cpp
+@@ -5,6 +5,7 @@
+ #include "game/botw/camera/camera.h"
+ #include "game/botw/debug/entity_debugger.h"
+ #include "rendering/haptics.h"
++#include "rendering/rumble.h"
+ #include "rendering/tracking.h"
+ #include "utils/render_utils.h"
+ 
+@@ -57,6 +58,331 @@ bool Player::IsClimbing() {
+     return HAS_FLAG(GetMoveFlags(), PlayerMoveBitFlags::IS_SWIMMING_OR_CLIMBING | PlayerMoveBitFlags::IS_CLIMBING_WALL) || IsClimbingLadder();
+ }
+ 
++// v0.6 diagnostics: Link's life field and explosive actors. Both are read-only and change nothing: the damage and
++// explosion rumbles keep the sources they have. The life
++// scan copies the player actor once a frame and, 300 ms after a damage or death state, looks for the 4-byte field
++// that fell. The explosive log follows the actor list's bombs, arrows and barrels until they go. Every line is
++// capped and prints an offset, a value, a distance or a time only: never game code or an instruction word.
++constexpr uint32_t kLifeScanBytes = sizeof(PlayerActor); // 0x2528
++constexpr int kLifeRingFrames = 40;
++constexpr int kLifeProbeCap = 12;
++constexpr int kLifeCandidateLog = 8;
++constexpr auto kLifeProbeDelay = std::chrono::milliseconds(300);
++constexpr auto kLifeBaseline = std::chrono::milliseconds(600);
++constexpr auto kLifeProbeGap = std::chrono::milliseconds(600);
++constexpr auto kLifeWatchGap = std::chrono::seconds(1);
++constexpr int kLifeWatchLogCap = 60;
++
++struct LifeFrame {
++    std::chrono::steady_clock::time_point at;
++    std::vector<uint8_t> bytes;
++    bool valid = false;
++};
++static std::vector<LifeFrame> s_lifeFrames;
++static int s_lifeFrameNext = 0;
++static uint32_t s_lifePlayer = 0;
++static std::vector<uint32_t> s_lifeCandidates;
++static bool s_lifeCandidatesSet = false;
++static int s_lifeProbes = 0;
++static bool s_lifeProbePending = false;
++static std::chrono::steady_clock::time_point s_lifeProbeAt;
++static bool s_lifeProbeDeath = false;
++static std::chrono::steady_clock::time_point s_lifeLastProbeAt;
++static int s_lifeSkipped = 0;
++static bool s_lifeStopped = false;
++static uint32_t s_lifeWatchOffset = UINT32_MAX;
++static int32_t s_lifeLastLogged = INT32_MIN;
++static std::chrono::steady_clock::time_point s_lifeLastWatchLog;
++static int s_lifeWatchLogs = 0;
++
++static int32_t ReadBigEndianS32(const uint8_t* p) {
++    return (int32_t)(((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | (uint32_t)p[3]);
++}
++
++static void ResetLifeScan(uint32_t player) {
++    s_lifePlayer = player;
++    s_lifeFrameNext = 0;
++    for (LifeFrame& frame : s_lifeFrames) {
++        frame.valid = false;
++    }
++    s_lifeCandidates.clear();
++    s_lifeCandidatesSet = false;
++    s_lifeProbes = 0;
++    s_lifeProbePending = false;
++    s_lifeSkipped = 0;
++    s_lifeStopped = false;
++    s_lifeWatchOffset = UINT32_MAX;
++    s_lifeLastLogged = INT32_MIN;
++    s_lifeWatchLogs = 0;
++}
++
++// a damage reaction or the death state: its hit is what the field must have lost
++static void NoteLifeScanState(uint32_t stateNamePtr) {
++    const bool death = stateNamePtr == 0x101E0878; // the death state
++    const bool damage = stateNamePtr == 0x101E0910 || stateNamePtr == 0x101E0930 || stateNamePtr == 0x101E0940;
++    if (!death && !damage) {
++        return;
++    }
++    if (s_lifeStopped || s_lifeWatchOffset != UINT32_MAX || s_lifeProbes >= kLifeProbeCap || s_lifeProbePending) {
++        return;
++    }
++    const auto now = std::chrono::steady_clock::now();
++    if (s_lifeProbes > 0 && now - s_lifeLastProbeAt < kLifeProbeGap) {
++        return;
++    }
++    s_lifeProbePending = true;
++    s_lifeProbeAt = now + kLifeProbeDelay;
++    s_lifeProbeDeath = death;
++}
++
++static void ResolveLifeProbe(const LifeFrame& afterFrame) {
++    const LifeFrame* beforeFrame = nullptr;
++    for (const LifeFrame& frame : s_lifeFrames) {
++        if (!frame.valid || frame.at > afterFrame.at - kLifeBaseline) {
++            continue;
++        }
++        if (beforeFrame == nullptr || frame.at > beforeFrame->at) {
++            beforeFrame = &frame;
++        }
++    }
++    if (beforeFrame == nullptr) {
++        if (s_lifeSkipped++ < 3) {
++            Log::print<INFO>("[vib] life scan: no frame 0.6 s back yet, probe skipped");
++        }
++        return;
++    }
++
++    if (s_lifeWatchOffset != UINT32_MAX) {
++        return; // the watch lines below own it from here
++    }
++
++    std::vector<uint32_t> found;
++    for (uint32_t off = 0; off + 4 <= kLifeScanBytes; off += 4) {
++        const int32_t before = ReadBigEndianS32(beforeFrame->bytes.data() + off);
++        const int32_t after = ReadBigEndianS32(afterFrame.bytes.data() + off);
++        if (before < 1 || before > 480 || after < 0 || after >= before || before - after > 160) {
++            continue;
++        }
++        if (s_lifeProbeDeath && after != 0) {
++            continue;
++        }
++        found.push_back(off);
++    }
++    if (!s_lifeCandidatesSet) {
++        s_lifeCandidates = std::move(found);
++        s_lifeCandidatesSet = true;
++    }
++    else {
++        std::erase_if(s_lifeCandidates, [&found](uint32_t off) {
++            return std::find(found.begin(), found.end(), off) == found.end();
++        });
++    }
++    ++s_lifeProbes;
++    s_lifeLastProbeAt = afterFrame.at;
++
++    std::string samples;
++    for (size_t i = 0; i < std::min<size_t>(s_lifeCandidates.size(), kLifeCandidateLog); ++i) {
++        const uint32_t off = s_lifeCandidates[i];
++        samples += fmt::format(" +0x{:X} {}->{}", off, ReadBigEndianS32(beforeFrame->bytes.data() + off),
++                               ReadBigEndianS32(afterFrame.bytes.data() + off));
++    }
++    Log::print<INFO>("[vib] life scan hit {}: {} candidates{}", s_lifeProbes, s_lifeCandidates.size(), samples);
++
++    if (s_lifeCandidates.empty()) {
++        s_lifeStopped = true;
++        Log::print<INFO>("[vib] life scan: no field left after {} scans; the store-site fallback is not in this build",
++                         s_lifeProbes);
++        return;
++    }
++    if (s_lifeCandidates.size() == 1 && s_lifeProbes >= 2) {
++        s_lifeWatchOffset = s_lifeCandidates.front();
++        const int32_t life = ReadBigEndianS32(afterFrame.bytes.data() + s_lifeWatchOffset);
++        s_lifeLastLogged = life;
++        s_lifeLastWatchLog = afterFrame.at;
++        Log::print<INFO>("[vib] life field: player+0x{:X} = {} quarter hearts", s_lifeWatchOffset, life);
++    }
++}
++
++static void UpdateLifeScan() {
++    if (s_lifeFrames.empty()) {
++        s_lifeFrames.resize(kLifeRingFrames);
++    }
++    if (s_playerAddress == 0) {
++        if (s_lifePlayer != 0) {
++            ResetLifeScan(0);
++        }
++        return;
++    }
++    if (s_lifePlayer != s_playerAddress) {
++        ResetLifeScan(s_playerAddress);
++    }
++
++    LifeFrame& frame = s_lifeFrames[s_lifeFrameNext];
++    if (frame.bytes.size() != kLifeScanBytes) {
++        frame.bytes.resize(kLifeScanBytes);
++    }
++    std::memcpy(frame.bytes.data(), Guest::HostPointer<uint8_t>(s_playerAddress), kLifeScanBytes);
++    frame.at = std::chrono::steady_clock::now();
++    frame.valid = true;
++    s_lifeFrameNext = (s_lifeFrameNext + 1) % kLifeRingFrames;
++
++    const uint32_t watch = s_lifeWatchOffset;
++    if (watch != UINT32_MAX && s_lifeWatchLogs < kLifeWatchLogCap) {
++        const int32_t life = ReadBigEndianS32(frame.bytes.data() + watch);
++        if (life != s_lifeLastLogged && (life == 0 || frame.at - s_lifeLastWatchLog >= kLifeWatchGap)) {
++            ++s_lifeWatchLogs;
++            s_lifeLastLogged = life;
++            s_lifeLastWatchLog = frame.at;
++            Log::print<INFO>("[vib] life field: player+0x{:X} = {} quarter hearts", watch, life);
++            if (s_lifeWatchLogs == kLifeWatchLogCap) {
++                Log::print<INFO>("[vib] life field: log cap reached, no more value lines");
++            }
++        }
++    }
++
++    if (!s_lifeProbePending || frame.at < s_lifeProbeAt) {
++        return;
++    }
++    s_lifeProbePending = false;
++    ResolveLifeProbe(frame);
++}
++
++constexpr size_t kExplosiveCap = 64;
++constexpr int kExplosiveGoneLogCap = 60;
++constexpr float kExplosiveNearLog = 40.0f;
++
++struct ExplosiveActor {
++    uint32_t ptr = 0;
++    uint32_t id = 0;
++    std::string name;
++    glm::fvec3 pos = {};
++    bool hasPos = false;
++    std::chrono::steady_clock::time_point seenAt;
++};
++static std::vector<ExplosiveActor> s_explosives;
++static std::unordered_set<std::string> s_explosiveNamesLogged;
++static uint32_t s_explosivePlayer = UINT32_MAX;
++static int s_explosiveGoneLogs = 0;
++
++static bool PlayerPosition(glm::fvec3& pos) {
++    const uint32_t mtxAddress = Player::GetMtxAddress();
++    if (mtxAddress == 0) {
++        return false;
++    }
++    const BEMatrix34 mtx = Guest::Get<BEMatrix34>(mtxAddress);
++    pos = { mtx.pos_x.getLE(), mtx.pos_y.getLE(), mtx.pos_z.getLE() };
++    return glm::all(glm::isfinite(pos));
++}
++
++static bool ActorPosition(uint32_t actorPtr, glm::fvec3& pos) {
++    const BEMatrix34 mtx = Guest::Get<BEMatrix34>(actorPtr + offsetof(ActorWiiU, mtx));
++    pos = { mtx.pos_x.getLE(), mtx.pos_y.getLE(), mtx.pos_z.getLE() };
++    return glm::all(glm::isfinite(pos));
++}
++
++static bool IsExplosiveName(const char* name) {
++    return strstr(name, "Bomb") != nullptr || strstr(name, "Barrel") != nullptr || strstr(name, "Explo") != nullptr ||
++           strstr(name, "Chuchu") != nullptr || strstr(name, "Beam") != nullptr;
++}
++
++// one line per name a session: the list creates these actors everywhere, so the seen line only says the name and
++// how far away the first one was. The gone lines carry what the test needs (age and last distance).
++static void LogExplosiveGone(const ExplosiveActor& actor, bool recycled) {
++    if (s_explosiveGoneLogs >= kExplosiveGoneLogCap) {
++        return;
++    }
++    const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - actor.seenAt).count();
++    glm::fvec3 player;
++    if (actor.hasPos && PlayerPosition(player)) {
++        const float distance = glm::distance(player, actor.pos);
++        if (distance > kExplosiveNearLog) {
++            return; // the report's explosions are 3-25 m away; farther actors are not this test's
++        }
++        ++s_explosiveGoneLogs;
++        Log::print<INFO>("[vib] explosive gone name='{}' after {:.2f} s, {:.1f} m from Link{}", actor.name, seconds,
++                         distance, recycled ? " (id changed)" : "");
++        return;
++    }
++    ++s_explosiveGoneLogs;
++    Log::print<INFO>("[vib] explosive gone name='{}' after {:.2f} s, d=?{}", actor.name, seconds,
++                     recycled ? " (id changed)" : "");
++}
++
++static void NoteExplosiveActor(uint32_t actorPtr, const char* actorName) {
++    if (!IsExplosiveName(actorName)) {
++        return;
++    }
++    for (const ExplosiveActor& known : s_explosives) {
++        if (known.ptr == actorPtr) {
++            return; // the list is walked again for every creation; one record each
++        }
++    }
++    if (s_explosives.size() >= kExplosiveCap) {
++        return;
++    }
++
++    ExplosiveActor actor;
++    actor.ptr = actorPtr;
++    actor.id = Guest::Get<uint32_t>(actorPtr + offsetof(BaseProc, id)).getLE();
++    actor.name = actorName;
++    actor.seenAt = std::chrono::steady_clock::now();
++    actor.hasPos = ActorPosition(actorPtr, actor.pos);
++    s_explosives.push_back(actor);
++
++    if (!s_explosiveNamesLogged.insert(actor.name).second) {
++        return;
++    }
++    glm::fvec3 player;
++    if (actor.hasPos && PlayerPosition(player)) {
++        Log::print<INFO>("[vib] explosive seen name='{}' d={:.1f} m", actor.name, glm::distance(player, actor.pos));
++    }
++    else {
++        Log::print<INFO>("[vib] explosive seen name='{}' d=? (no position yet)", actor.name);
++    }
++}
++
++static void UpdateExplosives() {
++    if (s_explosivePlayer != s_playerAddress) {
++        s_explosivePlayer = s_playerAddress;
++        s_explosives.clear(); // a load keeps the seen names, not the old scene's records
++    }
++    if (s_playerAddress == 0) {
++        return;
++    }
++
++    for (size_t i = 0; i < s_explosives.size();) {
++        ExplosiveActor& actor = s_explosives[i];
++        const uint32_t id = Guest::Get<uint32_t>(actor.ptr + offsetof(BaseProc, id)).getLE();
++        const uint8_t state = Guest::Get<uint8_t>(actor.ptr + offsetof(BaseProc, state)).getLE();
++        const bool recycled = actor.id != 0 && id != actor.id;
++        if (recycled) {
++            LogExplosiveGone(actor, true);
++            if (i + 1 != s_explosives.size()) {
++                actor = std::move(s_explosives.back());
++            }
++            s_explosives.pop_back();
++            continue;
++        }
++        if (actor.id == 0) {
++            actor.id = id; // a just-created actor may not have its id yet
++        }
++        glm::fvec3 pos;
++        if (ActorPosition(actor.ptr, pos)) {
++            actor.pos = pos;
++            actor.hasPos = true;
++        }
++        if (state < 3) {
++            ++i;
++            continue;
++        }
++        LogExplosiveGone(actor, false);
++        if (i + 1 != s_explosives.size()) {
++            actor = std::move(s_explosives.back());
++        }
++        s_explosives.pop_back();
++    }
++}
++
+ // runs over the whole actor list every time an actor gets created
+ static void hook_UpdateActorList(PPCInterpreter_t* hCPU) {
+     hCPU->instructionPointer = hCPU->sprNew.LR;
+@@ -72,6 +398,7 @@ static void hook_UpdateActorList(PPCInterpreter_t* hCPU) {
+     if (actorNamePtr != 0) {
+         const char* actorName = Guest::CString(actorNamePtr);
+         EntityDebugger::TrackActor(listIndex, actorPtr, actorName);
++        NoteExplosiveActor(actorPtr, actorName);
+ 
+         if (strcmp(actorName, "GameROMPlayer") == 0) {
+             s_playerAddress = actorPtr;
+@@ -130,6 +457,8 @@ static std::string DescribeDamageDevices(uint32_t devices) {
+ static void PlayDamageRumble(uint32_t stateNamePtr, const char* path) {
+     using clock = std::chrono::steady_clock;
+     constexpr RumbleParameters damageRumble = { true, 0, RumbleType::Falling, 0.5f, false, 0.4, 0.1f, 0.8f };
++    // the headset would only get weaker with the hands' falling envelope: its hit is held (runtime.cpp)
++    constexpr int kHeadsetPulseMs = 300;
+     static clock::time_point s_lastPlayed{};
+     static std::string_view s_lastPath{};
+     const auto now = clock::now();
+@@ -172,15 +501,25 @@ static void PlayDamageRumble(uint32_t stateNamePtr, const char* path) {
+ 
+     const float hands = damageRumble.amplitude * gain;
+     const uint32_t devices = settings.GetHapticsDeviceMask(HapticCategory::Damage);
++    const bool headset = (devices & HapticDeviceHeadset) != 0;
+     const float headsetLevel = std::min(1.0f, hands * settings.GetHapticsHeadsetLimit());
+-    const int headset = (devices & HapticDeviceHeadset) ? (int)std::lround(headsetLevel * 25.0f) : 0;
+     const bool queued = Haptics::Play(damageRumble, HapticCategory::Damage);
+     RumbleParameters otherHand = damageRumble;
+     otherHand.hand = 1;
+     Haptics::Play(otherHand, HapticCategory::Damage);
+     if (queued) {
+         const float handsLevel = (devices & HapticDeviceSense) ? hands : 0.0f;
+-        say(fmt::format("hands {:.2f}, headset {}/25, Damage Taken {}% [{}]", handsLevel, headset,
++        std::string headsetText = "off";
++        if (headset) {
++#if defined(__PROSPERO__)
++            // the runtime owns the amplitude-to-Hz mapping and says which level it took
++            headsetText = fmt::format("pulse {} Hz for {} ms",
++                                      BetterVR_PS5_HeadsetPulse(headsetLevel, kHeadsetPulseMs), kHeadsetPulseMs);
++#else
++            headsetText = "on";
++#endif
++        }
++        say(fmt::format("hands {:.2f}, headset {}, Damage Taken {}% [{}]", handsLevel, headsetText,
+             (unsigned)settings.HapticsStrength(HapticCategory::Damage).load(), DescribeDamageDevices(devices)));
+     }
+     else
+@@ -200,6 +539,7 @@ static void hook_PlayerNormalChangeState(PPCInterpreter_t* hCPU) {
+     }
+ 
+     LogPlayerNormalStateOnce(stateNamePtr);
++    NoteLifeScanState(stateNamePtr);
+     if (ShouldBlockFirstPersonPlayerNormalState(stateNamePtr)) {
+         PlayDamageRumble(stateNamePtr, "PlayerNormal");
+     }
+@@ -277,6 +617,8 @@ void Player::OnGameFrame() {
+     if (s_gameFramesSinceLadderClimb != UINT32_MAX) {
+         s_gameFramesSinceLadderClimb++;
+     }
++    UpdateLifeScan();
++    UpdateExplosives();
+     ApplyStoredActionFloatParamOverrides();
+ }
+ 
+diff --git a/src/rendering/rumble.h b/src/rendering/rumble.h
+index b0f1dba..28cfe8f 100644
+--- a/src/rendering/rumble.h
++++ b/src/rendering/rumble.h
+@@ -4,9 +4,11 @@
+ 
+ #if defined(__PROSPERO__)
+ // port/bettervr/xr/runtime.cpp: the runtime's sinks for the devices BetterVR's OpenXR paths do not reach. The
+-// headset takes 0..1 (the runtime maps it to hmd2's 0..25), the pad 0..1 (Cemu's own rumble is taken over
+-// for as long as a VR session runs, so the two never double).
++// headset takes 0..1 (the runtime maps it to its motor's speed: 25*sqrt(a) Hz), the pad 0..1 (Cemu's own rumble
++// is taken over for as long as a VR session runs, so the two never double). A pulse is a hit held on the
++// headset: a 60 ms kick at 25 Hz, then the mapped level for the given time; it returns that level in Hz.
+ extern "C" void BetterVR_PS5_HeadsetVibration(float amplitude);
++extern "C" int BetterVR_PS5_HeadsetPulse(float strength, int ms);
+ extern "C" void BetterVR_PS5_PadVibration(float amplitude);
+ #endif
+ 

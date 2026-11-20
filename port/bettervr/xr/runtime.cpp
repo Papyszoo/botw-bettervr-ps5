@@ -1801,25 +1801,44 @@ namespace
 }
 
 // ==== the Vibration page's other devices ========================================================
-// BetterVR's mixer (rendering/rumble.h) calls the two sinks below every 60 Hz tick with 0..1. The headset's motor
-// takes 0..25 and one motor has no direction; a level is sent when it changes, and a continuous hold is capped at
-// 2 s like AstroBotVR2 so the forehead never buzzes for long. The Vibration page's test buttons override the level
-// for 400 ms. The pad's level is 0..255, sent to port/cemu/PS5PadController.cpp; BetterVR's page is its strength.
+// BetterVR's mixer (rendering/rumble.h) calls the two sinks below every 60 Hz tick with 0..1. The headset's level
+// is not an amplitude: it is its motor's speed in Hz (10..25, 1..9 run at 10, 0 stops; PSVR2Toolkit's
+// psvr2tk_capi.cpp says so of the same motor's USB command). An eccentric motor's force grows with speed squared,
+// so every level goes through HeadsetHz() and 0..1 becomes a force. A level is sent when it changes, and a
+// continuous hold is capped at 2 s like AstroBotVR2 so the forehead never buzzes for long. A Damage Taken hit
+// (BetterVR_PS5_HeadsetPulse) is a 60 ms kick at 25 Hz, then the mapped level held for the hit. The Vibration
+// page's test buttons override the level for 400 ms; the headset's stays full 25, the one motor speed the player
+// has already felt. The pad's level is 0..255, sent to port/cemu/PS5PadController.cpp; BetterVR's page is its
+// strength.
 namespace
 {
 	constexpr int kHeadsetTestLevel = 25;
 	constexpr int kPadTestLevel = 204;
 	constexpr XrTime kHeadsetHoldCap = 2'000'000'000;
 	constexpr XrTime kDeviceTestHold = 400'000'000;
+	constexpr XrTime kHeadsetKick = 60'000'000;
+
+	// The headset's one motor takes a speed, not an amplitude. Below 0.08 the motor would only tick, so it is off.
+	int HeadsetHz(float amplitude)
+	{
+		const float a = std::clamp(amplitude, 0.0f, 1.0f);
+		if (a < 0.08f)
+			return 0;
+		return std::clamp((int)std::lround(25.0f * std::sqrt(a)), 10, 25);
+	}
 
 	struct DeviceSinkState
 	{
-		int wanted = 0; // the mixer's last level (headset 0..25, pad 0..255)
+		int wanted = 0; // the mixer's last level (headset 0..25 Hz, pad 0..255)
 		int sent = -1;  // what the device last took; -1 none yet
 		bool capped = false;
 		int cappedLevel = -1; // the level the 2 s cap cut, so it stays off until the level changes
 		XrTime sameAt = 0;
 		XrTime testUntil = 0;
+		// a Damage Taken hit: the kick at 25 Hz, then the mapped level held until pulseUntil
+		int pulseHz = 0;
+		XrTime pulseKickUntil = 0;
+		XrTime pulseUntil = 0;
 	};
 	DeviceSinkState s_headset, s_pad;
 
@@ -1837,7 +1856,15 @@ namespace
 	{
 		const XrTime now = Now();
 		const bool testing = now < s_headset.testUntil;
-		const int wanted = testing ? kHeadsetTestLevel : s_headset.wanted;
+		int wanted = testing ? kHeadsetTestLevel : s_headset.wanted;
+		if (!testing)
+		{
+			// the pulse outlasts the mixer's own envelope: the hit's mapped level is held, not its falling tail
+			if (now < s_headset.pulseKickUntil)
+				wanted = std::max(wanted, kHeadsetTestLevel);
+			else if (now < s_headset.pulseUntil)
+				wanted = std::max(wanted, s_headset.pulseHz);
+		}
 		if (!testing && s_headset.capped && wanted == s_headset.cappedLevel)
 			return 0; // the hold was cut at 2 s: stay off until the level changes, not 2 s on and 16 ms off
 		if (wanted == 0 && s_headset.sent <= 0)
@@ -1895,8 +1922,31 @@ extern "C" void BetterVR_PS5_HeadsetVibration(float amplitude)
 	std::lock_guard lock(s.lock);
 	if (s.stopped)
 		return;
-	s_headset.wanted = (int)std::lround(std::clamp(amplitude, 0.0f, 1.0f) * 25.0f);
+	s_headset.wanted = HeadsetHz(amplitude);
 	ApplyHeadset();
+}
+
+// Damage Taken (BetterVR's player.cpp): one hit is a 60 ms kick at 25 Hz, then the level its strength maps to,
+// held for ms. The mixer's own falling envelope keeps the hands; the headset would only get weaker with it.
+extern "C" int BetterVR_PS5_HeadsetPulse(float strength, int ms)
+{
+	std::lock_guard lock(s.lock);
+	if (s.stopped)
+		return 0;
+	const float a = std::clamp(strength, 0.0f, 1.0f);
+	const int hz = HeadsetHz(a);
+	const XrTime now = Now();
+	if (hz == 0)
+	{
+		VibLog("headset pulse off (strength %.2f, below 0.08)", a);
+		return 0;
+	}
+	s_headset.pulseHz = hz;
+	s_headset.pulseKickUntil = now + kHeadsetKick;
+	s_headset.pulseUntil = now + (XrTime)std::max(ms, 1) * 1'000'000;
+	VibLog("headset pulse %d Hz for %d ms (kick %d Hz for 60 ms, strength %.2f)", hz, ms, kHeadsetTestLevel, a);
+	ApplyHeadset();
+	return hz;
 }
 
 extern "C" void BetterVR_PS5_PadVibration(float amplitude)

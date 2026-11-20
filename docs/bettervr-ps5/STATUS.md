@@ -3,6 +3,64 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-20: the headset's motor takes a speed in Hz and Damage Taken kicks it; built, untested on console
+
+The RC logs gave the headset 12, 11, 10, ... 7 from a hit and nothing was felt, while the page's 25-for-400 ms test
+is. The value is not an amplitude: it is the motor's speed in Hz (10-25; 1-9 run at 10, 0 stops), as PSVR2Toolkit
+documents for the same motor. A 12-to-7 Hz decay is about 23 % to 8 % of the force of 25 Hz, so the old linear
+`a x 25` made every hit weak and its falling envelope made it weaker still.
+
+Every level the runtime sends now goes through one mapping, `25 * sqrt(a)`, off below a = 0.08: the mixer's sink,
+the Damage Taken pulse, and anything else that reaches the motor. The Vibration page's Headset test stays at 25 Hz,
+the speed already felt. Damage Taken adds `BetterVR_PS5_HeadsetPulse`: a 60 ms kick at 25 Hz, then the hit's mapped
+level held for 300 ms, scaled by the Damage Taken row and the Headset Limit (100 % strength at the default 60 % cap:
+a = 0.48 -> 17 Hz after the kick). The hands keep their 0.4 s falling pattern; the pulse only changes the headset. The
+damage line now says `headset pulse 17 Hz for 300 ms`, and the runtime adds `[vib] headset pulse 17 Hz for 300 ms
+(kick 25 Hz for 60 ms, strength 0.48)`.
+
+Two diagnostics for the next console run, read-only and capped: the report's life-field scan (a 40-frame copy of the
+player actor, one probe 300 ms after each damage or death state, intersecting the 4-byte s32 offsets that fell, then
+watching the one field it finds) and the explosive-actor log (`Bomb`, `Barrel`, `Explo`, `Chuchu`, `Beam`; one
+`explosive seen` line per name, `explosive gone` with age and last distance within 40 m). They print offsets, values,
+distances and times only, never game code or instruction words. The V208 store decode is not in this build. New patch
+bettervr 0029; no Cemu change.
+
+**Test request 61 (v0.6 vibration: the Hz model, the held damage pulse, the life scan, explosions; 13.60 console).**
+Install the build and start Breath of the Wild in VR with `HapticsLogPatterns` on. Keep Damage Taken at 100 %, Hands
+and Headset ticked, Headset Limit 60 %.
+
+V1. **The motor's speed.**
+1. Open BetterVR's menu (hold left Square on Sense) > Vibration > Test and press **Headset** six times, about 2 s
+   apart. All six are now 25 Hz for 400 ms; say whether each was felt and whether they felt equal.
+2. Set Headset Limit to 100 %, take one weak enemy hit in a quiet spot, then set it to 25 % and take another. Say
+   which was stronger and whether the 25 Hz test is clearly stronger than both. Restore 60 %.
+3. Send `LC_ALL=C grep -a "\[vib\] test headset\|\[vib\] headset pulse\|hmd2: headset" boot.log`.
+
+V2. **Damage.**
+1. Take three hits from a weak enemy, one non-lethal fall of about 15 m without the paraglider, stand in burning
+   grass for about 3 s, and let Link die once.
+2. For each event say whether the hands and the headset were felt and how strong (weak / fine / too strong). Say
+   whether the headset is held for the hit rather than fading at once.
+3. Send `LC_ALL=C grep -a "\[vib\] damage\|\[vib\] headset pulse\|hmd2: headset" boot.log`.
+
+V3. **Life field.** No extra steps: V2's hits feed it.
+1. Send every `[vib] life scan` and `[vib] life field` line. If the scan stops, send its `no field left ... scans`
+   line; that is expected when Link's life is not stored inline, and the store-site fallback is not in this build.
+2. After the hits, eat one meal and say whether a `[vib] life field: player+0x... = N quarter hearts` line rises.
+
+V4. **Explosions (diagnostic).**
+1. With the Remote Bomb rune, detonate a round bomb about 3 m from Link (shield up or behind cover), then about 10 m
+   and about 25 m; repeat with the cube bomb.
+2. If available, shoot one bomb arrow at a wall about 10 m away, and ignite an explosive barrel from about 10 m.
+3. Write down the order you did them in.
+4. Send `LC_ALL=C grep -a "\[vib\] explosive" boot.log`.
+
+**Expected if it works:** V1's six test presses all feel the same; the 100 % hit (about 22 Hz) is clearly stronger
+than the 25 % one (about 11 Hz); V2's headset is felt on every logged hit, held for about 0.3 s; V3 prints candidate
+counts that fall to one field after two hits, or the `no field left` line; V4's gone lines name the actors with an age
+and a distance in the 3-25 m range. The full list of `[vib]` lines is in `UPDATE-1.0.md`, "Vibration: one page and one
+mixer".
+
 ## 2026-11-20: the gaze probe is bound on 13.60 and logs only, and the throw assist does nothing without a real sample; built, untested on console
 
 The RC session's 24 `[Throw] gaze assist bent 15.0 degrees toward the head` lines came from patch bettervr

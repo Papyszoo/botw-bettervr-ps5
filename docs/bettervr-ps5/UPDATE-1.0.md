@@ -923,34 +923,47 @@ v06's, unchanged; 0055 is the only Cemu patch added. `VERSION` stays 0.5.0.
   maximum. A game pause stops the input envelopes (100 ms), so nothing stays on.
 - **The PS VR2 headset's motor** is bound in `third_party/hmd2` as an optional export: `sceHmd2SetVibration(handle,
   level)`, 0-25, one motor. `sceKernelDlsym` first; otherwise the 13.60 table's `+0x2ae00` only behind libSceHmd2's
-  anchor check. Other firmware leaves it unbound (one `hmd2:` line) and VR continues. The runtime sends on change, caps
-  a continuous hold at 2 s, maps 0..1 to 0..25 and logs the first calls and every failure. It is not called with a zero
-  level at VR start. Its first call is whichever comes first: the page's Headset test, or a Damage Taken or Explosions
-  event (both default to the headset); the motor was felt on 13.60, so that path is not an unverified offset. The page's
-  Headset button remains the way to call it on purpose and logs `[vib] test headset: level 25 -> 0x...`.
+  anchor check. Other firmware leaves it unbound (one `hmd2:` line) and VR continues. The value is the motor's speed
+  in Hz, not an amplitude (10-25; 1-9 run at 10, 0 stops), as PSVR2Toolkit documents for the same motor, so the
+  runtime maps every 0..1 level through `Hz = 25*sqrt(a)`, off below 0.08, and the felt force follows the square. The
+  runtime sends on change, caps a continuous hold at 2 s and logs the first calls and every failure. It is not called
+  with a zero level at VR start. Its first call is whichever comes first: the page's Headset test, a Damage Taken
+  pulse or an Explosions event (the first two default to the headset); the motor was felt on 13.60, so that path is
+  not an unverified offset. The page's Headset button remains the way to call it on purpose: it stays at 25 Hz for
+  400 ms and logs `[vib] test headset: level 25 -> 0x...`.
 - **The DualSense is taken over while VR runs.** `port/cemu/PS5PadController.cpp` gains `PS5Pad_SetExternalRumble`
   (Cemu's own `start_rumble`/`stop_rumble` return at once, and both motors are cleared when the mode changes) and
   `PS5Pad_ExternalRumble` (the mixer's level; the launcher's Vibration row stays the outer switch, and Cemu's own
   per-controller rumble percentage is not applied while VR drives the pad). `port/bettervr/xr/runtime.cpp` turns it on
   at `xrBeginSession` and off at `xrDestroySession` and `BetterVR_PS5_Stop`; one `[pad] rumble:` line says which side
   drives the pad. No Cemu patch was needed.
-- **Damage taken** uses both paths a hit can take (`player.cpp`, `camera.cpp`): the `PlayerNormal` damage-state hook
-  and `PlayerLargeDamage`'s own setup at `0x02CAB32C`, the site the pack already patches (a separate hook there
-  forwards to the float-param override). One falling rumble on both hands per hit; the other path within 250 ms is
-  dropped, so a blow cannot rumble twice, while two states from one path are two hits. A Damage request takes its
-  hand even while a swing, a guard or a release rumble is still running (patch bettervr 0019): the mixer's priority
-  check used to drop it, and the release rumbles are Falling too, the same type the same-rumble check matches.
-  `0x02CAB32C` also runs once while a save loads, before the first in-game frame; that call is logged and plays
-  nothing. One `[vib] damage path=... state='...' (...) -> hands 0.80, headset 12/25, Damage Taken 100% [...]` line
-  per event, under `HapticsLogPatterns` like the game's pattern lines, names the path (`PlayerNormal` or
-  `PlayerLargeDamage`), the state's hash and what the Damage Taken row asked for, or `none, ...` and why. Every
-  `PlayerNormal` state is also logged once with its hash at INFO, capped at 64 states, so the next run lists the
-  states the game really uses.
+- **Damage taken** is the `PlayerNormal` damage-state hook (`player.cpp`): 大/中/小ダメージ (0x101E0910/30/40), one
+  falling rumble on both hands per hit. `PlayerLargeDamage`'s setup at `0x02CAB32C` is not a per-hit path: its
+  parameters load once per action, and the logs show one call per boot, while a save loads. It still forwards to the
+  float-param override, and its load-time call is logged and plays nothing. A Damage request takes its hand even
+  while a swing, a guard or a release rumble is still running (patch bettervr 0019): the mixer's priority check used
+  to drop it, and the release rumbles are Falling too, the same type the same-rumble check matches. The headset gets
+  a pulse instead of the hands' falling envelope (`BetterVR_PS5_HeadsetPulse`, patch bettervr 0029): a 60 ms kick at
+  25 Hz, then the hit's mapped level held for 300 ms, scaled by the Damage Taken row and the Headset Limit (100 % at
+  the default 60 % cap is a = 0.48 -> 17 Hz). One `[vib] damage path=... state='...' (...) -> hands 0.80, headset
+  pulse 17 Hz for 300 ms, Damage Taken 100% [...]` line per event, under `HapticsLogPatterns` like the game's pattern
+  lines, names the path, the state's hash and what the row asked for, or `none, ...` and why; the runtime adds
+  `[vib] headset pulse 17 Hz for 300 ms (kick 25 Hz for 60 ms, strength 0.48)`. Every `PlayerNormal` state is also
+  logged once with its hash at INFO, capped at 64 states, so the next run lists the states the game really uses.
+- **Diagnostics for the next run** (read-only, capped, no behaviour change): a life-field scan copies the player
+  actor once a frame and, 300 ms after a damage or death state, intersects the 4-byte big-endian s32 offsets that
+  fell within the report's limits, logs `[vib] life scan hit N: M candidates (+0x... b->a, ...)`, and when one offset
+  survives two probes logs `[vib] life field: player+0x... = N quarter hearts` and watches it. An explosive-actor log
+  records names containing `Bomb`, `Barrel`, `Explo`, `Chuchu` or `Beam` from the actor-list hook, one
+  `[vib] explosive seen name='...' d=... m` per name, and `[vib] explosive gone name='...' after ... s, ... m from
+  Link` (within 40 m) when the id changes or the state reaches 3. Neither prints game code or instruction words. The
+  V208 life-store decode is not part of this build.
 - **The game's rumble stays one category for now, with a learning log.** At the `VPADControlMotor`/`StopMotor` hooks
   (`controls.cpp`, at most 40 lines 150 ms apart, `HapticsLogPatterns` turns it off) it prints the caller LR, the
   playing state, the VPAD pattern bytes, and either the sead `PatternRumbleAddon`'s string at `+0x14` and its repeat
   count at `+0x1C` when the addon is in a callee-saved register or on the stack, or `pattern="?"`.
-- **Not done: explosions.** They are a category with their settings, but no event source yet.
+- **Not done: explosions.** They are a category with their settings, and the explosive-actor log above is diagnostic
+  only; no event source plays them yet.
 
 ### Adaptive triggers
 
