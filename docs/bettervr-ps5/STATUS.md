@@ -3,6 +3,54 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-20: the rune-download panel is the 2D layer alone for the whole event; built, untested on console
+
+The RC's rune sequence kept a bad 3D picture behind BetterVR's 2D panel for 29 s of a 39 s `Demo003_0` event
+(`boot.log` 480.9-520.2, `Item03`). The game keeps drawing while the panel is up, so BetterVR keeps submitting fresh
+stereo pairs and the runtime's mono switch, which waits for a frame with no fresh pair, only fires at 510.9, 9 s
+before the event ends (`logs5-out.txt` section 4). The panel is BetterVR's `Layer2D` quad; the pair behind it is the
+bad picture.
+
+`Demo003_0` is the Sheikah Slate download panel (upstream's table, `patch_Settings_Cutscenes.asm:61`), a 2D "get"
+screen with nothing to see in 3D. `GameState::UseBlackBarsDuringEvents()` now returns true for that event, whatever
+the camera mode and the `UseBlackBarsForCutscenes` setting: upstream's own black-bars presentation then leaves the
+projection layer out of `xrEndFrame` from the event's first frame, and the 2D layer alone is composed with black
+around it. The runtime's no-projection branch is unchanged. Other cutscenes and normal gameplay never enter this
+path (the flag is set for `Demo003_0` only). No map-area event name appears in the play3/play5 logs, and the only
+map-named events in upstream's table are `Demo004_0` "Map Tower Demo" (a third-person 3D camera scene, 28.9 s at
+`boot.prev.log` 109.2-138.2) and `Demo039_0` "Divine Beast: Map Download" (not in these logs), so only `Demo003_0`
+is covered. New patch bettervr 0032 (`game_state.cpp` only); no Cemu or runtime change.
+
+Logs: `2D-only presentation starts for 'Demo003_0' (the 2D layer alone, black around it)` at the event's start, and
+`2D-only presentation ends for 'Demo003_0'` at its end.
+
+**Test request 66 (v0.6 rune-download 2D presentation, 13.60 console).** Install the `BotW-VR-v...zip` from this
+head's green "BetterVR build" run and start Breath of the Wild in VR.
+
+1. **Normal play and another cutscene, unchanged.** Play about 60 s in the open world, then trigger a cutscene that
+   is not the rune download (a memory, or a tower). Does the world still have depth, and does the cutscene still
+   play in 3D as before?
+2. **A new rune (the report's case).** Pick up a rune you do not have (a new game up to the first rune pedestal, or
+   any pedestal your save still allows) and watch the whole sequence without moving for the first 3 s, then turn
+   your head left and right and lean. Is the panel on black from its first frame, with no bad 3D picture behind it
+   at any point, and does it stay put in the room when you turn? Is the "Rune extracted" panel readable? If a
+   second unclaimed rune is available, repeat once; say which entry point (`Item01`, `Item02`, `Item03`) each was.
+3. **Send**, from `/data/ps5cemu/logs/boot.log`:
+   - `LC_ALL=C grep -a "2D-only presentation\|Event 'Demo003_0'" boot.log`
+   - `LC_ALL=C grep -a "compose mode" boot.log`
+   - `LC_ALL=C grep -a "\[draws\]" boot.log`
+
+**Expected if it works:** `2D-only presentation starts for 'Demo003_0'` on the same frame as the event's started
+line, then `compose mode mono (frame N): no projection layer or eye picture this frame` from the first frame of the
+event, with no `compose mode stereo` between it and `2D-only presentation ends for 'Demo003_0'`; the panel sits on
+black for the whole event, and the `multiview` numbers keep moving under it because the game still draws. The next
+`compose mode stereo` line is after the event's end.
+
+**What it decides:** a mono line from the event's first frame and a steady panel on black close the report. A
+`compose mode stereo` line after the 2D-only line means the projection layer still went out and the flag did not
+reach the renderer; send the lines from step 3. A black or missing panel means the change took the 2D layer with
+it, and the next step is gating the projection layer in the renderer instead.
+
 ## 2026-11-20: damage follows Link's life field and explosions play from the actors that go; built, untested on console
 
 The RC's V3 scan found one field at player actor `+0x540` in quarter hearts and V4 saw the tracked bombs, barrels and

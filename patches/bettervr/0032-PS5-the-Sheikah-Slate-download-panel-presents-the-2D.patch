@@ -1,0 +1,62 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ps5cemu <ps5cemu@localhost>
+Date: Fri, 20 Nov 2026 13:23:50 +0100
+Subject: [PATCH] PS5: the Sheikah Slate download panel presents the 2D layer
+ alone for the whole event; built, untested on console
+
+---
+ src/game/botw/game_state.cpp | 20 ++++++++++++++++++++
+ 1 file changed, 20 insertions(+)
+
+diff --git a/src/game/botw/game_state.cpp b/src/game/botw/game_state.cpp
+index 4199ccd..91b492c 100644
+--- a/src/game/botw/game_state.cpp
++++ b/src/game/botw/game_state.cpp
+@@ -9,6 +9,10 @@
+ #include "instance.h"
+ 
+ static std::atomic_bool s_eventActive = false;
++// Demo003_0 is the Sheikah Slate download panel: a 2D picture the game keeps drawing a 3D scene behind, so
++// its frames stay fresh stereo pairs and the runtime's mono switch only fires near the end. Present the 2D
++// layer alone for the whole event, the way a black-bars cutscene is presented.
++static std::atomic_bool s_2DOnlyPresentation = false;
+ // the camera picked with the cutscene button, kept across events the game chains together
+ static std::atomic<EventMode> s_eventModeOverride = EventMode::NO_EVENT;
+ static std::atomic_uint32_t s_cameraToggles = 0;
+@@ -152,6 +156,9 @@ static void hook_GetEventName(PPCInterpreter_t* hCPU) {
+     const bool isEventActive = hCPU->gpr[3] != 0;
+     if (!isEventActive) {
+         if (!s_currentEvent.empty()) {
++            if (s_2DOnlyPresentation.exchange(false)) {
++                Log::print<INFO>("2D-only presentation ends for '{}'", s_currentEvent);
++            }
+             Log::print<INFO>("Event '{}' has now ended", s_currentEvent);
+             s_currentEvent.clear();
+             s_currentEntryPoint.clear();
+@@ -167,6 +174,15 @@ static void hook_GetEventName(PPCInterpreter_t* hCPU) {
+     if (s_currentEvent == eventName && s_currentEntryPoint == entryPointName) {
+         return;
+     }
++    const bool twoDOnly = eventName == "Demo003_0";
++    if (s_2DOnlyPresentation.exchange(twoDOnly) != twoDOnly) {
++        if (twoDOnly) {
++            Log::print<INFO>("2D-only presentation starts for '{}' (the 2D layer alone, black around it)", eventName);
++        }
++        else {
++            Log::print<INFO>("2D-only presentation ends for '{}'", s_currentEvent);
++        }
++    }
+     s_currentEvent = eventName;
+     s_currentEntryPoint = entryPointName;
+     Events::Settings settings = defaultFirstPersonSettings;
+@@ -206,6 +222,10 @@ bool GameState::IsThirdPerson() {
+ }
+ 
+ bool GameState::UseBlackBarsDuringEvents() {
++    if (Events::IsActive() && s_2DOnlyPresentation.load(std::memory_order_relaxed)) {
++        return true;
++    }
++
+     if (IsFlatCameraModeActive() || !Events::IsActive() || IsFirstPerson()) {
+         return false;
+     }
