@@ -9,8 +9,9 @@ The RC's V3 scan found one field at player actor `+0x540` in quarter hearts and 
 arrows go, but no source played the Explosions row. Both now do.
 
 **Damage from life.** The scan is still the guard: 300 ms after a damage or death state, `+0x540` must have fallen
-within its limits, on two probes, before any event uses it. Until then the `PlayerNormal` state hook is the source,
-exactly as in v0.5.0; if the field does not fall, the state hook stays the source for the session. Once proven, every
+within its limits, on two probes, before any event uses it. A damage state that takes no life is not a wrong field,
+so a miss is retried on the next state. Until then the `PlayerNormal` state hook is the source, exactly as in v0.5.0;
+if the field does not fall on six probes, the state hook stays the source for the session. Once proven, every
 drop is one Damage Taken event and the state hooks play none, so falls, burning, cold and heat ticks and a lethal hit
 all count. The hands' amplitude is 0.4/0.6/0.8/1.0 of the state hook's 0.8 for 1/2/3/4+ quarter hearts lost, and
 reaching 0 uses the full one; the headset pulse is about 11/13/15/17 Hz. A rise (food, a heart container) updates the
@@ -38,8 +39,9 @@ Headset ticked, Explosions at 100 % with Hands and Headset ticked, and Headset L
 
 1. **Validation, the first two hits.** Take two hits from a weak enemy (a Bokoblin is fine) at least 2 s apart, with
    no fall, fire or other damage in between. Expected: two `[vib] damage path=PlayerNormal ...` lines, then, 300 ms
-   after the second, `[vib] life: player+0x540 is the life field, damage now follows its drops`. If the line instead
-   says `did not fall`, stop here and send it with the two damage lines.
+   after the second, `[vib] life: player+0x540 is the life field, damage now follows its drops`. A single `did not
+   fall (a->b), probe skipped` is retried on the next hit; if the line says `did not fall on 6 probes`, stop here and
+   send it with the damage lines.
 2. **Falls.** After the validation line, fall about 5 m without the paraglider (one quarter heart), then about 15 m
    (three or more). Each drop should pulse once and log one `[vib] damage path=life ...` line with the before and
    after values. Say whether the one-quarter hit is clearly weaker than the bigger one.

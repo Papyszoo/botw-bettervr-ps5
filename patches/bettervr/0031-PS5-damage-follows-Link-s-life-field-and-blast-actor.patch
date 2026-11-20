@@ -5,14 +5,14 @@ Subject: [PATCH] PS5: damage follows Link's life field and blast actors play
  the Explosions row; built, untested on console
 
 ---
- src/game/botw/player/player.cpp | 335 +++++++++++++++++---------------
- 1 file changed, 183 insertions(+), 152 deletions(-)
+ src/game/botw/player/player.cpp | 346 ++++++++++++++++++--------------
+ 1 file changed, 193 insertions(+), 153 deletions(-)
 
 diff --git a/src/game/botw/player/player.cpp b/src/game/botw/player/player.cpp
-index 9cb7b89..e1d1c68 100644
+index 9cb7b89..c9a8f1f 100644
 --- a/src/game/botw/player/player.cpp
 +++ b/src/game/botw/player/player.cpp
-@@ -58,20 +58,21 @@ bool Player::IsClimbing() {
+@@ -58,20 +58,22 @@ bool Player::IsClimbing() {
      return HAS_FLAG(GetMoveFlags(), PlayerMoveBitFlags::IS_SWIMMING_OR_CLIMBING | PlayerMoveBitFlags::IS_CLIMBING_WALL) || IsClimbingLadder();
  }
  
@@ -35,6 +35,7 @@ index 9cb7b89..e1d1c68 100644
 +constexpr int32_t kLifeMax = 480; // 120 hearts, the scan's upper limit
 +constexpr int kLifeRingFrames = 150; // 2.5 s at 60 fps, 1.25 s at the 120 fps cap: a probe needs 0.9 s of history
 +constexpr int kLifeProbeCap = 2; // the scan's one field must fall on two probes
++constexpr int kLifeProbeMisses = 6; // a damage state with no life lost is not a wrong field: six misses end the try
  constexpr auto kLifeProbeDelay = std::chrono::milliseconds(300);
  constexpr auto kLifeBaseline = std::chrono::milliseconds(600);
  constexpr auto kLifeProbeGap = std::chrono::milliseconds(600);
@@ -44,13 +45,14 @@ index 9cb7b89..e1d1c68 100644
  
  struct LifeFrame {
      std::chrono::steady_clock::time_point at;
-@@ -81,39 +82,34 @@ struct LifeFrame {
+@@ -81,39 +83,37 @@ struct LifeFrame {
  static std::vector<LifeFrame> s_lifeFrames;
  static int s_lifeFrameNext = 0;
  static uint32_t s_lifePlayer = 0;
 -static std::vector<uint32_t> s_lifeCandidates;
 -static bool s_lifeCandidatesSet = false;
  static int s_lifeProbes = 0;
++static int s_lifeMisses = 0;
  static bool s_lifeProbePending = false;
  static std::chrono::steady_clock::time_point s_lifeProbeAt;
  static bool s_lifeProbeDeath = false;
@@ -81,7 +83,9 @@ index 9cb7b89..e1d1c68 100644
 -    s_lifeCandidates.clear();
 -    s_lifeCandidatesSet = false;
      s_lifeProbes = 0;
++    s_lifeMisses = 0;
      s_lifeProbePending = false;
++    s_lifeLastProbeAt = {};
      s_lifeSkipped = 0;
 -    s_lifeStopped = false;
 -    s_lifeWatchOffset = UINT32_MAX;
@@ -92,7 +96,7 @@ index 9cb7b89..e1d1c68 100644
  }
  
  // a damage reaction or the death state: its hit is what the field must have lost
-@@ -123,7 +119,7 @@ static void NoteLifeScanState(uint32_t stateNamePtr) {
+@@ -123,11 +123,11 @@ static void NoteLifeScanState(uint32_t stateNamePtr) {
      if (!death && !damage) {
          return;
      }
@@ -101,7 +105,12 @@ index 9cb7b89..e1d1c68 100644
          return;
      }
      const auto now = std::chrono::steady_clock::now();
-@@ -146,60 +142,32 @@ static void ResolveLifeProbe(const LifeFrame& afterFrame) {
+-    if (s_lifeProbes > 0 && now - s_lifeLastProbeAt < kLifeProbeGap) {
++    if (now - s_lifeLastProbeAt < kLifeProbeGap) {
+         return;
+     }
+     s_lifeProbePending = true;
+@@ -146,60 +146,37 @@ static void ResolveLifeProbe(const LifeFrame& afterFrame) {
          }
      }
      if (beforeFrame == nullptr) {
@@ -117,17 +126,31 @@ index 9cb7b89..e1d1c68 100644
 -    if (s_lifeWatchOffset != UINT32_MAX) {
 -        return; // the watch lines below own it from here
 -    }
--
++    const int32_t before = ReadBigEndianS32(beforeFrame->bytes.data() + kLifeOffset);
++    const int32_t after = ReadBigEndianS32(afterFrame->bytes.data() + kLifeOffset);
++    const bool fell = before >= 1 && before <= kLifeMax && after >= 0 && after < before &&
++                      before - after <= 160 && (!s_lifeProbeDeath || after == 0);
++    s_lifeLastProbeAt = afterFrame.at;
+ 
 -    std::vector<uint32_t> found;
 -    for (uint32_t off = 0; off + 4 <= kLifeScanBytes; off += 4) {
 -        const int32_t before = ReadBigEndianS32(beforeFrame->bytes.data() + off);
 -        const int32_t after = ReadBigEndianS32(afterFrame.bytes.data() + off);
 -        if (before < 1 || before > 480 || after < 0 || after >= before || before - after > 160) {
 -            continue;
--        }
++    if (!fell) {
++        if (++s_lifeMisses >= kLifeProbeMisses) {
++            s_lifeGivenUp = true;
++            if (GetSettings().hapticsLogPatterns) {
++                Log::print<INFO>("[vib] life: player+0x{:X} did not fall on {} probes, the damage state hook stays the source",
++                                 kLifeOffset, s_lifeMisses);
++            }
+         }
 -        if (s_lifeProbeDeath && after != 0) {
 -            continue;
--        }
++        else if (GetSettings().hapticsLogPatterns) {
++            Log::print<INFO>("[vib] life: player+0x{:X} did not fall ({}->{}), probe skipped", kLifeOffset, before, after);
+         }
 -        found.push_back(off);
 -    }
 -    if (!s_lifeCandidatesSet) {
@@ -139,13 +162,9 @@ index 9cb7b89..e1d1c68 100644
 -            return std::find(found.begin(), found.end(), off) == found.end();
 -        });
 -    }
-+    const int32_t before = ReadBigEndianS32(beforeFrame->bytes.data() + kLifeOffset);
-+    const int32_t after = ReadBigEndianS32(afterFrame->bytes.data() + kLifeOffset);
-+    const bool fell = before >= 1 && before <= kLifeMax && after >= 0 && after < before &&
-+                      before - after <= 160 && (!s_lifeProbeDeath || after == 0);
-     ++s_lifeProbes;
-     s_lifeLastProbeAt = afterFrame.at;
- 
+-    ++s_lifeProbes;
+-    s_lifeLastProbeAt = afterFrame.at;
+-
 -    std::string samples;
 -    for (size_t i = 0; i < std::min<size_t>(s_lifeCandidates.size(), kLifeCandidateLog); ++i) {
 -        const uint32_t off = s_lifeCandidates[i];
@@ -158,12 +177,6 @@ index 9cb7b89..e1d1c68 100644
 -        s_lifeStopped = true;
 -        Log::print<INFO>("[vib] life scan: no field left after {} scans; the store-site fallback is not in this build",
 -                         s_lifeProbes);
-+    if (!fell) {
-+        s_lifeGivenUp = true;
-+        if (GetSettings().hapticsLogPatterns) {
-+            Log::print<INFO>("[vib] life: player+0x{:X} did not fall ({}->{}), the damage state hook stays the source",
-+                             kLifeOffset, before, after);
-+        }
          return;
      }
 -    if (s_lifeCandidates.size() == 1 && s_lifeProbes >= 2) {
@@ -172,6 +185,7 @@ index 9cb7b89..e1d1c68 100644
 -        s_lifeLastLogged = life;
 -        s_lifeLastWatchLog = afterFrame.at;
 -        Log::print<INFO>("[vib] life field: player+0x{:X} = {} quarter hearts", s_lifeWatchOffset, life);
++    ++s_lifeProbes;
 +    if (s_lifeProbes >= kLifeProbeCap) {
 +        s_lifeValidated = true;
 +        if (GetSettings().hapticsLogPatterns) {
@@ -180,7 +194,7 @@ index 9cb7b89..e1d1c68 100644
      }
  }
  
-@@ -207,9 +175,16 @@ static void UpdateLifeScan() {
+@@ -207,9 +184,16 @@ static void UpdateLifeScan() {
      if (s_lifeFrames.empty()) {
          s_lifeFrames.resize(kLifeRingFrames);
      }
@@ -200,7 +214,7 @@ index 9cb7b89..e1d1c68 100644
          }
          return;
      }
-@@ -226,19 +201,34 @@ static void UpdateLifeScan() {
+@@ -226,19 +210,34 @@ static void UpdateLifeScan() {
      frame.valid = true;
      s_lifeFrameNext = (s_lifeFrameNext + 1) % kLifeRingFrames;
  
@@ -245,7 +259,7 @@ index 9cb7b89..e1d1c68 100644
  
      if (!s_lifeProbePending || frame.at < s_lifeProbeAt) {
          return;
-@@ -248,8 +238,9 @@ static void UpdateLifeScan() {
+@@ -248,8 +247,9 @@ static void UpdateLifeScan() {
  }
  
  constexpr size_t kExplosiveCap = 64;
@@ -257,7 +271,7 @@ index 9cb7b89..e1d1c68 100644
  
  struct ExplosiveActor {
      uint32_t ptr = 0;
-@@ -257,12 +248,9 @@ struct ExplosiveActor {
+@@ -257,12 +257,9 @@ struct ExplosiveActor {
      std::string name;
      glm::fvec3 pos = {};
      bool hasPos = false;
@@ -270,7 +284,7 @@ index 9cb7b89..e1d1c68 100644
  
  static bool PlayerPosition(glm::fvec3& pos) {
      const uint32_t mtxAddress = Player::GetMtxAddress();
-@@ -285,33 +273,47 @@ static bool IsExplosiveName(const char* name) {
+@@ -285,33 +282,47 @@ static bool IsExplosiveName(const char* name) {
             strstr(name, "Chuchu") != nullptr || strstr(name, "Beam") != nullptr;
  }
  
@@ -309,21 +323,21 @@ index 9cb7b89..e1d1c68 100644
 +            result = fmt::format("hands {:.2f}, Explosions {}% [{}]", strength * gain,
 +                                 (unsigned)settings.HapticsStrength(HapticCategory::Explosion).load(),
 +                                 DescribeDevices(devices));
-+        }
-+        else {
-+            result = "none, no vibration mixer (VR is not running)";
          }
 -        ++s_explosiveGoneLogs;
 -        Log::print<INFO>("[vib] explosive gone name='{}' after {:.2f} s, {:.1f} m from Link{}", actor.name, seconds,
 -                         distance, recycled ? " (id changed)" : "");
 -        return;
++        else {
++            result = "none, no vibration mixer (VR is not running)";
++        }
++    }
++    if (settings.hapticsLogPatterns) {
++        Log::print<INFO>("[vib] explosion {} {:.1f} m -> {}", name, distance, result);
      }
 -    ++s_explosiveGoneLogs;
 -    Log::print<INFO>("[vib] explosive gone name='{}' after {:.2f} s, d=?{}", actor.name, seconds,
 -                     recycled ? " (id changed)" : "");
-+    if (settings.hapticsLogPatterns) {
-+        Log::print<INFO>("[vib] explosion {} {:.1f} m -> {}", name, distance, result);
-+    }
  }
  
  static void NoteExplosiveActor(uint32_t actorPtr, const char* actorName) {
@@ -336,7 +350,7 @@ index 9cb7b89..e1d1c68 100644
      for (const ExplosiveActor& known : s_explosives) {
          if (known.ptr == actorPtr) {
              return; // the list is walked again for every creation; one record each
-@@ -325,61 +327,69 @@ static void NoteExplosiveActor(uint32_t actorPtr, const char* actorName) {
+@@ -325,61 +336,69 @@ static void NoteExplosiveActor(uint32_t actorPtr, const char* actorName) {
      actor.ptr = actorPtr;
      actor.id = Guest::Get<uint32_t>(actorPtr + offsetof(BaseProc, id)).getLE();
      actor.name = actorName;
@@ -440,7 +454,7 @@ index 9cb7b89..e1d1c68 100644
      }
  }
  
-@@ -437,7 +447,7 @@ static void LogPlayerNormalStateOnce(uint32_t stateNamePtr) {
+@@ -437,7 +456,7 @@ static void LogPlayerNormalStateOnce(uint32_t stateNamePtr) {
  }
  
  // "hands+headset+pad" for the damage line: what the Damage Taken row asked for when the hit arrived
@@ -449,7 +463,7 @@ index 9cb7b89..e1d1c68 100644
      std::string text;
      if (devices & HapticDeviceSense)
          text = "hands";
-@@ -450,26 +460,37 @@ static std::string DescribeDamageDevices(uint32_t devices) {
+@@ -450,26 +469,37 @@ static std::string DescribeDamageDevices(uint32_t devices) {
  
  // A damage event is one falling rumble on both hands. Two state machines can see the same hit (PlayerNormal's
  // damage reaction and PlayerLargeDamage's setup at 0x02CAB32C), so the other path within 250 ms is dropped: one
@@ -496,7 +510,7 @@ index 9cb7b89..e1d1c68 100644
      };
  
      // 0x02CAB32C also runs once while a save loads, before the first in-game frame: that is not a hit and the motor
-@@ -520,13 +541,23 @@ static void PlayDamageRumble(uint32_t stateNamePtr, const char* path) {
+@@ -520,13 +550,23 @@ static void PlayDamageRumble(uint32_t stateNamePtr, const char* path) {
  #endif
          }
          say(fmt::format("hands {:.2f}, headset {}, Damage Taken {}% [{}]", handsLevel, headsetText,
@@ -521,7 +535,7 @@ index 9cb7b89..e1d1c68 100644
      PlayDamageRumble(0, "PlayerLargeDamage");
  }
  
-@@ -540,7 +571,7 @@ static void hook_PlayerNormalChangeState(PPCInterpreter_t* hCPU) {
+@@ -540,7 +580,7 @@ static void hook_PlayerNormalChangeState(PPCInterpreter_t* hCPU) {
  
      LogPlayerNormalStateOnce(stateNamePtr);
      NoteLifeScanState(stateNamePtr);

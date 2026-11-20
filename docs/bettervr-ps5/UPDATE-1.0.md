@@ -956,9 +956,10 @@ v06's, unchanged; 0055 is the only Cemu patch added. `VERSION` stays 0.5.0.
 - **The life field drives damage once it is proven.** Link's life is a big-endian s32 at player actor `+0x540` in
   quarter hearts (the console's V3 scan found this field and no other: two hits took it 7 -> 4 -> 1, meals raised it
   again). The scan still runs: 300 ms after a damage or death state, `+0x540` must have fallen within the same limits
-  (1..480 before, 0..before after, no more than 160 lost), on two probes, before any event uses it. Until then the
-  state hook above is the source, exactly as in v0.5.0; if the field does not fall on a probe, or leaves 0..480 for
-  60 frames, the state hook stays the source for the session. Once proven, every drop is one Damage Taken event and
+  (1..480 before, 0..before after, no more than 160 lost), on two probes, before any event uses it. A damage state
+  with no life lost is not a wrong field, so a miss is retried on the next state. Until then the state hook above is
+  the source, exactly as in v0.5.0; if the field does not fall on six probes, or leaves 0..480 for 60 frames, the
+  state hook stays the source for the session. Once proven, every drop is one Damage Taken event and
   the state hooks play none: falls, burning, cold and heat ticks and a lethal hit all count. The hands' amplitude is
   0.4, 0.6, 0.8 or 1.0 of the state hook's 0.8 for 1, 2, 3 or 4+ quarter hearts lost (reaching 0 is the full one), so
   the headset pulse is about 11, 13, 15 or 17 Hz. A rise (food, a heart container) updates the baseline and never
