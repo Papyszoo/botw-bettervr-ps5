@@ -153,7 +153,7 @@ index c434c3d..51ea244 100644
      float GetSnapTurnFadeAmount();
  }
 diff --git a/src/game/botw/input/controls.cpp b/src/game/botw/input/controls.cpp
-index fda8fe6..0a87bbf 100644
+index fda8fe6..0a091ea 100644
 --- a/src/game/botw/input/controls.cpp
 +++ b/src/game/botw/input/controls.cpp
 @@ -185,11 +185,58 @@ static void UpdateSnapTurnStick(float stickX, bool& latched) {
@@ -177,7 +177,7 @@ index fda8fe6..0a87bbf 100644
 +
 +    const int32_t snapAngle = GetSettings().GetSnapTurnAngle();
 +    TurningMode mode = TurningMode::FIRST_PERSON_SMOOTH;
-+    if (GameState::IsThirdPerson()) {
++    if (GetSettings().GetCameraMode() == CameraMode::THIRD_PERSON) {
 +        mode = GetSettings().ShouldSnapTurnInThirdPerson() && snapAngle > 0 ? TurningMode::THIRD_PERSON_SNAP : TurningMode::THIRD_PERSON_SMOOTH;
 +    }
 +    else if (snapAngle > 0) {
