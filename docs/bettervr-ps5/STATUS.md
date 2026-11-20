@@ -63,7 +63,7 @@ Headset ticked, Explosions at 100 % with Hands and Headset ticked, and Headset L
 
 **Expected if it works:** the validation line after the second enemy hit; one `path=life` line and one pulse per later
 drop, including falls and temperature ticks; no line for a meal; a one-quarter hit at `hands 0.32` with `pulse 11 Hz`
-and a four-quarter or lethal one at `hands 0.80` with `pulse 17 Hz`; explosions at `hands 0.80` near 3 m, weaker at
+and a four-quarter or lethal one at `hands 0.80` with `pulse 17 Hz`; explosions at `hands 1.00` near 3 m, weaker at
 10 m, weaker still at 25 m and nothing past 30 m; no line at a load, and possibly one `ignored (area unload)` line
 when a load removes the scene's actors.
 
