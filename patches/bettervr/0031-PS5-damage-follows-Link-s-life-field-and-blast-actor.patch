@@ -9,7 +9,7 @@ Subject: [PATCH] PS5: damage follows Link's life field and blast actors play
  1 file changed, 190 insertions(+), 153 deletions(-)
 
 diff --git a/src/game/botw/player/player.cpp b/src/game/botw/player/player.cpp
-index 9cb7b89..77c1bd3 100644
+index 9cb7b89..d3ac565 100644
 --- a/src/game/botw/player/player.cpp
 +++ b/src/game/botw/player/player.cpp
 @@ -58,20 +58,22 @@ bool Player::IsClimbing() {
@@ -127,7 +127,7 @@ index 9cb7b89..77c1bd3 100644
 -        return; // the watch lines below own it from here
 -    }
 +    const int32_t before = ReadBigEndianS32(beforeFrame->bytes.data() + kLifeOffset);
-+    const int32_t after = ReadBigEndianS32(afterFrame->bytes.data() + kLifeOffset);
++    const int32_t after = ReadBigEndianS32(afterFrame.bytes.data() + kLifeOffset);
 +    const bool fell = before >= 1 && before <= kLifeMax && after >= 0 && after < before &&
 +                      before - after <= 160 && (!s_lifeProbeDeath || after == 0);
 +    s_lifeLastProbeAt = afterFrame.at;
