@@ -1129,8 +1129,8 @@ v06's, unchanged; 0055 is the only Cemu patch added. `VERSION` stays 0.5.0.
   and at most one a second `[turn] <source> applied N deg of yaw with the right stick at rest (...)` when a yaw
   arrives with the stick inside the deadzone for a quarter second or more, at the first-person application and both
   third-person sites.
-- **Not done:** no comfort fade or blink is added for the third-person step. Patch bettervr 0012. Built, untested on
-  console.
+- **Not done:** no comfort fade or blink is added for the third-person step. Patches bettervr 0012 and 0036. Built,
+  untested on console.
 
 ### Magnesis wrist twist
 

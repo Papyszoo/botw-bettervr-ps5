@@ -44,9 +44,10 @@ Keep Comfort > Advanced > Turning at Snap 45 for steps 1-3 unless a step says ot
    and every `SnapTurn:` line.
 4. **First person.** Set Camera Mode First Person and Comfort > Advanced > Turning to Smooth. Repeat step 1's
    pushes: the DualSense's stick and, with the Sense controllers on, a Sense right stick must turn smoothly, and no
-   `[turn] ... at rest` line may appear. Then set Turning to Snap 45 and push once each way; each push must be one
-   step. Send the `[turn] mode: first person smooth, N deg/s` and `[turn] mode: first person snap, 45 degrees` lines
-   and every `SnapTurn:` line.
+   `[turn] ... at rest` line may appear. Then set Turning to Snap 45 and, with the Sense controllers on, push the
+   Sense right stick once each way; each push must be one step, as in v0.5.1. Send the
+   `[turn] mode: first person smooth, N deg/s` and `[turn] mode: first person snap, 45 degrees` lines and every
+   `SnapTurn:` line.
 5. **Both controller types.** Repeat step 1 with the Sense right stick (Sense controllers on) and say whether it
    matches the DualSense. Then repeat with the Sense controllers off and the DualSense only.
 6. **Send** `LC_ALL=C grep -a "\[turn\]\|SnapTurn:" boot.log` and say, for each push, whether the view turned the
