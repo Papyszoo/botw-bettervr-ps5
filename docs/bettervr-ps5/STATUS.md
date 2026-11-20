@@ -3,6 +3,68 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-20: eye tracking is offered to the game, and one switch bends a throw and an arrow; built, untested on console
+
+The 13.60 gaze run behind Test request 60 showed a stream that can be used: about 51.5 new samples a second, unit
+directions in the firmware's headset frame (`-z` forward, `+x` right), and a blink or the headset off reported as an
+invalid sample. `hmd2::gaze_available()` therefore no longer answers false in this build. It binds the three gaze
+exports at the firmware table whose anchor matched and answers true before a session, when only the table can be
+checked; after `InternalGazeStart` it is true only while the stream runs. With it true the runtime offers
+`XR_EXT_eye_gaze_interaction`, builds the eye-gaze profile and its pose space, and rotates each sample by the frame's
+head pose into stage space; BetterVR logs `Supports Eye Tracking: Yes`. A firmware with no verified table offers nothing;
+a session whose start returned nonzero hides the row and leaves the gaze space untracked, as in v0.6.
+
+**Eye Aim Assist, one row.** Controls > Motion Controls has one row, **Eye Aim Assist**, off by default and drawn only
+while the runtime can offer a gaze pose. It replaces v0.6's hidden **Gaze Throw Assist**, and its setting is
+`EyeAimAssist` in `bettervr.json`; `EyeGazeThrowAssist` is no longer read, so a leftover true cannot turn it on. With
+the setting on and a valid sample:
+
+- a released throw is bent toward the point 10 m along the gaze ray from the head, around the hand the throw left from
+  (the left hand when the object was in it), by at most 15 degrees and at the hand's speed;
+- a player's arrow is bent toward the point 100 m along the same ray, from the bow's own origin, by no more than 5
+  degrees, and only while the gaze is already within 5 degrees of the aim. A gaze further off changes nothing, so the
+  assist cannot pull an arrow away from where the bow points.
+
+One log line per assisted throw or shot, at INFO so it needs no debug switch:
+`[Throw] eye aim assist: right hand, 12.4 degrees to gaze, 12.4 applied` and
+`[BowShot] eye aim assist: arrow, 2.1 degrees to gaze, 2.1 applied`. The first number is the raw angle between the
+released direction and the gaze, the second what was applied; no line means no valid sample or an unchanged shot.
+
+New patch bettervr 0036 (`controls.cpp`, `bow.cpp`, `mod_settings.h`, `imgui_menus.cpp`); no Cemu change. The offered
+extension and the hidden state are in `port/bettervr/xr/runtime.cpp` and `third_party/hmd2/`.
+
+**Test request 70 (v0.7 Eye Aim Assist, 13.60 console).** Install the `BotW-VR-v...zip` from this head's green
+"BetterVR build" run and start Breath of the Wild in VR with the headset and both Sense controllers. Keep eye tracking
+on and calibrated in the PS5's Settings > Accessories > PS VR2.
+
+1. **The row and the switch.** Open BetterVR's menu > Controls > Motion Controls. **Eye Aim Assist** must be there
+   and off. Turn it on, quit to the library and start the game again: it must still be on. Leave it on for steps 2,
+   4 and 5. (A firmware with no verified gaze table, or eye tracking off, must show no row.)
+2. **A throw while looking at the target, switch on.** Hold something throwable (a bomb or a weapon) and look 10-20
+   degrees left of where the head faces, at a tree or an enemy; throw it at that target. Do it once looking left and
+   once looking right, so a mirrored sign shows. With the switch on, the object should land nearer the target than
+   the hand's own throw.
+3. **The same throw, switch off.** Turn **Eye Aim Assist** off and repeat step 2: the object must go where the hand
+   throws, and no `[Throw] eye aim assist` line may appear.
+4. **Arrows across the aim.** Turn the switch back on. Draw the bow and shoot a target just left of the bow's aim, then
+   one just right, each within about 5 degrees of the aim. Each arrow should land nearer its target.
+5. **A gaze outside the cone.** Aim at a target, look 15-20 degrees away from the bow's aim, and shoot. The arrow must
+   go where the bow points, and no `[BowShot] eye aim assist` line may appear.
+6. **A blink.** Blink or close your eyes as a throw is released and as an arrow is shot: no assist line, and the throw
+   or arrow goes where the hand or bow pointed.
+
+**Send back:** whether the row appeared and stayed on across a restart; what the throws and arrows did in steps 2-5;
+and from `/data/ps5cemu/logs/boot.log`:
+
+- `LC_ALL=C grep -a "Supports Eye Tracking\|gaze: XR_EXT\|eye aim assist" boot.log`
+- the `[gaze] ... valid 1` and `valid 0` lines around the throws and shots (the first minute has two a second, then
+  one every 10 s), if the grep above does not already show them.
+
+**What it decides.** Step 1 is the row and the saved switch; step 2 the direction's sign and the 15-degree cap (a
+mirrored bend points at the throw's own flaw); step 3 the switch's off path; step 4 the 5-degree cone and that an
+arrow is nudged, not pulled; step 5 that an off-cone gaze leaves the aim alone; step 6 that a blink does not bend
+anything.
+
 ## 2026-11-20: v0.6.0 ships asyncCompose on: the compose wait leaves Cemu's GPU thread, and the `[draws]` line splits the record; built; asyncCompose tested on console at 1x
 
 The v0.6 console logs (1x and 1.5x, gameplay windows of 3,500+ draws) put the stereo pass's record at 12.3-13.5 ms at

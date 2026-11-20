@@ -216,10 +216,10 @@ bool worn();
 // init() (returns invalid), and inactive on firmware without the table.
 Gaze gaze();
 
-// Whether eye tracking can be offered to applications. This build logs the probe only
-// (third_party/hmd2/hmd2.cpp), so this is false: the runtime does not offer
-// XR_EXT_eye_gaze_interaction and BetterVR's menu draws no Gaze Throw Assist row until the
-// console's Test request 60 confirms the direction and rate. Safe before init().
+// Whether eye tracking can be offered to applications. The three exports are bound on the firmware
+// tables whose anchor matched, and after gaze_start() this is true only while the stream is running:
+// the runtime then offers XR_EXT_eye_gaze_interaction and BetterVR draws its Eye Aim Assist row.
+// Safe before init(): only the table is checked then.
 bool gaze_available();
 
 // -- Sense controllers -----------------------------------------------------------------
