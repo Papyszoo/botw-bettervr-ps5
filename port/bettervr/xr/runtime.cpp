@@ -562,6 +562,24 @@ namespace
 		// is where a tracker pose appears once seated, for the head and both hands; the spaces' own offsets stay
 		// as they are, which is what moves the world under them.
 		Pose seat;
+		// A seat's line waits for the panel it must name: the hold's input, the head's yaw before the seat, the
+		// seat's offset, the head's position, and how many frames the line has waited for a 2D panel.
+		struct SeatReport
+		{
+			bool pending = false;
+			const char* source = "";
+			float before = 0; // the tracker head's yaw, degrees, before the seat
+			Vec3 offset{};	  // the seat's x/z, metres
+			Vec3 head{};	  // the tracker head's position the seat was made from
+			uint32_t waited = 0;
+		} seatReport;
+		// The recenter PollOptions asked for: xrWaitFrame applies it at the display time of the frame it hands
+		// out, so the pose is the one the player is looking at when the hold reaches its second, not the CPU's.
+		bool recenterRequested = false;
+		const char* recenterSource = "";
+		// One more per seat, which BetterVR's 2D panel reads (patches/bettervr 0030): a recenter turns the world
+		// under the head, so a panel whose gaze was locked before it must be placed again.
+		std::atomic<uint32_t> recenterGeneration{0};
 		// one Options input's hold: which second it started at, and the hold already spent
 		struct OptionsHold
 		{
@@ -824,7 +842,8 @@ namespace
 
 	// The view's new seat: the head's forward becomes -z and its horizontal position the origin, at its height
 	// (y is kept: BetterVR's stage offset is the height's own, so a seated calibration stays valid). One seat for
-	// the head and both hands, below the app and the game.
+	// the head and both hands, below the app and the game. The line is written by xrEndFrame, when it can also
+	// say where the 2D panel ended up.
 	void Recenter(const Pose& head, const char* source)
 	{
 		const Vec3 forward = Rotate(head.q, {0, 0, -1});
@@ -833,8 +852,26 @@ namespace
 		const Quat turn = AxisAngle(0, 1, 0, yaw);
 		const Vec3 offset = Rotate(turn, head.p);
 		s.seat = {turn, {-offset.x, 0.0f, -offset.z}};
-		RecenterLog("%s: yaw %.1f deg, offset %.2f %.2f m (the head was at %.2f %.2f %.2f)", source, yaw, s.seat.p.x, s.seat.p.z, head.p.x,
-			head.p.y, head.p.z);
+		s.seatReport = {true, source, yaw, s.seat.p, head.p, 0};
+		s.recenterGeneration.fetch_add(1, std::memory_order_release);
+	}
+
+	// The recenter a hold asked for, at the display time of the frame being handed out: the seat's pose is the
+	// one that frame's views are located from, so the world forward and the 2D panel end up on that pose's yaw.
+	void ApplyRecenter(XrTime displayTime)
+	{
+		if (!s.recenterRequested)
+			return;
+		s.recenterRequested = false;
+		if (s.session == XR_NULL_HANDLE || !s.session->hmdUp)
+			return;
+		const hmd2::Pose sample = hmd2::predicted_pose((uint64_t)(displayTime / 1000));
+		if (!sample.tracked)
+		{
+			RecenterLog("%s: the headset has no pose, nothing moved", s.recenterSource);
+			return;
+		}
+		Recenter(FromHmd(sample), s.recenterSource);
 	}
 
 	// One Options input's hold: a press that began with the touchpad clicked is the app's chord (its second opens
@@ -861,13 +898,9 @@ namespace
 		recentered.store(true, std::memory_order_release);
 		if (s.session == XR_NULL_HANDLE || !s.session->hmdUp)
 			return;
-		const hmd2::Pose sample = hmd2::predicted_pose((uint64_t)(now / 1000));
-		if (!sample.tracked)
-		{
-			RecenterLog("%s: the headset has no pose, nothing moved", source);
-			return;
-		}
-		Recenter(FromHmd(sample), source);
+		// the seat is not made here: xrWaitFrame makes it at the display time of the frame it hands out
+		s.recenterSource = source;
+		s.recenterRequested = true;
 	}
 
 	void PollRecenter()
@@ -2800,6 +2833,8 @@ XRAPI_ATTR XrResult XRAPI_CALL xrWaitFrame(XrSession session, const XrFrameWaitI
 	state->shouldRender = XR_TRUE;
 	if (openAlready)
 		session->waitsAhead++;
+	// a hold that reached its second seats the view for this frame, before the app locates the eyes it draws from
+	ApplyRecenter(state->predictedDisplayTime);
 	// the eyes' offsets from the head, from this frame's tracker result, when it has a plausible one
 	const hmd2::Poses poses = hmd2::predicted_poses();
 	if (poses.head.tracked && poses.left.tracked && poses.right.tracked)
@@ -3012,10 +3047,13 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
 	VkImageView hudView = session->dummyView;
 	VkImage hudImage = VK_NULL_HANDLE;
 	const XrSwapchain_T* hudSwapchain = nullptr;
+	bool panelPlaced = false;
+	Vec3 panelCentre{};
 	if (quad && quad->subImage.swapchain && quad->subImage.swapchain->released >= 0 && quad->subImage.swapchain->color)
 	{
 		const XrSwapchain_T* swapchain = quad->subImage.swapchain;
 		const Pose quadPose = Compose(SpacePose(quad->space, info->displayTime), FromXr(quad->pose));
+		panelCentre = quadPose.p;
 		bool any = false;
 		for (int eye = 0; eye < 2; eye++)
 		{
@@ -3036,6 +3074,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
 			hudSwapchain = swapchain;
 			hudView = swapchain->views[swapchain->released];
 			hudImage = swapchain->images[swapchain->released];
+			panelPlaced = true;
 			params.flags |= 4u;
 			if (quad->layerFlags & XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT)
 				params.flags |= 8u;
@@ -3050,6 +3089,34 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
 				params.flags |= 16u;
 				session->monoOnQuad++;
 			}
+		}
+	}
+	// The recenter's one line: the head's yaw before the seat, the yaw it is at now (the seat's forward is -z,
+	// so the frame's own head reads 0), and where the 2D panel ended up from that head. The line waits for a
+	// panel when there is one, for at most a second, so a recenter with no quad still says where the head is.
+	if (s.seatReport.pending)
+	{
+		const float deg = 180.0f / 3.14159265f;
+		const Pose head = HeadAt(info->displayTime);
+		const Vec3 forward = Rotate(head.q, {0, 0, -1});
+		const float after = std::atan2(forward.x, -forward.z) * deg;
+		if (panelPlaced || ++s.seatReport.waited >= 60)
+		{
+			if (panelPlaced)
+			{
+				const Vec3 headMid{(hudPoses[0].p.x + hudPoses[1].p.x) * 0.5f, (hudPoses[0].p.y + hudPoses[1].p.y) * 0.5f,
+					(hudPoses[0].p.z + hudPoses[1].p.z) * 0.5f};
+				const Vec3 toPanel = Sub(panelCentre, headMid);
+				const float panel = std::atan2(toPanel.x, -toPanel.z) * deg;
+				RecenterLog("%s: head yaw %.1f -> %.1f deg, the 2D panel is %.1f deg right of it; the seat moved %.2f %.2f m (the head was at %.2f %.2f %.2f)",
+					s.seatReport.source, s.seatReport.before, after, panel, s.seatReport.offset.x, s.seatReport.offset.z, s.seatReport.head.x,
+					s.seatReport.head.y, s.seatReport.head.z);
+			}
+			else
+				RecenterLog("%s: head yaw %.1f -> %.1f deg, no 2D panel this frame; the seat moved %.2f %.2f m (the head was at %.2f %.2f %.2f)",
+					s.seatReport.source, s.seatReport.before, after, s.seatReport.offset.x, s.seatReport.offset.z, s.seatReport.head.x,
+					s.seatReport.head.y, s.seatReport.head.z);
+			s.seatReport.pending = false;
 		}
 	}
 	if ((params.flags & 7u) == 0)
@@ -3813,6 +3880,13 @@ extern "C" bool BetterVR_PS5_OptionsRecentered(bool pad)
 extern "C" bool BetterVR_PS5_OptionsDown()
 {
 	return s_optionsDown.load(std::memory_order_acquire);
+}
+
+// BetterVR's 2D panel (patches/bettervr 0030): how many times the view has been seated. A recenter turns the
+// world under the head, so a panel whose gaze was locked before it is placed again from this frame's views.
+extern "C" uint32_t BetterVR_PS5_RecenterGeneration()
+{
+	return s.recenterGeneration.load(std::memory_order_acquire);
 }
 
 // BetterVR's menu (patches/bettervr): whether either Sense controller is connected. Its actions read any connected

@@ -749,10 +749,14 @@ v06's, unchanged; 0055 is the only Cemu patch added. `VERSION` stays 0.5.0.
   origin, and the head and both hands follow in VIEW, LOCAL and STAGE, so BetterVR and the game need no change. The
   height stays: BetterVR's stage offset is a pure y shift for the seated eye height, so its seated calibration is not
   disturbed. The seat is one pose in the runtime (`Recenter`, `port/bettervr/xr/runtime.cpp`), latched from the head's
-  own pose when the second is reached and reset to identity at each session. Hmd2 still reprojects each frame from the
+  own pose at the display time of the frame the hold reaches its second in (`xrWaitFrame` applies the request, before
+  the app locates that frame's eyes), and reset to identity at each session. Hmd2 still reprojects each frame from the
   tracker's own head pose (`Located::trackerHead`), not the seat: the seat is the game's frame, the room stays the
-  headset's. It fires once a hold and its release does nothing. One line a recenter:
-  `[recenter] right Sense: yaw -12.3 deg, offset 0.15 -0.42 m (the head was at ...)`.
+  headset's. It fires once a hold and its release does nothing. A full-screen 2D panel turns with the seat: BetterVR's
+  `Layer2D` reads the runtime's seat counter (`BetterVR_PS5_RecenterGeneration`) and lays the panel out again from the
+  new frame's views, so it is straight ahead the instant the view recenters, at any head pitch and roll (patch bettervr
+  0030). One line a recenter:
+  `[recenter] right Sense: head yaw -12.3 -> 0.0 deg, the 2D panel is 0.0 deg right of it; the seat moved 0.15 -0.42 m (the head was at ...)`.
 - **A short press is the game's pause.** Released before 1 s, Options is the Wii U "+" that opens the inventory and
   pause screens: one tap on the frame of the release, always `VPAD_BUTTON_PLUS`. The earlier build sent
   `VPAD_BUTTON_MINUS` while `state.mapOpen` said the map was open, as the right stick click is read in the menus, but

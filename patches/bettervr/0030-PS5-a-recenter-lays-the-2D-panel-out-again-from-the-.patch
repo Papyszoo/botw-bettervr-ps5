@@ -1,0 +1,169 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ps5cemu <ps5cemu@localhost>
+Date: Fri, 20 Nov 2026 04:52:24 +0100
+Subject: [PATCH] PS5: a recenter lays the 2D panel out again from the frame's
+ own views; built, untested on console
+
+The loading/menu panel is one quad in the runtime's stage frame: the eye midpoint of the HUD frame's
+latched views, 1.85 m along the gaze the screen opened with. The gaze is held in world space, so a
+recenter, which turns the world under the head, left the panel on the yaw it had before the seat: the
+panel ended up a few degrees to one side, by as much as the head had turned since the screen appeared.
+
+The runtime now counts its seats (BetterVR_PS5_RecenterGeneration). When the count moves, Layer2D drops
+the old gaze lock and lays the panel out from this frame's located views instead of the HUD frame's, then
+locks the gaze anew, so the panel is on the seat's own yaw by construction. The re-shown-frame path,
+which re-uses the last quads verbatim, re-places them the same way.
+
+GetHorizontalGazeDirection flattened the quaternion's w and y, which is the yaw only while the head is
+level; it now flattens the head's forward vector, so a pitched or rolled head opens the panel straight
+ahead too.
+---
+ src/rendering/renderer.cpp | 83 ++++++++++++++++++++++++++++++++------
+ src/rendering/renderer.h   |  5 +++
+ 2 files changed, 75 insertions(+), 13 deletions(-)
+
+diff --git a/src/rendering/renderer.cpp b/src/rendering/renderer.cpp
+index 84f2675..65cfedb 100644
+--- a/src/rendering/renderer.cpp
++++ b/src/rendering/renderer.cpp
+@@ -304,6 +304,9 @@ void RND_Renderer::EndFrame() {
+             m_lastPresented3D = true;
+         }
+         if (presented2DBefore) {
++            if (m_layer2D != nullptr) {
++                m_layer2D->ReplaceForRecenter(m_lastLayer2DQuads);
++            }
+             for (auto& layer : m_lastLayer2DQuads) {
+                 compositionLayers.emplace_back(reinterpret_cast<XrCompositionLayerBaseHeader*>(&layer));
+             }
+@@ -900,12 +903,30 @@ void RND_Renderer::Layer2D::RecordRender(RND_VkBackend::CommandContext<false>* c
+ }
+ 
+ static glm::fvec3 GetHorizontalGazeDirection(const glm::quat& headOrientation) {
+-    glm::quat yawOnly = glm::quat(headOrientation.w, 0.0f, headOrientation.y, 0.0f);
+-    if (glm::length(yawOnly) < 0.001f) {
++    // the direction the head looks along, flattened: the yaw of the gaze itself, at any pitch and roll. (The
++    // quaternion's w and y alone are only the yaw when the head is level: a pitched and rolled head puts part
++    // of the turn in y, and the panel then opened a few degrees off to one side.)
++    const glm::fvec3 forward = headOrientation * glm::fvec3(0.0f, 0.0f, -1.0f);
++    const glm::fvec3 flat(forward.x, 0.0f, forward.z);
++    if (glm::length(flat) < 0.001f) {
+         return glm::fvec3(0.0f, 0.0f, -1.0f);
+     }
+ 
+-    return glm::normalize(yawOnly) * glm::fvec3(0.0f, 0.0f, -1.0f);
++    return glm::normalize(flat);
++}
++
++#if defined(__PROSPERO__)
++// the runtime's: how many times a held Options has seated the view (port/bettervr/xr/runtime.cpp)
++extern "C" uint32_t BetterVR_PS5_RecenterGeneration();
++#endif
++
++// 0 off the console: the PS5 runtime is the only seat there is, and it is never moved elsewhere
++static uint32_t RecenterGeneration() {
++#if defined(__PROSPERO__)
++    return BetterVR_PS5_RecenterGeneration();
++#else
++    return 0;
++#endif
+ }
+ 
+ static std::mutex s_hudQuadMutex;
+@@ -916,16 +937,11 @@ std::optional<RND_Renderer::HudQuad> RND_Renderer::GetHudQuad() {
+     return s_hudQuad;
+ }
+ 
+-std::vector<XrCompositionLayerQuad> RND_Renderer::Layer2D::FinishRendering(long frameIdx) {
+-    this->m_swapchain->FinishRendering();
+-
+-    auto poses = VRManager::instance().XR->GetRenderer()->GetPoses(frameIdx);
+-    if (!poses.has_value()) {
+-        return {};
+-    }
+-
+-    const XrPosef& leftPose = poses->at(OpenXR::EyeSide::LEFT).pose;
+-    const XrPosef& rightPose = poses->at(OpenXR::EyeSide::RIGHT).pose;
++// The panel's pose for a pair of located views: level in front of the head, the HUD distance away, or locked to
++// the gaze a screen opened with. One place for it, so a recenter can place the panel again below.
++XrPosef RND_Renderer::Layer2D::PanelPose(const std::array<XrView, 2>& poses) {
++    const XrPosef& leftPose = poses.at(OpenXR::EyeSide::LEFT).pose;
++    const XrPosef& rightPose = poses.at(OpenXR::EyeSide::RIGHT).pose;
+     glm::vec3 headPosition = (ToGLM(leftPose.position) + ToGLM(rightPose.position)) * 0.5f;
+     glm::quat headOrientation = glm::slerp(ToGLM(leftPose.orientation), ToGLM(rightPose.orientation), 0.5f);
+ 
+@@ -975,6 +991,47 @@ std::vector<XrCompositionLayerQuad> RND_Renderer::Layer2D::FinishRendering(long
+         layerPose.orientation = { 0.0f, 0.0f, 0.0f, 1.0f };
+     }
+ 
++    return layerPose;
++}
++
++// A frame that re-shows the last one re-uses its quad layers as they were made. After a recenter they would stay
++// in the world the seat just turned away from, so they take this frame's head, and the gaze locks anew.
++void RND_Renderer::Layer2D::ReplaceForRecenter(std::vector<XrCompositionLayerQuad>& layers) {
++    const uint32_t recenters = RecenterGeneration();
++    if (recenters == m_recenterSeen) {
++        return;
++    }
++    m_recenterSeen = recenters;
++    m_isGazeLocked = false;
++    auto poses = VRManager::instance().XR->GetRenderer()->GetPoses();
++    if (!poses.has_value()) {
++        return;
++    }
++    const XrPosef pose = PanelPose(poses.value());
++    for (auto& layer : layers) {
++        layer.pose = pose;
++    }
++}
++
++std::vector<XrCompositionLayerQuad> RND_Renderer::Layer2D::FinishRendering(long frameIdx) {
++    this->m_swapchain->FinishRendering();
++
++    // A recenter turns the world under the head. The views the frame this panel is drawn for was latched with
++    // belong to the world before it, and a gaze locked in it would keep the panel where it was. This frame's
++    // views place the panel again, in front of the head as it is now, and the gaze locks anew.
++    const uint32_t recenters = RecenterGeneration();
++    const bool recentered = recenters != m_recenterSeen;
++    m_recenterSeen = recenters;
++    auto poses = VRManager::instance().XR->GetRenderer()->GetPoses(recentered ? -1 : frameIdx);
++    if (!poses.has_value()) {
++        return {};
++    }
++    if (recentered) {
++        m_isGazeLocked = false;
++    }
++
++    const XrPosef layerPose = PanelPose(poses.value());
++
+     const float aspectRatio = 16.0f / 9.0f;
+ 
+ 
+diff --git a/src/rendering/renderer.h b/src/rendering/renderer.h
+index d2928bf..ba570bb 100644
+--- a/src/rendering/renderer.h
++++ b/src/rendering/renderer.h
+@@ -249,10 +249,14 @@ public:
+         void StartRendering() const;
+         void RecordRender(RND_VkBackend::CommandContext<false>* context, long frameIdx);
+         std::vector<XrCompositionLayerQuad> FinishRendering(long frameIdx);
++        // a re-shown frame's quad layers, placed again after a recenter turned the world under them
++        void ReplaceForRecenter(std::vector<XrCompositionLayerQuad>& layers);
+         long GetCurrentFrameIdx() const { return m_currentFrameIdx; }
+         LayerTarget& GetTarget(long frameIdx) { return m_targets[frameIdx]; }
+ 
+     private:
++        XrPosef PanelPose(const std::array<XrView, 2>& poses);
++
+         std::unique_ptr<Swapchain> m_swapchain;
+         std::unique_ptr<RND_VkBackend::PresentPipeline<false>> m_presentPipeline;
+         std::array<LayerTarget, 2> m_targets;
+@@ -262,6 +266,7 @@ public:
+         bool m_isGazeLocked = false;
+         uint32_t m_gazeUnlockCounter = 0;
+         glm::fvec3 m_lockedGazeForward = glm::fvec3(0.0f, 0.0f, -1.0f);
++        uint32_t m_recenterSeen = 0;
+ 
+         long m_currentFrameIdx = 0;
+     };
