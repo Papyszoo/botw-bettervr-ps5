@@ -3,6 +3,67 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-20: damage reads Link's life field from the first frame, so a fall rumbles; built, untested on console
+
+The RC7 report: falling about 15 m did not vibrate. The log has `PlayerNormal state '着地ダメージ'`
+(`0x101E0D18`) at 196.973, no `[vib] damage` line at all, and no life-probe line in the whole session. `+0x540`
+was still the scan's field gated behind two damage states (test request 65, step 1): the probe only ran on
+`0x101E0910`/`0x101E0930`/`0x101E0940` and the death state, so a session whose first damage is a fall (or fire,
+cold or heat) never adopted it. The state hook does not list the landing-damage state, so the hit reached nothing.
+
+**The fix.** `UpdateLifeScan` now reads the big-endian s32 at player actor `+0x540` itself, once the actor is
+valid and no loading screen is up. A value in `0..480` quarter hearts (120 hearts, so every extra and yellow heart
+fits) on three consecutive frames is adopted, and that value is the baseline: one
+`[vib] life: player+0x540 adopted (12 of 480 quarter hearts), damage now follows its drops` line says so, with no
+enemy hit needed first. A fall, fire, a cold tick or an enemy hit is then one Damage Taken event from the first
+one. The rules are unchanged: every drop fires one `[vib] damage path=life <before>-><after> quarter hearts` line
+and one falling rumble scaled by the quarter hearts lost; rises (food, containers) only move the baseline; a
+loading screen or a new player actor resets the baseline and a lost actor clears it, so a load never fires.
+
+**When the field is not the life field.** While the value never reads plausibly, the `PlayerNormal` state hook and
+`PlayerLargeDamage` stay the source, exactly as in v0.5.0. A second of out-of-range values (60 frames) ends the
+try and logs once, either
+`[vib] life: player+0x540 never read a life value (<v>), the damage state hook stays the source` (never adopted) or
+`[vib] life: player+0x540 left the life range (<v>), the damage state hook is the source` (adopted, then lost). The
+150-frame scan ring, the 0.6 s probe baseline and the two-probe gate are gone; the probe's `did not fall` lines
+with them.
+
+New patch bettervr 0035 (`player.cpp` only); no Cemu change.
+
+**Test request 68 (v0.6 fall damage from the first frame, 13.60 console).** Install the `BotW-VR-v...zip` from
+this head's green "BetterVR build" run and start Breath of the Wild in VR with the headset and both Sense
+controllers. Keep `HapticsLogPatterns` on (its default) and Damage Taken at 100 % with Hands and Headset ticked.
+
+1. **Adoption, before any hit.** Load a save and stand still for about 5 s without taking any damage. Send the one
+   `[vib] life: player+0x540 adopted (<n> of 480 quarter hearts)` line. If instead the line says `never read a life
+   value (<v>)`, stop here and send it with the life and damage lines.
+2. **Falls, the report's case.** Fall about 5 m without the paraglider (one quarter heart), then about 15 m (three or
+   more). Each must pulse once, as Link lands, and log one `[vib] damage path=life ...` line. Say whether the
+   one-quarter hit is clearly weaker than the bigger one.
+3. **Fire and temperature.** Stand in burning grass for about 3 s, then wait for the cold ticks in Hebra (or the
+   heat ticks in the Gerudo desert). Each tick that takes life must pulse once and log one `path=life` line.
+4. **An enemy hit.** Take one hit from a weak enemy (a Bokoblin is fine). One pulse, one `path=life` line, and no
+   second pulse from the state hook.
+5. **Food.** Eat a meal that fills hearts. No pulse and no `[vib] damage` line while the life bar rises.
+6. **A save load.** Save, then load the save (or fast travel). No pulse at the loading screen, during the load, or
+   in the first second after it; no `[vib] damage` line there.
+7. **Quit** to the library and use Settings > Diagnostics > Copy logs to USB. Send, from
+   `/data/ps5cemu/logs/boot.log`:
+   - `LC_ALL=C grep -a "\[vib\] life:" boot.log`
+   - `LC_ALL=C grep -a "\[vib\] damage" boot.log`
+   - the `PlayerNormal state` lines with timestamps from 10 s before to 10 s after each fall
+
+**Expected if it works:** the adoption line at the start of the session; one `path=life` line and one pulse per
+life drop, including the falls and the temperature ticks, at `hands 0.32` for one quarter heart and `hands 0.80`
+for four or more (or reaching 0); no line for the meal; no line at the load.
+
+**What it decides:** a fall line and a pulse close the report and make `+0x540` the damage source from the first
+frame. A fall with no line means the field was not adopted (the adoption line says why) or its value did not drop
+(the before/after values are in the `path=life` line when it fires); if it was adopted and stayed put, the next
+check is the landing-damage state itself. An adoption line with a value that is not Link's hearts means the offset
+moved in this build; send the value, and the fallback is the state hook. A pulse at the load means the baseline
+reset missed it.
+
 ## 2026-11-20: an explosion plays from the blast actor's move, once per real detonation; built, untested on console
 
 The RC7 report: explosion rumble felt delayed, two bomb arrows seemed to vibrate twice each, and a save load a few

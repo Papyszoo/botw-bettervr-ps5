@@ -1,0 +1,296 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ps5cemu <ps5cemu@localhost>
+Date: Fri, 20 Nov 2026 14:54:16 +0100
+Subject: [PATCH] PS5: damage reads Link's life field from the first frame, so
+ a fall rumbles; built, untested on console
+
+---
+ src/game/botw/player/player.cpp | 216 ++++++++++----------------------
+ 1 file changed, 65 insertions(+), 151 deletions(-)
+
+diff --git a/src/game/botw/player/player.cpp b/src/game/botw/player/player.cpp
+index 14aa5e7..b50252b 100644
+--- a/src/game/botw/player/player.cpp
++++ b/src/game/botw/player/player.cpp
+@@ -59,191 +59,106 @@ bool Player::IsClimbing() {
+ }
+ 
+ // v0.6: Link's life in quarter hearts at player actor +0x540. The console's V3 scan found this field and no other
+-// (two hits took it 7 -> 4 -> 1, meals raised it again). The scan below still proves it before any event uses it, so a
+-// build whose layout moved cannot pulse from a wrong offset: 300 ms after a damage or death state, +0x540 has to
+-// fall within the scan's limits, on two probes. Until then the PlayerNormal damage hook is the source, as in v0.5.0;
+-// once proven, every drop is one Damage Taken event, including falls and temperature ticks, and the state hook no
+-// longer plays one. A loading screen, or a new player actor, resets the baseline so a load never fires.
+-constexpr uint32_t kLifeScanBytes = sizeof(PlayerActor); // 0x2528
++// (two hits took it 7 -> 4 -> 1, meals raised it again), and the RC6 run read the same field from the actor. It is
++// adopted as soon as the player actor holds a plausible value on a few frames: a fall, fire or a cold tick takes
++// life with no enemy's state in front of it, so two damage states must not be the gate. The value's range and its
++// steadiness are the checks; while they fail, the PlayerNormal damage hook is the source, as in v0.5.0. Once
++// adopted, every drop is one Damage Taken event and the state hooks play none. A loading screen or a new player
++// actor resets the baseline so a load never fires; a second of out-of-range values ends the adoption and the hook
++// takes over again.
+ constexpr uint32_t kLifeOffset = 0x540; // quarter hearts, the V3 scan's one field
+-constexpr int32_t kLifeMax = 480; // 120 hearts, the scan's upper limit
+-constexpr int kLifeRingFrames = 150; // 2.5 s at 60 fps, 1.25 s at the 120 fps cap: a probe needs 0.9 s of history
+-constexpr int kLifeProbeCap = 2; // the scan's one field must fall on two probes
+-constexpr int kLifeProbeMisses = 6; // a damage state with no life lost is not a wrong field: six misses end the try
+-constexpr auto kLifeProbeDelay = std::chrono::milliseconds(300);
+-constexpr auto kLifeBaseline = std::chrono::milliseconds(600);
+-constexpr auto kLifeProbeGap = std::chrono::milliseconds(600);
++constexpr int32_t kLifeMax = 480; // 120 hearts, the scan's upper limit: every extra and yellow heart fits
++constexpr int kLifeSettleFrames = 3; // a plausible value on this many frames is the baseline
++constexpr int kLifeBadFrameCap = 60; // 1 s at 60 fps: a field that keeps this up is not the life field
+ constexpr float kDamageAmplitude = 0.8f; // the state hook's hit, and the life hit at 4+ quarter hearts
+ 
+-struct LifeFrame {
+-    std::chrono::steady_clock::time_point at;
+-    std::vector<uint8_t> bytes;
+-    bool valid = false;
+-};
+-static std::vector<LifeFrame> s_lifeFrames;
+-static int s_lifeFrameNext = 0;
+ static uint32_t s_lifePlayer = 0;
+-static int s_lifeProbes = 0;
+-static int s_lifeMisses = 0;
+-static bool s_lifeProbePending = false;
+-static std::chrono::steady_clock::time_point s_lifeProbeAt;
+-static bool s_lifeProbeDeath = false;
+-static std::chrono::steady_clock::time_point s_lifeLastProbeAt;
+-static int s_lifeSkipped = 0;
+-static bool s_lifeValidated = false;
++static bool s_lifeAdopted = false;
+ static bool s_lifeGivenUp = false;
+ static int32_t s_lifeBaseline = -1; // -1: no baseline yet (first frame, a load, a new actor)
++static int32_t s_lifeCandidate = -1;
++static int s_lifeCandidateFrames = 0;
+ static int s_lifeBadFrames = 0;
+ 
+-static int32_t ReadBigEndianS32(const uint8_t* p) {
+-    return (int32_t)(((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | (uint32_t)p[3]);
+-}
+-
+ static void PlayLifeDamageRumble(int32_t life, int32_t lost);
+ 
+ static void ResetLifeScan(uint32_t player) {
+     s_lifePlayer = player;
+-    s_lifeFrameNext = 0;
+-    for (LifeFrame& frame : s_lifeFrames) {
+-        frame.valid = false;
+-    }
+-    s_lifeProbes = 0;
+-    s_lifeMisses = 0;
+-    s_lifeProbePending = false;
+-    s_lifeLastProbeAt = {};
+-    s_lifeSkipped = 0;
+     s_lifeBaseline = -1;
++    s_lifeCandidate = -1;
++    s_lifeCandidateFrames = 0;
+     s_lifeBadFrames = 0;
+ }
+ 
+-// a damage reaction or the death state: its hit is what the field must have lost
+-static void NoteLifeScanState(uint32_t stateNamePtr) {
+-    const bool death = stateNamePtr == 0x101E0878; // the death state
+-    const bool damage = stateNamePtr == 0x101E0910 || stateNamePtr == 0x101E0930 || stateNamePtr == 0x101E0940;
+-    if (!death && !damage) {
+-        return;
+-    }
+-    if (s_lifeValidated || s_lifeGivenUp || s_lifeProbePending || s_lifeProbes >= kLifeProbeCap) {
+-        return;
+-    }
+-    const auto now = std::chrono::steady_clock::now();
+-    if (now - s_lifeLastProbeAt < kLifeProbeGap) {
+-        return;
+-    }
+-    s_lifeProbePending = true;
+-    s_lifeProbeAt = now + kLifeProbeDelay;
+-    s_lifeProbeDeath = death;
+-}
+-
+-static void ResolveLifeProbe(const LifeFrame& afterFrame) {
+-    const LifeFrame* beforeFrame = nullptr;
+-    for (const LifeFrame& frame : s_lifeFrames) {
+-        if (!frame.valid || frame.at > afterFrame.at - kLifeBaseline) {
+-            continue;
+-        }
+-        if (beforeFrame == nullptr || frame.at > beforeFrame->at) {
+-            beforeFrame = &frame;
+-        }
+-    }
+-    if (beforeFrame == nullptr) {
+-        if (s_lifeSkipped++ < 3 && GetSettings().hapticsLogPatterns) {
+-            Log::print<INFO>("[vib] life: no frame 0.6 s back yet, probe skipped");
+-        }
+-        return; // the next damage state tries again, with a frame before its own hit
+-    }
+-
+-    const int32_t before = ReadBigEndianS32(beforeFrame->bytes.data() + kLifeOffset);
+-    const int32_t after = ReadBigEndianS32(afterFrame.bytes.data() + kLifeOffset);
+-    const bool fell = before >= 1 && before <= kLifeMax && after >= 0 && after < before &&
+-                      before - after <= 160 && (!s_lifeProbeDeath || after == 0);
+-    s_lifeLastProbeAt = afterFrame.at;
+-
+-    if (!fell) {
+-        if (++s_lifeMisses >= kLifeProbeMisses) {
+-            s_lifeGivenUp = true;
+-            if (GetSettings().hapticsLogPatterns) {
+-                Log::print<INFO>("[vib] life: player+0x{:X} did not fall on {} probes, the damage state hook stays the source",
+-                                 kLifeOffset, s_lifeMisses);
+-            }
+-        }
+-        else if (GetSettings().hapticsLogPatterns) {
+-            Log::print<INFO>("[vib] life: player+0x{:X} did not fall ({}->{}), probe skipped", kLifeOffset, before, after);
+-        }
+-        return;
+-    }
+-    ++s_lifeProbes;
+-    if (s_lifeProbes >= kLifeProbeCap) {
+-        s_lifeValidated = true;
+-        if (GetSettings().hapticsLogPatterns) {
+-            Log::print<INFO>("[vib] life: player+0x{:X} is the life field, damage now follows its drops", kLifeOffset);
+-        }
+-    }
+-}
+-
+ static void UpdateLifeScan() {
+-    if (s_lifeFrames.empty()) {
+-        s_lifeFrames.resize(kLifeRingFrames);
+-    }
+-    const bool loading = Screens::IsLoadingVisible();
+-    if (s_playerAddress == 0 || loading) {
++    if (s_playerAddress == 0 || Screens::IsLoadingVisible()) {
+         // a load's values must not become the baseline of the first hit after it
+         if (s_lifePlayer != s_playerAddress) {
+             ResetLifeScan(s_playerAddress);
+         }
+         s_lifeBaseline = -1;
+-        s_lifeProbePending = false;
+-        for (LifeFrame& frame : s_lifeFrames) {
+-            frame.valid = false;
+-        }
++        s_lifeCandidate = -1;
++        s_lifeCandidateFrames = 0;
+         return;
+     }
+     if (s_lifePlayer != s_playerAddress) {
+         ResetLifeScan(s_playerAddress);
+     }
+ 
+-    LifeFrame& frame = s_lifeFrames[s_lifeFrameNext];
+-    if (frame.bytes.size() != kLifeScanBytes) {
+-        frame.bytes.resize(kLifeScanBytes);
+-    }
+-    std::memcpy(frame.bytes.data(), Guest::HostPointer<uint8_t>(s_playerAddress), kLifeScanBytes);
+-    frame.at = std::chrono::steady_clock::now();
+-    frame.valid = true;
+-    s_lifeFrameNext = (s_lifeFrameNext + 1) % kLifeRingFrames;
+-
+-    const int32_t life = ReadBigEndianS32(frame.bytes.data() + kLifeOffset);
++    const int32_t life = Guest::Get<int32_t>(s_playerAddress + kLifeOffset).getLE();
+     if (life < 0 || life > kLifeMax) {
+         s_lifeBaseline = -1;
+-        if (++s_lifeBadFrames >= 60 && s_lifeValidated) {
+-            s_lifeValidated = false;
+-            s_lifeGivenUp = true;
+-            if (GetSettings().hapticsLogPatterns) {
+-                Log::print<INFO>("[vib] life: player+0x{:X} left the life range ({}), the damage state hook is the source",
+-                                 kLifeOffset, life);
+-            }
++        s_lifeCandidate = -1;
++        s_lifeCandidateFrames = 0;
++        if (s_lifeGivenUp || ++s_lifeBadFrames < kLifeBadFrameCap) {
++            return;
++        }
++        s_lifeGivenUp = true;
++        if (s_lifeAdopted) {
++            s_lifeAdopted = false;
++            Log::print<INFO>("[vib] life: player+0x{:X} left the life range ({}), the damage state hook is the source",
++                             kLifeOffset, life);
+         }
++        else {
++            Log::print<INFO>("[vib] life: player+0x{:X} never read a life value ({}), the damage state hook stays the source",
++                             kLifeOffset, life);
++        }
++        return;
+     }
+-    else {
+-        s_lifeBadFrames = 0;
+-        if (s_lifeBaseline < 0) {
+-            s_lifeBaseline = life; // first frame, after a load, or a new actor
++    s_lifeBadFrames = 0;
++
++    if (!s_lifeAdopted) {
++        if (s_lifeGivenUp) {
++            return;
+         }
+-        else if (life < s_lifeBaseline) {
+-            const int32_t lost = s_lifeBaseline - life;
+-            s_lifeBaseline = life;
+-            if (s_lifeValidated) {
+-                PlayLifeDamageRumble(life, lost);
+-            }
++        if (life == s_lifeCandidate) {
++            ++s_lifeCandidateFrames;
++        }
++        else {
++            s_lifeCandidate = life;
++            s_lifeCandidateFrames = 1;
+         }
+-        else if (life > s_lifeBaseline) {
+-            s_lifeBaseline = life; // food and containers raise it; never a hit
++        if (s_lifeCandidateFrames < kLifeSettleFrames) {
++            return;
+         }
++        s_lifeAdopted = true;
++        s_lifeBaseline = life;
++        Log::print<INFO>("[vib] life: player+0x{:X} adopted ({} of {} quarter hearts), damage now follows its drops",
++                         kLifeOffset, life, kLifeMax);
++        return;
+     }
+ 
+-    if (!s_lifeProbePending || frame.at < s_lifeProbeAt) {
+-        return;
++    if (s_lifeBaseline < 0) {
++        s_lifeBaseline = life; // first frame, after a load, or a new actor
++    }
++    else if (life < s_lifeBaseline) {
++        const int32_t lost = s_lifeBaseline - life;
++        s_lifeBaseline = life;
++        PlayLifeDamageRumble(life, lost);
++    }
++    else if (life > s_lifeBaseline) {
++        s_lifeBaseline = life; // food and containers raise it; never a hit
+     }
+-    s_lifeProbePending = false;
+-    ResolveLifeProbe(frame);
+ }
+ 
+ constexpr size_t kExplosionActorCap = 8;
+@@ -509,7 +424,7 @@ static std::string DescribeDevices(uint32_t devices) {
+ // A damage event is one falling rumble on both hands. Two state machines can see the same hit (PlayerNormal's
+ // damage reaction and PlayerLargeDamage's setup at 0x02CAB32C), so the other path within 250 ms is dropped: one
+ // event per hit, never two rumbles for one blow. Two states from the same path are two hits. Once the life field is
+-// validated it is the only source: the state hooks do not call this at all, and a drop in quarter hearts sets the
++// adopted it is the only source: the state hooks do not call this at all, and a drop in quarter hearts sets the
+ // hands' amplitude (1 = small, 4 or more, or reaching 0 = the state hook's old level).
+ // With HapticsLogPatterns on, like the game's pattern lines, one [vib] line per call says which path saw the hit,
+ // which state (or life values), and what the Damage Taken row asked for, whatever the outcome: a console run can
+@@ -603,7 +518,7 @@ static void PlayLifeDamageRumble(int32_t life, int32_t lost) {
+ }
+ 
+ void Player::OnLargeDamage() {
+-    if (s_lifeValidated) {
++    if (s_lifeAdopted) {
+         return; // the life field is the source: one event per drop
+     }
+     PlayDamageRumble(0, "PlayerLargeDamage");
+@@ -618,8 +533,7 @@ static void hook_PlayerNormalChangeState(PPCInterpreter_t* hCPU) {
+     }
+ 
+     LogPlayerNormalStateOnce(stateNamePtr);
+-    NoteLifeScanState(stateNamePtr);
+-    if (ShouldBlockFirstPersonPlayerNormalState(stateNamePtr) && !s_lifeValidated) {
++    if (ShouldBlockFirstPersonPlayerNormalState(stateNamePtr) && !s_lifeAdopted) {
+         PlayDamageRumble(stateNamePtr, "PlayerNormal");
+     }
+ 
