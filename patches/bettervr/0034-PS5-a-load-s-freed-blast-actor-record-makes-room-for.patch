@@ -1,0 +1,38 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ps5cemu <ps5cemu@localhost>
+Date: Fri, 20 Nov 2026 14:17:10 +0100
+Subject: [PATCH] PS5: a load's freed blast actor record makes room for the new
+ one; built, untested on console
+
+---
+ src/game/botw/player/player.cpp | 10 +++++++++-
+ 1 file changed, 9 insertions(+), 1 deletion(-)
+
+diff --git a/src/game/botw/player/player.cpp b/src/game/botw/player/player.cpp
+index 8985974..14aa5e7 100644
+--- a/src/game/botw/player/player.cpp
++++ b/src/game/botw/player/player.cpp
+@@ -246,7 +246,7 @@ static void UpdateLifeScan() {
+     ResolveLifeProbe(frame);
+ }
+ 
+-constexpr size_t kExplosionActorCap = 4;
++constexpr size_t kExplosionActorCap = 8;
+ constexpr float kExplosionRange = 30.0f; // nothing at 30 m
+ constexpr float kExplosionFull = 3.0f; // full strength at 3 m or less
+ constexpr float kExplosionMove = 0.5f; // the blast actor's move: shorter drift is not a detonation
+@@ -344,6 +344,14 @@ static void NoteExplosionActor(uint32_t actorPtr, const char* actorName) {
+         }
+     }
+     if (s_explosions.size() >= kExplosionActorCap) {
++        // a load frees the old resident actor and makes a new one: its record can take the oldest stale slot
++        const auto stale = std::find_if(s_explosions.begin(), s_explosions.end(),
++                                        [](const ExplosionActor& known) { return known.stale; });
++        if (stale == s_explosions.end()) {
++            return;
++        }
++        *stale = ExplosionActor{};
++        stale->ptr = actorPtr;
+         return;
+     }
+     ExplosionActor actor;
