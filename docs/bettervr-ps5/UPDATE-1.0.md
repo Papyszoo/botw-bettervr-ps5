@@ -930,6 +930,21 @@ v06's, unchanged; 0055 is the only Cemu patch added. `VERSION` stays 0.5.0.
   driver's recording) and what is left between draws (the command stream's register writes, copies, clears and
   queries) with the TSC; about 0.2 ms a frame, only with the profile on. Every counter is added with a load and a
   store on Cemu's GPU thread, where `xrEndFrame` takes them, instead of a locked add on every draw.
+- **Index lists kept across frames (v0.7, patch cemu 0059, `indexCache`, on).** At 1.25x the record split put 1.7-1.9 ms
+  a frame into about 1,900 index lists decoded again, because Cemu's eight-list index cache is emptied at every GPU
+  wait and finished command buffer. A decoded list is now also kept by pointer, count, mode, type and restart index:
+  trusted until Cemu's next flush, then checked with the vertex cache's page hash and used again if unchanged or
+  decoded again into new memory if not. Unused lists go after 60 frames; 32 MB at most; the immediate draws' index
+  array is never kept. `"indexCache": 0` gives Cemu's cache. The `[draws]` line adds `kept index lists used again N,
+  changed N (N KB held)`.
+- **View arrays kept when unchanged (v0.7, patch cemu 0060).** A continued multiview draw no longer builds a stage's
+  right-view half again when the stage's constants and uniform buffers are clean and the right view's data epoch,
+  shader and stereo state are the same as at the last build.
+- **RADV threaded recording stays a `ps5cemu.json` switch.** The rest of the 1.25x record is mostly the driver
+  recording new state at each sequence's first draw. The driver's layer (`RADV_THREADED_RECORDING=1`) moves that to a
+  worker and leaves the copying of each command's arguments on the GPU thread, an estimated 1.5-3 ms at 5-9k draws if
+  the worker has a free core; `vkEndCommandBuffer`, destroys and frees wait for the worker. It has never run in a game,
+  so Test request 70 runs it before any default changes.
 
 ### Vibration: one page and one mixer
 
@@ -1208,7 +1223,8 @@ Nothing here has run on a console. The mip chain's cost and the skipped passes n
 the HUD quads' edges need a headset. The optional FSR/upscale for presets below 1x is not done; the compose boxes
 BetterVR's already-upscaled eye image. The compose fence wait leaves Cemu's GPU thread with `asyncCompose`, on by
 default since the 13.60 console result; Test request 69 checks the default at 1x and 1.5x and the `"asyncCompose": 0`
-path. The per-draw caches wait for the record split's numbers from the console. The Sense trigger
+path. Index lists kept across frames (0059) and unchanged view arrays kept (0060) target the 1.25x record; Test
+request 70 measures them and RADV threaded recording at 1.25x. The Sense trigger
 payload, which of its two formats the firmware accepts, and its return-code meaning are unverified; the DualSense's
 pad handle is opened in vibration mode 2. The headset's
 `+0x2ae00` is from public tables, not our own dump; its test button is the proof. Explosions have settings but no
