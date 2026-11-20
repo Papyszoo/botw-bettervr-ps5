@@ -109,6 +109,16 @@ extern std::atomic<uint64_t> g_ps5DrawsMultiview;
 extern std::atomic<uint64_t> g_ps5DrawsReplay;
 extern std::atomic<uint64_t> g_ps5RecordNs;
 extern std::atomic<uint64_t> g_ps5ReplayNs;
+// patches/cemu 0058: the same line's draw path counts, and with bettervr.json's profile the stereo pass's phases in
+// TSC ticks (Cemu's _rdtscFrequency a second): [0] the sequences' setup, [1] the draws, within them [2] uniforms,
+// [3] indices, [4] vertex and uniform buffers, [5] the pipeline and descriptor sets
+extern std::atomic<uint64_t> g_ps5DrawSequences;
+extern std::atomic<uint64_t> g_ps5DescriptorSetsMade;
+extern std::atomic<uint64_t> g_ps5PipelinesMade;
+extern std::atomic<uint64_t> g_ps5DrawPhaseTicks[6];
+extern std::atomic<uint64_t> g_ps5IndexDecodes;
+extern std::atomic<uint64_t> g_ps5IndexBytes;
+extern uint64_t _rdtscFrequency;
 #endif
 
 // the port's (ps5/log.cpp): a line of the boot log
@@ -1382,14 +1392,31 @@ namespace
 			return;
 #if defined(__PROSPERO__)
 		const double frames = (double)session->drawLogFrames;
-		Log("[draws] per frame: multiview %.1f, replay %.1f, total %.1f | record %.2f ms | replay %.2f ms | compose %.2f ms | xr end %.2f ms (over %llu frames, %.1f s)",
+		const double recordMs = (double)g_ps5RecordNs.exchange(0, std::memory_order_relaxed) / 1e6 / frames;
+		Log("[draws] per frame: multiview %.1f, replay %.1f, total %.1f | record %.2f ms | replay %.2f ms | compose %.2f ms | xr end %.2f ms (over %llu frames, %.1f s)"
+			" | sequences %.1f, index lists %.1f (%.0f KB), sets made %.2f, pipelines made %.2f",
 			(double)g_ps5DrawsMultiview.exchange(0, std::memory_order_relaxed) / frames,
 			(double)g_ps5DrawsReplay.exchange(0, std::memory_order_relaxed) / frames,
-			(double)g_ps5DrawsTotal.exchange(0, std::memory_order_relaxed) / frames,
-			(double)g_ps5RecordNs.exchange(0, std::memory_order_relaxed) / 1e6 / frames,
+			(double)g_ps5DrawsTotal.exchange(0, std::memory_order_relaxed) / frames, recordMs,
 			(double)g_ps5ReplayNs.exchange(0, std::memory_order_relaxed) / 1e6 / frames,
 			(double)session->drawLogFenceUs / 1000.0 / frames, (double)session->drawLogEndUs / 1000.0 / frames,
-			(unsigned long long)session->drawLogFrames, (double)(now - session->drawLogAt) / 1e6);
+			(unsigned long long)session->drawLogFrames, (double)(now - session->drawLogAt) / 1e6,
+			(double)g_ps5DrawSequences.exchange(0, std::memory_order_relaxed) / frames,
+			(double)g_ps5IndexDecodes.exchange(0, std::memory_order_relaxed) / frames,
+			(double)g_ps5IndexBytes.exchange(0, std::memory_order_relaxed) / 1024.0 / frames,
+			(double)g_ps5DescriptorSetsMade.exchange(0, std::memory_order_relaxed) / frames,
+			(double)g_ps5PipelinesMade.exchange(0, std::memory_order_relaxed) / frames);
+		// bettervr.json's profile: where the record's time went. The rest of the record, between the draws, is the
+		// command stream's own work: register writes, texture copies and clears, queries and the like.
+		double phaseMs[6];
+		for (int i = 0; i < 6; i++)
+			phaseMs[i] = _rdtscFrequency ? (double)g_ps5DrawPhaseTicks[i].exchange(0, std::memory_order_relaxed) * 1000.0 / (double)_rdtscFrequency / frames : 0.0;
+		if (s.profile)
+			Log("[draws] record split per frame: sequence setup %.2f ms, draws %.2f ms (uniforms %.2f, indices %.2f, buffers %.2f, pipeline and sets %.2f, "
+				"binds and the draw %.2f), between draws %.2f ms",
+				phaseMs[0], phaseMs[1], phaseMs[2], phaseMs[3], phaseMs[4], phaseMs[5],
+				std::max(0.0, phaseMs[1] - phaseMs[2] - phaseMs[3] - phaseMs[4] - phaseMs[5]),
+				std::max(0.0, recordMs - phaseMs[0] - phaseMs[1]));
 #endif
 		session->drawLogAt = now;
 		session->drawLogFrames = 0;

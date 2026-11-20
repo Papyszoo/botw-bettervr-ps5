@@ -1,0 +1,280 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ps5cemu <ps5cemu@localhost>
+Date: Fri, 20 Nov 2026 13:28:49 +0100
+Subject: [PATCH] PS5: the [draws] line's draw path counts (sequences, index
+ lists, descriptor sets and pipelines made) and, with the profile on, the
+ stereo pass's phases; built, untested on console
+
+The counters are added with a load and a store on Cemu's GPU thread, which is where the runtime
+takes them (xrEndFrame), instead of a locked add on every draw. With bettervr.json's profile on, the
+stereo pass's draws time their sequence setup, uniforms, indices, vertex and uniform buffers, and
+pipeline and descriptor sets with the TSC.
+---
+ src/Cafe/HW/Latte/Core/LatteIndices.cpp       |  13 +++
+ .../Renderer/Vulkan/VulkanRendererCore.cpp    | 108 +++++++++++++++++-
+ 2 files changed, 117 insertions(+), 4 deletions(-)
+
+diff --git a/src/Cafe/HW/Latte/Core/LatteIndices.cpp b/src/Cafe/HW/Latte/Core/LatteIndices.cpp
+index aa64a70c..651d4682 100644
+--- a/src/Cafe/HW/Latte/Core/LatteIndices.cpp
++++ b/src/Cafe/HW/Latte/Core/LatteIndices.cpp
+@@ -10,6 +10,15 @@
+ #include <arm_neon.h>
+ #endif
+ 
++#if defined(CEMU_PS5)
++#include <atomic>
++
++// The runtime's 5 s [draws] line (port/bettervr/xr/runtime.cpp): the index lists decoded (a miss of the
++// cache below) and their bytes. Cemu's GPU thread adds and the runtime takes them on that thread.
++std::atomic<uint64> g_ps5IndexDecodes{0};
++std::atomic<uint64> g_ps5IndexBytes{0};
++#endif
++
+ struct
+ {
+ 	struct CacheEntry
+@@ -700,6 +709,10 @@ void LatteIndices_decode(const void* indexData, LatteIndexType indexType, uint32
+ 	}
+ 	// query index buffer from renderer
+ 	indexAllocation = g_renderer->indexData_reserveIndexMemory(indexOutputSize);
++#if defined(CEMU_PS5)
++	g_ps5IndexDecodes.store(g_ps5IndexDecodes.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
++	g_ps5IndexBytes.store(g_ps5IndexBytes.load(std::memory_order_relaxed) + indexOutputSize, std::memory_order_relaxed);
++#endif
+ 	void* indexOutputPtr = indexAllocation.mem;
+ 
+ 	// decode indices
+diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRendererCore.cpp b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRendererCore.cpp
+index 88b7ca8d..794bf391 100644
+--- a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRendererCore.cpp
++++ b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRendererCore.cpp
+@@ -21,7 +21,8 @@ extern bool hasValidFramebufferAttached;
+ #if defined(CEMU_PS5)
+ // The runtime's 5 s [draws] line (port/bettervr/xr/runtime.cpp): how many draws each frame took
+ // through multiview or the right-eye replay, and the GPU thread's time in the stereo pass and the
+-// replay. Atomics: the counters are read from the runtime while Cemu's GPU thread adds to them.
++// replay. Atomics: the runtime takes the counters (on Cemu's GPU thread, in xrEndFrame) while
++// Cemu's GPU thread adds to them.
+ extern uint64 _rdtscFrequency;
+ std::atomic<uint64> g_ps5DrawsTotal{0};
+ std::atomic<uint64> g_ps5DrawsMultiview{0};
+@@ -33,6 +34,60 @@ static uint64 ps5TscToNs(uint64 ticks)
+ {
+ 	return _rdtscFrequency ? ticks * 1000000000ull / _rdtscFrequency : 0;
+ }
++
++// The same line's draw path counts: draws that set up their state in full (the first of a sequence),
++// descriptor sets and pipelines made (cache misses), and, with bettervr.json's profile on, where the
++// stereo pass's time goes, in TSC ticks: [0] the sequences' setup (shaders, render targets, textures,
++// viewport), [1] the draws, and within the draws [2] uniforms, [3] indices, [4] vertex and uniform
++// buffers, [5] the pipeline and descriptor sets. The rest of a draw is its binds and the draw itself.
++extern bool g_ps5FrameProfile;
++std::atomic<uint64> g_ps5DrawSequences{0};
++std::atomic<uint64> g_ps5DescriptorSetsMade{0};
++std::atomic<uint64> g_ps5PipelinesMade{0};
++std::atomic<uint64> g_ps5DrawPhaseTicks[6]{};
++
++enum class PS5DrawPhase : uint32
++{
++	Sequence,
++	Draw,
++	Uniforms,
++	Indices,
++	Buffers,
++	State,
++};
++
++// whether the draw in progress times its phases: the profile is on and the stereo pass is running
++static bool s_ps5DrawPhases = false;
++
++// Cemu's GPU thread is the only one that adds, and the runtime takes the counts on it too (xrEndFrame
++// runs there): a load and a store, not a locked add on every draw
++static inline void ps5Count(std::atomic<uint64>& counter, uint64 value = 1)
++{
++	counter.store(counter.load(std::memory_order_relaxed) + value, std::memory_order_relaxed);
++}
++
++// the ticks since `since` go to the phase, and `since` moves on to now
++static inline void ps5DrawLap(uint64& since, PS5DrawPhase phase)
++{
++	if (!s_ps5DrawPhases)
++		return;
++	const uint64 now = __rdtsc();
++	ps5Count(g_ps5DrawPhaseTicks[(uint32)phase], now - since);
++	since = now;
++}
++
++// a whole call's ticks to a phase, whichever way it returns
++struct PS5DrawPhaseScope
++{
++	PS5DrawPhaseScope(bool on, PS5DrawPhase phase) : phase(phase), start(on ? __rdtsc() : 0) {}
++	~PS5DrawPhaseScope()
++	{
++		if (start)
++			ps5Count(g_ps5DrawPhaseTicks[(uint32)phase], __rdtsc() - start);
++	}
++	PS5DrawPhase phase;
++	uint64 start;
++};
+ #endif
+ 
+ // includes only states that may change during minimal drawcalls
+@@ -246,6 +301,9 @@ PipelineInfo* VulkanRenderer::draw_createGraphicsPipeline(uint32 indexCount)
+ 	const auto geometryShader = LatteSHRC_GetActiveGeometryShader();
+ 	const auto pixelShader = LatteSHRC_GetActivePixelShader();
+ 	auto cachedFboVk = (CachedFBOVk*)m_state.activeFBO;
++#if defined(CEMU_PS5)
++	ps5Count(g_ps5PipelinesMade);
++#endif
+ 
+ 	uint64 minimalStateHash = draw_calculateMinimalGraphicsPipelineHash(fetchShader, LatteGPUState.contextNew);
+ 	uint64 pipelineHash = draw_calculateGraphicsPipelineHash(fetchShader, vertexShader, geometryShader, pixelShader, cachedFboVk->GetRenderPassObj(), LatteGPUState.contextNew);
+@@ -633,6 +691,9 @@ VkDescriptorSetInfo* VulkanRenderer::draw_getOrCreateDescriptorSet(PipelineInfo*
+ 	const auto it = ds_cache.find(stateHash);
+ 	if (it != ds_cache.cend())
+ 		return it->second;
++#if defined(CEMU_PS5)
++	ps5Count(g_ps5DescriptorSetsMade);
++#endif
+ 
+ 	VkDescriptorSetLayout descriptor_set_layout;
+ 	switch (shader->shaderType)
+@@ -1393,6 +1454,9 @@ void VulkanRenderer::draw_handleSpecialState5()
+ 
+ void VulkanRenderer::draw_beginSequence()
+ {
++#if defined(CEMU_PS5)
++	PS5DrawPhaseScope ps5Phase(g_ps5FrameProfile && m_view.isStereo, PS5DrawPhase::Sequence);
++#endif
+ 	m_state.drawSequenceSkip = false;
+ 
+ 	bool streamoutEnable = LatteGPUState.contextRegister[mmVGT_STRMOUT_EN] != 0;
+@@ -1471,6 +1535,9 @@ void VulkanRenderer::draw_execute_first(uint32 baseVertex, uint32 baseInstance,
+ 	// prepare streamout
+ 	m_streamoutState.verticesPerInstance = count;
+ 	LatteStreamout_PrepareDrawcall(count, instanceCount);
++#if defined(CEMU_PS5)
++	uint64 ps5Since = s_ps5DrawPhases ? __rdtsc() : 0;
++#endif
+ 
+ 	// update uniform vars
+ 	LatteDecompilerShader* vertexShader = LatteSHRC_GetActiveVertexShader();
+@@ -1485,6 +1552,9 @@ void VulkanRenderer::draw_execute_first(uint32 baseVertex, uint32 baseInstance,
+ 		uniformData_updateUniformVars(VulkanRendererConst::SHADER_STAGE_INDEX_GEOMETRY, geometryShader, s_vkUniformDataGS);
+ 	// store where the read pointer should go after command buffer execution
+ 	m_cmdBufferUniformRingbufIndices[m_commandBufferIndex] = m_uniformVarBufferWriteIndex;
++#if defined(CEMU_PS5)
++	ps5DrawLap(ps5Since, PS5DrawPhase::Uniforms);
++#endif
+ 
+ 	// process index data
+ 	const LattePrimitiveMode primitiveMode = static_cast<LattePrimitiveMode>(LatteGPUState.contextRegister[mmVGT_PRIMITIVE_TYPE]);
+@@ -1518,6 +1588,9 @@ void VulkanRenderer::draw_execute_first(uint32 baseVertex, uint32 baseInstance,
+ 			m_view.indexType = vkType;
+ 		}
+ 	}
++#if defined(CEMU_PS5)
++	ps5DrawLap(ps5Since, PS5DrawPhase::Indices);
++#endif
+ 
+ 	if (m_useHostMemoryForCache)
+ 	{
+@@ -1540,6 +1613,9 @@ void VulkanRenderer::draw_execute_first(uint32 baseVertex, uint32 baseInstance,
+ 		LatteBufferCache_Sync(indexMax + baseVertex, baseInstance, instanceCount, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, stageUniformModifiedMask);
+ 		bufferCache_flushCopiesForDraw();
+ 	}
++#if defined(CEMU_PS5)
++	ps5DrawLap(ps5Since, PS5DrawPhase::Buffers);
++#endif
+ 
+ 	PipelineInfo* pipeline_info = draw_getOrCreateGraphicsPipeline(count);
+ 	m_state.activePipelineInfo = pipeline_info;
+@@ -1561,6 +1637,9 @@ void VulkanRenderer::draw_execute_first(uint32 baseVertex, uint32 baseInstance,
+ 	m_state.activePixelDS = pixelDS;
+ 	m_state.activeGeometryDS = geometryDS;
+ 	m_state.descriptorSetsChanged = true;
++#if defined(CEMU_PS5)
++	ps5DrawLap(ps5Since, PS5DrawPhase::State);
++#endif
+ 
+ 	draw_setRenderPass();
+ 	if (m_view.restoreBindings)
+@@ -1649,6 +1728,9 @@ void VulkanRenderer::draw_execute_continued(uint32 baseVertex, uint32 baseInstan
+ 	// prepare streamout
+ 	m_streamoutState.verticesPerInstance = count;
+ 	LatteStreamout_PrepareDrawcall(count, instanceCount);
++#if defined(CEMU_PS5)
++	uint64 ps5Since = s_ps5DrawPhases ? __rdtsc() : 0;
++#endif
+ 
+ 	// update uniform vars
+ 	LatteDecompilerShader* vertexShader = LatteSHRC_GetActiveVertexShader();
+@@ -1664,6 +1746,9 @@ void VulkanRenderer::draw_execute_continued(uint32 baseVertex, uint32 baseInstan
+ 		uniformData_updateUniformVarsIncremental(VulkanRendererConst::SHADER_STAGE_INDEX_GEOMETRY, geometryShader, stageUniformModifiedMask, s_vkUniformDataGS, false, drawcallContext.gsUniformBufferDirtyMask);
+ 	// store where the read pointer should go after command buffer execution
+ 	m_cmdBufferUniformRingbufIndices[m_commandBufferIndex] = m_uniformVarBufferWriteIndex;
++#if defined(CEMU_PS5)
++	ps5DrawLap(ps5Since, PS5DrawPhase::Uniforms);
++#endif
+ 
+ 	// process index data
+ 	const LattePrimitiveMode primitiveMode = static_cast<LattePrimitiveMode>(LatteGPUState.contextRegister[mmVGT_PRIMITIVE_TYPE]);
+@@ -1697,6 +1782,9 @@ void VulkanRenderer::draw_execute_continued(uint32 baseVertex, uint32 baseInstan
+ 			m_view.indexType = vkType;
+ 		}
+ 	}
++#if defined(CEMU_PS5)
++	ps5DrawLap(ps5Since, PS5DrawPhase::Indices);
++#endif
+ 
+ 	if (m_useHostMemoryForCache)
+ 	{
+@@ -1718,6 +1806,9 @@ void VulkanRenderer::draw_execute_continued(uint32 baseVertex, uint32 baseInstan
+ 		LatteBufferCache_Sync(indexMax + baseVertex, baseInstance, instanceCount, drawcallContext.vertexBufferDirtyMask, drawcallContext.vsUniformBufferDirtyMask, drawcallContext.psUniformBufferDirtyMask, drawcallContext.gsUniformBufferDirtyMask, stageUniformModifiedMask, true);
+ 		bufferCache_flushCopiesForDraw();
+ 	}
++#if defined(CEMU_PS5)
++	ps5DrawLap(ps5Since, PS5DrawPhase::Buffers);
++#endif
+ 
+ 	m_state.descriptorSetsChanged = false;
+ 	PipelineInfo* pipeline_info = m_state.activePipelineInfo;
+@@ -1745,6 +1836,9 @@ void VulkanRenderer::draw_execute_continued(uint32 baseVertex, uint32 baseInstan
+ 		}
+ #endif
+ 	}
++#if defined(CEMU_PS5)
++	ps5DrawLap(ps5Since, PS5DrawPhase::State);
++#endif
+ 
+ 	auto vkObjPipeline = pipeline_info->m_vkrObjPipeline;
+ 	if (vkObjPipeline->GetPipeline() == VK_NULL_HANDLE)
+@@ -1869,18 +1963,24 @@ void VulkanRenderer::draw_execute_continued(uint32 baseVertex, uint32 baseInstan
+ 
+ void VulkanRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 instanceCount, uint32 count, MPTR indexDataMPTR, Latte::LATTE_VGT_DMA_INDEX_TYPE::E_INDEX_TYPE indexType, const LatteDrawcallContext& drawcallContext)
+ {
++#if defined(CEMU_PS5)
++	s_ps5DrawPhases = g_ps5FrameProfile && m_view.isStereo;
++	PS5DrawPhaseScope ps5Phase(s_ps5DrawPhases, PS5DrawPhase::Draw);
++#endif
+ 	bool isFirst = drawcallContext.isFirst;
+ 	m_view.drawNeedsRight = m_view.isStereo && !m_state.drawSequenceSkip && view_drawNeedsRight();
+ 	if (LatteView_IsMultiviewRequested() && !m_state.drawSequenceSkip)
+ 		view_selectFBO(isFirst);
+ #if defined(CEMU_PS5)
+-	g_ps5DrawsTotal.fetch_add(1, std::memory_order_relaxed);
++	ps5Count(g_ps5DrawsTotal);
++	if (isFirst)
++		ps5Count(g_ps5DrawSequences);
+ 	if (m_view.isStereo && !m_state.drawSequenceSkip)
+ 	{
+ 		if (m_view.isMultiviewFBO)
+-			g_ps5DrawsMultiview.fetch_add(1, std::memory_order_relaxed);
++			ps5Count(g_ps5DrawsMultiview);
+ 		else if (m_view.drawNeedsRight)
+-			g_ps5DrawsReplay.fetch_add(1, std::memory_order_relaxed);
++			ps5Count(g_ps5DrawsReplay);
+ 	}
+ #endif
+ 	if (isFirst)
