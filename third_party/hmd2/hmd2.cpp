@@ -653,7 +653,7 @@ bool bind_gaze_exports() {
         return s.gaze_bound;
     const int handle = load_sysmodule(kSysmoduleHmd2, "libSceHmd2");
     if (handle < 0) {
-        // not latched: a later session or the init path may load the library where this early probe could not
+        // not latched: a later session may load the library where this one could not
         return false;
     }
     s.gaze_checked = true;

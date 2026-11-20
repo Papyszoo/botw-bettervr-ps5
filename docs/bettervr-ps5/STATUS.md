@@ -41,7 +41,8 @@ verified libSceHmd2 table)` line and does nothing else. The runtime no longer fl
    - every `hmd2: [gaze] ...` line: `bound at the 13.60 table ...`, `InternalGazeStart -> 0x...`, the
      `0x38 rc 0x...:` hex lines with their `dir ... valid ... status ...` fields, the `sample rate ...`
      line, and `InternalGazeStop -> 0x...`;
-   - `gaze: XR_EXT_eye_gaze_interaction not offered: this build logs the gaze probe only`;
+   - `gaze: XR_EXT_eye_gaze_interaction not offered: this build logs the gaze probe only` (the line may end with
+     `(the application did not chain the system property)`);
    - BetterVR's ` - Supports Eye Tracking: No` line;
    - any `[Throw] gaze assist ...` line, which must be absent.
 6. Say whether the game froze or crashed at VR start, and whether the PS5 eye-tracking setting was on and
