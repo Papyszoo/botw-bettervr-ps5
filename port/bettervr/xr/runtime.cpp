@@ -2117,9 +2117,9 @@ extern "C" int BetterVR_PS5_TestTriggers()
 	return step;
 }
 
-// BetterVR's menu draws the Gaze Throw Assist row only while the runtime can offer eye tracking.
-// This build's gaze is a logging probe (third_party/hmd2), so gaze_available() is false and the
-// row stays hidden; the row's code stays for when the probe's direction and rate are confirmed.
+// BetterVR's menu draws its eye rows (Eye Aim Assist, Eye Magnesis, Eye Rune Pick) only while the runtime can
+// offer eye tracking. gaze_available() is true once the gaze table bound and its stream started, and false again
+// when the stream did not take, so a firmware without the table draws none of them.
 extern "C" int BetterVR_PS5_EyeGazeAvailable()
 {
 	return hmd2::gaze_available() ? 1 : 0;
@@ -2167,9 +2167,9 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEnumerateInstanceExtensionProperties(const char
 	// XR_KHR_composition_layer_depth is not offered, as 7fbceeb allows: BetterVR then keeps its depth in a local attachment, and no
 	// depth swapchain (three 16 MB images for each eye) is made for a compositor that ignores depth. xrCreateInstance still
 	// accepts the name, for an application that asks without having looked.
-	// Eye gaze is not offered in this build: the 13.60 probe binds its exports and logs samples
-	// (third_party/hmd2/hmd2.cpp), but no application may use them until the console has confirmed
-	// the direction and rate. The extension list, the profile and the action set therefore stay off.
+	// Eye gaze is offered while the gaze table has bound (third_party/hmd2/hmd2.cpp): the runtime builds the
+	// eye-gaze profile and space, and BetterVR's Controls page draws its eye rows. A firmware
+	// without the table, or a stream that did not start, offers none of it.
 	const bool gaze = hmd2::gaze_available();
 	*count = gaze ? 2u : 1u;
 	if (capacity < *count)
@@ -2270,8 +2270,8 @@ XRAPI_ATTR XrResult XRAPI_CALL xrGetSystemProperties(XrInstance, XrSystemId, XrS
 	std::snprintf(props->systemName, XR_MAX_SYSTEM_NAME_SIZE, "PlayStation VR2");
 	props->graphicsProperties = {kEyeWidth, kEyeHeight, 1};
 	props->trackingProperties = {XR_TRUE, XR_TRUE};
-	// The eye-gaze profile is not offered in this build: hmd2::gaze_available() is false while the
-	// 13.60 probe logs only. The property stays false and BetterVR logs Supports Eye Tracking: No.
+	// The eye-gaze profile is offered with the extension, while hmd2's gaze table is bound. When the
+	// stream did not start the property is false and BetterVR logs Supports Eye Tracking: No.
 	const bool gaze = hmd2::gaze_available();
 	bool chained = false;
 	for (auto* next = static_cast<XrBaseOutStructure*>(props->next); next; next = next->next)
@@ -2283,7 +2283,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrGetSystemProperties(XrInstance, XrSystemId, XrS
 	static bool logged = false;
 	if (!std::exchange(logged, true))
 		Log(gaze ? "gaze: XR_EXT_eye_gaze_interaction offered%s; a pose is reported only while the headset's calibrated eye tracking is on"
-				 : "gaze: XR_EXT_eye_gaze_interaction not offered: this build logs the gaze probe only%s",
+				 : "gaze: XR_EXT_eye_gaze_interaction not offered: the gaze table did not bind%s",
 			chained ? "" : " (the application did not chain the system property)");
 	return XR_SUCCESS;
 }

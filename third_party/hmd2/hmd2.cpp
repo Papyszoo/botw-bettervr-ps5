@@ -771,8 +771,8 @@ bool bind_gaze_exports() {
     return s.gaze_bound;
 }
 
-// Called once after sceHmd2Open: start the stream. Its samples are read and logged only; nothing
-// here (or in the runtime) offers them to an application in this build.
+// Called once after sceHmd2Open: start the stream. A valid sample is offered to the runtime as the
+// OpenXR gaze space while this stream runs (gaze_available); the probe's own lines still log it.
 void gaze_start() {
     if (!bind_gaze_exports()) {
         logf("hmd2: [gaze] unavailable on this firmware (no verified libSceHmd2 table)");
@@ -2128,10 +2128,13 @@ bool pad_triggers_available() {
 }
 
 bool gaze_available() {
-    // This build's gaze is a probe: it binds and logs on the table's builds, but the runtime must not offer
-    // XR_EXT_eye_gaze_interaction yet, so no application can use a sample. The console's Test
-    // request 60 decides the sign and the rate before the extension is offered.
-    return false;
+    if (!bind_gaze_exports())
+        return false;
+    // Before a session only the exports can be checked; gaze_start() activates them and records
+    // whether the stream took. A session whose activation failed does not offer eye tracking.
+    if (s.gaze_started_us == 0)
+        return true;
+    return s.gaze_active;
 }
 
 Gaze gaze() {
