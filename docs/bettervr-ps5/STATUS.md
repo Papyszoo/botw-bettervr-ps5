@@ -3,6 +3,68 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-20: v0.7 performance: the compose wait can leave Cemu's GPU thread (asyncCompose, off by default), and the `[draws]` line splits the record; built, untested on console
+
+What the RC logs say (play4/play5, 1x and 1.5x, gameplay windows of 3,500+ draws): the stereo pass's record is
+12.3-13.5 ms at 1x and 12.9 ms at 1.5x, so it does not grow with the eye's pixels and is the GPU thread's own
+work. The compose wait is 4.6-5.1 ms at 1x and 11.6-11.8 ms at 1.5x: it is the GPU finishing the frame, and Cemu's
+GPU thread sat in `xrEndFrame` for it every frame. A frame was the record plus that wait in series (about 18.5 ms,
+54 fps), and the GPU had nothing to do while the next frame's first commands were recorded.
+
+**asyncCompose.** With `"asyncCompose": 1` in `/data/botwvr/launcher/bettervr.json` (read at the session's start),
+`xrEndFrame` returns once the compose is submitted. The frame pump's next `xrWaitFrame` (BetterVR's own thread,
+which already ran right after each frame end) waits for the compose's fence, submits the frame to Hmd2 with the same
+render pose, and then naps and begins the next Hmd2 frame, in the same order and at the same moment the synchronous
+path did. Cemu's GPU thread meanwhile goes on to the next game frame. One compose is in flight at most: an
+`xrEndFrame` that finds a compose the pump has not taken finishes it before it records its own (the compose's
+command buffer, descriptor set and fence are reused), and a fence timeout is left to the GPU thread's next
+`xrEndFrame`, which handles it as before. Off (the default) the frame end does what it did; its wait and submit
+moved into one function that `xrEndFrame` calls at once. The startup log says `[vr-xr] compose wait: ...
+(bettervr.json's asyncCompose)`. Expected: `xr end` drops to a few tenths of a millisecond and the frame to about
+the record's time when the GPU keeps up, up to the 60 fps cap at 1x; no gain where the GPU is the limit.
+
+**The `[draws]` line.** It gains `| sequences N, index lists N (N KB), sets made N, pipelines made N` per frame: the
+draws that set up their state in full (the first of a sequence), the index lists decoded (index cache misses) and
+their size, and the descriptor sets and pipelines made. With `bettervr.json`'s `"profile": true` a second line,
+`[vr-xr] [draws] record split per frame: sequence setup X ms, draws Y ms (uniforms, indices, buffers, pipeline and
+sets, binds and the draw), between draws Z ms`, says where the stereo pass's record goes; it costs about 0.2 ms a
+frame and only with the profile on. Cemu's draw counters no longer take a locked add on every draw. New patch:
+cemu 0058; no BetterVR change.
+
+**Threaded recording, no rebuild.** The driver can record Cemu's Vulkan commands on a worker thread of its own
+(`RADV_THREADED_RECORDING`, CTS-tested, never run in a game here); `ps5cemu.json`'s `radvEnvironment` turns it on at
+the app's start. Expected: if the driver's recording is a large share of the 2.5 us a draw, the record drops by a
+few milliseconds; if the worker has no free core, it can be slower.
+
+**Test request 66 (v0.7 performance: asyncCompose, threaded recording and the record split; 13.60 console).** Install
+the `BotW-VR-v...zip` from this head's green "BetterVR build" run. Use one outdoor spot for every run: load the same
+save, stand at the same place on the Great Plateau or Hyrule Field facing the same way with grass and trees in view;
+each run, stand still 30 s, then walk a small circle for 30 s, then quit to the library. Keep `"profile": true` in
+`/data/botwvr/launcher/bettervr.json` for all runs. Change only what the run says:
+
+1. **1x, `"asyncCompose": 0`.** The baseline.
+2. **1x, `"asyncCompose": 1`.** Say whether head turns feel the same as run 1 (no extra lag, judder or smear) and
+   whether the HUD, a menu and the inventory look as before.
+3. **1x, `"asyncCompose": 0`, threaded recording.** Set `"radvEnvironment": {"RADV_THREADED_RECORDING": "1"}` in
+   `/data/botwvr/launcher/ps5cemu.json` and restart the app (it reads that file at its start). Set it back to `{}`
+   and restart the app after this run.
+4. **1.25x, `"asyncCompose": 0`.** BetterVR's menu > System > VR Resolution > 1.25x, then restart the game.
+5. **1.25x, `"asyncCompose": 1`.** Then set VR Resolution back to 1x.
+
+After run 3 and after run 5, use Settings > Diagnostics > Copy logs to USB (the app keeps the last five boot logs)
+and send the zips, or from each run's `boot*.log`:
+- `LC_ALL=C grep -a "\[draws\]" boot.log` (both `[draws]` lines)
+- `LC_ALL=C grep -a "\[frame\]\|\[perf\]" boot.log`
+- `LC_ALL=C grep -a "fps submitted\|compose wait:\|RADV_THREADED\|Graphics pack presets\|compositor's GPU work" boot.log`
+
+**What it decides.** Run 1's record split names the per-draw work to cache next (sequence setup, uniforms, indices,
+buffers, pipeline and sets, or the binds, which are the driver's recording), and its `GPU busy` says whether the GPU
+waits on the CPU (well below 100 %: CPU cuts pay) or is the limit (near 100 %: only GPU work cuts help). Run 2 against
+run 1: the fps, `xr end` (expected a few tenths of a millisecond), `compose`, and in the 600-frame line `ahead`,
+`missed` and the submitted fps against the `[perf]` fps (lower submitted fps means frames were dropped); asyncCompose
+becomes the default only if the fps rises and head turns feel the same. Run 3 against run 1: `record` and the fps for
+threaded recording. Runs 4 and 5: whether 1.25x holds with asyncCompose.
+
 ## 2026-11-20: damage follows Link's life field and explosions play from the actors that go; built, untested on console
 
 The RC's V3 scan found one field at player actor `+0x540` in quarter hearts and V4 saw the tracked bombs, barrels and

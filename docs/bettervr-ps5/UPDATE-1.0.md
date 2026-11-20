@@ -908,6 +908,25 @@ v06's, unchanged; 0055 is the only Cemu patch added. `VERSION` stays 0.5.0.
 - **The compose buffer's last barrier has no host half.** Hmd2 samples the side-by-side buffer on the GPU (its
   texture descriptor points at the mapped image) and nothing on the host reads those pixels, so the barrier asks only
   for memory reads at the end of all commands instead of a host-read write-back.
+- **The compose wait can leave Cemu's GPU thread (v0.7, `asyncCompose`, off by default).** The console's `[draws]`
+  lines show the record at 12.3-13.5 ms at 1x and 12.9 ms at 1.5x (CPU work, not pixels) and the compose wait at
+  4.6-5.1 ms at 1x and 11.7 ms at 1.5x (the GPU finishing the frame), in series on the GPU thread. With
+  `bettervr.json` `"asyncCompose": 1`, `xrEndFrame` returns once the compose is submitted, and the frame pump's next
+  `xrWaitFrame` (BetterVR's thread, which already runs right after each frame end) waits for the fence, submits the
+  frame to Hmd2 and only then naps and begins the next Hmd2 frame, so Hmd2 sees the same order and timing. No worker,
+  fence or eye-buffer rotation of its own is needed: one compose is in flight at most, because an `xrEndFrame` that
+  finds a compose the pump has not taken (`composeFinishDue`) finishes it before it records its own, and Hmd2's
+  buffer index only moves on at its submit. A fence timeout is left to the GPU thread's next `xrEndFrame`, which
+  handles it as the synchronous path does. Off, `xrEndFrame` calls the same `FinishCompose` at once. The swapchain
+  images are safe either way: an image comes round again three acquires on.
+- **The `[draws]` line's draw path counts (v0.7, patch cemu 0058).** Per frame: `sequences` (draws that set up
+  their state in full, the first of a draw sequence), `index lists` and their KB (index cache misses, decoded and
+  uploaded), `sets made` and `pipelines made` (cache misses). With `"profile": true`, `[draws] record split per
+  frame` times the stereo pass's sequence setup (shaders, render targets, textures, viewport), its draws (uniforms,
+  indices, vertex and uniform buffers, pipeline and descriptor sets, and the rest: binds and the draw, which is the
+  driver's recording) and what is left between draws (the command stream's register writes, copies, clears and
+  queries) with the TSC; about 0.2 ms a frame, only with the profile on. Every counter is added with a load and a
+  store on Cemu's GPU thread, where `xrEndFrame` takes them, instead of a locked add on every draw.
 
 ### Vibration: one page and one mixer
 
@@ -1180,9 +1199,9 @@ v06's, unchanged; 0055 is the only Cemu patch added. `VERSION` stays 0.5.0.
 
 Nothing here has run on a console. The mip chain's cost and the skipped passes need the `[draws]` and `[frame]` lines;
 the HUD quads' edges need a headset. The optional FSR/upscale for presets below 1x is not done; the compose boxes
-BetterVR's already-upscaled eye image. The compose fence wait still runs on Cemu's GPU thread: moving it off needs a
-worker with its own fence and submit, eye-buffer rotation while the compose is in flight, and a deferred
-`hmd2::submit`, which is more than a swap-time change. The Sense trigger
+BetterVR's already-upscaled eye image. The compose fence wait leaves Cemu's GPU thread only with `asyncCompose`
+(off by default) until Test request 66 shows the fps and the head-turn feel; the per-draw caches wait for that
+request's record split. The Sense trigger
 payload, which of its two formats the firmware accepts, and its return-code meaning are unverified; the DualSense's
 pad handle is opened in vibration mode 2. The headset's
 `+0x2ae00` is from public tables, not our own dump; its test button is the proof. Explosions have settings but no
