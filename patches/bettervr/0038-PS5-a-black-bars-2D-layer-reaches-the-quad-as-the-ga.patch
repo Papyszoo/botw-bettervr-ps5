@@ -1,0 +1,31 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ps5cemu <ps5cemu@localhost>
+Date: Fri, 20 Nov 2026 22:09:24 +0100
+Subject: [PATCH] PS5: a black-bars 2D layer reaches the quad as the game drew
+ it, without the 16:9 letterbox; built, untested on console
+
+---
+ src/cemu/capture.cpp | 10 ++++++----
+ 1 file changed, 6 insertions(+), 4 deletions(-)
+
+diff --git a/src/cemu/capture.cpp b/src/cemu/capture.cpp
+index 7f7dffa..5de5f3f 100644
+--- a/src/cemu/capture.cpp
++++ b/src/cemu/capture.cpp
+@@ -270,10 +270,12 @@ void Capture::OnHud(const FrameState& state, VkCommandBuffer commandBuffer, cons
+             imguiOverlay->Update();
+             imguiOverlay->Render(frameIdx, false, false);
+ #if defined(__PROSPERO__)
+-            // With nothing drawn on top and a 3D picture behind it, the HUD image is already the
+-            // layer: skip the copy into hudFramebuffer, the clear, the ImGui draw and the copy back.
+-            // A screen with nothing behind it still takes the opaque path.
+-            if (imguiOverlay->DrewOverlay() || !renderer->IsRendering3D(frameIdx)) {
++            // With nothing drawn on top and a picture behind it, the HUD image is already the layer:
++            // skip the copy into hudFramebuffer, the clear, the ImGui draw and the copy back. A
++            // black-bars frame is the 2D layer alone, and the quad shows that image as the game drew
++            // it; the opaque ImGui path letterboxes it to 16:9 inside the eye-shaped surface, which
++            // the 16:9 quad then stretches. A screen with nothing behind it still takes the opaque path.
++            if (imguiOverlay->DrewOverlay() || (!renderer->IsRendering3D(frameIdx) && !game.blackBars)) {
+                 imguiOverlay->DrawHUDLayerAsBackground(commandBuffer, surface.image, frameIdx);
+                 VulkanUtils::DebugPipelineBarrier(commandBuffer);
+                 imguiOverlay->DrawAndCopyToImage(commandBuffer, surface.image, frameIdx, false);

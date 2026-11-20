@@ -3,6 +3,44 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-20: a black-bars 2D layer reaches the quad as the game drew it; built, untested on console
+
+The v0.6.1 report (13.60, new game): the first rune's 2D-only panel is alone on black again, but its picture looks
+like a stretched window, the same look the first-time pick-up panel had while it was 2D-only. The pulled boot log
+(`logs-rune3/run1`) has `2D-only presentation starts for 'Demo003_0' (the 2D layer alone, black around it)` and
+`Event 'Demo003_0' started at 'Item02' (first person ON, ignore camera rotation ON, game-animated hands OFF)` at
+1150.574, then `compose mode mono (frame 63602): no projection layer or eye picture this frame; the 2D picture alone
+in front of the player, black outside it` at 1150.580. The last `Camera Mode:` line before it is `First Person
+(Recommended)` (350.330): this run is first person, and patch 0032's check comes before the first-person gate.
+
+**Sizes.** `view configuration: two views of 1984x2048` (6.630), `Found rendering resolution 2480x2560` (19.911) and
+`HUD mip chain: 2480x2560, 2 levels` (20.295): the 1.25x VR Resolution preset makes the game's surface, the Layer2D
+swapchain and the HUD image 2480x2560, an aspect of 0.969. `Layer2D::FinishRendering` submits one quad of 16:9
+(`aspectRatio = 16/9`, `hudSize`), and the runtime maps the whole image rect onto it.
+
+**Why it stretched.** With black bars, the 2D layer takes the opaque ImGui path in `Capture::OnHud`:
+`ImGuiOverlay::Render` draws the HUD image into a centered 16:9 region of the 2480x2560 surface
+(`CalculateCenteredAspectRegion`, called with `centerTo16x9 = true`), so the picture is squeezed into 2480x1395 rows,
+0.545x vertically, before it reaches Layer2D. The quad then maps the full 2480x2560 image onto 16:9, which undoes
+that 0.545 by stretching the picture 1.835x horizontally: a 16:9 window about 1.8x too wide. Normal play does not
+take that path: the PS5 shortcut added by patch bettervr 0007 leaves the game's HUD image as the layer, and the same
+16:9 quad restores the game's own 2D scaling. The runtime's compose, the game and Cemu are not involved.
+
+**The fix.** Patch bettervr 0038 changes patch 0007's PS5 condition so a black-bars frame also keeps the game's own
+2D image; `DrewOverlay()` still takes the opaque path when a BetterVR overlay is up. The quad is unchanged, so the
+panel is the picture the game drew at its true aspect. Normal stereo, the HUD, menus, `Demo002_0`'s camera hold and
+the runtime's compose are unchanged.
+
+**Before patch 0032, and why not the 0037 hold.** In v0.6.0/RC6 the rune sequence showed the 2D panel over a 3D
+picture for about 29 s: the game kept drawing and BetterVR kept submitting fresh stereo pairs, so the compose stayed
+stereo with the quad over the pair; the report called that 3D picture bad, not the panel. The runtime's
+mono/no-fresh-pair path only took over for the last ~4.4 s, when the panel was alone on black (`logs5-out.txt`
+section 4). Patch 0032 removed the 3D part for the whole event. Patch 0037 is not a substitute: it latches only for
+`Demo002_0` (`Events::IsFirstTimeItemGetActive()`) and only in third person, while this run's `Demo003_0` started in
+first person; holding the player's own camera would put the open world behind the panel, not the black surround, and
+`Demo003_0` is a 2D screen, not the pick-up's moving third-person camera. The `useBlackBars` path remains the right
+presentation for it.
+
 ## 2026-11-20: the first-time pick-up holds the third-person camera where it was; built, untested on console
 
 The v0.6.0 report (13.60): the first Bird Egg pickup ran `Demo002_0` while the item panel was up
@@ -42,8 +80,8 @@ Logs: `Camera hold starts for 'Demo002_0' (third person, held at (x, y, z); head
 event starts in third person, and `Camera hold ends for 'Demo002_0' (third person, held at (x, y, z))` when it ends.
 `Demo003_0` keeps `2D-only presentation starts for 'Demo003_0' (the 2D layer alone, black around it)`.
 
-**Test request 71 (v0.6.1 first-time pick-up camera hold, 13.60 console).** Install the `BotW-VR-v...zip` from this
-head's green "BetterVR build" run and start Breath of the Wild in VR.
+**Test request 71 (v0.6.1 first-time pick-up camera hold and rune panel, 13.60 console).** Install the
+`BotW-VR-v...zip` from this head's green "BetterVR build" run and start Breath of the Wild in VR.
 
 1. **Normal play and another cutscene, unchanged.** Play about 60 s in the open world, then trigger a cutscene that
    is not an item get (a memory, or a tower). Does the world still have depth, and does the cutscene still play in 3D
@@ -59,8 +97,10 @@ head's green "BetterVR build" run and start Breath of the Wild in VR.
    save has never taken. Watch the whole item-get presentation. Does it show the 3D presentation exactly as v0.6.0
    did (no camera hold, no black around the panel, the scene behind it steady), and does the panel stay put when you
    turn? Say what the 3D picture showed, because the same event must not have lost its depth.
-4. **The rune sequence, unchanged.** Collect a rune that downloads a panel (`Demo003_0`, for example the Magnesis
-   rune). Does the 2D layer still show alone on black for the whole download, as in Test request 66?
+4. **The rune sequence, unchanged in what it shows.** Collect a rune that downloads a panel (`Demo003_0`, for
+   example the Magnesis rune). Does the 2D layer still show alone on black for the whole download, as in Test
+   request 66? Is the panel a 16:9 window at its true shape, with no stretch (the text and the window's border the
+   same proportions as in flat play), and does it stay steady when you turn your head?
 5. **A chest, unchanged.** Open a chest in either camera mode. The chest and Link's hands must still show in 3D as
    before; no camera hold line may name `Demo000_0` or `Demo000_2`. Say whether the item panel after the chest opens
    looks as it did in v0.6.0.
@@ -68,13 +108,15 @@ head's green "BetterVR build" run and start Breath of the Wild in VR.
    - `LC_ALL=C grep -a "Camera hold\|2D-only presentation\|Event 'Demo002_0'\|Event 'Demo003_0'\|Event 'Demo000_" boot.log`
    - `LC_ALL=C grep -a "compose mode" boot.log`
    - `LC_ALL=C grep -a "\[draws\]" boot.log`
+   - `LC_ALL=C grep -a "Found rendering resolution\|HUD mip chain" boot.log`
    - Which Camera Mode was set for steps 2, 3 and 4.
 
 **Expected if it works:** in third person, one `Camera hold starts for 'Demo002_0'` line on the event's started line,
 `compose mode` stays stereo for the whole event, the world behind the panel does not change angle, and one
 `Camera hold ends for 'Demo002_0'` line at the event's end. In first person there is no camera hold line and the
 event is the 3D presentation v0.6.0 showed. `Demo003_0` still logs `2D-only presentation starts` and its
-`compose mode mono` line, as before. The chest step has no camera hold line and its `compose mode` stays stereo.
+`compose mode mono` line, as before, and the panel is the game's own 2D picture at its true 16:9 shape. The chest
+step has no camera hold line and its `compose mode` stays stereo.
 
 **What it decides:** a pair of camera hold lines with a steady, deep world and a readable panel in third person
 closes the follow-up. A third-person event with no hold line means `IsThirdPerson()` was false when the event
@@ -83,6 +125,9 @@ take: send the lines from step 6 and the camera mode. A world that still changes
 hold does not reach the render camera. A missing or misplaced panel means the hold took the Layer2D reference with
 it; the next step is to hold only the camera matrices. A `2D-only presentation starts for 'Demo003_0'` that changed
 means the rune event lost its presentation, and a 2D-only line for a chest or the pick-up means the list is too wide.
+A rune panel that is still stretched is the black-bars image taking the letterbox again: send the camera mode, the
+`Found rendering resolution` and `HUD mip chain` lines, and whether the stretch is wide (the picture wider than tall
+beyond 16:9) or narrow.
 
 ## 2026-11-20: v0.6.1 hotfix: third-person smooth turning reads the game's own yaw delta again; built, untested on console
 
