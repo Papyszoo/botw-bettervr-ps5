@@ -3,6 +3,73 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-20: a mono or cutscene frame is the 2D quad alone, never an eye picture across both eyes; built, untested on console
+
+The RC's rune pickup (`Demo003_0`, `boot.log` 273.7-310.8) and its new-area screens run with
+`[draws] ... multiview 0.0, record 0.00 ms` (`boot.log` 303.458, 588.759): the game draws one picture, not a
+stereo pair. From 300.119 to the end of the session the `[vr-xr]` frame line counts `kept 233` and nothing
+else, and the one `render pose kept for a re-shown pair` line is at 300.119: BetterVR's submit thread
+re-shows the last pair, and from about a second into the hold the located ring no longer holds the pose that
+pair was rendered with. The runtime kept that pose and composed the pair into both eyes anyway: a picture
+more than a second old, stretched across both eyes, with Hmd2 reprojecting it from where it was rendered.
+That is the frozen background; the rune panel (BetterVR's 2D quad) is the only layer that drew correctly.
+
+Why `monoQuad` was off (a412839): 1.0.0 dropped the 0.9.23 mod's presentation switches (`monoQuad`,
+`menuLock`, the proof counters), and the runtime carried the three that still mattered as fixed values. The
+mono-on-quad path was left `false` because 1.0.0 has its own 2D layer instead of the old shared-pose mono
+projection, so the compare-and-copy of a mono projection across each eye was never exercised: the
+"doubled Link" case that `compose.comp`'s flag 16 exists for.
+
+The compositor now has two modes, and a switch between them logs one line. **Stereo** is both eyes'
+pictures with the HUD quad over them, unchanged: a fresh pair is found in the located ring as before, so
+normal play, menus and the HUD frame are the same. **Mono** is the 2D picture alone in front of the player,
+black around it: a mono projection (identical pose and FOV in both views) rides the HUD quad through flag
+16; a re-shown pair the ring no longer holds has its eye pictures left out, and the frame's own quad is
+drawn instead; a frame with no projection keeps its quad alone. In mono the quad is placed with the live
+eyes and Hmd2 is given the live head for the compose, so the picture sits still in the room instead of being
+reprojected from an old pose. A re-shown pair with no usable quad keeps the old kept-pose path.
+`port/bettervr/xr/runtime.cpp` only; no Cemu or BetterVR change, no shader change.
+
+Logs: `[vr-xr] compose mode stereo (frame N): both eyes' pictures with the HUD quad over them`, and
+`[vr-xr] compose mode mono (frame N): <reason>; the 2D picture alone in front of the player, black outside
+it`, where the reason is `one mono picture in both views, on the HUD quad`, `a re-shown pair the located ring
+no longer holds`, or `no projection layer or eye picture this frame`. `render pose kept` and `kept N` are
+still there.
+
+**Test request 62 (v0.6 mono and cutscene frames, 13.60 console).** Install the `BotW-VR-v...zip` from this
+head's green "BetterVR build" run and start Breath of the Wild in VR.
+
+M1. **Normal play, unchanged.** Play about a minute in the open world with the HUD up. Does the picture
+have depth and follow your head as before, and is the HUD where it was?
+
+M2. **A new rune (the report's case).** Pick up a rune you do not have (a new game up to the first rune
+pedestal, or any rune pedestal your save still allows), and watch the whole cutscene without moving for the
+first 3 seconds, then turn your head left and right and lean. Is the cutscene picture a screen in front of
+you with black around it that stays put in the room when you turn, or is anything stretched or doubled
+across the eyes? Is the "Rune extracted" panel readable?
+
+M3. **A new map area.** Cross a region boundary on foot, or fast-travel to a region you have not entered,
+so the area-name screen shows. Same questions as M2.
+
+M4. **Menus and the map.** Open the inventory for 10 s, turn your head, then open the map. Anything
+different from the RC?
+
+M5. **Send** `LC_ALL=C grep -a "compose mode" boot.log`, then `LC_ALL=C grep -a "render pose kept\|\[draws\]"
+boot.log` and the `[vr-xr] ... frames, ... fps submitted ...` lines from the sessions of M1-M3, plus the
+[bettervr] `Event '...' started/ended` lines for M2 and M3. Say which mode line came at which step.
+
+**Expected if it works:** `compose mode stereo` at VR start and through M1 and M4. At M2 and M3 the line
+becomes `compose mode mono ...` with `a re-shown pair the located ring no longer holds` (or `one mono picture
+in both views, on the HUD quad`), stays for the length of the screen and becomes `compose mode stereo` when
+play resumes: one line each way, not a flicker. The headset shows the 2D picture on a screen in the room in
+M2 and M3, and the `multiview 0.0` windows line up with the mono lines.
+
+**What it decides:** a mono line and a steady screen in M2/M3 fixes the RC's frozen background. A stereo
+line through the whole cutscene means the frames arrive as a fresh projection rather than a re-shown pair,
+and the next step is BetterVR's side of the mono capture (a numbered patch), not the compose. A screen that
+flickers between the quad and the eye pictures is a mode switching per frame: the line count says which
+frames, and the mode needs its hold lengthened.
+
 ## 2026-11-20: the headset's motor takes a speed in Hz and Damage Taken kicks it; built, untested on console
 
 The RC logs gave the headset 12, 11, 10, ... 7 from a hit and nothing was felt, while the page's 25-for-400 ms test
