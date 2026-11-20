@@ -1944,6 +1944,10 @@ extern "C" int BetterVR_PS5_HeadsetPulse(float strength, int ms)
 	s_headset.pulseHz = hz;
 	s_headset.pulseKickUntil = now + kHeadsetKick;
 	s_headset.pulseUntil = now + (XrTime)std::max(ms, 1) * 1'000'000;
+	// a hit is a new event: the 2 s cap cut a continuous hold, not this pulse, and its hold starts again
+	s_headset.sameAt = now;
+	s_headset.capped = false;
+	s_headset.cappedLevel = -1;
 	VibLog("headset pulse %d Hz for %d ms (kick %d Hz for 60 ms, strength %.2f)", hz, ms, kHeadsetTestLevel, a);
 	ApplyHeadset();
 	return hz;
