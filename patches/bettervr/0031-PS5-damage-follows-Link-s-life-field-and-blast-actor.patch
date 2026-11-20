@@ -5,11 +5,11 @@ Subject: [PATCH] PS5: damage follows Link's life field and blast actors play
  the Explosions row; built, untested on console
 
 ---
- src/game/botw/player/player.cpp | 346 ++++++++++++++++++--------------
- 1 file changed, 193 insertions(+), 153 deletions(-)
+ src/game/botw/player/player.cpp | 343 ++++++++++++++++++--------------
+ 1 file changed, 190 insertions(+), 153 deletions(-)
 
 diff --git a/src/game/botw/player/player.cpp b/src/game/botw/player/player.cpp
-index 9cb7b89..c9a8f1f 100644
+index 9cb7b89..77c1bd3 100644
 --- a/src/game/botw/player/player.cpp
 +++ b/src/game/botw/player/player.cpp
 @@ -58,20 +58,22 @@ bool Player::IsClimbing() {
@@ -284,7 +284,7 @@ index 9cb7b89..c9a8f1f 100644
  
  static bool PlayerPosition(glm::fvec3& pos) {
      const uint32_t mtxAddress = Player::GetMtxAddress();
-@@ -285,33 +282,47 @@ static bool IsExplosiveName(const char* name) {
+@@ -285,27 +282,38 @@ static bool IsExplosiveName(const char* name) {
             strstr(name, "Chuchu") != nullptr || strstr(name, "Beam") != nullptr;
  }
  
@@ -323,34 +323,25 @@ index 9cb7b89..c9a8f1f 100644
 +            result = fmt::format("hands {:.2f}, Explosions {}% [{}]", strength * gain,
 +                                 (unsigned)settings.HapticsStrength(HapticCategory::Explosion).load(),
 +                                 DescribeDevices(devices));
++        }
++        else {
++            result = "none, no vibration mixer (VR is not running)";
          }
 -        ++s_explosiveGoneLogs;
 -        Log::print<INFO>("[vib] explosive gone name='{}' after {:.2f} s, {:.1f} m from Link{}", actor.name, seconds,
 -                         distance, recycled ? " (id changed)" : "");
 -        return;
-+        else {
-+            result = "none, no vibration mixer (VR is not running)";
-+        }
-+    }
-+    if (settings.hapticsLogPatterns) {
-+        Log::print<INFO>("[vib] explosion {} {:.1f} m -> {}", name, distance, result);
      }
 -    ++s_explosiveGoneLogs;
 -    Log::print<INFO>("[vib] explosive gone name='{}' after {:.2f} s, d=?{}", actor.name, seconds,
 -                     recycled ? " (id changed)" : "");
++    if (settings.hapticsLogPatterns) {
++        Log::print<INFO>("[vib] explosion {} {:.1f} m -> {}", name, distance, result);
++    }
  }
  
  static void NoteExplosiveActor(uint32_t actorPtr, const char* actorName) {
-     if (!IsExplosiveName(actorName)) {
-         return;
-     }
-+    if (Screens::IsLoadingVisible()) {
-+        return; // the load's own actors are not scene explosions
-+    }
-     for (const ExplosiveActor& known : s_explosives) {
-         if (known.ptr == actorPtr) {
-             return; // the list is walked again for every creation; one record each
-@@ -325,61 +336,69 @@ static void NoteExplosiveActor(uint32_t actorPtr, const char* actorName) {
+@@ -325,61 +333,69 @@ static void NoteExplosiveActor(uint32_t actorPtr, const char* actorName) {
      actor.ptr = actorPtr;
      actor.id = Guest::Get<uint32_t>(actorPtr + offsetof(BaseProc, id)).getLE();
      actor.name = actorName;
@@ -454,7 +445,7 @@ index 9cb7b89..c9a8f1f 100644
      }
  }
  
-@@ -437,7 +456,7 @@ static void LogPlayerNormalStateOnce(uint32_t stateNamePtr) {
+@@ -437,7 +453,7 @@ static void LogPlayerNormalStateOnce(uint32_t stateNamePtr) {
  }
  
  // "hands+headset+pad" for the damage line: what the Damage Taken row asked for when the hit arrived
@@ -463,7 +454,7 @@ index 9cb7b89..c9a8f1f 100644
      std::string text;
      if (devices & HapticDeviceSense)
          text = "hands";
-@@ -450,26 +469,37 @@ static std::string DescribeDamageDevices(uint32_t devices) {
+@@ -450,26 +466,37 @@ static std::string DescribeDamageDevices(uint32_t devices) {
  
  // A damage event is one falling rumble on both hands. Two state machines can see the same hit (PlayerNormal's
  // damage reaction and PlayerLargeDamage's setup at 0x02CAB32C), so the other path within 250 ms is dropped: one
@@ -510,7 +501,7 @@ index 9cb7b89..c9a8f1f 100644
      };
  
      // 0x02CAB32C also runs once while a save loads, before the first in-game frame: that is not a hit and the motor
-@@ -520,13 +550,23 @@ static void PlayDamageRumble(uint32_t stateNamePtr, const char* path) {
+@@ -520,13 +547,23 @@ static void PlayDamageRumble(uint32_t stateNamePtr, const char* path) {
  #endif
          }
          say(fmt::format("hands {:.2f}, headset {}, Damage Taken {}% [{}]", handsLevel, headsetText,
@@ -535,7 +526,7 @@ index 9cb7b89..c9a8f1f 100644
      PlayDamageRumble(0, "PlayerLargeDamage");
  }
  
-@@ -540,7 +580,7 @@ static void hook_PlayerNormalChangeState(PPCInterpreter_t* hCPU) {
+@@ -540,7 +577,7 @@ static void hook_PlayerNormalChangeState(PPCInterpreter_t* hCPU) {
  
      LogPlayerNormalStateOnce(stateNamePtr);
      NoteLifeScanState(stateNamePtr);

@@ -20,8 +20,8 @@ lost, so a load cannot fire. One `[vib] damage path=life <before>-><after> quart
 what the row asked for; one `[vib] life: player+0x540 is the life field ...` line says when it took over.
 
 **Explosions.** The actor-list hook records names containing `Bomb`, `Barrel`, `Explo`, `Chuchu` or `Beam` as they are
-created (never during a loading screen) and follows the actor's id and state each game frame. When one goes within
-30 m of Link, the Explosions row plays one falling rumble on both hands, full at 3 m and straight to nothing at 30 m;
+created and follows the actor's id and state each game frame. When one goes within 30 m of Link, the Explosions row
+plays one falling rumble on both hands, full at 3 m and straight to nothing at 30 m;
 the headset follows through the mixer's level. Removals while a loading screen is up or the player actor is gone are
 discarded, as are four or more in one frame (an area unload): that frame logs one `[vib] explosion: N gone in one
 frame, ignored (area unload)`. One `[vib] explosion <name> <dist> m -> ...` line per actor says what the row asked for

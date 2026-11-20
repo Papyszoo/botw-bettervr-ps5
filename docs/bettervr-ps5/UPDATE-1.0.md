@@ -968,8 +968,8 @@ v06's, unchanged; 0055 is the only Cemu patch added. `VERSION` stays 0.5.0.
   row asked for or why it played nothing; one `[vib] life: player+0x540 is the life field ...` line says when the
   field took over.
 - **Explosions are the actor list's own removals.** The hook records names containing `Bomb`, `Barrel`, `Explo`,
-  `Chuchu` or `Beam` as they are created (never during a loading screen) and follows the actor's id and state each
-  game frame. When one goes (its id is recycled or its state reaches 3) within 30 m of Link, the Explosions row
+  `Chuchu` or `Beam` as they are created and follows the actor's id and state each game frame. When one goes (its id
+  is recycled or its state reaches 3) within 30 m of Link, the Explosions row
   plays one falling rumble on both hands, full at 3 m and straight to nothing at 30 m; the headset follows through
   the mixer's own level. Removals while a loading screen is up or the player actor is gone are discarded, as are four
   or more in one frame (an area unload, not a blast): that frame logs one `[vib] explosion: N gone in one frame,
