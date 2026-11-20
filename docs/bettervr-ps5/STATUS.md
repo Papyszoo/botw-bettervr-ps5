@@ -3503,3 +3503,18 @@ and under 60 flat means the open world will be hard to hold at 40.
 None open. Resolved this run: zlib.net is allowed now, and the M2 prompt follows `PLAN.md`.
 If a scheduled task still has the older prompt (the one that waits for PS5XR and `m2-xr-quad`),
 update it to follow `PLAN.md`.
+
+## v0.7 test build
+
+One build for the console test, from the v0.7 draws and gaze branches on top of v0.6.1; built, untested on console.
+
+- **1.25x draw cuts.** On by default; no menu row. The index lists kept across frames are `bettervr.json`'s
+  `indexCache` (leave the key out, or set it to 1); `"indexCache": 0` gives Cemu's own cache. The VR Resolution
+  preset is BetterVR's menu > System > VR Resolution > 1.25x (restart the game). RADV threaded recording stays a
+  `ps5cemu.json` experiment. Test request 72.
+- **Eye Aim Assist.** BetterVR's menu > Controls > Motion Controls, first person only, drawn while the runtime offers
+  a gaze pose. Off by default (`EyeAimAssist`). Test request 73.
+- **Eye Magnesis.** BetterVR's menu > Controls > Motion Controls, first person only, under Eye Aim Assist. Off by
+  default (`EyeMagnesis`). Test request 74.
+- **Eye Rune Pick.** BetterVR's menu > Controls > Motion Controls, first person only, under Eye Magnesis. Off by
+  default (`EyeRunePick`). Test request 74.
