@@ -120,6 +120,31 @@ source or built. Nothing here has been run on a console.
   so either a small OpenXR layer goes on top of hmd2, or BetterVR calls hmd2 directly (see
   `PLAN.md`, M3).
 
+## Firmware coverage of hmd2's optional exports (2026-11-20)
+
+Checked in the code, not on a console.
+
+- **The headset motor and the gaze probe bind on seven libSceHmd2 tables.** The tables for
+  `sceHmd2SetVibration` and the three gaze exports (`third_party/hmd2/hmd2.cpp`) now carry 13.60,
+  12.40, 11.60, 10.00, 8.40, 7.61 and 5.50. The rows are PS5VR's (`app/src/vr_exports_*.h` in
+  <https://github.com/theghostonline/PS5VR>; the clone used here is the mtp-24 fork), GPL-3.0-or-later,
+  Copyright (C) 2026 Husam Osman. Each table uses the anchor string `hmd2_exports.h` already has for
+  that build, at the same offset, so a build is used only when its anchor sits exactly where the
+  table says. PS5VR has no row for either function on 9.00, and that build stays off. A build with
+  no matching anchor stays off as before, with its one `off on this firmware` line.
+- **The Sense vibration and trigger setters are unchanged:** libScePad's 13.60 table, by name first,
+  never scanned. Their link-time NID imports are v0.7 work.
+- **A startup probe logs, and never calls, every resolution route.** For the motor, the three gaze
+  functions and the four Sense setters it prints one line each:
+  `hmd2: resolve <name> dlsym-nid <addr|fail> dlsym-lib <addr|fail> table <addr> (+0x<offset>)`.
+  `dlsym-nid` is `sceKernelDlsym` with the NID spelling; `dlsym-lib` is the loader's
+  `NID#lib#module` spelling. `table` is the address the bind itself would take, or `-` when no
+  table's anchor matches. The probe fills no slot and calls no address. If any spelling returns the
+  table address, userland resolution by NID works, and the resolver planned for v0.7 shrinks to a
+  few lines in `resolve_module`.
+- **Not in this build:** the Sense setters as link-time NID imports and the elevation-helper
+  resolver (research-firmware.md Step A.2 and Step B). Both are v0.7.
+
 ## Reference: RE7-PSVR2 and HLA-PSVR2 behaviour
 
 - **RE7:** about 35–60 fps at full resolution, with lock modes of 60 or 40 fps reprojected to

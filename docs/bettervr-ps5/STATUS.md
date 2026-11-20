@@ -3,6 +3,86 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-20: the optional VR exports cover seven libSceHmd2 tables, and a startup probe logs every resolution route; built, untested on console
+
+The headset motor (`sceHmd2SetVibration`) and the gaze probe (`sceHmd2GazeGetResult`,
+`sceHmd2InternalGazeStart`, `sceHmd2InternalGazeStop`) bound only through the 13.60 table, although
+PS5VR carries rows for six more builds of libSceHmd2. Separately, nothing in the app had tested
+whether `sceKernelDlsym` can see these functions under their NID, or under the loader's
+`NID#lib#module` spelling; the research said names fail on 13.60, but not whether the other
+spellings do.
+
+**Step A, data only.** The two optional tables now carry every build PS5VR has a table for: 13.60,
+12.40, 11.60, 10.00, 8.40, 7.61 and 5.50. The rows are PS5VR's (`app/src/vr_exports_*.h`,
+GPL-3.0-or-later, Copyright (C) 2026 Husam Osman), and each build is keyed by the same anchor
+string and offset our own `hmd2_exports.h` already uses, so a table is used only when its anchor
+sits exactly where it says. 9.00 has no PS5VR row for either function and stays off; a build
+without a matching anchor stays off as before, with its one `off on this firmware` line. The bind
+lines now name the matched build (`the 12.40 table`, `the 7.61 table`, …). No link-time import was
+added, and the Sense setters still bind by name or at libScePad's 13.60 table only.
+
+**Step 0, log only.** `setup()` now runs one probe as soon as libSceHmd2 is loaded, before the
+required resolve and before anything optional is called. For the motor, the three gaze exports and
+the four libScePad Sense setters it prints one line each:
+
+`hmd2: resolve sceHmd2SetVibration dlsym-nid fail dlsym-lib fail table 0x... (+0x2ae00)`
+
+`dlsym-nid` is `sceKernelDlsym(handle, "Al4qjNREVQQ", ...)`, `dlsym-lib` is the same call with
+`"Al4qjNREVQQ#libSceHmd2#libSceHmd2"`, and `table` is the address the bind itself would take (or
+`-` when no table's anchor matches). The probe fills no slot, changes no latch and calls no address,
+so the session behaves exactly as it would without it. The singular trigger setter has no row in
+libScePad's table, so its `table` is expected to print `-`.
+
+**What this does not change.** On 13.60 the same addresses bind as before (motor +0x2ae00, gaze
++0x35510/+0x31b60/+0x31b80, Sense mode +0x100b0, intensity +0x5610, both-hands triggers +0xa730).
+The Sense setters as link-time NID imports and the elevation-helper resolver remain v0.7 work and
+are not in this build. The six added tables are unrun: only 13.60 (this app) and 13.60/12.40
+(PS5VR) have console results.
+
+**Test request 64 (v0.6 resolution probe and the seven motor/gaze tables, 13.60 console).** Install
+the `BotW-VR-v...zip` from this head's green "BetterVR build" run and start Breath of the Wild in VR
+with both Sense controllers and the headset on.
+
+1. **The motor.** Use the Vibration page's headset test, or take a hit. The headset must vibrate as
+   in the RC.
+2. **The Sense pair.** Use the Vibration page's Sense vibration row and its trigger test row. Both
+   must behave as in the RC.
+3. **The gaze stream.** Look around for about 10 s at the title screen or in the world. The probe
+   starts the stream once, so its `[gaze]` samples should appear twice a second for the first
+   minute.
+4. **Quit** to the library and use Settings > Diagnostics > Copy logs to USB.
+5. **Send** `/data/ps5cemu/logs/boot.log`, or these greps:
+   - `LC_ALL=C grep -a "hmd2: resolve " boot.log`
+   - `LC_ALL=C grep -a "\[gaze\]" boot.log`
+   - `LC_ALL=C grep -a "headset vibration" boot.log`
+   - `LC_ALL=C grep -a "Sense vibration exports bound" boot.log`
+   - `LC_ALL=C grep -a "Sense trigger effects bound" boot.log`
+
+**Expected on 13.60:** eight `hmd2: resolve ...` lines, in this shape and with these table offsets:
+
+- `sceHmd2SetVibration ... table 0x... (+0x2ae00)`
+- `sceHmd2InternalGazeStart ... table 0x... (+0x31b60)`
+- `sceHmd2InternalGazeStop ... table 0x... (+0x31b80)`
+- `sceHmd2GazeGetResult ... table 0x... (+0x35510)`
+- `scePadVrControllerSetVibrationMode ... table 0x... (+0x100b0)`
+- `scePadVrControllerSetVibration ... table 0x... (+0x5610)`
+- `scePadVrControllerSetTriggerEffects ... table 0x... (+0xa730)`
+- `scePadVrControllerSetTriggerEffect ... table -`
+
+`dlsym-nid fail` and `dlsym-lib fail` are the expected result for all eight; the research predicts
+it for the names on 13.60 and the two loader spellings are untested. If **either** `dlsym` side
+prints an address equal to `table`, say which function: that is the useful surprise, because
+userland resolution by NID then works and v0.7's resolver shrinks to a few lines. Also send the
+`headset vibration bound ... 13.60 table` and `[gaze] bound at the 13.60 table ...` lines, and say
+whether the motor, the Sense vibration and the triggers still feel as before (they must not change).
+
+**What it decides:** all eight lines as above with both `dlsym` sides failing confirms Step 0's
+premise and leaves the v0.7 helper resolver as planned. A `dlsym` address equal to `table` changes
+that plan to a userland lookup. A table address or offset that differs from the list means the
+anchor/table pairing for that export needs a look. The six added tables can only be verified by a
+report from a 12.40, 11.60, 10.x, 8.40, 7.x or 5.50 console; the same eight lines from one of those
+would be the evidence.
+
 ## 2026-11-20: a recenter puts the 2D panel on the seat's forward and takes the display time's pose; built, untested on console
 
 The RC's six holds (boot.log 555, 565, 1292, 1298, 1311, 1318; `[menu] Options up after 1172-1434 ms`) each
