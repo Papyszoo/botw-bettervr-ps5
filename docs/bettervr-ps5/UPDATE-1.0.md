@@ -927,9 +927,8 @@ v06's, unchanged; 0055 is the only Cemu patch added. `VERSION` stays 0.5.0.
   in Hz, not an amplitude (10-25; 1-9 run at 10, 0 stops), as PSVR2Toolkit documents for the same motor, so the
   runtime maps every 0..1 level through `Hz = 25*sqrt(a)`, off below 0.08, and the felt force follows the square. The
   runtime sends on change, caps a continuous hold at 2 s and logs the first calls and every failure. It is not called
-  with a zero level at VR start. Its first call is whichever comes first: the page's Headset test, a Damage Taken
-  pulse or an Explosions event (the first two default to the headset); the motor was felt on 13.60, so that path is
-  not an unverified offset. The page's Headset button remains the way to call it on purpose: it stays at 25 Hz for
+  with a zero level at VR start. Its first call is whichever comes first: the page's Headset test or a Damage Taken
+  pulse (both default to the headset); the motor was felt on 13.60, so that path is not an unverified offset. The page's Headset button remains the way to call it on purpose: it stays at 25 Hz for
   400 ms and logs `[vib] test headset: level 25 -> 0x...`.
 - **The DualSense is taken over while VR runs.** `port/cemu/PS5PadController.cpp` gains `PS5Pad_SetExternalRumble`
   (Cemu's own `start_rumble`/`stop_rumble` return at once, and both motors are cleared when the mode changes) and
@@ -943,7 +942,7 @@ v06's, unchanged; 0055 is the only Cemu patch added. `VERSION` stays 0.5.0.
   float-param override, and its load-time call is logged and plays nothing. A Damage request takes its hand even
   while a swing, a guard or a release rumble is still running (patch bettervr 0019): the mixer's priority check used
   to drop it, and the release rumbles are Falling too, the same type the same-rumble check matches. The headset gets
-  a pulse instead of the hands' falling envelope (`BetterVR_PS5_HeadsetPulse`, patch bettervr 0029): a 60 ms kick at
+  a held pulse besides the hands' falling envelope (`BetterVR_PS5_HeadsetPulse`, patch bettervr 0029): a 60 ms kick at
   25 Hz, then the hit's mapped level held for 300 ms, scaled by the Damage Taken row and the Headset Limit (100 % at
   the default 60 % cap is a = 0.48 -> 17 Hz). One `[vib] damage path=... state='...' (...) -> hands 0.80, headset
   pulse 17 Hz for 300 ms, Damage Taken 100% [...]` line per event, under `HapticsLogPatterns` like the game's pattern
