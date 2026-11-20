@@ -1,0 +1,141 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ps5cemu <ps5cemu@localhost>
+Date: Fri, 20 Nov 2026 20:48:57 +0100
+Subject: [PATCH] PS5: the first-time pick-up holds the third-person camera at
+ the pose before the event; built, untested on console
+
+Demo002_0's event camera steps the third-person view around Link and the item a frame at a time. The camera now
+latches the player's own pose when the event starts and resolves the VR base pose from it while the event runs in
+third person, so the event camera's moves are ignored and head tracking still applies on top. First person and
+every other event are unchanged. Demo002_0 is no longer part of the 2D-only presentation.
+---
+ src/game/botw/camera/camera.cpp | 28 ++++++++++++++++++++++++++++
+ src/game/botw/camera/camera.h   |  1 +
+ src/game/botw/game_state.cpp    | 15 +++++++++++++++
+ src/game/botw/game_state.h      |  1 +
+ 4 files changed, 45 insertions(+)
+
+diff --git a/src/game/botw/camera/camera.cpp b/src/game/botw/camera/camera.cpp
+index 3e1699b..180fa83 100644
+--- a/src/game/botw/camera/camera.cpp
++++ b/src/game/botw/camera/camera.cpp
+@@ -20,6 +20,11 @@ static std::atomic<glm::mat4> s_referenceMtx = glm::mat4(1.0f);
+ 
+ static glm::fvec3 s_wsCameraPosition = glm::fvec3();
+ static glm::fquat s_wsCameraRotation = glm::identity<glm::fquat>();
++// Demo002_0's event camera walks the third-person view around Link and the item a frame at a time; the view
++// keeps the pose it had on the last frame before the event, and the headset moves it from there.
++static glm::fvec3 s_heldEventCameraPosition = glm::fvec3();
++static glm::fquat s_heldEventCameraRotation = glm::identity<glm::fquat>();
++static bool s_isHoldingEventCamera = false;
+ static glm::fvec3 s_lastGameplayCameraTarget = glm::fvec3();
+ static bool s_hasGameplayCameraTarget = false;
+ static bool s_isSwimming = false;
+@@ -54,6 +59,11 @@ void Camera::SetReferenceMtx(const glm::mat4& referenceMtx) {
+     s_referenceMtx.store(referenceMtx);
+ }
+ 
++void Camera::LatchEventCameraHold() {
++    s_heldEventCameraPosition = s_wsCameraPosition;
++    s_heldEventCameraRotation = s_wsCameraRotation;
++}
++
+ static std::atomic_bool s_appliesFirstPersonTurning = false;
+ struct SnapTurnRequest {
+     int32_t direction = 0;
+@@ -438,6 +448,24 @@ glm::mat4 Camera::GetFreshReferenceMtx() {
+ }
+ 
+ std::pair<glm::fvec3, glm::fquat> Camera::ResolveGameplayBasePose(const BESeadLookAtCamera& camera) {
++    // Demo002_0's event camera steps around Link and the item a frame at a time in third person; the view keeps the
++    // pose it had on the last frame before the event, and the headset moves it from there.
++    const bool holdEventCamera = Events::IsFirstTimeItemGetActive() && GameState::IsThirdPerson();
++    if (holdEventCamera != s_isHoldingEventCamera) {
++        s_isHoldingEventCamera = holdEventCamera;
++        if (holdEventCamera) {
++            Log::print<INFO>("Camera hold starts for 'Demo002_0' (third person, held at ({:.2f}, {:.2f}, {:.2f}); head tracking still applies)",
++                s_heldEventCameraPosition.x, s_heldEventCameraPosition.y, s_heldEventCameraPosition.z);
++        }
++        else {
++            Log::print<INFO>("Camera hold ends for 'Demo002_0' (third person, held at ({:.2f}, {:.2f}, {:.2f}))",
++                s_heldEventCameraPosition.x, s_heldEventCameraPosition.y, s_heldEventCameraPosition.z);
++        }
++    }
++    if (holdEventCamera) {
++        return { s_heldEventCameraPosition, s_heldEventCameraRotation };
++    }
++
+     // the first frames after a screen closes are what a 2-frame world shift would come from: say whether the
+     // view took the hook's cached pose or the game's own camera matrix
+     static bool s_wasScreenShown = false;
+diff --git a/src/game/botw/camera/camera.h b/src/game/botw/camera/camera.h
+index 51ea244..f6ccf43 100644
+--- a/src/game/botw/camera/camera.h
++++ b/src/game/botw/camera/camera.h
+@@ -15,6 +15,7 @@ namespace Camera {
+ 
+     std::pair<glm::fvec3, glm::fquat> ResolveGameplayBasePose(const BESeadLookAtCamera& camera);
+     void UpdateReferenceMtx(const glm::fvec3& gameplayPos, const glm::fquat& gameplayRot);
++    void LatchEventCameraHold();
+ 
+     // a hook should pass the same views to each call so everything comes from one XR frame
+     std::pair<glm::fvec3, glm::fquat> BuildMiddlePose(const std::optional<Tracking::HeadViews>& views, const glm::fvec3& gameplayPos, const glm::fquat& gameplayRot);
+diff --git a/src/game/botw/game_state.cpp b/src/game/botw/game_state.cpp
+index 91b492c..a1022b7 100644
+--- a/src/game/botw/game_state.cpp
++++ b/src/game/botw/game_state.cpp
+@@ -13,6 +13,9 @@ static std::atomic_bool s_eventActive = false;
+ // its frames stay fresh stereo pairs and the runtime's mono switch only fires near the end. Present the 2D
+ // layer alone for the whole event, the way a black-bars cutscene is presented.
+ static std::atomic_bool s_2DOnlyPresentation = false;
++// Demo002_0 is the first-time pick-up panel: its third-person camera cues step the view around Link and the item,
++// so the camera holds the pose it had on the last frame before the event and only the headset moves it.
++static std::atomic_bool s_firstTimeItemGet = false;
+ // the camera picked with the cutscene button, kept across events the game chains together
+ static std::atomic<EventMode> s_eventModeOverride = EventMode::NO_EVENT;
+ static std::atomic_uint32_t s_cameraToggles = 0;
+@@ -71,6 +74,10 @@ bool Events::IsActive() {
+     return s_eventActive.load(std::memory_order_relaxed);
+ }
+ 
++bool Events::IsFirstTimeItemGetActive() {
++    return s_firstTimeItemGet.load(std::memory_order_relaxed);
++}
++
+ static EventMode GetActiveEventMode() {
+     const EventMode overrideMode = s_eventModeOverride.load(std::memory_order_relaxed);
+     return overrideMode != EventMode::NO_EVENT ? overrideMode : GetSettings().GetCutsceneCameraMode();
+@@ -159,6 +166,7 @@ static void hook_GetEventName(PPCInterpreter_t* hCPU) {
+             if (s_2DOnlyPresentation.exchange(false)) {
+                 Log::print<INFO>("2D-only presentation ends for '{}'", s_currentEvent);
+             }
++            s_firstTimeItemGet = false;
+             Log::print<INFO>("Event '{}' has now ended", s_currentEvent);
+             s_currentEvent.clear();
+             s_currentEntryPoint.clear();
+@@ -183,6 +191,13 @@ static void hook_GetEventName(PPCInterpreter_t* hCPU) {
+             Log::print<INFO>("2D-only presentation ends for '{}'", s_currentEvent);
+         }
+     }
++    // Demo002_0's event camera walks the third-person view around Link and the item; the camera holds the player's
++    // own pose from the last frame before the event. First person and every other event keep the game camera.
++    const bool firstTimeItemGet = eventName == "Demo002_0";
++    if (firstTimeItemGet && s_currentEvent != eventName) {
++        Camera::LatchEventCameraHold();
++    }
++    s_firstTimeItemGet = firstTimeItemGet;
+     s_currentEvent = eventName;
+     s_currentEntryPoint = entryPointName;
+     Events::Settings settings = defaultFirstPersonSettings;
+diff --git a/src/game/botw/game_state.h b/src/game/botw/game_state.h
+index a510358..6ae6429 100644
+--- a/src/game/botw/game_state.h
++++ b/src/game/botw/game_state.h
+@@ -20,6 +20,7 @@ namespace Events {
+     };
+ 
+     bool IsActive();
++    bool IsFirstTimeItemGetActive();
+     void ToggleCameraMode();
+     std::optional<Settings> GetFirstPersonSettings();
+     bool UsesAnimatedHands();

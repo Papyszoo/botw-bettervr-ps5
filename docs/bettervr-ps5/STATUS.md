@@ -3,13 +3,13 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
-## 2026-11-20: the first-time pick-up panel is the 2D layer alone in third person, and first person stays 3D; built, untested on console
+## 2026-11-20: the first-time pick-up holds the third-person camera where it was; built, untested on console
 
 The v0.6.0 report (13.60): the first Bird Egg pickup ran `Demo002_0` while the item panel was up
 (`play7/logs/boot.log` 1607-1609, 610.976-614.392; also 446.345-448.214 and 63.021-65.380). The panel was sharp and
 steady, but the 3D picture behind it jumped to a different camera angle almost every frame (behind, side, above): a
-violent strobe in the headset. The follow-up console report (Test request 71's build) is that the jump happened only
-with the third-person camera; in first person the item-get presentation is fine in 3D and should stay 3D.
+violent strobe in the headset. Test request 71's build showed the panel alone on black in third person, but the
+panel looked stretched, so `Demo002_0` is back in 3D and the event camera is held instead.
 
 `Demo002_0` is "Pick up Get Demo" in upstream's table (`patch_Settings_Cutscenes.asm:60`), started directly or at
 `GetAnotherInnerItem`; the game runs it when an item type is picked up for the first time. In play3-play7 the three
@@ -18,30 +18,32 @@ Chests use other ids: `Demo000_0` "Treasure Chest Get Demo" (52 starts in play3-
 Chest Get Demo (inventory full)" (11), both first person and `PAN_OFF` like `Demo002_0`; cooking is `Demo001_0`. The
 runes are `Demo003_0` at `Item01`-`Item03` (9 starts).
 
-**Why the camera jumped.** `Demo002_0` is first person with camera rotation ignored, so BetterVR's event trampoline
-(`patch_FirstPersonMode_Events.asm`) skips every `CameraEvent` action it covers (`Look`, `LookDirect`, `Turn`,
-`Idling`, `Move`, ...) and marks it finished so the event can go on. The pick-up demo's 3D picture is a scripted
-camera move around Link and the item; each cue is marked finished on the frame it starts, so the demo steps through
-its camera cues at frame rate instead of at their authored timing. The 3D layer keeps being captured and submitted
-as a fresh stereo pair, so the runtime never falls into mono and the headset shows a new scripted angle every 60 Hz
-frame. It is not an eye swap: both eyes take the same middle base pose, and only the base camera changes per frame.
+**Why the camera jumped.** In third person `GameState::IsFirstPerson()` is false for the whole event, so upstream's
+event trampoline (`patch_FirstPersonMode_Events.asm`) does not skip the `CameraEvent` actions (`Look`, `LookDirect`,
+`Turn`, `Idling`, `Move`, ...) that `ignoreCameraRotation` skips in first person. The pick-up demo's 3D picture is a
+scripted camera move around Link and the item, and each cue reaches the render camera on the frame it starts, so the
+base camera changes every 60 Hz frame. Both eyes take the same middle base pose; only the base camera moves.
 
-**The fix.** New patch bettervr 0037 adds `Demo002_0` to the 2D-only presentation patch 0032 introduced for
-`Demo003_0`, in third person only. `GameState::UseBlackBarsDuringEvents()` returns true for the event only while
-`GameState::IsThirdPerson()` holds: the same condition as the `IsFirstPerson()` check in upstream's own black-bars
-path one line below, which the renderer applies before it drops the projection layer (`renderer.cpp` ~331). The 3D
-capture releases early and the projection layer stays out of `xrEndFrame` from the event's first frame; the 2D layer
-alone is composed with black around it, as in Test request 66. In first person the event is exactly as in v0.6.0:
-stereo and no black bars. `Demo003_0` keeps its 2D-only presentation in either mode, and `Demo000_0`/`Demo000_2` stay
-out: their 3D picture is the chest opening, the scene to watch. No other event changed; no Cemu or runtime change.
+**The fix.** `Demo002_0` is no longer part of the 2D-only presentation patch 0032 introduced for `Demo003_0`, so the
+pick-up is 3D in either camera mode and `Demo003_0` keeps patch 0032 exactly as it was. Instead, patch bettervr 0037
+latches the player's own pose when a `Demo002_0` event starts (`Camera::LatchEventCameraHold()`) and
+`Camera::ResolveGameplayBasePose()` returns that pose while the event runs in third person. That is the function
+through which the render camera, the visibility check and the reference matrix take the game camera every frame, so
+the event camera's moves are ignored there and the headset pose is still composed on top. The hold is released when
+the event ends. First person and every other event are unchanged.
 
-Logs: `2D-only presentation for 'Demo002_0' is on (this event is third person, the 2D layer alone, black around it)`
-at the event's start in third person, or `2D-only presentation for 'Demo002_0' is off (this event is first person, its
-3D picture stays)` in first person; `2D-only presentation ends for 'Demo002_0'` at its end. `Demo003_0` keeps
-`2D-only presentation starts for 'Demo003_0' (the 2D layer alone, black around it)`.
+**Why not upstream's fixed-camera path.** Upstream keeps the camera still during an event through
+`ignoreCameraRotation` and `hook_ShouldSkipEventCamera`, and the "Cutscenes on a still 2D screen" preset turns that
+on. The hook returns true only while `GameState::IsFirstPerson()` holds, because it is there to stop first-person
+nausea; it skips the event camera actions, which first person already skips for this event, and it does not hold the
+VR base pose in third person.
 
-**Test request 71 (v0.6.1 first-time pick-up 2D presentation in both camera modes, 13.60 console).** Install the
-`BotW-VR-v...zip` from this head's green "BetterVR build" run and start Breath of the Wild in VR.
+Logs: `Camera hold starts for 'Demo002_0' (third person, held at (x, y, z); head tracking still applies)` when the
+event starts in third person, and `Camera hold ends for 'Demo002_0' (third person, held at (x, y, z))` when it ends.
+`Demo003_0` keeps `2D-only presentation starts for 'Demo003_0' (the 2D layer alone, black around it)`.
+
+**Test request 71 (v0.6.1 first-time pick-up camera hold, 13.60 console).** Install the `BotW-VR-v...zip` from this
+head's green "BetterVR build" run and start Breath of the Wild in VR.
 
 1. **Normal play and another cutscene, unchanged.** Play about 60 s in the open world, then trigger a cutscene that
    is not an item get (a memory, or a tower). Does the world still have depth, and does the cutscene still play in 3D
@@ -49,38 +51,38 @@ at the event's start in third person, or `2D-only presentation for 'Demo002_0' i
 2. **Third-person camera (the report's case).** In the VR menu set Camera Mode to Third Person (the cutscene camera
    mode can stay at its default). Pick up an item type the save has never picked up, so the big panel appears (a new
    game's first Apple or Bird Egg, or any material you have not taken on this save; the small toast means that type
-   was already taken). Stand still for the first 3 s, then turn your head left and right and lean. Is the panel on
-   black from its first frame, with no 3D picture behind it at any point, and does it stay put in the room when you
-   turn? Repeat once with a second new item type if one is available and say which items they were.
+   was already taken). Watch the whole item-get presentation, then turn your head left and right and lean. Does the
+   world stay where it was, with no scripted angle change behind the panel, and does it keep its depth? Does the item
+   name/description panel show, stay readable, and stay in front of you when you turn? Repeat once with a second new
+   item type if one is available and say which items they were.
 3. **First-person camera (must stay as v0.6.0).** Set Camera Mode to First Person and pick up another item type the
    save has never taken. Watch the whole item-get presentation. Does it show the 3D presentation exactly as v0.6.0
-   did (no black around the panel, no strobing picture, the scene behind it steady), and does the panel stay put when
-   you turn? Say what the 3D picture showed, because the same event must not have lost its depth.
-4. **A chest, unchanged.** Open a chest in either camera mode. The chest and Link's hands must still show in 3D as
-   before; no 2D-only line may name `Demo000_0` or `Demo000_2`. Say whether the item panel after the chest opens
+   did (no camera hold, no black around the panel, the scene behind it steady), and does the panel stay put when you
+   turn? Say what the 3D picture showed, because the same event must not have lost its depth.
+4. **The rune sequence, unchanged.** Collect a rune that downloads a panel (`Demo003_0`, for example the Magnesis
+   rune). Does the 2D layer still show alone on black for the whole download, as in Test request 66?
+5. **A chest, unchanged.** Open a chest in either camera mode. The chest and Link's hands must still show in 3D as
+   before; no camera hold line may name `Demo000_0` or `Demo000_2`. Say whether the item panel after the chest opens
    looks as it did in v0.6.0.
-5. **Send**, from `/data/ps5cemu/logs/boot.log`:
-   - `LC_ALL=C grep -a "2D-only presentation\|Event 'Demo002_0'\|Event 'Demo000_" boot.log`
+6. **Send**, from `/data/ps5cemu/logs/boot.log`:
+   - `LC_ALL=C grep -a "Camera hold\|2D-only presentation\|Event 'Demo002_0'\|Event 'Demo003_0'\|Event 'Demo000_" boot.log`
    - `LC_ALL=C grep -a "compose mode" boot.log`
    - `LC_ALL=C grep -a "\[draws\]" boot.log`
-   - Which Camera Mode was set for steps 2 and 3.
+   - Which Camera Mode was set for steps 2, 3 and 4.
 
-**Expected if it works:** in third person, `2D-only presentation for 'Demo002_0' is on` on the same frame as the
-event's started line, then `compose mode mono (frame N): no projection layer or eye picture this frame` from the
-first frame of the event, with no `compose mode stereo` between it and `2D-only presentation ends for 'Demo002_0'`;
-the panel sits on black for the whole event, and the `multiview` numbers keep moving under it because the game still
-draws. In first person, `2D-only presentation for 'Demo002_0' is off (this event is first person, its 3D picture
-stays)` and `compose mode` stays stereo through the event, with the 3D presentation v0.6.0 showed. The next
-`compose mode stereo` after a third-person event is after the event's end. The chest step has no 2D-only line and its
-`compose mode` stays stereo.
+**Expected if it works:** in third person, one `Camera hold starts for 'Demo002_0'` line on the event's started line,
+`compose mode` stays stereo for the whole event, the world behind the panel does not change angle, and one
+`Camera hold ends for 'Demo002_0'` line at the event's end. In first person there is no camera hold line and the
+event is the 3D presentation v0.6.0 showed. `Demo003_0` still logs `2D-only presentation starts` and its
+`compose mode mono` line, as before. The chest step has no camera hold line and its `compose mode` stays stereo.
 
-**What it decides:** a third-person mono line with a steady panel on black, and a first-person event that leaves the
-3D presentation alone, close the follow-up. A first-person run that logs `is on` or a mono compose means the mode
-gate did not take: send the lines from step 5. A third-person run that logs `is off` means `IsThirdPerson()` was
-false when the event started (check whether the scope or camera rune was up); send the lines and the camera mode. A
-`2D-only presentation starts for 'Demo003_0'` that changed with the mode means the two events share a condition they
-should not. A black or missing panel in third person means the change took the 2D layer with it, and the next step is
-gating the projection layer in the renderer instead. A 2D-only line for a chest means the list is too wide.
+**What it decides:** a pair of camera hold lines with a steady, deep world and a readable panel in third person
+closes the follow-up. A third-person event with no hold line means `IsThirdPerson()` was false when the event
+started (check whether the scope or camera rune was up); a hold line in first person means the mode gate did not
+take: send the lines from step 6 and the camera mode. A world that still changes angle behind the panel means the
+hold does not reach the render camera. A missing or misplaced panel means the hold took the Layer2D reference with
+it; the next step is to hold only the camera matrices. A `2D-only presentation starts for 'Demo003_0'` that changed
+means the rune event lost its presentation, and a 2D-only line for a chest or the pick-up means the list is too wide.
 
 ## 2026-11-20: v0.6.1 hotfix: third-person smooth turning reads the game's own yaw delta again; built, untested on console
 
