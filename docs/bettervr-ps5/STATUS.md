@@ -3,6 +3,65 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-20: v0.6.0 ships asyncCompose on: the compose wait leaves Cemu's GPU thread, and the `[draws]` line splits the record; built; asyncCompose tested on console at 1x
+
+The v0.6 console logs (1x and 1.5x, gameplay windows of 3,500+ draws) put the stereo pass's record at 12.3-13.5 ms at
+1x and 12.9 ms at 1.5x, so it is the GPU thread's own work and not the eye's pixels; the compose wait was 4.6-5.1 ms at
+1x and 11.6-11.8 ms at 1.5x, the GPU finishing the frame. A frame was the record plus that wait in series (about
+18.5 ms, 54 fps), and the GPU had nothing to do while the next frame's first commands were recorded.
+
+**asyncCompose, on by default.** `xrEndFrame` returns once the compose is submitted. The frame pump's next
+`xrWaitFrame` (BetterVR's own thread, which already ran right after each frame end) waits for the compose's fence,
+submits the frame to Hmd2 with the same render pose, and then naps and begins the next Hmd2 frame, in the same order
+and at the same moment the synchronous path did; Cemu's GPU thread goes on to the next game frame. One compose is in
+flight at most: an `xrEndFrame` that finds a compose the pump has not taken finishes it before it records its own (the
+compose's command buffer, descriptor set and fence are reused), and a fence timeout is left to the GPU thread's next
+`xrEndFrame`, which handles it as before. A `bettervr.json` with no `asyncCompose` key runs it on; `"asyncCompose": 0`
+turns it off, and the frame end then does what it did, with its wait and submit in one function that `xrEndFrame` calls
+at once. The startup log says `[vr-xr] compose wait: ... (bettervr.json's asyncCompose)`.
+
+**Tested on firmware 13.60:** one session at 1x (a shrine, Bokoblins, the inventory, the scope and a save) averaged
+59.9 fps of gameplay against 52.2 in the previous build's windows with the same draw counts; the 1% low rose from 44.4
+to 58.0 fps, frames held for three refreshes fell from 31% to about 1% (2.01 refreshes an image), `xr end` fell from
+4.5-5.1 ms to 0.07 ms, and repeated, skipped, queue-full and GPU timeout counts stayed at 0. 254 frames of 64,200 were
+missed (0.4%), the submitted rate stayed within a frame of the game's (59.68 against 59.74 fps), there were no new
+warnings, head turns felt the same and no visual issue showed. GPU busy was 56%: the 60 Hz slot stream is the ceiling
+in those windows.
+
+**The `[draws]` line.** It gains `| sequences N, index lists N (N KB), sets made N, pipelines made N` per frame: the
+draws that set up their state in full (the first of a sequence), the index lists decoded (index cache misses) and
+their size, and the descriptor sets and pipelines made. With `bettervr.json`'s `"profile": true` a second line,
+`[vr-xr] [draws] record split per frame: sequence setup X ms, draws Y ms (uniforms, indices, buffers, pipeline and
+sets, binds and the draw), between draws Z ms`, says where the stereo pass's record goes; it costs about 0.2 ms a
+frame and only with the profile on. That session's split: setup 2.36 ms, draws 7.64 ms (of them binds and the draw
+3.24 ms), between draws 2.08 ms, against a record of 12.14 ms, so the split is complete. Cemu's draw counters no
+longer take a locked add on every draw. New patch: cemu 0058; no BetterVR patch.
+
+**Test request 69 (v0.6.0 asyncCompose default and its off switch, 13.60 console).** Install the `BotW-VR-v...zip`
+from this head's green "BetterVR build" run and start Breath of the Wild in VR with the headset and both Sense
+controllers. Keep `"profile": true` in `/data/botwvr/launcher/bettervr.json` for all runs, and use one outdoor spot
+for each: the same save, the same place and facing the same way, with grass and trees in view; each run, stand still
+30 s, walk a small circle for 30 s, then quit to the library.
+
+1. **Default, 1x.** Remove any `"asyncCompose"` key from `bettervr.json` (or set it to 1). The boot log must have
+   `compose wait: on the frame pump's xrWaitFrame`. Say whether head turns feel like the last build (no extra lag,
+   judder or smear) and whether the HUD, a menu and the inventory look as before.
+2. **Off, 1x.** Set `"asyncCompose": 0` and restart the app (it reads the file at the session's start). The boot log
+   must have `compose wait: in xrEndFrame on Cemu's GPU thread` with `("asyncCompose": 0)`. Same route; the fps should
+   fall back to about the previous build's at this spot (about 52 fps in the matched windows) and `xr end` to
+   4.5-5.1 ms.
+3. **Default at 1.5x.** Put `"asyncCompose"` back to 1 (or remove it), set BetterVR's menu > System > VR Resolution >
+   1.5x, restart the game, and play the same route; then set VR Resolution back to 1x.
+
+Send each run's `boot.log` (Settings > Diagnostics > Copy logs to USB keeps the last five, or the file itself):
+- `LC_ALL=C grep -a "compose wait:\|\[draws\]\|\[frame\]\|\[perf\]" boot.log`
+- `LC_ALL=C grep -a "fps submitted\|compositor's GPU work\|VR start" boot.log`
+
+**What it decides.** Run 1 shows the default path: its fps and the 600-frame line's `missed`, `repeated`, `skipped` and
+`GPU timeouts` must match the tested 59.9 fps and zero. Run 2 must show the old rate, `xr end` back at 4.5-5.1 ms and
+the off line in the log, which is the switch working. Run 3 says whether 1.5x, where the fence wait is 11-12 ms, keeps
+`repeated`, `skipped` and `GPU timeouts` at zero and the submitted fps within a frame of `[perf]`.
+
 ## 2026-11-20: damage reads Link's life field from the first frame, so a fall rumbles; built, untested on console
 
 The RC7 report: falling about 15 m did not vibrate. The log has `PlayerNormal state '着地ダメージ'`
