@@ -42,7 +42,7 @@ at most twice a second while steering. `game` against the previous line's `now` 
 distance at its range. A new `HandAim::TryGetGazeWorldRay` places the gaze ray where the camera puts the eyes, and
 `GameState::GetActiveRune` reads RuneMgr's selected rune.
 
-New patch bettervr 0040 (`magnesis.cpp/.h`, `stereo_view.cpp`, `controls.cpp`, `hand_aim.cpp/.h`, `game_state.cpp/.h`,
+New patch bettervr 0041 (`magnesis.cpp/.h`, `stereo_view.cpp`, `controls.cpp`, `hand_aim.cpp/.h`, `game_state.cpp/.h`,
 `mod_settings.h`, `imgui_menus.cpp`); no Cemu, runtime or asm change.
 
 **Test request 74 (v0.7 Eye Magnesis, 13.60 console).** Install the `BotW-VR-v...zip` from this head's green
@@ -103,7 +103,7 @@ One log line per assisted throw or shot, at INFO so it needs no debug switch:
 `[BowShot] eye aim assist: arrow, 2.1 degrees to gaze, 2.1 applied`. The first number is the raw angle between the
 released direction and the gaze, the second what was applied; no line means no valid sample or an unchanged shot.
 
-New patch bettervr 0039 (`controls.cpp`, `bow.cpp`, `mod_settings.h`, `imgui_menus.cpp`); no Cemu change. The offered
+New patch bettervr 0040 (`controls.cpp`, `bow.cpp`, `mod_settings.h`, `imgui_menus.cpp`); no Cemu change. The offered
 extension and the hidden state are in `port/bettervr/xr/runtime.cpp` and `third_party/hmd2/`.
 
 **Test request 73 (v0.7 Eye Aim Assist, 13.60 console).** Install the `BotW-VR-v...zip` from this head's green
@@ -210,6 +210,27 @@ Send each run's `boot.log` (Settings > Diagnostics > Copy logs to USB):
 on. Run 2 decides threaded recording: if `binds and the draw` and the record fall and the fps rises with no stutter
 and `[perf]`'s GPU thread idle stays sane, a later build sets it for BotW VR; if the record does not fall or frames
 over 20 ms rise, it stays off. Run 3, if sent, is the same-session control for run 1.
+## 2026-11-20: first person with the DualSense follows the first-person Snap Turn step; built, untested on console
+
+The cd60daf report (13.60, DualSense as player 1, Sense controllers connected): in first person with First Person
+Snap Turn at 45, the right stick still turned smoothly; third person's snap and smooth turning both worked. The
+pulled boot log (`logs-turn2`) has `- Camera Mode: First Person (Recommended)` and `[turn] mode: first person snap, 45
+degrees` from 34.997 s in the latest run.
+
+**Cause.** The first-person snap latch read only the OpenXR right stick. A DualSense's right stick reaches the game
+as its VPAD sample, and the game applies that horizontal itself; first person withholds only the OpenXR part, so the
+step was never requested and the game's smooth yaw was what turned the view. Upstream's first-person path reads only
+the VR stick in the same way, so the smooth turn is upstream behaviour, not a change from patches 0012 or 0036; the
+third-person snap added by 0012 reads the physical stick and had no first-person counterpart.
+
+**The fix.** Patch bettervr 0039 adds the physical stick to the first-person latch, the same sum the third-person
+path uses, and withholds the physical horizontal from VPAD while a first-person snap is active (not in flat camera
+mode); one push is one step at the angle as set. With Snap Turn off nothing is withheld and the DualSense turns the
+game's camera as before. The first-person `SnapTurn:` line is INFO, as the third-person one is, so a console log
+shows each step.
+
+**Test request 70** in the next entry, step 4, covers this case.
+
 ## 2026-11-20: a black-bars 2D layer reaches the quad as the game drew it; built, untested on console
 
 The v0.6.1 report (13.60, new game): the first rune's 2D-only panel is alone on black again, but its picture looks
@@ -377,8 +398,10 @@ Keep Comfort > Advanced > Turning at Snap 45 for steps 1-3 unless a step says ot
    and every `SnapTurn:` line.
 4. **First person.** Set Camera Mode First Person and Comfort > Advanced > Turning to Smooth. Repeat step 1's
    pushes: the DualSense's stick and, with the Sense controllers on, a Sense right stick must turn smoothly, and no
-   `[turn] ... at rest` line may appear. Then set Turning to Snap 45 and, with the Sense controllers on, push the
-   Sense right stick once each way; each push must be one step, as in v0.5.1. Send the
+   `[turn] ... at rest` line may appear. Then set Turning to Snap 45 and push the DualSense's right stick once each
+   way; each push must be one 45-degree step and log one `SnapTurn: turning 45 degrees`, and holding must not step
+   again until the stick is released past the deadzone and pushed again (first person must follow the setting, not
+   the game's smooth turn). With the Sense controllers on, the Sense right stick must do the same. Send the
    `[turn] mode: first person smooth, N deg/s` and `[turn] mode: first person snap, 45 degrees` lines and every
    `SnapTurn:` line.
 5. **Both controller types.** Repeat step 1 with the Sense right stick (Sense controllers on) and say whether it
@@ -389,7 +412,8 @@ Keep Comfort > Advanced > Turning at Snap 45 for steps 1-3 unless a step says ot
 **What it decides.** A smooth turn with both controllers and no at-rest lines closes the report. An at-rest line
 names the source and the degrees it applied; the mode line tells which path was active. If a chase-camera line
 persists after the stick is released, the game's own yaw still reaches the camera and the next step is the game's
-chase state, not our stick map.
+chase state, not our stick map. A first-person push that logs one `SnapTurn: turning 45 degrees` and moves in one
+step closes the DualSense case; a smooth move without that line means the game still received the stick.
 
 ## 2026-11-20: v0.6.0 ships asyncCompose on: the compose wait leaves Cemu's GPU thread, and the `[draws]` line splits the record; built; asyncCompose tested on console at 1x
 

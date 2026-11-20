@@ -1,0 +1,55 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ps5cemu <ps5cemu@localhost>
+Date: Fri, 20 Nov 2026 23:18:00 +0100
+Subject: [PATCH] PS5: first person reads the DualSense's right stick for a
+ snap, and withholds it when the step is on; built, untested on console
+
+The first-person snap latch read only the OpenXR right stick. A DualSense's stick reaches the game as
+VPAD instead and turns its camera smoothly, so with Snap Turn on the game turned by the stick and no
+step was ever requested. The latch now reads the same sum the third-person path reads, and a
+first-person snap withholds the physical horizontal from the game as the third-person one does, so no
+smooth yaw is left to apply. With Snap Turn off nothing is withheld and the game's camera turns as
+before. The first-person snap line is INFO, as the third-person one already is.
+---
+ src/game/botw/camera/camera.cpp  | 2 +-
+ src/game/botw/input/controls.cpp | 7 +++++--
+ 2 files changed, 6 insertions(+), 3 deletions(-)
+
+diff --git a/src/game/botw/camera/camera.cpp b/src/game/botw/camera/camera.cpp
+index 180fa83..6d86ac9 100644
+--- a/src/game/botw/camera/camera.cpp
++++ b/src/game/botw/camera/camera.cpp
+@@ -203,7 +203,7 @@ static float ConsumePendingCameraYawDelta() {
+     }
+ 
+     SignalSnapTurnFade();
+-    Log::print<CONTROLS>("SnapTurn: turning {} degrees", direction * snapAngle);
++    Log::print<INFO>("SnapTurn: turning {} degrees", direction * snapAngle);
+     return (float)direction * (float)snapAngle;
+ }
+ 
+diff --git a/src/game/botw/input/controls.cpp b/src/game/botw/input/controls.cpp
+index 0a091ea..98ab03a 100644
+--- a/src/game/botw/input/controls.cpp
++++ b/src/game/botw/input/controls.cpp
+@@ -253,7 +253,8 @@ static void UpdateTurning(const XrActionStateVector2f& rightStickSource, float p
+     }
+     else if (GetSettings().GetSnapTurnAngle() > 0) {
+         Camera::SetSmoothTurnInput(0.0f);
+-        UpdateSnapTurnStick(stickX, s_firstPersonSnapTurnStickLatched);
++        // a DualSense's stick is in the physical sample, a Sense stick is in the XR one
++        UpdateSnapTurnStick(std::clamp(stickX + physicalStickX, -1.0f, 1.0f), s_firstPersonSnapTurnStickLatched);
+     }
+     else {
+         s_firstPersonSnapTurnStickLatched = false;
+@@ -1677,7 +1678,9 @@ static void hook_InjectXRInput(PPCInterpreter_t* hCPU) {
+ #endif
+ 
+     const bool thirdPersonSnapTurn = ShouldSnapTurnThirdPerson(state.inGame) && !ImGuiMenus::g_isOpen && Camera::AppliesFirstPersonTurning();
+-    if (thirdPersonSnapTurn)
++    const bool firstPersonSnapTurn = ShouldOverrideFirstPersonTurning(state.inGame) && GetSettings().GetSnapTurnAngle() > 0
++        && !GameState::IsFlatCameraModeActive() && !ImGuiMenus::g_isOpen && Camera::AppliesFirstPersonTurning();
++    if (thirdPersonSnapTurn || firstPersonSnapTurn)
+         vpadStatus.rightStick = { 0.0f, vpadStatus.rightStick.y.getLE() }; // the game turns by the step, not the stick
+     const bool disableRightStickHorizontalRotation = (ShouldOverrideFirstPersonTurning(state.inGame) || thirdPersonSnapTurn) && !ImGuiMenus::g_isOpen && Camera::AppliesFirstPersonTurning();
+     VPADButtons newXRStickHold = VPAD_BUTTON_NONE;
