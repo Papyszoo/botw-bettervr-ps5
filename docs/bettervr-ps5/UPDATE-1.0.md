@@ -1008,40 +1008,32 @@ v06's, unchanged; 0055 is the only Cemu patch added. `VERSION` stays 0.5.0.
 
 ### Eye tracking and the throw assist
 
-- **Gaze probe in hmd2.** `sceHmd2GazeGetResult`, `...ForFoveatedRendering`, `ActivateGazeTracking`,
-  `GetDeviceStatus` and `GetUserCalibrationStatus` are optional slots resolved with `sceKernelDlsym` only, in
-  libSceHmd2's own module handle rather than the opened headset's handle. No gaze offset is added to
-  `hmd2_exports.h`; a library that does not export them logs one line naming the first missing name and leaves eye
-  tracking off. A lazy probe binds them before the OpenXR instance is made, so the extension list can answer honestly;
-  after `sceHmd2Open` the probe calls `ActivateGazeTracking(1)`, then logs the device status and the user calibration
-  status. Status 0 means detected/calibrated; any other value is logged raw. A device status other than 0 says in the
-  log that eye tracking is off in the PS5 settings (Settings > Accessories > PS VR2 > Eye Tracking) or that the headset
-  does not see the eyes; a calibration status other than 0 says the user is not calibrated and names Adjust Eye
-  Tracking. The status is re-checked every 2 s, so putting the headset on or changing the setting after VR starts is
-  seen.
-- **The first 10 s.** At most once a second, the probe logs the full `0x38` result and the `0x18` foveated result as
-  hex, then the parsed raw direction and both status fields. Every later status change is logged once (at most 20
-  lines). A sample is exposed only when the device and calibration checks pass, both calls returned 0, the foveated
-  (or, failing that, the full) result's status is 0 and its direction is finite and non-zero.
-- **OpenXR exposure is gated by the exports.** The runtime lists `XR_EXT_eye_gaze_interaction` only when
-  `hmd2::gaze_available()` says the five exports are bound; `xrCreateInstance` refuses the name otherwise, and
-  `xrGetSystemProperties` fills `XrSystemEyeGazeInteractionPropertiesEXT` with false, so BetterVR logs
-  `Supports Eye Tracking: No` on 13.60 instead of offering an action set that can never track. When the exports are
-  there, the profile's `/user/eyes_ext/input/gaze_ext/pose` binding and the gaze space are made as before.
-  `xrLocateSpace` returns an orientation-only pose (valid + tracked) while the probe has a valid sample and an
-  untracked pose otherwise; `xrGetActionStatePose` reports the action active only then. After the session starts, a
-  failed activation or calibration is logged once and the runtime says the gaze space stays untracked. The Controls >
-  Motion Controls **Gaze Throw Assist** row is drawn only while `BetterVR_PS5_EyeGazeAvailable()` is true (the code
-  stays; unavailable hardware just does not show it).
-- **Direction frame.** The firmware gives the foveated direction headset-relative with +z forward; the runtime applies
-  PSVR2Toolkit's `{-x, y, -z}` conversion and rotates it by the frame's head pose into stage space. The first console
-  run's hex and raw direction are what confirm the sign.
-- **Throw assist.** Patch bettervr 0010. When the new setting is on, a released throw takes the point 10 m along the
-  gaze ray from the middle of the eyes (head forward when no gaze sample exists), and bends the hand's world velocity
-  toward the line from the hand to that point by at most 15 degrees; the speed is unchanged, and the game's own 1.2x
-  cap still applies. The setting is `Gaze Throw Assist` in Controls > Motion Controls, default off. Log line:
-  `[Throw] gaze assist bent N degrees toward the gaze` (or `head`). With eye tracking off or uncalibrated the
-  fallback is the head direction, so the setting still behaves predictably.
+- **Gaze probe in hmd2 (13.60 only).** `sceHmd2GazeGetResult`, `sceHmd2InternalGazeStart` and
+  `sceHmd2InternalGazeStop` are bound at PS5VR's 13.60 offsets (`+0x35510`, `+0x31b60`, `+0x31b80`) after
+  libSceHmd2's `"Not Initialized"` anchor matched (`kAnchor_libSceHmd2_1360`), the same exact-anchor, no-scan way
+  as `sceHmd2SetVibration`; the four gaze names with no public offset are not used. The bind is optional: another
+  firmware logs `hmd2: [gaze] unavailable on this firmware (no verified libSceHmd2 table)` and the stream stays
+  off.
+- **Start and log.** After `sceHmd2Open` the probe calls `InternalGazeStart()` once and logs its return code;
+  `shutdown()` calls `InternalGazeStop()`. Each `begin_frame()` polls `GazeGetResult` with the 0x10-byte parameter
+  `{0x10, headset handle, 0}` into a 0x38-byte result. A sample is valid when the call returned 0, `+4` is 0, the
+  `+0x10` flag is 1 and the direction at `+0x14` is finite and unit length. Every logged line carries the raw
+  0x38 bytes and the parsed direction, validity and status: about twice a second for the first 60 s of VR, then
+  every 10 s, and one measured new-`+8`-sample rate line after the first minute.
+- **Logging only.** `hmd2::gaze_available()` is false in this build, so the runtime does not list
+  `XR_EXT_eye_gaze_interaction`, does not make the profile or the action set, and BetterVR logs
+  `Supports Eye Tracking: No`; the Controls > Motion Controls **Gaze Throw Assist** row stays hidden. The
+  console's Test request 60 confirms the direction and rate before any gameplay use.
+- **Direction frame.** The firmware gives the direction in its headset frame, `-z` forward, and `xrLocateSpace`
+  uses it as it comes (the old `{-x, y, -z}` flip is gone); the pose is rotated by the frame's head pose into stage
+  space. This path stays for when the extension is offered again.
+- **Throw assist.** Patch bettervr 0010/0028. With the setting on, a released throw takes the point 10 m along the
+  gaze ray from the head and bends the hand's world velocity toward the line from the throwing hand to that point
+  by at most 15 degrees; the speed is unchanged, and the game's own 1.2x cap still applies. The assist does nothing
+  without a valid gaze sample (the old head-direction fallback is gone), so a leftover `EyeGazeThrowAssist: true`
+  cannot bend a throw while the row is hidden. A left-hand throw uses the left hand's position. The setting is
+  `Gaze Throw Assist` in Controls > Motion Controls, default off. Log line:
+  `[Throw] gaze assist bent N degrees toward the gaze`.
 - **Backlog, not this build:** item highlight and bow aim assist.
 
 ### Touchpad click

@@ -152,38 +152,23 @@ VRTRACKER2_FUNCS(DECLARE_PTR)
 VRHAND_FUNCS(DECLARE_PTR)
 #undef DECLARE_PTR
 
-// Eye tracking. These exports are optional and resolved by name only: no
-// firmware table carries a gaze offset, so a library without the names leaves
-// the feature off instead of guessing an address (one line says why).
+// Eye tracking, the 13.60 probe. libSceHmd2 does not export these names on 13.60, so they are
+// bound at PS5VR's 13.60 table offsets after the library's own anchor matched, exactly like the
+// headset motor (bind_headset_vibration). The full result is 0x38 bytes; only +4 status, +8 a
+// per-sample stamp, +0x10 the valid flag and +0x14 the direction are known. The stream is started
+// once and every sample is logged; this build does not hand a sample to gameplay.
 int (*sceHmd2GazeGetResult)(const void *param, void *result) = nullptr;
-int (*sceHmd2GazeGetResultForFoveatedRendering)(const void *param, void *result) = nullptr;
-int (*sceHmd2GazeActivateGazeTracking)(int mode) = nullptr;
-int (*sceHmd2GazeGetDeviceStatus)(int32_t *status) = nullptr;
-int (*sceHmd2GazeGetUserCalibrationStatus)(void *status) = nullptr;
+int (*sceHmd2InternalGazeStart)() = nullptr;
+int (*sceHmd2InternalGazeStop)() = nullptr;
 
-// The result layouts are AnyPS5's reverse-engineered libSceHmd2 (the sizes are
-// pinned by its argument checks; the full result is only known at +4 status and
-// +0x14 direction). The reserve bytes are kept so the hex dump is the whole
-// struct.
+// The parameter is AnyPS5's reverse-engineered 0x10-byte libSceHmd2 form: size, the opened headset's
+// handle, eight reserved bytes. The 0x38 result is kept as raw bytes, so its dump is the whole struct.
 struct GazeResultParameter {
     uint32_t size;
     int32_t handle;
     uint8_t reserved[8];
 };
-struct FoveatedGazeResult {
-    uint32_t size;
-    int32_t status;
-    float direction[3];
-    uint8_t reserved[4];
-};
-struct GazeUserCalibrationStatus {
-    int32_t status;
-    int32_t eye;
-    float point[3];
-};
 static_assert(sizeof(GazeResultParameter) == 0x10, "gaze parameter size");
-static_assert(sizeof(FoveatedGazeResult) == 0x18, "foveated gaze result size");
-static_assert(sizeof(GazeUserCalibrationStatus) == 0x14, "gaze calibration status size");
 
 struct Slot {
     const char *name;
@@ -314,20 +299,18 @@ struct State {
     DeviceState device = {0, true, 0};
     Error error = {"", 0};
 
-    // Eye tracking (the optional gaze exports): bound by name, activated once,
-    // and trusted only while the device and calibration checks pass.
+    // Eye tracking (the 13.60 probe): the three exports bound at the table's offsets, the stream
+    // started once, and a sample logged twice a second for the first minute, then every 10 s.
     bool gaze_checked = false;
     bool gaze_bound = false;
-    const char *gaze_first_missing = nullptr; // the first name dlsym did not give, for the init log
-    int gaze_missing = 0;                     // count; -1 when libSceHmd2 itself did not load
-    bool gaze_ready = false;   // the device is detected and the user is calibrated
-    bool gaze_active = false;  // ActivateGazeTracking(1) took
+    bool gaze_active = false;
     uint64_t gaze_started_us = 0;
     uint64_t gaze_logged_us = 0;
-    uint64_t gaze_status_checked_us = 0;
+    uint64_t gaze_last_stamp = 0;
+    bool gaze_rate_logged = false;
     int gaze_logs = 0;
-    int gaze_status_logs = 0;
-    int gaze_last_status = -2;
+    uint64_t gaze_polls = 0;
+    uint64_t gaze_new_samples = 0;
 
     // Pacing (HLA-PSVR2's rules): the previous BeginFrame and its predicted
     // display, the caller's measured work, and the frames Hmd2 has opened but
@@ -647,114 +630,74 @@ bool resolve_module(int handle, const char *file, const Slot *slots, size_t n,
     return true;
 }
 
-// -- eye tracking ------------------------------------------------------------
-// The five exports this port uses, all optional. They are found by name in libSceHmd2's own
-// module handle (not the opened headset's handle); the export tables have no gaze offsets, and
-// none are guessed. The probe runs before the OpenXR instance enumerates its extensions, so an
-// unavailable library is known before the runtime offers XR_EXT_eye_gaze_interaction.
+// -- eye tracking (the 13.60 probe) ------------------------------------------
+// The three exports the probe needs, at PS5VR's 13.60 offsets (GPL-3.0, app/src/vr_exports_1360.h;
+// the same library's SetVibration row from that source runs on the console). Exact anchor, no scan:
+// any other firmware leaves gaze off rather than guess an address, and the probe logs one line.
+const Slot kGazeSlots[] = {
+    {"sceHmd2GazeGetResult", reinterpret_cast<void **>(&sceHmd2GazeGetResult)},
+    {"sceHmd2InternalGazeStart", reinterpret_cast<void **>(&sceHmd2InternalGazeStart)},
+    {"sceHmd2InternalGazeStop", reinterpret_cast<void **>(&sceHmd2InternalGazeStop)},
+};
+const export_sig_t kExports_libSceHmd2Gaze_1360[] = {
+    {"sceHmd2GazeGetResult", 0x35510u},
+    {"sceHmd2InternalGazeStart", 0x31b60u},
+    {"sceHmd2InternalGazeStop", 0x31b80u},
+};
+const export_table_t kTables_libSceHmd2Gaze[] = {
+    {1360, kExports_libSceHmd2Gaze_1360, 3, &kAnchor_libSceHmd2_1360},
+};
+
 bool bind_gaze_exports() {
     if (s.gaze_checked)
         return s.gaze_bound;
-    struct GazeSlot {
-        const char *name;
-        void **slot;
-    };
-    const GazeSlot slots[] = {
-        {"sceHmd2GazeGetResult", reinterpret_cast<void **>(&sceHmd2GazeGetResult)},
-        {"sceHmd2GazeGetResultForFoveatedRendering",
-         reinterpret_cast<void **>(&sceHmd2GazeGetResultForFoveatedRendering)},
-        {"sceHmd2GazeActivateGazeTracking",
-         reinterpret_cast<void **>(&sceHmd2GazeActivateGazeTracking)},
-        {"sceHmd2GazeGetDeviceStatus", reinterpret_cast<void **>(&sceHmd2GazeGetDeviceStatus)},
-        {"sceHmd2GazeGetUserCalibrationStatus",
-         reinterpret_cast<void **>(&sceHmd2GazeGetUserCalibrationStatus)},
-    };
     const int handle = load_sysmodule(kSysmoduleHmd2, "libSceHmd2");
     if (handle < 0) {
         // not latched: a later session or the init path may load the library where this early probe could not
-        s.gaze_missing = -1;
-        s.gaze_first_missing = nullptr;
         return false;
     }
     s.gaze_checked = true;
-    s.gaze_missing = 0;
-    s.gaze_first_missing = nullptr;
-    for (const GazeSlot &gaze_slot : slots) {
-        *gaze_slot.slot = nullptr;
-        if (sceKernelDlsym(handle, gaze_slot.name, gaze_slot.slot) != 0 ||
-            *gaze_slot.slot == nullptr) {
-            if (s.gaze_first_missing == nullptr)
-                s.gaze_first_missing = gaze_slot.name;
-            s.gaze_missing++;
-        }
+    s.gaze_bound = resolve_module(handle, "libSceHmd2.sprx", kGazeSlots, kSlots(kGazeSlots),
+                                  kTables_libSceHmd2Gaze,
+                                  sizeof kTables_libSceHmd2Gaze / sizeof *kTables_libSceHmd2Gaze,
+                                  nullptr, false /* optional */, false /* never scan */);
+    if (!s.gaze_bound) {
+        sceHmd2GazeGetResult = nullptr;
+        sceHmd2InternalGazeStart = nullptr;
+        sceHmd2InternalGazeStop = nullptr;
     }
-    s.gaze_bound = s.gaze_missing == 0;
     return s.gaze_bound;
 }
 
-// Called once after sceHmd2Open: start the stream, then say plainly whether the
-// system switch and the user's calibration allow a sample to be trusted. A
-// status of 0 is what AnyPS5's reverse-engineered API calls detected/calibrated;
-// every other value is logged raw, so the first console run can correct it.
+// Called once after sceHmd2Open: start the stream. Its samples are read and logged only; nothing
+// here (or in the runtime) offers them to an application in this build.
 void gaze_start() {
-    s.gaze_started_us = sceKernelGetProcessTime();
     if (!bind_gaze_exports()) {
-        // the probe may have run before the logger existed (the extension list is asked first), so the
-        // result is said here, once per session
-        if (s.gaze_missing < 0)
-            logf("hmd2: [gaze] libSceHmd2 unavailable; eye tracking off");
-        else
-            logf("hmd2: [gaze] libSceHmd2 does not export %s%s; eye tracking off",
-                 s.gaze_first_missing != nullptr ? s.gaze_first_missing : "the gaze exports",
-                 s.gaze_missing > 1 ? " and the other gaze exports" : "");
+        logf("hmd2: [gaze] unavailable on this firmware (no verified libSceHmd2 table)");
         return;
     }
-    logf("hmd2: [gaze] five exports bound by name (no offset table)");
+    logf("hmd2: [gaze] bound at the 13.60 table (anchor checked): GetResult %p, Start %p, Stop %p",
+         reinterpret_cast<void *>(sceHmd2GazeGetResult),
+         reinterpret_cast<void *>(sceHmd2InternalGazeStart),
+         reinterpret_cast<void *>(sceHmd2InternalGazeStop));
 
-    const int activate = sceHmd2GazeActivateGazeTracking(1);
-    s.gaze_active = activate == 0;
-    logf("hmd2: [gaze] ActivateGazeTracking(1) -> 0x%08x", (unsigned)activate);
-
-    int32_t device = -1;
-    const int device_rc = sceHmd2GazeGetDeviceStatus(&device);
-    GazeUserCalibrationStatus calibration = {};
-    const int calibration_rc = sceHmd2GazeGetUserCalibrationStatus(&calibration);
-    const bool device_ok = device_rc == 0 && device == 0;
-    const bool calibration_ok = calibration_rc == 0 && calibration.status == 0;
-    s.gaze_ready = device_ok && calibration_ok;
-
-    if (device_rc != 0)
-        logf("hmd2: [gaze] device status unavailable (rc 0x%08x); eye tracking off",
-             (unsigned)device_rc);
-    else if (device == 0)
-        logf("hmd2: [gaze] device detected");
-    else
-        logf("hmd2: [gaze] device status %d: eye tracking is off in the PS5 settings "
-             "(Settings > Accessories > PS VR2 > Eye Tracking), or the headset does not see "
-             "the eyes", (int)device);
-
-    if (calibration_rc != 0)
-        logf("hmd2: [gaze] calibration status unavailable (rc 0x%08x); treated as not calibrated",
-             (unsigned)calibration_rc);
-    else if (calibration.status != 0)
-        logf("hmd2: [gaze] calibration status %d, eye %d, point %.2f %.2f %.2f: not calibrated; "
-             "run PS5 Settings > Accessories > PS VR2 > Adjust Eye Tracking",
-             (int)calibration.status, (int)calibration.eye, (double)calibration.point[0],
-             (double)calibration.point[1], (double)calibration.point[2]);
-    else
-        logf("hmd2: [gaze] calibrated (eye %d, point %.2f %.2f %.2f)", (int)calibration.eye,
-             (double)calibration.point[0], (double)calibration.point[1],
-             (double)calibration.point[2]);
-
-    logf("hmd2: [gaze] eye tracking %s", s.gaze_ready ? "on" : "off");
+    const int rc = sceHmd2InternalGazeStart();
+    s.gaze_active = rc == 0;
+    s.gaze_started_us = sceKernelGetProcessTime();
+    logf("hmd2: [gaze] InternalGazeStart -> 0x%08x (%s)", (unsigned)rc,
+         rc == 0 ? "stream started" : "stream not started");
 }
 
-void log_gaze_hex(const char *what, int rc, const uint8_t *bytes, size_t n) {
+// One line: the whole 0x38 result as raw bytes, then the fields this probe reads.
+void log_gaze_sample(int rc, const uint8_t *bytes, const float direction[3], bool valid,
+                     int32_t status) {
     char hex[0x38 * 3 + 1];
     size_t at = 0;
-    for (size_t i = 0; i < n && at + 4 <= sizeof hex; i++)
+    for (size_t i = 0; i < 0x38 && at + 4 <= sizeof hex; i++)
         at += (size_t)std::snprintf(hex + at, sizeof hex - at, "%02x ", bytes[i]);
-    logf("hmd2: [gaze] %s (rc 0x%08x): %s", what, (unsigned)rc, hex);
+    logf("hmd2: [gaze] 0x38 rc 0x%08x: %s| dir %.4f %.4f %.4f valid %d status %d",
+         (unsigned)rc, hex, (double)direction[0], (double)direction[1], (double)direction[2],
+         valid ? 1 : 0, (int)status);
 }
 
 bool gaze_direction(const float raw[3], float out[3]) {
@@ -1166,15 +1109,17 @@ void teardown() {
         logf("hmd2: reprojection down (0x%08x)", (unsigned)r);
         s.reproj_up = false;
     }
-    if (s.gaze_bound && sceHmd2GazeActivateGazeTracking != nullptr) {
-        const int r = sceHmd2GazeActivateGazeTracking(0);
-        logf("hmd2: [gaze] ActivateGazeTracking(0) -> 0x%08x", (unsigned)r);
+    if (s.gaze_active && sceHmd2InternalGazeStop != nullptr) {
+        const int r = sceHmd2InternalGazeStop();
+        logf("hmd2: [gaze] InternalGazeStop -> 0x%08x", (unsigned)r);
     }
-    // the exports stay bound (the library is still loaded); a later session may activate again
-    s.gaze_ready = s.gaze_active = false;
-    s.gaze_started_us = s.gaze_logged_us = s.gaze_status_checked_us = 0;
-    s.gaze_logs = s.gaze_status_logs = 0;
-    s.gaze_last_status = -2;
+    // the exports stay bound (the library is still loaded); a later session starts the stream again
+    s.gaze_active = false;
+    s.gaze_started_us = s.gaze_logged_us = 0;
+    s.gaze_last_stamp = 0;
+    s.gaze_rate_logged = false;
+    s.gaze_logs = 0;
+    s.gaze_polls = s.gaze_new_samples = 0;
     if (s.hmd >= 0) {
         const int r = sceHmd2Close(s.hmd);
         logf("hmd2: sceHmd2Close(0x%x) -> 0x%08x", s.hmd, (unsigned)r);
@@ -1713,6 +1658,9 @@ bool wait_slot() {
 bool begin_frame() {
     if (!s.active)
         return false;
+    // The 13.60 gaze probe polls here: once a frame is plenty for its own throttle, and it keeps
+    // logging when no application asks for a gaze pose.
+    gaze();
     if (s.frame_open)   // the last frame was never submitted: draw it again
         return true;
     const uint64_t frame = s.frame + 1;
@@ -2002,92 +1950,60 @@ bool pad_triggers_available() {
 }
 
 bool gaze_available() {
-    if (!bind_gaze_exports())
-        return false;
-    // Before a session only the exports can be checked; gaze_start() activates them and records
-    // whether the stream took. A session whose activation failed does not offer eye tracking.
-    if (s.gaze_started_us == 0)
-        return true;
-    return s.gaze_active && s.gaze_ready;
+    // This build's gaze is a probe: it binds and logs on 13.60, but the runtime must not offer
+    // XR_EXT_eye_gaze_interaction yet, so no application can use a sample. The console's Test
+    // request 60 decides the sign and the rate before the extension is offered.
+    return false;
 }
 
 Gaze gaze() {
     Gaze out = {{0, 0, 0}, false, -1};
-    if (!s.gaze_bound || s.hmd < 0)
+    if (!s.gaze_bound || !s.gaze_active || s.hmd < 0)
         return out;
 
     GazeResultParameter param = {0x10, s.hmd, {}};
-    uint8_t full[0x38] = {};
-    const uint32_t full_size = 0x38;
-    std::memcpy(full, &full_size, sizeof full_size);
-    FoveatedGazeResult foveated = {};
-    foveated.size = 0x18;
-    const uint64_t now = sceKernelGetProcessTime();
+    uint8_t result[0x38] = {};
+    const uint32_t result_size = 0x38;
+    std::memcpy(result, &result_size, sizeof result_size);
+    const int rc = sceHmd2GazeGetResult(&param, result);
 
-    // The system switch or the fit can change after VR starts (the player puts the headset on
-    // after the session, or turns eye tracking off). Re-check at most every 2 s, and say in the
-    // log when the feature comes or goes.
-    if (now - s.gaze_status_checked_us >= 2'000'000)
-    {
-        s.gaze_status_checked_us = now;
-        int32_t device = -1;
-        GazeUserCalibrationStatus calibration = {};
-        const bool ready = sceHmd2GazeGetDeviceStatus(&device) == 0 && device == 0 &&
-                           sceHmd2GazeGetUserCalibrationStatus(&calibration) == 0 &&
-                           calibration.status == 0;
-        if (ready != s.gaze_ready)
-        {
-            s.gaze_ready = ready;
-            logf("hmd2: [gaze] eye tracking %s (device %d, calibration %d)", ready ? "on" : "off",
-                 (int)device, (int)calibration.status);
-        }
-    }
-
-    const int full_rc = sceHmd2GazeGetResult(&param, full);
-    const int foveated_rc = sceHmd2GazeGetResultForFoveatedRendering(&param, &foveated);
-    int32_t full_status = -1;
-    float full_direction[3] = {0, 0, 0};
-    std::memcpy(&full_status, full + 0x04, sizeof full_status);
-    std::memcpy(full_direction, full + 0x14, sizeof full_direction);
-
-    // The foveated result is the direction-only one; the full result is the
-    // fallback when that export refuses while the other answers.
-    float direction[3] = {0, 0, 0};
-    bool directed = false;
     int32_t status = -1;
-    if (foveated_rc == 0 && foveated.status == 0 &&
-        gaze_direction(foveated.direction, direction)) {
-        directed = true;
-        status = foveated.status;
-    } else if (full_rc == 0 && full_status == 0 && gaze_direction(full_direction, direction)) {
-        directed = true;
-        status = full_status;
-    }
+    uint32_t valid_flag = 0;
+    uint64_t stamp = 0;
+    float raw[3] = {0, 0, 0};
+    std::memcpy(&status, result + 0x04, sizeof status);
+    std::memcpy(&stamp, result + 0x08, sizeof stamp);
+    std::memcpy(&valid_flag, result + 0x10, sizeof valid_flag);
+    std::memcpy(raw, result + 0x14, sizeof raw);
 
+    // PS5VR's validity: the call returned 0, +4 is 0 and the +0x10 flag is 1; the direction must
+    // also be finite and unit length. The direction is in the firmware's headset frame, -z forward.
     out.status = status;
-    if (directed) {
-        std::memcpy(out.direction, direction, sizeof direction);
-        out.valid = s.gaze_ready;
+    out.valid = rc == 0 && status == 0 && valid_flag == 1 && gaze_direction(raw, out.direction);
+
+    const uint64_t now = sceKernelGetProcessTime();
+    s.gaze_polls++;
+    if (stamp != s.gaze_last_stamp) {
+        s.gaze_last_stamp = stamp;
+        s.gaze_new_samples++;
     }
 
-    if (s.gaze_started_us != 0 && now - s.gaze_started_us < 10'000'000 &&
-        (s.gaze_logged_us == 0 || now - s.gaze_logged_us >= 1'000'000)) {
+    // Two lines a second for the first minute of VR, then one every 10 s, and the measured
+    // new-sample rate once after that minute.
+    const uint64_t since_us = s.gaze_started_us != 0 ? now - s.gaze_started_us : 0;
+    const bool first_minute = since_us < 60'000'000;
+    const uint64_t interval = first_minute ? 500'000 : 10'000'000;
+    if (s.gaze_logged_us == 0 || now - s.gaze_logged_us >= interval) {
         s.gaze_logged_us = now;
         s.gaze_logs++;
-        log_gaze_hex("result 0x38", full_rc, full, sizeof full);
-        log_gaze_hex("foveated 0x18", foveated_rc,
-                     reinterpret_cast<const uint8_t *>(&foveated), sizeof foveated);
-        logf("hmd2: [gaze] raw direction %.4f %.4f %.4f, status full %d foveated %d, %s",
-             (double)out.direction[0], (double)out.direction[1], (double)out.direction[2],
-             (int)full_status, (int)foveated.status,
-             out.valid ? "valid" : directed ? "not exposed (device or calibration)"
-                                            : "no tracked sample");
+        log_gaze_sample(rc, result, out.direction, out.valid, status);
     }
-    if (status != s.gaze_last_status) {
-        s.gaze_last_status = status;
-        if (s.gaze_status_logs++ < 20)
-            logf("hmd2: [gaze] status changed to %d (%s)", (int)status,
-                 out.valid ? "valid" : "not exposed");
+    if (!first_minute && !s.gaze_rate_logged) {
+        s.gaze_rate_logged = true;
+        const double seconds = (double)since_us / 1'000'000.0;
+        const double rate = seconds > 0.0 ? (double)s.gaze_new_samples / seconds : 0.0;
+        logf("hmd2: [gaze] sample rate %.1f new +8 stamps/s over %.1f s (%llu changes in %llu polls)",
+             rate, seconds, (unsigned long long)s.gaze_new_samples, (unsigned long long)s.gaze_polls);
     }
     return out;
 }

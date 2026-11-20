@@ -1964,9 +1964,9 @@ extern "C" int BetterVR_PS5_TestTriggers()
 	return step;
 }
 
-// BetterVR's menu draws the Gaze Throw Assist row only while the runtime can offer eye tracking:
-// the exports are bound, and after a session ActivateGazeTracking(1) and the calibration checks
-// passed. The row's code stays; unavailable hardware just does not show it.
+// BetterVR's menu draws the Gaze Throw Assist row only while the runtime can offer eye tracking.
+// This build's gaze is a logging probe (third_party/hmd2), so gaze_available() is false and the
+// row stays hidden; the row's code stays for when the probe's direction and rate are confirmed.
 extern "C" int BetterVR_PS5_EyeGazeAvailable()
 {
 	return hmd2::gaze_available() ? 1 : 0;
@@ -2014,9 +2014,9 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEnumerateInstanceExtensionProperties(const char
 	// XR_KHR_composition_layer_depth is not offered, as 7fbceeb allows: BetterVR then keeps its depth in a local attachment, and no
 	// depth swapchain (three 16 MB images for each eye) is made for a compositor that ignores depth. xrCreateInstance still
 	// accepts the name, for an application that asks without having looked.
-	// Eye gaze is offered only when libSceHmd2's five gaze exports are bound: a library without them
-	// (13.60, the first console run) leaves the extension out, so the application logs No and does not
-	// build an action set whose poses could never be tracked. Activation is checked again at the session.
+	// Eye gaze is not offered in this build: the 13.60 probe binds its exports and logs samples
+	// (third_party/hmd2/hmd2.cpp), but no application may use them until the console has confirmed
+	// the direction and rate. The extension list, the profile and the action set therefore stay off.
 	const bool gaze = hmd2::gaze_available();
 	*count = gaze ? 2u : 1u;
 	if (capacity < *count)
@@ -2117,10 +2117,8 @@ XRAPI_ATTR XrResult XRAPI_CALL xrGetSystemProperties(XrInstance, XrSystemId, XrS
 	std::snprintf(props->systemName, XR_MAX_SYSTEM_NAME_SIZE, "PlayStation VR2");
 	props->graphicsProperties = {kEyeWidth, kEyeHeight, 1};
 	props->trackingProperties = {XR_TRUE, XR_TRUE};
-	// The eye-gaze profile is offered only when hmd2 bound the five gaze exports. xrGetSystemProperties
-	// runs before xrCreateSession, so activation and calibration are checked again after hmd2::init: a
-	// session whose ActivateGazeTracking(1) failed leaves every gaze pose untracked, and the runtime
-	// says so once. Without the exports (13.60) the property is false and BetterVR logs No.
+	// The eye-gaze profile is not offered in this build: hmd2::gaze_available() is false while the
+	// 13.60 probe logs only. The property stays false and BetterVR logs Supports Eye Tracking: No.
 	const bool gaze = hmd2::gaze_available();
 	bool chained = false;
 	for (auto* next = static_cast<XrBaseOutStructure*>(props->next); next; next = next->next)
@@ -2132,7 +2130,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrGetSystemProperties(XrInstance, XrSystemId, XrS
 	static bool logged = false;
 	if (!std::exchange(logged, true))
 		Log(gaze ? "gaze: XR_EXT_eye_gaze_interaction offered%s; a pose is reported only while the headset's calibrated eye tracking is on"
-				 : "gaze: XR_EXT_eye_gaze_interaction not offered: libSceHmd2 does not bind the gaze exports on this firmware%s",
+				 : "gaze: XR_EXT_eye_gaze_interaction not offered: this build logs the gaze probe only%s",
 			chained ? "" : " (the application did not chain the system property)");
 	return XR_SUCCESS;
 }
@@ -2269,7 +2267,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateSession(XrInstance, const XrSessionCreate
 	s.sessionStartedAt = sceKernelGetProcessTime();
 	Log("VR start 3/5: the headset is up and the compositor is ready (%llu ms after the session)", (unsigned long long)((sceKernelGetProcessTime() - sessionBeganAt) / 1000));
 	if (s.instance->gaze && !hmd2::gaze_available())
-		Log("gaze: eye tracking did not activate or is not calibrated; the gaze space stays untracked and the throw assist uses the head direction");
+		Log("gaze: eye tracking is not available; the gaze space stays untracked");
 	s.gripPitch = BetterVR_PS5_Setting("gripPitch", 32.0f);
 	s.aimPitch = BetterVR_PS5_Setting("aimPitch", 0.0f);
 	s.gripYaw = BetterVR_PS5_Setting("gripYaw", 17.0f);
@@ -2445,9 +2443,9 @@ XRAPI_ATTR XrResult XRAPI_CALL xrLocateSpace(XrSpace space, XrSpace base, XrTime
 			location->pose = {{0, 0, 0, 1}, {0, 0, 0}};
 			return XR_SUCCESS;
 		}
-		// hmd2 hands the firmware's headset-frame direction (+z forward, as PSVR2Toolkit's
-		// {-x, y, -z} conversion implies); OpenXR's eyes look down -z, and the pose is in stage space.
-		const Vec3 raw{-sample.direction[0], sample.direction[1], -sample.direction[2]};
+		// hmd2 hands the firmware's headset-frame direction (-z forward, as PS5VR reads the same result);
+		// OpenXR's eyes look down -z, so it is used as it comes, and the pose is in stage space.
+		const Vec3 raw{sample.direction[0], sample.direction[1], sample.direction[2]};
 		const Vec3 direction = Rotate(HeadAt(time).q, raw);
 		const Quat orientation = Mul(Conj(SpacePose(base, time).q), FromTo({0, 0, -1}, direction));
 		location->pose = ToXr(Pose{orientation, {0, 0, 0}});

@@ -124,12 +124,11 @@ struct DeviceState {
     uint32_t lens_mm;  // lens-to-eye distance Hmd2 reports
 };
 
-// One eye-tracking sample. The gaze exports are optional: they are resolved by
-// name only, and a library that does not export them leaves `valid` false (one
-// line says why). `direction` is the firmware's own headset-frame direction,
-// +z forward and not yet turned into tracker space; `status` is the result's
-// status field (0 = a tracked sample). init() activates the stream and logs the
-// device and calibration state; the first 10 s of samples are logged as hex.
+// One eye-tracking sample from the 13.60 probe. The three exports are bound at a table whose
+// anchor matched, so any other firmware leaves `valid` false and logs one line. `direction` is the
+// firmware's own headset-frame direction, -z forward and not yet turned into tracker space;
+// `status` is the result's status word (0 = a tracked sample). A sample is valid only when the
+// call returned 0, +4 is 0, the +0x10 flag is 1 and the direction is finite and unit length.
 struct Gaze {
     float direction[3];
     bool valid;
@@ -211,14 +210,16 @@ uint64_t display_time_us();   // Hmd2's predicted display time for this frame
 Fov field_of_view();
 DeviceState device_state();   // cached, polled at most every 0.5 s
 bool worn();
-// One poll of the headset's eye tracking. Cheap (two exports), safe before
-// init() (returns invalid), and rate-limits its own first-10-s log.
+// One poll of the 13.60 gaze probe: one sceHmd2GazeGetResult, its own log (the raw 0x38 bytes,
+// direction and validity twice a second for the first minute of VR, then every 10 s, and the
+// measured new-sample rate once), and `valid` as the Gaze note above says. Cheap, safe before
+// init() (returns invalid), and inactive on firmware without the table.
 Gaze gaze();
 
-// Whether eye tracking can be offered: the five gaze exports are bound by name,
-// and after a session has started, ActivateGazeTracking(1) took and the device
-// and user calibration checks pass. Safe before init(); it loads libSceHmd2 to
-// bind the exports, so an OpenXR runtime can answer before its first session.
+// Whether eye tracking can be offered to applications. This build logs the probe only
+// (third_party/hmd2/hmd2.cpp), so this is false: the runtime does not offer
+// XR_EXT_eye_gaze_interaction and BetterVR's menu draws no Gaze Throw Assist row until the
+// console's Test request 60 confirms the direction and rate. Safe before init().
 bool gaze_available();
 
 // -- Sense controllers -----------------------------------------------------------------

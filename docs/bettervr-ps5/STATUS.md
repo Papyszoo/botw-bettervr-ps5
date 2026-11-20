@@ -3,6 +3,55 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-20: the gaze probe is bound on 13.60 and logs only, and the throw assist does nothing without a real sample; built, untested on console
+
+The RC session's 24 `[Throw] gaze assist bent 15.0 degrees toward the head` lines came from patch bettervr
+0010: when no eye-gaze sample existed, the assist fell back to the head's forward direction. A leftover
+`EyeGazeThrowAssist: true` in `bettervr.json` therefore bent every throw by the full 15 degrees even though
+the row was hidden and the player could not turn it off. The assist now returns the velocity unchanged
+unless `Tracking::EyeGaze()` gives a valid sample, and the target line starts at the hand that throws (the
+left hand's position when only the left hand holds the item). The row stays hidden and the setting stays
+default off; a leftover on setting now has no effect. Patch bettervr 0028.
+
+The gaze probe now uses the table that already works for the headset motor. `sceHmd2GazeGetResult` and
+`sceHmd2InternalGazeStart` / `Stop` are bound at PS5VR's 13.60 offsets (`+0x35510`, `+0x31b60`,
+`+0x31b80`) behind `kAnchor_libSceHmd2_1360`, exact and never scanned; the four names with no public
+offset are gone. After `sceHmd2Open` the stream starts once, `begin_frame()` polls one `0x38` result, and
+a sample is valid only when the call returned 0, `+4` is 0, `+0x10` is 1 and the `+0x14` direction is
+finite and unit length. Each log line carries the raw `0x38` bytes plus the parsed direction, validity and
+status, about twice a second for the first 60 s of VR, then every 10 s, with one measured new-`+8`-sample
+rate line after that minute. Other firmware logs one `hmd2: [gaze] unavailable on this firmware (no
+verified libSceHmd2 table)` line and does nothing else. The runtime no longer flips the direction
+(`{-x, y, -z}` is gone; the firmware's frame is `-z` forward) and does not offer
+`XR_EXT_eye_gaze_interaction`: the probe is logging only, so no sample reaches gameplay, BetterVR logs
+`Supports Eye Tracking: No`, and the Gaze Throw Assist row stays hidden. No Cemu change. Details:
+`UPDATE-1.0.md`, "Eye tracking and the throw assist".
+
+**Test request 60 (the gaze probe, the report's request 59, 13.60 console).**
+1. On the PS5, open Settings > Accessories > PS VR2. Turn eye tracking on, then run **Adjust Eye Tracking**
+   once while wearing the headset.
+2. Install the build, put the headset on **before** starting the game, then start Breath of the Wild in VR.
+   In BetterVR's Controls > Motion Controls, **Gaze Throw Assist** must not be shown.
+3. When the headset picture appears, keep the head still and do all of this in the first 60 s: look
+   **straight ahead 5 s**, **far right 5 s**, **far left 5 s**, **up 5 s**, **down 5 s**, then **close your
+   eyes 3 s** and open them.
+4. Play about a minute.
+5. Quit to the home screen. Send `/data/ps5cemu/logs/boot.log` (and `boot.1.log` if the game was started
+   twice), or paste:
+   - every `hmd2: [gaze] ...` line: `bound at the 13.60 table ...`, `InternalGazeStart -> 0x...`, the
+     `0x38 rc 0x...:` hex lines with their `dir ... valid ... status ...` fields, the `sample rate ...`
+     line, and `InternalGazeStop -> 0x...`;
+   - `gaze: XR_EXT_eye_gaze_interaction not offered: this build logs the gaze probe only`;
+   - BetterVR's ` - Supports Eye Tracking: No` line;
+   - any `[Throw] gaze assist ...` line, which must be absent.
+6. Say whether the game froze or crashed at VR start, and whether the PS5 eye-tracking setting was on and
+   the adjustment completed.
+
+**Expected if it works:** straight ahead gives `dir 0.0000 0.0000 -1.0000 valid 1`; right gives `x > 0`;
+left gives `x < 0`; up gives `y > 0`; down gives `y < 0`; closed eyes gives `valid 0` or `status != 0`. The
+`sample rate` line is the headset's measured rate. If right gives `x < 0`, only the x sign needs flipping,
+and the hex lines show it.
+
 ## 2026-11-20: v0.6 triggers (the bow on feedback mode 1, one Sense path, a step test), built, untested on console
 
 The 13.60 logs of RC `5fbe5c6` refused every bow R2 payload: `slope 0-9 1-8` (mode 5) came back
