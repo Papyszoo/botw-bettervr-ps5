@@ -944,7 +944,7 @@ v06's, unchanged; 0055 is the only Cemu patch added. `VERSION` stays 0.5.0.
   recording new state at each sequence's first draw. The driver's layer (`RADV_THREADED_RECORDING=1`) moves that to a
   worker and leaves the copying of each command's arguments on the GPU thread, an estimated 1.5-3 ms at 5-9k draws if
   the worker has a free core; `vkEndCommandBuffer`, destroys and frees wait for the worker. It has never run in a game,
-  so Test request 70 runs it before any default changes.
+  so Test request 72 runs it before any default changes.
 
 ### Vibration: one page and one mixer
 
@@ -1234,7 +1234,7 @@ the HUD quads' edges need a headset. The optional FSR/upscale for presets below 
 BetterVR's already-upscaled eye image. The compose fence wait leaves Cemu's GPU thread with `asyncCompose`, on by
 default since the 13.60 console result; Test request 69 checks the default at 1x and 1.5x and the `"asyncCompose": 0`
 path. Index lists kept across frames (0059) and unchanged view arrays kept (0060) target the 1.25x record; Test
-request 70 measures them and RADV threaded recording at 1.25x. The Sense trigger
+request 72 measures them and RADV threaded recording at 1.25x. The Sense trigger
 payload, which of its two formats the firmware accepts, and its return-code meaning are unverified; the DualSense's
 pad handle is opened in vibration mode 2. The headset's
 `+0x2ae00` is from public tables, not our own dump; its test button is the proof. Explosions have settings but no

@@ -42,10 +42,10 @@ at most twice a second while steering. `game` against the previous line's `now` 
 distance at its range. A new `HandAim::TryGetGazeWorldRay` places the gaze ray where the camera puts the eyes, and
 `GameState::GetActiveRune` reads RuneMgr's selected rune.
 
-New patch bettervr 0037 (`magnesis.cpp/.h`, `stereo_view.cpp`, `controls.cpp`, `hand_aim.cpp/.h`, `game_state.cpp/.h`,
+New patch bettervr 0040 (`magnesis.cpp/.h`, `stereo_view.cpp`, `controls.cpp`, `hand_aim.cpp/.h`, `game_state.cpp/.h`,
 `mod_settings.h`, `imgui_menus.cpp`); no Cemu, runtime or asm change.
 
-**Test request 71 (v0.7 Eye Magnesis, 13.60 console).** Install the `BotW-VR-v...zip` from this head's green
+**Test request 74 (v0.7 Eye Magnesis, 13.60 console).** Install the `BotW-VR-v...zip` from this head's green
 "BetterVR build" run. On the PS5, Settings > Accessories > PS VR2: eye tracking on and **Adjust Eye Tracking** run
 once. Put the headset on before starting the game, play in first person, and open BetterVR's menu > Controls > Motion
 Controls: turn **Eye Magnesis** and **Eye Rune Pick** on.
@@ -103,10 +103,10 @@ One log line per assisted throw or shot, at INFO so it needs no debug switch:
 `[BowShot] eye aim assist: arrow, 2.1 degrees to gaze, 2.1 applied`. The first number is the raw angle between the
 released direction and the gaze, the second what was applied; no line means no valid sample or an unchanged shot.
 
-New patch bettervr 0036 (`controls.cpp`, `bow.cpp`, `mod_settings.h`, `imgui_menus.cpp`); no Cemu change. The offered
+New patch bettervr 0039 (`controls.cpp`, `bow.cpp`, `mod_settings.h`, `imgui_menus.cpp`); no Cemu change. The offered
 extension and the hidden state are in `port/bettervr/xr/runtime.cpp` and `third_party/hmd2/`.
 
-**Test request 70 (v0.7 Eye Aim Assist, 13.60 console).** Install the `BotW-VR-v...zip` from this head's green
+**Test request 73 (v0.7 Eye Aim Assist, 13.60 console).** Install the `BotW-VR-v...zip` from this head's green
 "BetterVR build" run and start Breath of the Wild in VR with the headset and both Sense controllers. Keep eye tracking
 on and calibrated in the PS5's Settings > Accessories > PS VR2.
 
@@ -178,12 +178,12 @@ each `vkCmd*` with its arguments copied and records them on a worker thread; `vk
 (about a dozen submits a frame), destroys and frees wait for it, and the worker spins 50 us on the clock before it
 sleeps. If the worker gets a core of its own, the GPU thread keeps only the copying, an estimated 1.5-3 ms off the
 record at 5-9k draws; on a busy core it can cost instead. It has never run in a game, so it stays off by default and
-Test request 70 runs it. It does not conflict with 0059 or 0060: those cut Cemu's own work, which stays on the GPU
+Test request 72 runs it. It does not conflict with 0059 or 0060: those cut Cemu's own work, which stays on the GPU
 thread either way, and kept lists keep their index buffer offsets, so fewer index binds reach the queue.
 
 New patches: cemu 0059, 0060; no BetterVR patch.
 
-**Test request 70 (v0.7 draws at 1.25x, 13.60 console).** Install the `BotW-VR-v...zip` from this head's green
+**Test request 72 (v0.7 draws at 1.25x, 13.60 console).** Install the `BotW-VR-v...zip` from this head's green
 "BetterVR build" run and start Breath of the Wild in VR with the headset and both Sense controllers. Keep
 `"profile": true` in `/data/botwvr/launcher/bettervr.json` with no `"indexCache"` key, and set BetterVR's menu >
 System > VR Resolution > 1.25x (restart the game). Use two spots for every run, the same each time: the busy outdoor
