@@ -2108,9 +2108,9 @@ extern "C" int BetterVR_PS5_TestTriggers()
 	return step;
 }
 
-// BetterVR's menu draws the Eye Aim Assist row only while the runtime can offer eye tracking.
-// gaze_available() is true once the gaze table bound and its stream started, and false again when
-// the stream did not take, so a firmware without the table draws no row.
+// BetterVR's menu draws its eye rows (Eye Aim Assist, Eye Magnesis, Eye Rune Pick) only while the runtime can
+// offer eye tracking. gaze_available() is true once the gaze table bound and its stream started, and false again
+// when the stream did not take, so a firmware without the table draws none of them.
 extern "C" int BetterVR_PS5_EyeGazeAvailable()
 {
 	return hmd2::gaze_available() ? 1 : 0;
@@ -2159,7 +2159,7 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEnumerateInstanceExtensionProperties(const char
 	// depth swapchain (three 16 MB images for each eye) is made for a compositor that ignores depth. xrCreateInstance still
 	// accepts the name, for an application that asks without having looked.
 	// Eye gaze is offered while the gaze table has bound (third_party/hmd2/hmd2.cpp): the runtime builds the
-	// eye-gaze profile and space, and BetterVR's Controls page draws its Eye Aim Assist row. A firmware
+	// eye-gaze profile and space, and BetterVR's Controls page draws its eye rows. A firmware
 	// without the table, or a stream that did not start, offers none of it.
 	const bool gaze = hmd2::gaze_available();
 	*count = gaze ? 2u : 1u;

@@ -218,7 +218,7 @@ Gaze gaze();
 
 // Whether eye tracking can be offered to applications. The three exports are bound on the firmware
 // tables whose anchor matched, and after gaze_start() this is true only while the stream is running:
-// the runtime then offers XR_EXT_eye_gaze_interaction and BetterVR draws its Eye Aim Assist row.
+// the runtime then offers XR_EXT_eye_gaze_interaction and BetterVR draws its eye rows.
 // Safe before init(): only the table is checked then.
 bool gaze_available();
 

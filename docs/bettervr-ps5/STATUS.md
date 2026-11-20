@@ -3,6 +3,79 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-20: Eye Magnesis and Eye Rune Pick: runes pick what the eyes look at, and a held metal object goes there; built, untested on console
+
+Two new rows under Controls > Motion Controls, after **Eye Aim Assist**, both off by default and drawn only while the
+runtime offers a gaze pose: **Eye Magnesis** (`EyeMagnesis` in `bettervr.json`) and **Eye Rune Pick** (`EyeRunePick`).
+They act in first person only. With a switch off, or without a valid gaze sample, every rune behaves as in v0.6:
+the target is the one in the middle of the view and a held object follows the hand while the right grip is held.
+
+- **The pick.** BotW chooses the Magnesis, Stasis and Cryonis target on the GPU: a pixel shader tests one point of the
+  picture, passed in a 0x20-byte pixel uniform block, and the game reads the result back. Upstream BetterVR already
+  moves that point from the picture's middle to the left eye's optical centre (`hook_ModifyPixelUniformBlockData`,
+  call site 0x038B2B2C). With **Eye Magnesis** on and the Magnesis rune out with nothing held, or **Eye Rune Pick** on
+  and Stasis or Cryonis out, the point becomes where the gaze falls in the left eye's picture, through the projection
+  the foveation code already uses. The grab is still the right trigger (or a short grip press), as before. Whether the
+  game accepts a point away from the middle is the first thing to check (step 1 below).
+- **Steering (Eye Magnesis).** While a body is held, the hold point is where a steering ray from between the eyes
+  meets the circle of the game's own Magnesis distance around Link: the eyes set the direction and the height. The
+  steering starts on the object at the grab, follows the gaze once it is more than 2.5 degrees away (so a gaze
+  resting on the object leaves it still), and is kept within 60 degrees of level. The game's distance, height and
+  direction fields are written by the same aim hook (0x020D858C) and through the same release-threshold clamps as the
+  hand's aim, so the object chases the point rather than jumping and the game does not drop it from our side.
+- **Push and pull (Eye Magnesis).** While the eyes steer, the right stick's up/down no longer reaches the game (where
+  it raises and lowers the object) and instead pushes it away or pulls it in, at up to 6 m/s with full deflection
+  (the deflection squared, for fine control near the middle), starting from the game's own distance each frame so
+  the game's range stays its own. A pull stops at 1.5 m unless the object is already closer. Turning on the stick's
+  left/right is unchanged.
+- **Turning.** Unchanged: the right grip held and the wrist's turn since the squeeze rotate the object (patch 0013's
+  spin path). The hand no longer moves it while the eyes steer.
+- **The gaze.** Each sample goes through a low-pass whose cutoff rises with the gaze's speed (2 Hz at rest), in
+  stage space, so a head turn while looking at one spot does not swing the ray. A blink keeps the last direction for
+  0.6 s; a longer loss hands Magnesis back to the hand.
+
+Logs, all INFO: `[magnesis] rune out: N (Magnesis 2, Stasis 3, Cryonis 4)` when the rune changes (the indices 2-4
+are inferred from the game's rune order, camera 5 is upstream's), `[magnesis] eye pick on/off (rune N)`,
+`[magnesis] eye pick at X Y (centre X Y), N blocks` at most twice a second while picking, `[magnesis] eye steering on
+(distance D)` per hold, and `[magnesis] eye steer: gaze off A deg, distance game G (wrote W) now N, stick S, height H`
+at most twice a second while steering. `game` against the previous line's `now` shows whether the game clamps the
+distance at its range. A new `HandAim::TryGetGazeWorldRay` places the gaze ray where the camera puts the eyes, and
+`GameState::GetActiveRune` reads RuneMgr's selected rune.
+
+New patch bettervr 0037 (`magnesis.cpp/.h`, `stereo_view.cpp`, `controls.cpp`, `hand_aim.cpp/.h`, `game_state.cpp/.h`,
+`mod_settings.h`, `imgui_menus.cpp`); no Cemu, runtime or asm change.
+
+**Test request 71 (v0.7 Eye Magnesis, 13.60 console).** Install the `BotW-VR-v...zip` from this head's green
+"BetterVR build" run. On the PS5, Settings > Accessories > PS VR2: eye tracking on and **Adjust Eye Tracking** run
+once. Put the headset on before starting the game, play in first person, and open BetterVR's menu > Controls > Motion
+Controls: turn **Eye Magnesis** and **Eye Rune Pick** on.
+
+1. **Off-centre pick (first; it decides the feature).** Stand where two metal objects are about 20 degrees apart left
+   and right (the Magnesis shrine's first slabs or crates). Take Magnesis out. Keep the head still and look with the
+   eyes only at the left object, then the right one, then one above or below the middle of the view. Say which one
+   highlights each time. Pull the trigger while looking at one that is not in the middle: is it the one grabbed?
+2. **Steering.** Holding it, keep the head still and look left, right, up and down: does it follow the eyes, and how
+   quickly? Look straight at it for 10 seconds: does it stay put, or sink or drift? Turn the head and walk: it should
+   come along.
+3. **Push and pull.** Right stick up and down: does it go away and come closer? Push it to the far end, then pull:
+   does it answer at once? Does left/right still turn as before?
+4. **Turning.** Hold the right grip and twist the wrist both ways: it must turn in place and not slide. Let go of
+   the grip quickly once: say if the object is dropped.
+5. **Blinks and closed eyes.** Blink normally while steering: no jerk? Close the eyes for 2 seconds: the object should
+   stop following and the hand (with the grip held) aims as before; open them and it follows the eyes again.
+6. **A door or sliding block.** Move one by looking: does the game let go of it?
+7. **Stasis and Cryonis.** With Stasis out, look (eyes only) at an object off the middle: does it highlight, and does
+   the trigger freeze that one? With Cryonis out, look at water off the middle: does the pillar preview move there?
+8. **Off again.** Turn both rows off: picking, steering and the right stick must behave as in v0.6.
+
+**Send back:** what each step did, and from `/data/ps5cemu/logs/boot.log`:
+`LC_ALL=C grep -a "\[magnesis\]\|Supports Eye Tracking" boot.log`.
+
+**What it decides.** Step 1 whether the game takes an off-centre pick point (if not, the pick needs a different
+hook and steering still stands); the `rune out` lines the rune indices; step 2 the dead zone and smoothing; step 3
+the stick speed and whether `game` follows `wrote` at the range end; step 4 that turning no longer moves the object;
+step 5 the hand-over; step 6 the release thresholds; step 7 the two other runes; step 8 the off path.
+
 ## 2026-11-20: eye tracking is offered to the game, and one switch bends a throw and an arrow; built, untested on console
 
 The 13.60 gaze run behind Test request 60 showed a stream that can be used: about 51.5 new samples a second, unit
