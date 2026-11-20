@@ -954,14 +954,15 @@ v06's, unchanged; 0055 is the only Cemu patch added. `VERSION` stays 0.5.0.
 
 ### Adaptive triggers
 
-- **What the effects are.** R2 (the bow) uses slope mode 5: from zone 0 at strength 1 to zone 9 at a strength that
-  grows with the game's own `drawAmount` (weapon `+0x94C`, 0-1.5 clamped to 1), 1-8 across the strength setting. A held
-  trigger therefore firms up as the bowstring comes back, and the effect stays at the end strength above zone 9. Off
-  below 2 % draw. L2 (the shield) is feedback mode 1, position 2, strength 3-5 across the setting, while
+- **What the effects are.** R2 (the bow) uses feedback mode 1 at position 2, the mode the firmware accepts: the
+  stop's strength grows with the game's own `drawAmount` (weapon `+0x94C`, 0-1.5 clamped to 1), 1-8 across the
+  strength setting, so a held trigger gets firmer as the bowstring comes back. Off below 2 % draw. L2 (the shield)
+  is feedback mode 1, position 2, strength 3-5 across the setting, while
   `state.isShieldGuarding`; off otherwise. Both are off when BetterVR's menu is open, on the pause and inventory
   screens (`GameState::IsShowingMenu()`), and outside the game. The effect is sent on change, at most 20 times a
   second; an off pair goes out at once. A call libScePad refuses is not marked sent: the same effect is tried again
-  5 s later, so a failure cannot hide a value until it changes (the rule is AstroBotVR2's).
+  5 s later, so a failure cannot hide a value until it changes (the rule is AstroBotVR2's), and a refusal never
+  stops the other device or a later call.
 - **BetterVR's side** (patch bettervr 0009): `Bow::GetDrawAmount()` (bow.cpp/bow.h); one call each input frame in
   `hook_InjectXRInput` (controls.cpp), and an off call when the input sample is not ready; the PS5-only `ModSettings`
   rows `AdaptiveTriggers` (default true) and `AdaptiveTriggerStrength` (0-1, default 1), which save to
@@ -984,21 +985,26 @@ v06's, unchanged; 0055 is the only Cemu patch added. `VERSION` stays 0.5.0.
   command at +0x08, R2 at +0x40, each a u32 mode, four padding bytes and 0x30 data bytes. The layout and the builders
   are `port/bettervr/xr/triggers.h`, with static asserts on the command and parameter sizes and offsets, and a host
   test (`tools/tests/test-bettervr-triggers.sh`, run by the Tests workflow).
-- **The Sense controllers** (the experiment, now the System card's **Sense Triggers** row, default off, saved in
-  `bettervr.json` as `senseTriggers`; a hand-written `true` still works): `scePadVrControllerSetTriggerEffect(s)`,
-  NIDs `6Cdc9bbjrRY`/`v8P+9PRqg10`, bound by name first and otherwise at the 13.60 table's `0xa730` (both hands) only
-  when its anchor sits exactly (see the firmware gates below). The notes name two plausible payloads, so the card has
-  a live test row **Sense trigger format** with Auto, 1 and 2: 1 is the DualSense 0x78 layout on the both-hands call,
-  2 is one 0x38-byte command a hand, and Auto tries 1 then 2 and keeps the one that answers. The choice is saved as
-  `senseTriggerLayout` and every send is logged; a format change resets the sent state so the next effect goes out at
-  once.
+- **The Sense controllers** (the System card's **Sense Triggers** row, default off, saved in
+  `bettervr.json` as `senseTriggers`; a hand-written `true` still works): `scePadVrControllerSetTriggerEffects`,
+  NID `v8P+9PRqg10`, bound by name first and otherwise at the 13.60 table's `0xa730` only when its anchor sits
+  exactly (see the firmware gates below). It takes the DualSense's 0x78 parameter, `command[0]` for the left
+  controller and `command[1]` for the right. The one-hand `0x38` export is not used: it has never been bound on
+  13.60, and every send there was our own `0x80000001`, so a refused effect is only retried, never followed by
+  another layout.
+- **The Triggers test** (the Vibration page): one press sends the next of eleven fixed payloads to the DualSense
+  and the Sense controllers, whatever the Sense Triggers row says, and writes one
+  `[trig test] step N/11 <payload> rc=0x... (device)` line a device. The payload table is
+  `ps5trig::kTestPayloads` in `port/bettervr/xr/triggers.h`, so the host test checks its bytes. A step holds 15 s
+  or until the next press; meanwhile the game's own effects are held back, and the last step (all off) ends the
+  test and lets them out again.
 - **Always off on the way out:** `xrDestroySession`, `BetterVR_PS5_Stop` and the failed-start path all send the off
   pair before the pad handles go; the effect lives in the controller's firmware and would otherwise outlive the game.
 - **Logs** (the boot log, each line starts `[trig]`): `Sense trigger effects on/off ...`, the binding lines from
-  hmd2 (`DualSense trigger effects bound by NID 2JgFB2n9oUM (link-time import, ...)`, `Sense trigger effects bound`),
-  one line per effect call with both commands and libScePad's answer
-  (`DualSense (handle N) L2 feedback 2 5, R2 slope 0-9 1-6 -> 0x00000000`), the Sense layout experiment's results and
-  the chosen payload, and `DualSense off (...)` / `Sense off (...)`.
+  hmd2 (`DualSense trigger effects bound by NID 2JgFB2n9oUM (link-time import, ...)`, `Sense trigger effects bound
+  (both hands ...)`), one line per effect call with both commands and libScePad's answer
+  (`DualSense (handle N) L2 feedback 2 5, R2 feedback 2 8 -> 0x00000000`, `Sense both hands (0x78) L2 ..., R2 ... ->
+  0x...`), the `[trig test]` lines, and `DualSense off (...)` / `Sense off (...), both hands`.
 
 ### Eye tracking and the throw assist
 

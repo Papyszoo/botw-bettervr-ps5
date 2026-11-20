@@ -3,6 +3,46 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-20: v0.6 triggers (the bow on feedback mode 1, one Sense path, a step test), built, untested on console
+
+The 13.60 logs of RC `5fbe5c6` refused every bow R2 payload: `slope 0-9 1-8` (mode 5) came back
+`0x80920001` (`SCE_PAD_ERROR_INVALID_ARG`) from the DualSense setter and from libScePad's Sense setter, every
+time, while the shield's L2 `feedback 2 5` returned 0 on both. The bow is now feedback mode 1 at position 2,
+its strength 1-8 rising with the draw, on the DualSense and the Sense controllers. The Sense path is now the
+both-hands `0x78` call only: the one-hand `0x38` export was never bound (`0x80000001`), and its failure set the
+Auto layout to -1, which stopped every later Sense effect. The format row, its `senseTriggerLayout` key and its
+strings are gone, and a refused effect no longer affects the other device or a later call. The Vibration page's
+Test row has a fourth button, **Triggers n/11**: each press sends the next of eleven fixed payloads (the report's
+table: feedback, weapon, vibration, multi-position, both slope payloads and the off pair) to the DualSense and to
+the Sense controllers, whatever the Sense Triggers row says, and logs one line a device. A step holds 15 s or
+until the next press; the last step is all off. New patch bettervr 0027; no Cemu change. Details:
+`UPDATE-1.0.md`, "Adaptive triggers".
+
+**Test request 59 (v0.6 triggers, 13.60 console).**
+1. On the PS5, open Settings > Accessories > Controllers (General) > **Trigger Effect Intensity** and write the
+   value down. If it is Off, set Strong for this test.
+2. Install the build, start BotW in VR with both Sense controllers charged and the DualSense connected. In
+   BetterVR's menu > System, turn **Sense Triggers** on. The **Sense trigger format** row must be gone.
+3. Open menu > Vibration > Test and press **Triggers** once per step, 1 to 11 (the button reads `Triggers N/11`).
+   At each step slowly squeeze each Sense trigger fully, left then right, then the DualSense's L2 and R2. For every
+   step write: left felt? right felt? and what (a stop at about 20 %, stiff all the way, a click, a buzz, nothing).
+4. Step 3 holds for 15 s: squeeze once, press the **Sense Controllers** rumble test, wait for it to stop, then
+   squeeze again. Say whether the resistance is still there.
+5. Close the menu. Equip a bow and draw slowly three times while holding R2: the right trigger must push back
+   harder as the draw grows, and go slack after the shot or when a draw is cancelled.
+6. With a one-handed weapon and a shield, raise the shield to your chest, then pull L2: a stop at about 20 %.
+   Lower the shield and pull again: it must be free.
+7. Send the felt notes from steps 3-6, the step 1 setting, and every line of `/data/ps5cemu/logs/boot.log` that
+   contains `[trig]` or `trigger effects`. In particular: `hmd2: Sense trigger effects bound (both hands ...)`,
+   the eleven `[trig test] step N/11 ... rc=0x...` pairs (one DualSense line and one Sense line a step), the
+   `[trig] Sense both hands (0x78) L2 ..., R2 ... -> 0x...` lines from the bow and the shield, and `Sense off`.
+
+**What the answers decide:** step 3 felt on the right proves the bow fix; steps 7-9 at `0x80920001` while 1-5
+are 0 means modes 4-6 are refused for this title (keep 1-3, do not change `--module-sdk`); step 2 or 3 refused
+means a value-range rule (lower the bow's cap); step 4 lost after the rumble means the effect must be re-sent
+after a Sense vibration (a v0.6 follow-up, not in this build); no `[trig test]` line at all means the button or
+the log path needs a fix, so send the `[vib]` lines of the same run too.
+
 ## 2026-11-19: v0.6 shadows (High 200% by default, and the cascades snap to whole texels), built, untested on console
 
 A fresh launcher starts the Graphics pack's Shadows preset on **High (200%)** (`$shadowRes = 2`): the near cascade's

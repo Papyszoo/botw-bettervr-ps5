@@ -274,12 +274,11 @@ int pad_set_trigger_effect(int handle, const void* param);
 // bind line has been logged; the menu asks this before offering its row. Safe before init().
 bool pad_triggers_available();
 
-// A Sense controller's adaptive triggers, through libScePad's own Sense exports (the DualSense setter refuses a
-// Sense handle). `param` is 0x78 bytes when `_effects` takes both hands, a 0x38-byte command when `_effect` takes
-// one; the VR payload's layout is unpublished. Resolved by name, else at the 13.60 table's offsets only when the
-// anchor sits exactly there (never shifted); any other firmware returns kPadTriggerUnavailable and logs it once.
-// UNVERIFIED on hardware.
-int sense_set_trigger_effect(int handle, const void* param);
+// A Sense controller pair's adaptive triggers, through libScePad's own both-hands export (the DualSense setter
+// refuses a Sense handle). `param` is the same 0x78-byte ScePadTriggerEffectParam as the DualSense's: command[0]
+// belongs to the left controller and command[1] to the right. Resolved by name, else at the 13.60 table's offset
+// only when the anchor sits exactly there (never shifted); any other firmware returns kPadTriggerUnavailable and
+// logs it once. UNVERIFIED on hardware.
 int sense_set_trigger_effects(int left_handle, int right_handle, const void* param);
 
 int eye_size();     // per-eye width

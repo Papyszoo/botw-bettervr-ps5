@@ -1,0 +1,69 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ps5cemu <ps5cemu@localhost>
+Date: Fri, 20 Nov 2026 01:43:12 +0100
+Subject: [PATCH] PS5: the Vibration page test-steps the adaptive triggers, and
+ the Sense format row is gone; built, untested on console
+
+The 13.60 logs refused every R2 slope payload on both setters with 0x80920001, and the Sense one-hand 0x38 export was never bound, so the format experiment could only fail. Its row is removed: the Sense controllers take the DualSense's 0x78 parameter on the both-hands export, and nothing else.
+
+A Triggers button on the Vibration page steps through eleven fixed payloads, one a press, and the runtime sends each to the DualSense and the Sense controllers and logs one [trig test] line a device. The steps try the accepted feedback pair, the weapon and vibration modes, both slope payloads, the multi-position modes and the off pair, so one console run says which modes and hands this firmware takes.
+---
+ src/rendering/imgui_menus.cpp | 29 ++++++++++++++---------------
+ 1 file changed, 14 insertions(+), 15 deletions(-)
+
+diff --git a/src/rendering/imgui_menus.cpp b/src/rendering/imgui_menus.cpp
+index 2a78e05..c1e6f87 100644
+--- a/src/rendering/imgui_menus.cpp
++++ b/src/rendering/imgui_menus.cpp
+@@ -18,11 +18,11 @@
+ #include "font_material_symbols.h"
+ 
+ #if defined(__PROSPERO__)
+-// port/bettervr/xr/runtime.cpp: the Sense triggers' rows, live and saved to bettervr.json
++// port/bettervr/xr/runtime.cpp: the Sense triggers' rows, live and saved to bettervr.json; the Vibration page's
++// Triggers test steps through the adaptive triggers' payloads
+ extern "C" int BetterVR_PS5_SenseTriggersEnabled();
+-extern "C" int BetterVR_PS5_SenseTriggerFormat();
+ extern "C" void BetterVR_PS5_SetSenseTriggers(int on);
+-extern "C" void BetterVR_PS5_SetSenseTriggerFormat(int format);
++extern "C" int BetterVR_PS5_TestTriggers();
+ extern "C" int BetterVR_PS5_EyeGazeAvailable();
+ extern "C" int BetterVR_PS5_PadTriggersAvailable();
+ #endif
+@@ -1364,7 +1364,17 @@ void RND_Renderer::ImGuiOverlay::DrawVibrationPage(bool* changed) {
+     ImGui::SameLine(0.0f, testSpacing);
+     if (ImGui::Button("DualSense", ImVec2(testWidth, 0.0f)))
+         Haptics::TestPad();
+-    DrawPageNote("Each test says what answered in the log line that starts with [vib].");
++#if defined(__PROSPERO__)
++    // the adaptive triggers' step test: one fixed payload (mode, hands, values) a press, so one run says what
++    // libScePad accepts; the label is the step that was just sent
++    static int triggerTestStep = 0;
++    const std::string triggerTestLabel = fmt::format("Triggers {}/11", triggerTestStep);
++    ImGui::Dummy(ImVec2(0.0f, 2.0f));
++    if (ImGui::Button(triggerTestLabel.c_str(), ImVec2(-FLT_MIN, 0.0f)))
++        triggerTestStep = BetterVR_PS5_TestTriggers();
++#endif
++    DrawPageNote("Each test says what answered in the log line that starts with [vib]. Triggers steps through the "
++                 "adaptive triggers' payloads; every press writes one [trig test] line for each device.");
+ 
+     DrawSectionCaption("Categories");
+     ImGuiWindow* window = ImGui::GetCurrentWindow();
+@@ -1536,17 +1546,6 @@ void RND_Renderer::ImGuiOverlay::DrawSystemPage(bool* changed) {
+                 *changed = true;
+             }
+         });
+-        if (senseTriggers) {
+-            static constexpr const char* kSenseFormats[] = { "Auto", "1", "2" };
+-            int format = BetterVR_PS5_SenseTriggerFormat();
+-            int selected = format == 1 ? 1 : format == 2 ? 2 : 0;
+-            DrawSetting(ICON_MS_SETTINGS, "Sense trigger format", "Test row: 1 is both hands 0x78, 2 is one hand 0x38; Auto tries 1 then 2. Each send is logged.", [&]() {
+-                if (Segmented("SenseTriggerFormatRow", kSenseFormats, &selected)) {
+-                    BetterVR_PS5_SetSenseTriggerFormat(selected);
+-                    *changed = true;
+-                }
+-            });
+-        }
+         EndCard();
+     }
+ #endif

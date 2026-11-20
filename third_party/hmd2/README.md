@@ -44,11 +44,11 @@ tested and working on his console with the PS VR2 Sense controllers and with a D
   unchanged.
 
 - Adaptive triggers (2026-11-18): `pad_set_trigger_effect` (`scePadSetTriggerEffect`, imported at link
-  time under its NID `2JgFB2n9oUM`) for the DualSense, and `sense_set_trigger_effect` /
-  `sense_set_trigger_effects` for the Sense controllers (by name, else
-  `scePadVrControllerSetTriggerEffects` at the 13.60 table's `0xa730` after the existing anchor check).
-  The VR payload is unpublished; the caller's 0x78-byte DualSense layout is the experiment. Nothing
-  here has run on a console.
+  time under its NID `2JgFB2n9oUM`) for the DualSense, and `sense_set_trigger_effects` for the
+  Sense controllers (by name, else `scePadVrControllerSetTriggerEffects` at the 13.60 table's
+  `0xa730` after the existing anchor check). It takes the caller's 0x78-byte DualSense layout,
+  command[0] on the left controller and command[1] on the right; the one-hand export is not bound on
+  13.60 and is not used. Nothing here has run on a console.
 
 - Export tables for 12.40, 11.60, 10.x, 9.00, 8.40 and 5.50 (2026-11-08): `hmd2_exports.h` is the
   one regenerated in photo-splat-vr at commit `143d355`, which adds those firmware to Hmd2 and

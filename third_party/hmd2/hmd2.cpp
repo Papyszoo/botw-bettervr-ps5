@@ -842,16 +842,15 @@ bool bind_sense_vibration() {
 // resolves at runtime, and the reason to use it here: sceKernelDlsym matches the name table, which on 13.60 does not
 // see this export. The import cannot be missing on a firmware the app runs on: libScePad has exported the DualSense
 // setter at this NID from 5.50 through 13.60 (AstroBotVR2's profiles and the public NID tables), and a title with a
-// missing import would not load at all. The Sense controllers' own setters are not published (NIDs 6Cdc9bbjrRY and
-// v8P+9PRqg10): by name when the library exports them, else at HLA-PSVR2's 13.60 offset after the same anchor check
-// the vibration above uses. The VR payload is unpublished.
-int (*scePadVrControllerSetTriggerEffect)(int handle, const void *param) = nullptr;
+// missing import would not load at all. The Sense controllers' both-hands setter (NID v8P+9PRqg10) is not published:
+// by name when the library exports it, else at HLA-PSVR2's 13.60 offset after the same anchor check the vibration
+// above uses. It takes the DualSense's 0x78-byte parameter; the singular one-hand export is not used (it has never
+// been bound on this firmware).
 int (*scePadVrControllerSetTriggerEffects)(int left_handle, int right_handle, const void *param) = nullptr;
 int g_pad_trigger = 0;   // 0 not logged yet, 1 the link-time import is in use
 int g_sense_trigger = 0; // 0 not tried, 1 bound, -1 unavailable
 
 const Slot kSenseTriggerSlots[] = {
-    {"scePadVrControllerSetTriggerEffect", reinterpret_cast<void **>(&scePadVrControllerSetTriggerEffect)},
     {"scePadVrControllerSetTriggerEffects", reinterpret_cast<void **>(&scePadVrControllerSetTriggerEffects)},
 };
 const export_sig_t kExports_libScePadTriggers_1360[] = {
@@ -879,7 +878,7 @@ bool bind_sense_triggers() {
         logf("hmd2: Sense trigger effects: libScePad unavailable (handle 0x%x)", handle);
         return false;
     }
-    // each name on its own: one missing export must not cost the other (the singular one has no table offset)
+    // the name on its own: a missing export leaves the call unavailable
     bool need_table = false;
     for (const Slot &slot : kSenseTriggerSlots) {
         *slot.slot = nullptr;
@@ -903,10 +902,9 @@ bool bind_sense_triggers() {
             }
         }
     }
-    if (scePadVrControllerSetTriggerEffect != nullptr || scePadVrControllerSetTriggerEffects != nullptr) {
+    if (scePadVrControllerSetTriggerEffects != nullptr) {
         g_sense_trigger = 1;
-        logf("hmd2: Sense trigger effects bound (one hand %p, both hands %p)",
-             reinterpret_cast<void *>(scePadVrControllerSetTriggerEffect),
+        logf("hmd2: Sense trigger effects bound (both hands %p)",
              reinterpret_cast<void *>(scePadVrControllerSetTriggerEffects));
     } else {
         logf("hmd2: Sense trigger effects off on this firmware (no verified libScePad table)");
@@ -1922,12 +1920,6 @@ int pad_set_trigger_effect(int handle, const void *param) {
     if (!bind_pad_trigger())
         return kPadTriggerUnavailable;
     return scePadSetTriggerEffect(handle, param);
-}
-
-int sense_set_trigger_effect(int handle, const void *param) {
-    if (!bind_sense_triggers() || scePadVrControllerSetTriggerEffect == nullptr)
-        return kPadTriggerUnavailable;
-    return scePadVrControllerSetTriggerEffect(handle, param);
 }
 
 int sense_set_trigger_effects(int left_handle, int right_handle, const void *param) {
