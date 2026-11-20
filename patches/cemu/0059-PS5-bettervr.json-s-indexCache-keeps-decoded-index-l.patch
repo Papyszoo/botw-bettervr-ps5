@@ -1,0 +1,471 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ps5cemu <ps5cemu@localhost>
+Date: Fri, 20 Nov 2026 17:10:12 +0100
+Subject: [PATCH] PS5: bettervr.json's indexCache keeps decoded index lists
+ across frames and uses them again while their bytes are unchanged; built,
+ untested on console
+
+Cemu's index cache holds eight lists and drops them at every GPU wait and every finished command
+buffer, a dozen times a frame, so in Breath of the Wild's stereo pass about 2,000 lists (6-7 MB) were
+decoded again each frame, about 1.8 ms of the GPU thread at 1.25x. With the switch on, a decoded list
+is also kept by its pointer, count, primitive mode, index type and restart index. Until the next flush
+it is trusted as the cache trusts its own entries; after one, its bytes are hashed with the vertex
+cache's page hash and the list is used again if the hash is the same, or decoded again into new memory
+if not (the old memory goes once the command buffer is done). Lists unused for 60 frames go, the kept
+lists hold 32 MB at most, and memory LatteIndices_invalidate names (the immediate draws' index array)
+is never kept. The index heap's reservations keep their heap address, so letting one go no longer
+searches the live allocations. The [draws] line's counters: kept lists used again, found changed, and
+the bytes held.
+---
+ src/Cafe/HW/Latte/Core/LatteIndices.cpp       | 316 ++++++++++++++++--
+ .../Renderer/Vulkan/VKRMemoryManager.cpp      |   9 +-
+ .../Latte/Renderer/Vulkan/VKRMemoryManager.h  |   9 +-
+ 3 files changed, 301 insertions(+), 33 deletions(-)
+
+diff --git a/src/Cafe/HW/Latte/Core/LatteIndices.cpp b/src/Cafe/HW/Latte/Core/LatteIndices.cpp
+index 651d4682..fa0a7b2c 100644
+--- a/src/Cafe/HW/Latte/Core/LatteIndices.cpp
++++ b/src/Cafe/HW/Latte/Core/LatteIndices.cpp
+@@ -12,11 +12,147 @@
+ 
+ #if defined(CEMU_PS5)
+ #include <atomic>
++#include <bit>
++#include <unordered_map>
++#include <vector>
+ 
+ // The runtime's 5 s [draws] line (port/bettervr/xr/runtime.cpp): the index lists decoded (a miss of the
+-// cache below) and their bytes. Cemu's GPU thread adds and the runtime takes them on that thread.
++// cache below) and their bytes; the kept lists (below) used again and those found changed; and the bytes the
++// kept lists hold. Cemu's GPU thread adds and the runtime takes them on that thread.
+ std::atomic<uint64> g_ps5IndexDecodes{0};
+ std::atomic<uint64> g_ps5IndexBytes{0};
++std::atomic<uint64> g_ps5IndexReused{0};
++std::atomic<uint64> g_ps5IndexChanged{0};
++std::atomic<uint64> g_ps5IndexKeptBytes{0};
++
++// bettervr.json's indexCache (port/app/emulator.cpp, on unless "indexCache": 0): a decoded index list is kept
++// past the cache's flushes (a GPU wait, a finished command buffer) instead of going with them. Until the next
++// flush the cache trusts a list's bytes, as Cemu's does; a kept list met after one has its bytes hashed (as the
++// vertex cache hashes its pages, LatteBufferCache.cpp), and is used again if they are the same or decoded again
++// if not. A list not used for a second is let go.
++bool g_ps5KeepIndexLists = false;
++
++namespace
++{
++	struct KeptIndexKey
++	{
++		const void* ptr;
++		uint32 count;
++		uint32 restartIndex;
++		LattePrimitiveMode primitiveMode;
++		LatteIndexType indexType;
++
++		bool operator==(const KeptIndexKey& other) const
++		{
++			return ptr == other.ptr && count == other.count && restartIndex == other.restartIndex && primitiveMode == other.primitiveMode && indexType == other.indexType;
++		}
++	};
++
++	struct KeptIndexKeyHash
++	{
++		size_t operator()(const KeptIndexKey& key) const
++		{
++			uint64 h = (uint64)(uintptr_t)key.ptr * 0x9E3779B97F4A7C15ull;
++			h ^= ((uint64)key.count << 20) ^ ((uint64)key.restartIndex << 40) ^ ((uint64)key.primitiveMode << 8) ^ (uint64)key.indexType;
++			return (size_t)(h ^ (h >> 31));
++		}
++	};
++
++	struct KeptIndexList
++	{
++		uint64 dataHash;
++		uint32 flushEpoch; // the flush interval it was last decoded or found unchanged in
++		uint32 usedFrame;
++		uint32 outputSize;
++		uint32 indexMax;
++		Renderer::INDEX_TYPE renderIndexType;
++		uint32 outputCount;
++		Renderer::IndexAllocation indexAllocation;
++	};
++}
++
++static std::unordered_map<KeptIndexKey, KeptIndexList, KeptIndexKeyHash> s_keptIndexLists;
++static uint64 s_keptIndexBytes = 0;
++static bool s_keptIndexListsFull = false; // a list was not kept for the limit below
++static uint32 s_indexFlushEpoch = 1;
++static uint32 s_keptIndexSweepFrame = 0;
++// memory LatteIndices_invalidate says changes between draws without a flush (the immediate draws' index array):
++// lists there are never kept
++static std::vector<std::pair<const uint8*, const uint8*>> s_volatileIndexRanges;
++
++// the kept lists' index memory at most, and the frames a list stays kept unused
++static constexpr uint64 KEPT_INDEX_BYTES_MAX = 32 * 1024 * 1024;
++static constexpr uint32 KEPT_INDEX_UNUSED_FRAMES = 60;
++
++static inline void ps5IndexCount(std::atomic<uint64>& counter, uint64 value = 1)
++{
++	counter.store(counter.load(std::memory_order_relaxed) + value, std::memory_order_relaxed);
++}
++
++// a list's bytes, to tell whether a kept list changed: the vertex cache's page hash, over any length
++static uint64 LatteIndices_hashInput(const void* data, uint32 size)
++{
++	constexpr uint64 k0 = 0x55F23EAD;
++	constexpr uint64 k1 = 0x185FDC6D;
++	constexpr uint64 k2 = 0xF7431F49;
++	constexpr uint64 k3 = 0xA4C7AE9D;
++	const uint8* ptr = (const uint8*)data;
++	const uint8* end = ptr + (size & ~31u);
++	uint64 h0 = size;
++	uint64 h1 = 0;
++	uint64 h2 = 0;
++	uint64 h3 = 0;
++	uint64 words[4];
++	auto mix = [&]() {
++		h0 = std::rotr(h0, 7) + words[0] * k0;
++		h1 = std::rotr(h1, 7) + words[1] * k1;
++		h2 = std::rotr(h2, 7) + words[2] * k2;
++		h3 = std::rotr(h3, 7) + words[3] * k3;
++	};
++	for (; ptr < end; ptr += 32)
++	{
++		memcpy(words, ptr, 32);
++		mix();
++	}
++	if (size & 31)
++	{
++		memset(words, 0, sizeof(words));
++		memcpy(words, ptr, size & 31);
++		mix();
++	}
++	return h0 + h1 + h2 + h3;
++}
++
++static void LatteIndices_releaseKept(KeptIndexList& list)
++{
++	g_renderer->indexData_releaseIndexMemory(list.indexAllocation);
++	s_keptIndexBytes -= list.outputSize;
++}
++
++// lets go of the kept lists not used in the last `unusedFrames` frames
++static void LatteIndices_sweepKept(uint32 unusedFrames)
++{
++	const uint32 frame = LatteGPUState.frameCounter;
++	std::erase_if(s_keptIndexLists, [frame, unusedFrames](auto& entry) {
++		if (frame - entry.second.usedFrame <= unusedFrames)
++			return false;
++		LatteIndices_releaseKept(entry.second);
++		return true;
++	});
++	g_ps5IndexKeptBytes.store(s_keptIndexBytes, std::memory_order_relaxed);
++}
++
++static bool LatteIndices_isVolatile(const void* data, uint32 size)
++{
++	const uint8* begin = (const uint8*)data;
++	const uint8* end = begin + std::max<uint32>(size, 1);
++	for (const auto& range : s_volatileIndexRanges)
++	{
++		if (begin < range.second && range.first < end)
++			return true;
++	}
++	return false;
++}
+ #endif
+ 
+ struct
+@@ -34,34 +170,94 @@ struct
+ 		Renderer::INDEX_TYPE renderIndexType;
+ 		uint32 outputCount;
+ 		Renderer::IndexAllocation indexAllocation;
++#if defined(CEMU_PS5)
++		bool isKept; // the allocation is a kept list's, which lets it go
++#endif
+ 	};
+ 	std::array<CacheEntry, 8> entry;
+ 	uint64 currentUsageCounter{0};
+ }LatteIndexCache{};
+ 
++// whether the entry's allocation is the cache's own to let go
++static inline bool LatteIndices_ownsAllocation(const decltype(LatteIndexCache.entry)::value_type& entry)
++{
++#if defined(CEMU_PS5)
++	return !entry.isKept;
++#else
++	return true;
++#endif
++}
++
+ void LatteIndices_invalidate(const void* memPtr, uint32 size)
+ {
+ 	for(auto& entry : LatteIndexCache.entry)
+ 	{
+ 		if (entry.lastPtr >= memPtr && (entry.lastPtr < ((uint8*)memPtr + size)) )
+ 		{
+-			if(entry.lastPtr != nullptr)
++			if(entry.lastPtr != nullptr && LatteIndices_ownsAllocation(entry))
+ 				g_renderer->indexData_releaseIndexMemory(entry.indexAllocation);
+ 			entry.lastPtr = nullptr;
+ 			entry.lastCount = 0;
+ 		}
+ 	}
++#if defined(CEMU_PS5)
++	// the memory changes between draws: lists there are not kept from now on, and those kept before go
++	const uint8* begin = (const uint8*)memPtr;
++	const uint8* end = begin + size;
++	if (!g_ps5KeepIndexLists || size == 0 || std::any_of(s_volatileIndexRanges.begin(), s_volatileIndexRanges.end(), [begin, end](const auto& range) { return range.first <= begin && end <= range.second; }))
++		return;
++	s_volatileIndexRanges.emplace_back(begin, end);
++	if (s_keptIndexLists.empty())
++		return;
++	std::erase_if(s_keptIndexLists, [](auto& entry) {
++		const uint32 elementSize = (entry.first.indexType == LatteIndexType::U32_BE || entry.first.indexType == LatteIndexType::U32_LE) ? 4 : 2;
++		const uint32 inputSize = entry.first.indexType == LatteIndexType::AUTO ? 0 : entry.first.count * elementSize;
++		if (!LatteIndices_isVolatile(entry.first.ptr, inputSize))
++			return false;
++		LatteIndices_releaseKept(entry.second);
++		return true;
++	});
++	g_ps5IndexKeptBytes.store(s_keptIndexBytes, std::memory_order_relaxed);
++	// a cache entry may still name one of those lists' allocations
++	for (auto& entry : LatteIndexCache.entry)
++	{
++		if (entry.lastPtr != nullptr && entry.isKept)
++		{
++			entry.lastPtr = nullptr;
++			entry.lastCount = 0;
++		}
++	}
++#endif
+ }
+ 
+ void LatteIndices_invalidateAll()
+ {
+ 	for(auto& entry : LatteIndexCache.entry)
+ 	{
+-		if (entry.lastPtr != nullptr)
++		if (entry.lastPtr != nullptr && LatteIndices_ownsAllocation(entry))
+ 			g_renderer->indexData_releaseIndexMemory(entry.indexAllocation);
+ 		entry.lastPtr = nullptr;
+ 		entry.lastCount = 0;
+ 	}
++#if defined(CEMU_PS5)
++	// a new flush interval: a kept list's bytes are checked again at its next use. Lists unused for a while go,
++	// and once the limit left a list out (looked at once a frame), those not used in the last two frames
++	s_indexFlushEpoch++;
++	if (s_keptIndexLists.empty())
++		return;
++	const uint32 frame = LatteGPUState.frameCounter;
++	if (s_keptIndexListsFull && frame != s_keptIndexSweepFrame)
++	{
++		s_keptIndexSweepFrame = frame;
++		s_keptIndexListsFull = false;
++		LatteIndices_sweepKept(2);
++	}
++	else if (frame - s_keptIndexSweepFrame >= 30)
++	{
++		s_keptIndexSweepFrame = frame;
++		LatteIndices_sweepKept(KEPT_INDEX_UNUSED_FRAMES);
++	}
++#endif
+ }
+ 
+ uint64 LatteIndices_GetNextUsageIndex()
+@@ -661,6 +857,32 @@ void LatteIndices_alternativeCalculateIndexMax(const void* indexData, LatteIndex
+ 	}
+ }
+ 
++// the cache's least recently used entry takes the list (isKept: a kept list's allocation, which the cache does not let go)
++static void LatteIndices_remember(const void* indexData, uint32 count, LattePrimitiveMode primitiveMode, LatteIndexType indexType, uint32 indexMax, Renderer::INDEX_TYPE renderIndexType, uint32 outputCount, const Renderer::IndexAllocation& indexAllocation, bool isKept)
++{
++	// get least recently used cache entry
++	auto lruEntry = std::min_element(LatteIndexCache.entry.begin(), LatteIndexCache.entry.end(), [](const auto& a, const auto& b)
++	{
++		return a.lastUsed < b.lastUsed;
++	});
++	// invalidate previous allocation
++	if(lruEntry->lastPtr != nullptr && LatteIndices_ownsAllocation(*lruEntry))
++		g_renderer->indexData_releaseIndexMemory(lruEntry->indexAllocation);
++	// update cache
++	lruEntry->lastPtr = indexData;
++	lruEntry->lastCount = count;
++	lruEntry->lastPrimitiveMode = primitiveMode;
++	lruEntry->lastIndexType = indexType;
++	lruEntry->indexMax = indexMax;
++	lruEntry->renderIndexType = renderIndexType;
++	lruEntry->outputCount = outputCount;
++	lruEntry->indexAllocation = indexAllocation;
++#if defined(CEMU_PS5)
++	lruEntry->isKept = isKept;
++#endif
++	lruEntry->lastUsed = LatteIndices_GetNextUsageIndex();
++}
++
+ void LatteIndices_decode(const void* indexData, LatteIndexType indexType, uint32 count, LattePrimitiveMode primitiveMode, uint32& indexMax, Renderer::INDEX_TYPE& renderIndexType, uint32& outputCount, Renderer::IndexAllocation& indexAllocation)
+ {
+ 	// what this should do:
+@@ -707,6 +929,60 @@ void LatteIndices_decode(const void* indexData, LatteIndexType indexType, uint32
+ 		indexAllocation = {};
+ 		return; // no indices
+ 	}
++#if defined(CEMU_PS5)
++	// bettervr.json's indexCache: a kept list unchanged since it was decoded is used again
++	KeptIndexList* keptList = nullptr;
++	uint64 keptHash = 0;
++	if (g_ps5KeepIndexLists)
++	{
++		const uint32 elementSize = (indexType == LatteIndexType::U32_BE || indexType == LatteIndexType::U32_LE) ? 4 : 2;
++		const uint32 inputSize = indexType == LatteIndexType::AUTO ? 0 : count * elementSize;
++		if (!LatteIndices_isVolatile(indexData, inputSize))
++		{
++			auto [it, isNew] = s_keptIndexLists.try_emplace(KeptIndexKey{indexData, count, primitiveRestartIndex, primitiveMode, indexType});
++			KeptIndexList& list = it->second;
++			bool isUnchanged = false;
++			if (!isNew)
++			{
++				// within the flush interval it was checked in, the cache trusts it as it trusts its own entries
++				isUnchanged = list.flushEpoch == s_indexFlushEpoch;
++				if (!isUnchanged)
++				{
++					keptHash = LatteIndices_hashInput(indexData, inputSize);
++					isUnchanged = keptHash == list.dataHash;
++				}
++			}
++			else
++				keptHash = LatteIndices_hashInput(indexData, inputSize);
++			if (isUnchanged)
++			{
++				list.flushEpoch = s_indexFlushEpoch;
++				list.usedFrame = LatteGPUState.frameCounter;
++				indexMax = list.indexMax;
++				renderIndexType = list.renderIndexType;
++				outputCount = list.outputCount;
++				indexAllocation = list.indexAllocation;
++				ps5IndexCount(g_ps5IndexReused);
++				LatteIndices_remember(indexData, count, primitiveMode, indexType, indexMax, renderIndexType, outputCount, indexAllocation, true);
++				return;
++			}
++			if (!isNew)
++			{
++				// decoded again below into new memory: the GPU may not be done with the old
++				LatteIndices_releaseKept(list);
++				ps5IndexCount(g_ps5IndexChanged);
++			}
++			if (s_keptIndexBytes + indexOutputSize <= KEPT_INDEX_BYTES_MAX)
++				keptList = &list;
++			else
++			{
++				s_keptIndexLists.erase(it);
++				s_keptIndexListsFull = true;
++			}
++			g_ps5IndexKeptBytes.store(s_keptIndexBytes, std::memory_order_relaxed);
++		}
++	}
++#endif
+ 	// query index buffer from renderer
+ 	indexAllocation = g_renderer->indexData_reserveIndexMemory(indexOutputSize);
+ #if defined(CEMU_PS5)
+@@ -882,22 +1158,22 @@ void LatteIndices_decode(const void* indexData, LatteIndexType indexType, uint32
+ 	}
+ 	g_renderer->indexData_uploadIndexMemory(indexAllocation);
+ 	performanceMonitor.cycle[performanceMonitor.cycleIndex].indexDataUploaded += indexOutputSize;
+-	// get least recently used cache entry
+-	auto lruEntry = std::min_element(LatteIndexCache.entry.begin(), LatteIndexCache.entry.end(), [](const auto& a, const auto& b)
++#if defined(CEMU_PS5)
++	if (keptList)
+ 	{
+-		return a.lastUsed < b.lastUsed;
+-	});
+-	// invalidate previous allocation
+-	if(lruEntry->lastPtr != nullptr)
+-		g_renderer->indexData_releaseIndexMemory(lruEntry->indexAllocation);
+-	// update cache
+-	lruEntry->lastPtr = indexData;
+-	lruEntry->lastCount = count;
+-	lruEntry->lastPrimitiveMode = primitiveMode;
+-	lruEntry->lastIndexType = indexType;
+-	lruEntry->indexMax = indexMax;
+-	lruEntry->renderIndexType = renderIndexType;
+-	lruEntry->outputCount = outputCount;
+-	lruEntry->indexAllocation = indexAllocation;
+-	lruEntry->lastUsed = LatteIndices_GetNextUsageIndex();
++		keptList->dataHash = keptHash;
++		keptList->flushEpoch = s_indexFlushEpoch;
++		keptList->usedFrame = LatteGPUState.frameCounter;
++		keptList->outputSize = indexOutputSize;
++		keptList->indexMax = indexMax;
++		keptList->renderIndexType = renderIndexType;
++		keptList->outputCount = outputCount;
++		keptList->indexAllocation = indexAllocation;
++		s_keptIndexBytes += indexOutputSize;
++		g_ps5IndexKeptBytes.store(s_keptIndexBytes, std::memory_order_relaxed);
++	}
++	LatteIndices_remember(indexData, count, primitiveMode, indexType, indexMax, renderIndexType, outputCount, indexAllocation, keptList != nullptr);
++#else
++	LatteIndices_remember(indexData, count, primitiveMode, indexType, indexMax, renderIndexType, outputCount, indexAllocation, false);
++#endif
+ }
+diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/VKRMemoryManager.cpp b/src/Cafe/HW/Latte/Renderer/Vulkan/VKRMemoryManager.cpp
+index 54ca20cf..aac4a5b3 100644
+--- a/src/Cafe/HW/Latte/Renderer/Vulkan/VKRMemoryManager.cpp
++++ b/src/Cafe/HW/Latte/Renderer/Vulkan/VKRMemoryManager.cpp
+@@ -183,8 +183,8 @@ VKRSynchronizedHeapAllocator::VKRSynchronizedHeapAllocator(class VKRMemoryManage
+ VKRSynchronizedHeapAllocator::AllocatorReservation* VKRSynchronizedHeapAllocator::AllocateBufferMemory(uint32 size, uint32 alignment)
+ {
+ 	CHAddr addr = m_chunkedHeap.alloc(size, alignment);
+-	m_activeAllocations.emplace_back(addr);
+ 	AllocatorReservation* res = m_poolAllocatorReservation.allocObj();
++	res->heapAddr = addr;
+ 	res->bufferIndex = addr.chunkIndex;
+ 	res->bufferOffset = addr.offset;
+ 	res->size = size;
+@@ -196,11 +196,10 @@ VKRSynchronizedHeapAllocator::AllocatorReservation* VKRSynchronizedHeapAllocator
+ void VKRSynchronizedHeapAllocator::FreeReservation(AllocatorReservation* uploadReservation)
+ {
+ 	// put the allocation on a delayed release queue for the current command buffer
++	// the reservation keeps its heap address: no search through the live allocations, of which kept index
++	// lists (LatteIndices.cpp) can be thousands
+ 	uint64 currentCommandBufferId = VulkanRenderer::GetInstance()->GetCurrentCommandBufferId();
+-	auto it = std::find_if(m_activeAllocations.begin(), m_activeAllocations.end(), [&uploadReservation](const TrackedAllocation& allocation) { return allocation.allocation.chunkIndex == uploadReservation->bufferIndex && allocation.allocation.offset == uploadReservation->bufferOffset; });
+-	cemu_assert_debug(it != m_activeAllocations.end());
+-	m_releaseQueue[currentCommandBufferId].emplace_back(it->allocation);
+-	m_activeAllocations.erase(it);
++	m_releaseQueue[currentCommandBufferId].emplace_back(uploadReservation->heapAddr);
+ 	m_poolAllocatorReservation.freeObj(uploadReservation);
+ }
+ 
+diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/VKRMemoryManager.h b/src/Cafe/HW/Latte/Renderer/Vulkan/VKRMemoryManager.h
+index b81b65ea..4e1dfad0 100644
+--- a/src/Cafe/HW/Latte/Renderer/Vulkan/VKRMemoryManager.h
++++ b/src/Cafe/HW/Latte/Renderer/Vulkan/VKRMemoryManager.h
+@@ -206,12 +206,6 @@ private:
+ // heap style allocator with released memory being freed after the current command buffer finishes
+ class VKRSynchronizedHeapAllocator
+ {
+-	struct TrackedAllocation
+-	{
+-		TrackedAllocation(CHAddr allocation) : allocation(allocation) {};
+-		CHAddr allocation;
+-	};
+-
+   public:
+ 	VKRSynchronizedHeapAllocator(class VKRMemoryManager* vkMemoryManager, VKR_BUFFER_TYPE bufferType, size_t minimumBufferAllocSize);
+ 	VKRSynchronizedHeapAllocator(const VKRSynchronizedHeapAllocator&) = delete; // disallow copy
+@@ -224,6 +218,7 @@ class VKRSynchronizedHeapAllocator
+ 		uint32 bufferOffset;
+ 		uint32 size;
+ 		uint32 bufferIndex;
++		CHAddr heapAddr;
+ 	};
+ 
+ 	AllocatorReservation* AllocateBufferMemory(uint32 size, uint32 alignment);
+@@ -236,8 +231,6 @@ class VKRSynchronizedHeapAllocator
+   private:
+ 	const class VKRMemoryManager* m_vkrMemMgr;
+ 	VkBufferChunkedHeap m_chunkedHeap;
+-	// allocations
+-	std::vector<TrackedAllocation> m_activeAllocations;
+ 	MemoryPool<AllocatorReservation> m_poolAllocatorReservation{32};
+ 	// release queue
+ 	std::unordered_map<uint64, std::vector<CHAddr>> m_releaseQueue;

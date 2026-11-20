@@ -86,6 +86,8 @@ extern bool g_ps5FrameProfile;
 extern std::atomic<uint64> g_ps5FrameSwapNs;
 extern std::atomic<uint64> g_ps5FrameVrEndNs;
 extern std::atomic<uint32> g_ps5FrameProfileSamples;
+// patches/cemu 0059: bettervr.json's indexCache, index lists kept past the index cache's flushes (LatteIndices.cpp)
+extern bool g_ps5KeepIndexLists;
 extern "C" bool BetterVR_PS5_Profile();
 extern "C" float BetterVR_PS5_Setting(const char* name, float fallback); // bettervr.json
 #if defined(__PROSPERO__)
@@ -416,6 +418,12 @@ namespace ps5emu
 			GetConfig().vk_accurate_barriers = accurateBarriers;
 			ps5log::Line("[bettervr] Accurate barriers: {} (bettervr.json's accurateBarriers; {} on a PC VR run)",
 				accurateBarriers ? "on" : "off", accurateBarriers ? "on" : "off");
+			// bettervr.json's "indexCache": a decoded index list is kept past the index cache's flushes and used
+			// again while a hash of its bytes says they are the same; on unless "indexCache": 0
+			g_ps5KeepIndexLists = BetterVR_PS5_Setting("indexCache", 1.0f) != 0.0f;
+			ps5log::Line("[bettervr] Index cache: {} (bettervr.json's indexCache)",
+				g_ps5KeepIndexLists ? "index lists kept across frames, used again while their bytes are the same"
+					: "index lists decoded again after each of Cemu's flushes (\"indexCache\": 0)");
 			// bettervr.json's "profile": the [perf] lines get the GPU's busy time, and the runtime
 			// logs one [frame] line every 10 s; off unless asked for
 			if (BetterVR_PS5_Profile())
