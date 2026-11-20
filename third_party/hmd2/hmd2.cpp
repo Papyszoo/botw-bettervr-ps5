@@ -71,6 +71,11 @@ int sceVideoOutGetVblankStatus(int handle, void *status);
 }
 
 namespace hmd2 {
+
+// Defined with the export tables it reads (after bind_headset_vibration); setup() logs the probe
+// once, as soon as libSceHmd2 is loaded and before any optional function is called.
+void log_resolve_probe(int hmd2_handle);
+
 namespace {
 
 // -- constants --------------------------------------------------------------
@@ -152,11 +157,11 @@ VRTRACKER2_FUNCS(DECLARE_PTR)
 VRHAND_FUNCS(DECLARE_PTR)
 #undef DECLARE_PTR
 
-// Eye tracking, the 13.60 probe. libSceHmd2 does not export these names on 13.60, so they are
-// bound at PS5VR's 13.60 table offsets after the library's own anchor matched, exactly like the
-// headset motor (bind_headset_vibration). The full result is 0x38 bytes; only +4 status, +8 a
-// per-sample stamp, +0x10 the valid flag and +0x14 the direction are known. The stream is started
-// once and every sample is logged; this build does not hand a sample to gameplay.
+// Eye tracking, the probe. libSceHmd2 does not export these names on 13.60, so they are bound at
+// PS5VR's table offsets after the library's own anchor matched, exactly like the headset motor
+// (bind_headset_vibration). The full result is 0x38 bytes; only +4 status, +8 a per-sample stamp,
+// +0x10 the valid flag and +0x14 the direction are known. The stream is started once and every
+// sample is logged; this build does not hand a sample to gameplay.
 int (*sceHmd2GazeGetResult)(const void *param, void *result) = nullptr;
 int (*sceHmd2InternalGazeStart)() = nullptr;
 int (*sceHmd2InternalGazeStop)() = nullptr;
@@ -299,7 +304,7 @@ struct State {
     DeviceState device = {0, true, 0};
     Error error = {"", 0};
 
-    // Eye tracking (the 13.60 probe): the three exports bound at the table's offsets, the stream
+    // Eye tracking (the gaze probe): the three exports bound at the table's offsets, the stream
     // started once, and a sample logged twice a second for the first minute, then every 10 s.
     bool gaze_checked = false;
     bool gaze_bound = false;
@@ -630,10 +635,71 @@ bool resolve_module(int handle, const char *file, const Slot *slots, size_t n,
     return true;
 }
 
-// -- eye tracking (the 13.60 probe) ------------------------------------------
-// The three exports the probe needs, at PS5VR's 13.60 offsets (GPL-3.0, app/src/vr_exports_1360.h;
-// the same library's SetVibration row from that source runs on the console). Exact anchor, no scan:
-// any other firmware leaves gaze off rather than guess an address, and the probe logs one line.
+// -- the resolution probe (log only) -----------------------------------------
+// A startup probe: for each optional function, ask sceKernelDlsym for its NID
+// spelling and for the loader's "NID#lib#module" spelling, and print the address the firmware table
+// has. The three addresses side by side say whether userland resolution by NID can work at all.
+// Nothing here fills a slot or calls an address: the binds and the session are what they were.
+struct ProbeFunction {
+    const char *name;
+    const char *nid;
+};
+
+const char *probe_address(char *text, size_t size, const void *address) {
+    if (address == nullptr)
+        return "fail";
+    std::snprintf(text, size, "%p", address);
+    return text;
+}
+
+// The table's address for `name`, or 0 when this build's anchor does not sit exactly where a table
+// says. Quiet: module_table and resolve_module have already logged the build's lines.
+uintptr_t probe_table(const ModuleInfo &info, uintptr_t base, const export_table_t *tables,
+                      size_t tables_n, const char *name, uint32_t *offset) {
+    if (base == 0)
+        return 0;
+    for (size_t k = 0; k < tables_n; k++) {
+        if (!anchor_matches(&info, base, tables[k].anchor))
+            continue;
+        for (size_t j = 0; j < tables[k].count; j++)
+            if (std::strcmp(tables[k].exports[j].name, name) == 0) {
+                *offset = tables[k].exports[j].offset;
+                return base + tables[k].exports[j].offset;
+            }
+    }
+    return 0;
+}
+
+void probe_one(int handle, const char *file, const char *module, const ProbeFunction &function,
+               const export_table_t *tables, size_t tables_n) {
+    void *by_nid = nullptr;
+    void *by_library = nullptr;
+    char spelling[128];
+    std::snprintf(spelling, sizeof spelling, "%s#%s#%s", function.nid, module, module);
+    if (handle < 0 || sceKernelDlsym(handle, function.nid, &by_nid) != 0)
+        by_nid = nullptr;
+    if (handle < 0 || sceKernelDlsym(handle, spelling, &by_library) != 0)
+        by_library = nullptr;
+    ModuleInfo info;
+    const uintptr_t base = handle >= 0 ? module_base(handle, file, &info) : 0;
+    uint32_t offset = 0;
+    const uintptr_t table = probe_table(info, base, tables, tables_n, function.name, &offset);
+    char by_nid_text[24], by_library_text[24], table_text[40];
+    if (table != 0)
+        std::snprintf(table_text, sizeof table_text, "%p (+0x%x)", reinterpret_cast<void *>(table),
+                      (unsigned)offset);
+    else
+        std::snprintf(table_text, sizeof table_text, "-");
+    logf("hmd2: resolve %s dlsym-nid %s dlsym-lib %s table %s", function.name,
+         probe_address(by_nid_text, sizeof by_nid_text, by_nid),
+         probe_address(by_library_text, sizeof by_library_text, by_library), table_text);
+}
+
+// -- eye tracking (the probe) -----------------------------------------------
+// The three exports the probe needs, at PS5VR's offsets for every build it has a table for (GPL-3.0,
+// app/src/vr_exports.h and vr_exports_*.h; the same library's SetVibration row from that source runs
+// on the console). Our anchors are that source's, so the build is pinned exactly. No scan: a build
+// without the anchor leaves gaze off rather than guess an address, and the probe logs one line.
 const Slot kGazeSlots[] = {
     {"sceHmd2GazeGetResult", reinterpret_cast<void **>(&sceHmd2GazeGetResult)},
     {"sceHmd2InternalGazeStart", reinterpret_cast<void **>(&sceHmd2InternalGazeStart)},
@@ -644,8 +710,44 @@ const export_sig_t kExports_libSceHmd2Gaze_1360[] = {
     {"sceHmd2InternalGazeStart", 0x31b60u},
     {"sceHmd2InternalGazeStop", 0x31b80u},
 };
+const export_sig_t kExports_libSceHmd2Gaze_1240[] = {
+    {"sceHmd2GazeGetResult", 0x35110u},
+    {"sceHmd2InternalGazeStart", 0x31760u},
+    {"sceHmd2InternalGazeStop", 0x31780u},
+};
+const export_sig_t kExports_libSceHmd2Gaze_1160[] = {
+    {"sceHmd2GazeGetResult", 0x34f50u},
+    {"sceHmd2InternalGazeStart", 0x315a0u},
+    {"sceHmd2InternalGazeStop", 0x315c0u},
+};
+const export_sig_t kExports_libSceHmd2Gaze_1000[] = {
+    {"sceHmd2GazeGetResult", 0x34de0u},
+    {"sceHmd2InternalGazeStart", 0x31400u},
+    {"sceHmd2InternalGazeStop", 0x31420u},
+};
+const export_sig_t kExports_libSceHmd2Gaze_840[] = {
+    {"sceHmd2GazeGetResult", 0x34950u},
+    {"sceHmd2InternalGazeStart", 0x30a60u},
+    {"sceHmd2InternalGazeStop", 0x30a80u},
+};
+const export_sig_t kExports_libSceHmd2Gaze_761[] = {
+    {"sceHmd2GazeGetResult", 0x2e0a0u},
+    {"sceHmd2InternalGazeStart", 0x29b50u},
+    {"sceHmd2InternalGazeStop", 0x29b70u},
+};
+const export_sig_t kExports_libSceHmd2Gaze_550[] = {
+    {"sceHmd2GazeGetResult", 0x24e60u},
+    {"sceHmd2InternalGazeStart", 0x21690u},
+    {"sceHmd2InternalGazeStop", 0x216b0u},
+};
 const export_table_t kTables_libSceHmd2Gaze[] = {
     {1360, kExports_libSceHmd2Gaze_1360, 3, &kAnchor_libSceHmd2_1360},
+    {1240, kExports_libSceHmd2Gaze_1240, 3, &kAnchor_libSceHmd2_1240},
+    {1160, kExports_libSceHmd2Gaze_1160, 3, &kAnchor_libSceHmd2_1160},
+    {1000, kExports_libSceHmd2Gaze_1000, 3, &kAnchor_libSceHmd2_1000},
+    {840, kExports_libSceHmd2Gaze_840, 3, &kAnchor_libSceHmd2_840},
+    {761, kExports_libSceHmd2Gaze_761, 3, &kAnchor_libSceHmd2_761},
+    {550, kExports_libSceHmd2Gaze_550, 3, &kAnchor_libSceHmd2_550},
 };
 
 bool bind_gaze_exports() {
@@ -676,10 +778,17 @@ void gaze_start() {
         logf("hmd2: [gaze] unavailable on this firmware (no verified libSceHmd2 table)");
         return;
     }
-    logf("hmd2: [gaze] bound at the 13.60 table (anchor checked): GetResult %p, Start %p, Stop %p",
-         reinterpret_cast<void *>(sceHmd2GazeGetResult),
-         reinterpret_cast<void *>(sceHmd2InternalGazeStart),
-         reinterpret_cast<void *>(sceHmd2InternalGazeStop));
+    if (s.fw != 0)
+        logf("hmd2: [gaze] bound at the %d.%02d table (anchor checked): GetResult %p, Start %p, "
+             "Stop %p",
+             s.fw / 100, s.fw % 100, reinterpret_cast<void *>(sceHmd2GazeGetResult),
+             reinterpret_cast<void *>(sceHmd2InternalGazeStart),
+             reinterpret_cast<void *>(sceHmd2InternalGazeStop));
+    else
+        logf("hmd2: [gaze] bound by name: GetResult %p, Start %p, Stop %p",
+             reinterpret_cast<void *>(sceHmd2GazeGetResult),
+             reinterpret_cast<void *>(sceHmd2InternalGazeStart),
+             reinterpret_cast<void *>(sceHmd2InternalGazeStop));
 
     const int rc = sceHmd2InternalGazeStart();
     s.gaze_active = rc == 0;
@@ -1366,6 +1475,9 @@ bool setup(const Config &config) {
 
     const char *missing = nullptr;
     int handle = load_sysmodule(kSysmoduleHmd2, "libSceHmd2");
+    // Log only: what each resolution route sees for the optional functions. It runs even when the
+    // required resolve below fails, so a firmware without a table still says why. No address is used.
+    log_resolve_probe(handle);
     if (handle < 0 || !resolve_module(handle, "libSceHmd2.sprx", kHmd2Slots, kSlots(kHmd2Slots),
                                       kTables_libSceHmd2,
                                       sizeof kTables_libSceHmd2 / sizeof *kTables_libSceHmd2,
@@ -1658,7 +1770,7 @@ bool wait_slot() {
 bool begin_frame() {
     if (!s.active)
         return false;
-    // The 13.60 gaze probe polls here: once a frame is plenty for its own throttle, and it keeps
+    // The gaze probe polls here: once a frame is plenty for its own throttle, and it keeps
     // logging when no application asks for a gaze pose.
     gaze();
     if (s.frame_open)   // the last frame was never submitted: draw it again
@@ -1811,9 +1923,10 @@ int sense_set_vibration(int handle, uint8_t intensity) {
 // -- the headset's own motor -------------------------------------------------
 // sceHmd2SetVibration(handle, level): 0..25, one motor (AnyPS5 checks a level against 25 on a connected headset;
 // AstroBotVR2 uses 1..25 and holds no longer than 2 s). libSceHmd2 does not export it by name on 13.60, and its
-// offset is Ghost-VR's and HLA-PSVR2's tables' (+0x2ae00 on 13.60), not our own dump: it is bound like the Sense
-// exports, optional, and only through a table whose anchor string matched (libSceHmd2's own, so the build is pinned
-// before the offset is believed). Other firmware stays unbound and the motor stays still.
+// offset is Ghost-VR's, HLA-PSVR2's and PS5VR's tables', not our own dump. PS5VR (GPL-3.0, app/src/vr_exports_*.h)
+// has the row for every build it carries, so the offset comes from there wherever our anchor matches it: bound like
+// the Sense exports, optional, and only through a table whose anchor string matched (libSceHmd2's own, so the build
+// is pinned before the offset is believed). Other firmware stays unbound and the motor stays still.
 int (*sceHmd2SetVibration)(int handle, uint32_t level) = nullptr;
 const Slot kHeadsetVibrationSlots[] = {
     {"sceHmd2SetVibration", reinterpret_cast<void **>(&sceHmd2SetVibration)},
@@ -1821,8 +1934,32 @@ const Slot kHeadsetVibrationSlots[] = {
 const export_sig_t kExports_libSceHmd2Vibration_1360[] = {
     {"sceHmd2SetVibration", 0x2ae00u},
 };
+const export_sig_t kExports_libSceHmd2Vibration_1240[] = {
+    {"sceHmd2SetVibration", 0x2a9f0u},
+};
+const export_sig_t kExports_libSceHmd2Vibration_1160[] = {
+    {"sceHmd2SetVibration", 0x2a850u},
+};
+const export_sig_t kExports_libSceHmd2Vibration_1000[] = {
+    {"sceHmd2SetVibration", 0x2a6c0u},
+};
+const export_sig_t kExports_libSceHmd2Vibration_840[] = {
+    {"sceHmd2SetVibration", 0x2a1b0u},
+};
+const export_sig_t kExports_libSceHmd2Vibration_761[] = {
+    {"sceHmd2SetVibration", 0x236e0u},
+};
+const export_sig_t kExports_libSceHmd2Vibration_550[] = {
+    {"sceHmd2SetVibration", 0x1c640u},
+};
 const export_table_t kTables_libSceHmd2Vibration[] = {
     {1360, kExports_libSceHmd2Vibration_1360, 1, &kAnchor_libSceHmd2_1360},
+    {1240, kExports_libSceHmd2Vibration_1240, 1, &kAnchor_libSceHmd2_1240},
+    {1160, kExports_libSceHmd2Vibration_1160, 1, &kAnchor_libSceHmd2_1160},
+    {1000, kExports_libSceHmd2Vibration_1000, 1, &kAnchor_libSceHmd2_1000},
+    {840, kExports_libSceHmd2Vibration_840, 1, &kAnchor_libSceHmd2_840},
+    {761, kExports_libSceHmd2Vibration_761, 1, &kAnchor_libSceHmd2_761},
+    {550, kExports_libSceHmd2Vibration_550, 1, &kAnchor_libSceHmd2_550},
 };
 int g_headset_vibration = 0; // 0 not tried, 1 bound, -1 unavailable
 int g_headset_vibration_logged = 0;
@@ -1838,13 +1975,54 @@ bool bind_headset_vibration() {
                        kTables_libSceHmd2Vibration, sizeof kTables_libSceHmd2Vibration / sizeof *kTables_libSceHmd2Vibration,
                        nullptr, false /* optional */, false /* never scan */)) {
         g_headset_vibration = 1;
-        logf("hmd2: headset vibration bound at %p (sceHmd2SetVibration, 13.60 table, anchor checked)",
-             reinterpret_cast<void *>(sceHmd2SetVibration));
+        if (s.fw != 0)
+            logf("hmd2: headset vibration bound at %p (sceHmd2SetVibration, %d.%02d table, anchor "
+                 "checked)",
+                 reinterpret_cast<void *>(sceHmd2SetVibration), s.fw / 100, s.fw % 100);
+        else
+            logf("hmd2: headset vibration bound at %p (sceHmd2SetVibration, by name)",
+                 reinterpret_cast<void *>(sceHmd2SetVibration));
     } else {
         sceHmd2SetVibration = nullptr;
         logf("hmd2: sceHmd2SetVibration off on this firmware (no verified libSceHmd2 table), the headset stays still");
     }
     return g_headset_vibration > 0;
+}
+
+// The startup probe, once libSceHmd2 is loaded and before its required exports resolve: the lines
+// appear even on a build whose core table does not match. It asks for the eight optional functions;
+// the tables passed are the ones each bind uses, so a "table" address here is the address that bind
+// takes, and a build without the anchor prints "-".
+void log_resolve_probe(int hmd2_handle) {
+    static bool logged = false;
+    if (logged)
+        return;
+    logged = true;
+    probe_one(hmd2_handle, "libSceHmd2.sprx", "libSceHmd2", {"sceHmd2SetVibration", "Al4qjNREVQQ"},
+              kTables_libSceHmd2Vibration,
+              sizeof kTables_libSceHmd2Vibration / sizeof *kTables_libSceHmd2Vibration);
+    probe_one(hmd2_handle, "libSceHmd2.sprx", "libSceHmd2",
+              {"sceHmd2InternalGazeStart", "r93FLEZ3BBk"}, kTables_libSceHmd2Gaze,
+              sizeof kTables_libSceHmd2Gaze / sizeof *kTables_libSceHmd2Gaze);
+    probe_one(hmd2_handle, "libSceHmd2.sprx", "libSceHmd2",
+              {"sceHmd2InternalGazeStop", "IdYURdEdNFo"}, kTables_libSceHmd2Gaze,
+              sizeof kTables_libSceHmd2Gaze / sizeof *kTables_libSceHmd2Gaze);
+    probe_one(hmd2_handle, "libSceHmd2.sprx", "libSceHmd2",
+              {"sceHmd2GazeGetResult", "lAoFUedcfqA"}, kTables_libSceHmd2Gaze,
+              sizeof kTables_libSceHmd2Gaze / sizeof *kTables_libSceHmd2Gaze);
+    const int pad_handle = load_sysmodule(0, "libScePad");
+    probe_one(pad_handle, "libScePad.sprx", "libScePad",
+              {"scePadVrControllerSetVibrationMode", "Wf6-PNCyY20"}, kTables_libScePad,
+              sizeof kTables_libScePad / sizeof *kTables_libScePad);
+    probe_one(pad_handle, "libScePad.sprx", "libScePad",
+              {"scePadVrControllerSetVibration", "DGCwN1Lmmys"}, kTables_libScePad,
+              sizeof kTables_libScePad / sizeof *kTables_libScePad);
+    probe_one(pad_handle, "libScePad.sprx", "libScePad",
+              {"scePadVrControllerSetTriggerEffect", "6Cdc9bbjrRY"}, kTables_libScePadTriggers,
+              sizeof kTables_libScePadTriggers / sizeof *kTables_libScePadTriggers);
+    probe_one(pad_handle, "libScePad.sprx", "libScePad",
+              {"scePadVrControllerSetTriggerEffects", "v8P+9PRqg10"}, kTables_libScePadTriggers,
+              sizeof kTables_libScePadTriggers / sizeof *kTables_libScePadTriggers);
 }
 
 int set_vibration(int level) {
@@ -1950,7 +2128,7 @@ bool pad_triggers_available() {
 }
 
 bool gaze_available() {
-    // This build's gaze is a probe: it binds and logs on 13.60, but the runtime must not offer
+    // This build's gaze is a probe: it binds and logs on the table's builds, but the runtime must not offer
     // XR_EXT_eye_gaze_interaction yet, so no application can use a sample. The console's Test
     // request 60 decides the sign and the rate before the extension is offered.
     return false;

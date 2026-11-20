@@ -124,9 +124,9 @@ struct DeviceState {
     uint32_t lens_mm;  // lens-to-eye distance Hmd2 reports
 };
 
-// One eye-tracking sample from the 13.60 probe. The three exports are bound at a table whose
-// anchor matched, so any other firmware leaves `valid` false and logs one line. `direction` is the
-// firmware's own headset-frame direction, -z forward and not yet turned into tracker space;
+// One eye-tracking sample from the gaze probe. The three exports are bound at a table whose
+// anchor matched, so a build without the anchor leaves `valid` false and logs one line. `direction`
+// is the firmware's own headset-frame direction, -z forward and not yet turned into tracker space;
 // `status` is the result's status word (0 = a tracked sample). A sample is valid only when the
 // call returned 0, +4 is 0, the +0x10 flag is 1 and the direction is finite and unit length.
 struct Gaze {
@@ -210,7 +210,7 @@ uint64_t display_time_us();   // Hmd2's predicted display time for this frame
 Fov field_of_view();
 DeviceState device_state();   // cached, polled at most every 0.5 s
 bool worn();
-// One poll of the 13.60 gaze probe: one sceHmd2GazeGetResult, its own log (the raw 0x38 bytes,
+// One poll of the gaze probe: one sceHmd2GazeGetResult, its own log (the raw 0x38 bytes,
 // direction and validity twice a second for the first minute of VR, then every 10 s, and the
 // measured new-sample rate once), and `valid` as the Gaze note above says. Cheap, safe before
 // init() (returns invalid), and inactive on firmware without the table.
@@ -258,9 +258,9 @@ int sense_set_vibration_mode(int handle, int mode);
 int sense_set_vibration(int handle, uint8_t intensity);
 
 // The PS VR2 headset's motor, sceHmd2SetVibration(int handle, uint32_t level): one motor with no direction, level
-// 0..25. Bound on first use by name, else at the 13.60 offset public PS VR2 tables give (+0x2ae00) only when
-// libSceHmd2's own anchor string sits exactly there (never shifted); the offset is not from our own dump, so the bind, the level and any
-// failure are logged and the Vibration page's test button is the proof. A library or firmware without it returns
+// 0..25. Bound on first use by name, else at PS5VR's offset for the libSceHmd2 build whose anchor string sits exactly
+// where our table says (never shifted); the offset is not from our own dump, so the bind, the level and any failure
+// are logged and the Vibration page's test button is the proof. A build without the anchor returns
 // kHmd2VibrationUnavailable (logged once) and the headset simply stays still: never fatal. UNVERIFIED on hardware.
 constexpr int kHmd2VibrationUnavailable = (int)0x80000001;
 int set_vibration(int level);
