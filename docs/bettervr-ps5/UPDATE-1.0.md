@@ -953,20 +953,32 @@ v06's, unchanged; 0055 is the only Cemu patch added. `VERSION` stays 0.5.0.
   lines, names the path, the state's hash and what the row asked for, or `none, ...` and why; the runtime adds
   `[vib] headset pulse 17 Hz for 300 ms (kick 25 Hz for 60 ms, strength 0.48)`. Every `PlayerNormal` state is also
   logged once with its hash at INFO, capped at 64 states, so the next run lists the states the game really uses.
-- **Diagnostics for the next run** (read-only, capped, no behaviour change): a life-field scan copies the player
-  actor once a frame and, 300 ms after a damage or death state, intersects the 4-byte big-endian s32 offsets that
-  fell within the report's limits, logs `[vib] life scan hit N: M candidates (+0x... b->a, ...)`, and when one offset
-  survives two probes logs `[vib] life field: player+0x... = N quarter hearts` and watches it. An explosive-actor log
-  records names containing `Bomb`, `Barrel`, `Explo`, `Chuchu` or `Beam` from the actor-list hook, one
-  `[vib] explosive seen name='...' d=... m` per name, and `[vib] explosive gone name='...' after ... s, ... m from
-  Link` (within 40 m) when the id changes or the state reaches 3. Neither prints game code or instruction words. The
-  V208 life-store decode is not part of this build.
+- **The life field drives damage once it is proven.** Link's life is a big-endian s32 at player actor `+0x540` in
+  quarter hearts (the console's V3 scan found this field and no other: two hits took it 7 -> 4 -> 1, meals raised it
+  again). The scan still runs: 300 ms after a damage or death state, `+0x540` must have fallen within the same limits
+  (1..480 before, 0..before after, no more than 160 lost), on two probes, before any event uses it. Until then the
+  state hook above is the source, exactly as in v0.5.0; if the field does not fall on a probe, or leaves 0..480 for
+  60 frames, the state hook stays the source for the session. Once proven, every drop is one Damage Taken event and
+  the state hooks play none: falls, burning, cold and heat ticks and a lethal hit all count. The hands' amplitude is
+  0.4, 0.6, 0.8 or 1.0 of the state hook's 0.8 for 1, 2, 3 or 4+ quarter hearts lost (reaching 0 is the full one), so
+  the headset pulse is about 11, 13, 15 or 17 Hz. A rise (food, a heart container) updates the baseline and never
+  fires. The baseline resets on a loading screen, on a new player actor and when the actor address is lost, so a
+  load cannot fire. One `[vib] damage path=life <before>-><after> quarter hearts -> ...` line per drop says what the
+  row asked for or why it played nothing; one `[vib] life: player+0x540 is the life field ...` line says when the
+  field took over.
+- **Explosions are the actor list's own removals.** The hook records names containing `Bomb`, `Barrel`, `Explo`,
+  `Chuchu` or `Beam` as they are created (never during a loading screen) and follows the actor's id and state each
+  game frame. When one goes (its id is recycled or its state reaches 3) within 30 m of Link, the Explosions row
+  plays one falling rumble on both hands, full at 3 m and straight to nothing at 30 m; the headset follows through
+  the mixer's own level. Removals while a loading screen is up or the player actor is gone are discarded, as are four
+  or more in one frame (an area unload, not a blast): that frame logs one `[vib] explosion: N gone in one frame,
+  ignored (area unload)`. One `[vib] explosion <name> <dist> m -> ...` line per actor says what the row asked for or
+  why it played nothing. A remote bomb that is picked up or cancelled also disappears and cannot be told from a
+  detonation; the console check counts those separately.
 - **The game's rumble stays one category for now, with a learning log.** At the `VPADControlMotor`/`StopMotor` hooks
   (`controls.cpp`, at most 40 lines 150 ms apart, `HapticsLogPatterns` turns it off) it prints the caller LR, the
   playing state, the VPAD pattern bytes, and either the sead `PatternRumbleAddon`'s string at `+0x14` and its repeat
   count at `+0x1C` when the addon is in a callee-saved register or on the stack, or `pattern="?"`.
-- **Not done: explosions.** They are a category with their settings, and the explosive-actor log above is diagnostic
-  only; no event source plays them yet.
 
 ### Adaptive triggers
 

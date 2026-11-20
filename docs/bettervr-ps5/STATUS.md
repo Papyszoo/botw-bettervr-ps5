@@ -3,6 +3,76 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-20: damage follows Link's life field and explosions play from the actors that go; built, untested on console
+
+The RC's V3 scan found one field at player actor `+0x540` in quarter hearts and V4 saw the tracked bombs, barrels and
+arrows go, but no source played the Explosions row. Both now do.
+
+**Damage from life.** The scan is still the guard: 300 ms after a damage or death state, `+0x540` must have fallen
+within its limits, on two probes, before any event uses it. Until then the `PlayerNormal` state hook is the source,
+exactly as in v0.5.0; if the field does not fall, the state hook stays the source for the session. Once proven, every
+drop is one Damage Taken event and the state hooks play none, so falls, burning, cold and heat ticks and a lethal hit
+all count. The hands' amplitude is 0.4/0.6/0.8/1.0 of the state hook's 0.8 for 1/2/3/4+ quarter hearts lost, and
+reaching 0 uses the full one; the headset pulse is about 11/13/15/17 Hz. A rise (food, a heart container) updates the
+baseline and never fires. The baseline resets on a loading screen, on a new player actor and when the actor address is
+lost, so a load cannot fire. One `[vib] damage path=life <before>-><after> quarter hearts -> ...` line per drop says
+what the row asked for; one `[vib] life: player+0x540 is the life field ...` line says when it took over.
+
+**Explosions.** The actor-list hook records names containing `Bomb`, `Barrel`, `Explo`, `Chuchu` or `Beam` as they are
+created (never during a loading screen) and follows the actor's id and state each game frame. When one goes within
+30 m of Link, the Explosions row plays one falling rumble on both hands, full at 3 m and straight to nothing at 30 m;
+the headset follows through the mixer's level. Removals while a loading screen is up or the player actor is gone are
+discarded, as are four or more in one frame (an area unload): that frame logs one `[vib] explosion: N gone in one
+frame, ignored (area unload)`. One `[vib] explosion <name> <dist> m -> ...` line per actor says what the row asked for
+or why it played nothing. A remote bomb that is picked up or cancelled also disappears and cannot be told from a
+detonation, so that is a known false positive.
+
+The V3/V4 spam (`life scan`, `life field` value lines, `explosive seen`, `explosive gone`) is gone; every new line is
+under `HapticsLogPatterns` like the other `[vib]` lines. New patch bettervr 0031; no Cemu change. Details:
+`UPDATE-1.0.md`, "Vibration: one page and one mixer".
+
+**Test request 65 (v0.6 damage from life and explosions, 13.60 console).** Install the `BotW-VR-v...zip` from this
+head's green "BetterVR build" run and start Breath of the Wild in VR with the headset and both Sense controllers.
+Keep `HapticsLogPatterns` on (its default). In BetterVR's Vibration page keep Damage Taken at 100 % with Hands and
+Headset ticked, Explosions at 100 % with Hands and Headset ticked, and Headset Limit 60 %.
+
+1. **Validation, the first two hits.** Take two hits from a weak enemy (a Bokoblin is fine) at least 2 s apart, with
+   no fall, fire or other damage in between. Expected: two `[vib] damage path=PlayerNormal ...` lines, then, 300 ms
+   after the second, `[vib] life: player+0x540 is the life field, damage now follows its drops`. If the line instead
+   says `did not fall`, stop here and send it with the two damage lines.
+2. **Falls.** After the validation line, fall about 5 m without the paraglider (one quarter heart), then about 15 m
+   (three or more). Each drop should pulse once and log one `[vib] damage path=life ...` line with the before and
+   after values. Say whether the one-quarter hit is clearly weaker than the bigger one.
+3. **Fire and temperature.** Stand in burning grass for about 3 s, then wait for the cold ticks in Hebra (or the heat
+   ticks in the Gerudo desert). Every tick that takes life should pulse once and log one `path=life` line.
+4. **Lethal and food.** Let a hit kill Link; the last pulse should be the large one. Reload, then eat a meal: there
+   must be no pulse and no `[vib] damage` line while the life bar rises.
+5. **Load.** Save and load once (or fast travel). There must be no pulse at the load or in the first second after it;
+   send the `[vib] damage` lines from 10 s before to 10 s after.
+6. **Explosions.** In a quiet spot with no enemies: detonate a round remote bomb at about 3 m, then about 10 m and
+   about 25 m (shield up or behind cover); repeat the 3 m one with the cube bomb; shoot a bomb arrow at a wall about
+   10 m away; ignite an explosive barrel about 10 m away. Say whether the hands and the headset pulsed and how strong
+   each was, from weak to too strong. Write down the order.
+7. **A cancelled remote bomb.** At about 5 m, press the rune to recall/cancel a remote bomb without detonating it.
+   An explosion pulse here is the known false positive; send its line and say whether it was felt.
+8. **Quit** to the library and use Settings > Diagnostics > Copy logs to USB. Send, from
+   `/data/ps5cemu/logs/boot.log`:
+   - `LC_ALL=C grep -a "\[vib\] damage\|\[vib\] life:" boot.log`
+   - `LC_ALL=C grep -a "\[vib\] explosion" boot.log`
+   - `LC_ALL=C grep -a "\[vib\] headset pulse" boot.log`
+
+**Expected if it works:** the validation line after the second enemy hit; one `path=life` line and one pulse per later
+drop, including falls and temperature ticks; no line for a meal; a one-quarter hit at `hands 0.32` with `pulse 11 Hz`
+and a four-quarter or lethal one at `hands 0.80` with `pulse 17 Hz`; explosions at `hands 0.80` near 3 m, weaker at
+10 m, weaker still at 25 m and nothing past 30 m; no line at a load, and possibly one `ignored (area unload)` line
+when a load removes the scene's actors.
+
+**What it decides:** the validation line and the `path=life` lines confirm `+0x540` and make the life field the
+damage source in v0.6. `did not fall` means the field moved or the probe's baseline is wrong; the before/after values
+say which. A fall or temperature tick with no line means the drop was missed or the value is not life; the surrounding
+lines show it. An explosion pulse on a cancelled bomb is the known false positive, and the order in step 7 says
+whether a distance or time filter can separate them.
+
 ## 2026-11-20: the optional VR exports cover seven libSceHmd2 tables, and a startup probe logs every resolution route; built, untested on console
 
 The headset motor (`sceHmd2SetVibration`) and the gaze probe (`sceHmd2GazeGetResult`,
