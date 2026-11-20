@@ -3,6 +3,60 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-20: v0.6.1 hotfix: third-person smooth turning reads the game's own yaw delta again; built, untested on console
+
+The v0.6.0 report (13.60, DualSense, the Sense controllers off after 251 s; Camera Mode Third Person from 376 s):
+**Snap Turn (third person)** on gave one 45-degree step per push (`SnapTurn: turning ±45 degrees in third person`,
+388-640 s), but with it off the right stick did not turn the view at all, and while swimming the view turned by
+itself.
+
+**Root cause.** Patch bettervr 0012 moved the displaced `lfs f12, 0x194(r1)` in `captureCameraChaseStickYaw`
+before the trampoline's stack pop but kept the game-frame offset. The trampoline's frame is 0x20 bytes, so before
+the pop the same slot is `0x1B4(r1)` (the value `hook_AddGameCameraStickYaw` already reads as "the delta, 0x20
+higher up"). `0x194(r1)` read the game's `0x174` slot instead. With Snap Turn on the override hook writes f12, so
+the wrong load never reached the camera; with it off the chase camera applied that other slot every frame: zero on
+foot (no turn) and a nonzero swim value in water (yaw with no stick). The first-person path
+(`hook_AddGameCameraStickYaw`, `s_baseYaw` plus the captured delta, and `SetSmoothTurnInput` for a Sense) read the
+right slot and was unchanged. It was not a stick deadzone or drift, and not a stale snap: the log has no
+`SnapTurn: cancelled` line, and with snap off no request is made.
+
+**The fix.** The chase trampoline loads `0x1B4(r1)`, exactly the instruction v0.5.1/upstream executed after the
+pop; the snap hook still replaces it when Snap Turn is on. One `[turn] mode:` line when the effective mode changes
+(first or third person, snap or smooth, with the angle or speed), and rate-limited (after a quarter second with
+the right stick at rest, at most one a second, with the frames held back) `[turn] ... applied N deg of yaw with the
+right stick at rest` lines in the first-person application and at both third-person stick-yaw sites. New patch
+bettervr 0036; no Cemu change.
+
+**Test request 70 (v0.6.1 smooth turn, 13.60 console).** Install the `BotW-VR-v...zip` from this head's green
+"BetterVR build" run and start Breath of the Wild in VR. Say which controller each test used (DualSense or Sense).
+Keep Comfort > Advanced > Turning at Snap 45 for steps 1-3 unless a step says otherwise.
+
+1. **Third person, snap off, on land.** Set Camera Mode Third Person and Play Style > Third-Person Camera >
+   Snap Turn (third person) off. Stand still on land, push the right stick fully right for about a second, release,
+   then left for a second. The view must turn smoothly at the v0.5.1/upstream rate, stop when the stick returns, and
+   not drift while it rests. Send the one `[turn] mode: third person smooth, the game's right stick` line.
+2. **Third person, snap off, in water.** Without touching either stick, float (tread water) for 10 s. The view must
+   not rotate. Then push the right stick right for a second and release; the turn must stop. There must be no
+   `[turn] ... at rest` line in this step. Send every `[turn]` line of the test.
+3. **Third person, snap on.** Turn Snap Turn (third person) on. One push right must step 45 degrees and log one
+   `SnapTurn: turning 45 degrees in third person`; holding must not step again until the stick is released past the
+   deadzone and pushed again; one push left steps -45. Send the `[turn] mode: third person snap, 45 degrees` line
+   and every `SnapTurn:` line.
+4. **First person.** Set Camera Mode First Person and Comfort > Advanced > Turning to Smooth. Repeat step 1's
+   pushes: the DualSense's stick and, with the Sense controllers on, a Sense right stick must turn smoothly, and no
+   `[turn] ... at rest` line may appear. Then set Turning to Snap 45 and push once each way; each push must be one
+   step. Send the `[turn] mode: first person smooth, N deg/s` and `[turn] mode: first person snap, 45 degrees` lines
+   and every `SnapTurn:` line.
+5. **Both controller types.** Repeat step 1 with the Sense right stick (Sense controllers on) and say whether it
+   matches the DualSense. Then repeat with the Sense controllers off and the DualSense only.
+6. **Send** `LC_ALL=C grep -a "\[turn\]\|SnapTurn:" boot.log` and say, for each push, whether the view turned the
+   way the stick was pushed and stopped on release.
+
+**What it decides.** A smooth turn with both controllers and no at-rest lines closes the report. An at-rest line
+names the source and the degrees it applied; the mode line tells which path was active. If a chase-camera line
+persists after the stick is released, the game's own yaw still reaches the camera and the next step is the game's
+chase state, not our stick map.
+
 ## 2026-11-20: v0.6.0 ships asyncCompose on: the compose wait leaves Cemu's GPU thread, and the `[draws]` line splits the record; built; asyncCompose tested on console at 1x
 
 The v0.6 console logs (1x and 1.5x, gameplay windows of 3,500+ draws) put the stereo pass's record at 12.3-13.5 ms at

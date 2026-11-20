@@ -1,0 +1,217 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ps5cemu <ps5cemu@localhost>
+Date: Fri, 20 Nov 2026 17:08:58 +0100
+Subject: [PATCH] PS5: third-person smooth turning reads the game's own yaw
+ delta again, and a turn mode and no-stick yaw are logged; built, untested on
+ console
+
+The v0.6.0 trampoline moved the displaced `lfs f12, 0x194(r1)` in captureCameraChaseStickYaw before the
+stack pop but kept the game-frame offset. Before the pop the game frame is 0x20 higher, so the slot is
+0x1B4(r1), the value the capture load already reads. With Snap Turn on the override writes f12 and the
+step worked; with it off CameraChase applied the game's 0x174 slot every frame: no turn on foot and a
+self-turning swim camera in water. The load is 0x1B4(r1) again, as v0.5.1 executed it after the pop.
+
+One `[turn] mode:` line says when the effective mode changes, and at most one a second `[turn] ... applied
+N deg of yaw with the right stick at rest` line names a yaw that arrives inside the deadzone, at the
+first-person application and both third-person stick-yaw sites.
+---
+ .../patch_CTRL_CameraControls.asm             |  2 +-
+ src/game/botw/camera/camera.cpp               | 55 ++++++++++++++++++-
+ src/game/botw/camera/camera.h                 |  1 +
+ src/game/botw/input/controls.cpp              | 47 ++++++++++++++++
+ 4 files changed, 103 insertions(+), 2 deletions(-)
+
+diff --git a/resources/BreathOfTheWild_BetterVR/patch_CTRL_CameraControls.asm b/resources/BreathOfTheWild_BetterVR/patch_CTRL_CameraControls.asm
+index 73f0fe4..629df9d 100644
+--- a/resources/BreathOfTheWild_BetterVR/patch_CTRL_CameraControls.asm
++++ b/resources/BreathOfTheWild_BetterVR/patch_CTRL_CameraControls.asm
+@@ -194,7 +194,7 @@ stw r0, 0x24(r1)
+ lfs f1, 0x1B4(r1) ; the delta, 0x20 higher up than in the game's own frame
+ bl import.coreinit.hook_AddGameCameraStickYaw
+ 
+-lfs f12, 0x194(r1) ; replaced instruction
++lfs f12, 0x1B4(r1) ; replaced instruction, 0x20 higher up than in the game's own frame
+ bl import.coreinit.hook_OverrideThirdPersonChaseStickYaw
+ 
+ lwz r0, 0x24(r1)
+diff --git a/src/game/botw/camera/camera.cpp b/src/game/botw/camera/camera.cpp
+index 4e58816..3e1699b 100644
+--- a/src/game/botw/camera/camera.cpp
++++ b/src/game/botw/camera/camera.cpp
+@@ -61,6 +61,8 @@ struct SnapTurnRequest {
+ };
+ static std::atomic<SnapTurnRequest> s_pendingSnapTurn;
+ static std::atomic<float> s_smoothTurnStickDeflection = 0.0f;
++static std::atomic<float> s_turnStickInput = 0.0f;
++static std::atomic_uint64_t s_turnStickAtRestSinceNs = 0;
+ static std::atomic_uint64_t s_snapTurnFadeStartNs = 0;
+ static std::atomic_uint64_t s_snapTurnFadeUntilNs = 0;
+ 
+@@ -82,6 +84,16 @@ void Camera::SetSmoothTurnInput(float stickDeflection) {
+     s_smoothTurnStickDeflection = stickDeflection;
+ }
+ 
++void Camera::SetTurnStickInput(float stickX) {
++    s_turnStickInput = stickX;
++    if (std::fabs(stickX) > (float)GetSettings().stickDeadzone) {
++        s_turnStickAtRestSinceNs = 0;
++    }
++    else if (s_turnStickAtRestSinceNs.load() == 0) {
++        s_turnStickAtRestSinceNs = GetTimeStamp();
++    }
++}
++
+ float Camera::GetSnapTurnFadeAmount() {
+     const uint64_t startNs = s_snapTurnFadeStartNs;
+     const uint64_t endNs = s_snapTurnFadeUntilNs;
+@@ -193,6 +205,35 @@ static float ConsumeGameStickYawDelta() {
+     return std::exchange(s_pendingGameStickYawDelta, 0.0f);
+ }
+ 
++// Rate-limited (one line a second): a yaw that arrives with the right stick at rest is the camera turning
++// by itself, which a console log must catch. A quarter second at rest is required, so the frame that
++// applies a released stick's last delta cannot trip it. The line counts the frames held back since the last.
++static void LogYawWithoutStickInput(const char* source, float yawDegrees) {
++    if (yawDegrees == 0.0f || !std::isfinite(yawDegrees) || std::fabs(yawDegrees) < 0.05f) {
++        return;
++    }
++    if (std::fabs(s_turnStickInput.load()) > (float)GetSettings().stickDeadzone) {
++        return;
++    }
++
++    const uint64_t atRestSinceNs = s_turnStickAtRestSinceNs.load();
++    const uint64_t nowNs = GetTimeStamp();
++    if (atRestSinceNs == 0 || nowNs - atRestSinceNs < 250'000'000ull) {
++        return;
++    }
++
++    static uint64_t s_lastLogNs = 0;
++    static int s_skipped = 0;
++    if (s_lastLogNs != 0 && nowNs - s_lastLogNs < 1'000'000'000ull) {
++        ++s_skipped;
++        return;
++    }
++
++    Log::print<INFO>("[turn] {} applied {:.2f} deg of yaw with the right stick at rest ({} since the last line)", source, yawDegrees, s_skipped);
++    s_skipped = 0;
++    s_lastLogNs = nowNs;
++}
++
+ static bool ApplyYawDeltaToComputedCameraPivot(PPCInterpreter_t* hCPU, float yawDeltaDegrees) {
+     if (yawDeltaDegrees == 0.0f || hCPU->gpr[4] == 0 || hCPU->gpr[5] == 0) {
+         return false;
+@@ -453,13 +494,19 @@ static void hook_UpdateCameraForGameplay(PPCInterpreter_t* hCPU) {
+ 
+     const float gameYawDegrees = YawDegreesFromRotation(gameplayRotation);
+     const float gameStickYawDelta = ConsumeGameStickYawDelta();
++    LogYawWithoutStickInput("the game's camera", gameStickYawDelta);
+     if (ShouldAdoptGameCameraYaw()) {
+         s_baseYawDegrees = gameYawDegrees;
+         s_hasBaseYaw = true;
+     }
+     else {
++        const float pendingYawDelta = ConsumePendingCameraYawDelta();
++        if (GetSettings().GetSnapTurnAngle() <= 0) {
++            // a snap step is the stick's request, so only the smooth path can turn without a stick
++            LogYawWithoutStickInput("BetterVR's smooth turn", pendingYawDelta);
++        }
+         // follow the turn the game already applied instead of correcting it away
+-        s_baseYawDegrees = NormalizeDegrees(s_baseYawDegrees + gameStickYawDelta - ConsumePendingCameraYawDelta());
++        s_baseYawDegrees = NormalizeDegrees(s_baseYawDegrees + gameStickYawDelta - pendingYawDelta);
+         gameplayRotation = glm::angleAxis(glm::radians(s_baseYawDegrees), glm::fvec3(0.0f, 1.0f, 0.0f));
+     }
+     s_pendingGameYawCorrection = NormalizeDegrees(gameYawDegrees - s_baseYawDegrees);
+@@ -555,6 +602,9 @@ static void hook_OverrideThirdPersonChaseStickYaw(PPCInterpreter_t* hCPU) {
+     hCPU->instructionPointer = hCPU->sprNew.LR;
+ 
+     if (!ShouldSnapTurnThirdPersonCamera()) {
++        if (GameState::IsThirdPerson()) {
++            LogYawWithoutStickInput("the game's chase camera", (float)hCPU->fpr[12].fp0);
++        }
+         return;
+     }
+     hCPU->fpr[12].fp0 = ConsumeThirdPersonSnapTurnDelta();
+@@ -564,6 +614,9 @@ static void hook_OverrideThirdPersonTailStickYaw(PPCInterpreter_t* hCPU) {
+     hCPU->instructionPointer = hCPU->sprNew.LR;
+ 
+     if (!ShouldSnapTurnThirdPersonCamera()) {
++        if (GameState::IsThirdPerson()) {
++            LogYawWithoutStickInput("the game's tail camera", (float)hCPU->fpr[28].fp0 * (float)hCPU->fpr[24].fp0);
++        }
+         return;
+     }
+ 
+diff --git a/src/game/botw/camera/camera.h b/src/game/botw/camera/camera.h
+index c434c3d..51ea244 100644
+--- a/src/game/botw/camera/camera.h
++++ b/src/game/botw/camera/camera.h
+@@ -25,5 +25,6 @@ namespace Camera {
+     void RequestSnapTurn(int direction);
+     void CancelSnapTurn();
+     void SetSmoothTurnInput(float stickDeflection);
++    void SetTurnStickInput(float stickX);
+     float GetSnapTurnFadeAmount();
+ }
+diff --git a/src/game/botw/input/controls.cpp b/src/game/botw/input/controls.cpp
+index fda8fe6..0a87bbf 100644
+--- a/src/game/botw/input/controls.cpp
++++ b/src/game/botw/input/controls.cpp
+@@ -185,11 +185,58 @@ static void UpdateSnapTurnStick(float stickX, bool& latched) {
+     }
+ }
+ 
++enum class TurningMode : uint8_t {
++    FIRST_PERSON_SMOOTH,
++    FIRST_PERSON_SNAP,
++    THIRD_PERSON_SMOOTH,
++    THIRD_PERSON_SNAP,
++};
++
++// One line when the effective turn mode changes, so a console log says which mode a stick test ran in.
++static void LogTurningModeChange(bool inGame) {
++    static int s_loggedMode = -1;
++    if (!inGame) {
++        s_loggedMode = -1;
++        return;
++    }
++
++    const int32_t snapAngle = GetSettings().GetSnapTurnAngle();
++    TurningMode mode = TurningMode::FIRST_PERSON_SMOOTH;
++    if (GameState::IsThirdPerson()) {
++        mode = GetSettings().ShouldSnapTurnInThirdPerson() && snapAngle > 0 ? TurningMode::THIRD_PERSON_SNAP : TurningMode::THIRD_PERSON_SMOOTH;
++    }
++    else if (snapAngle > 0) {
++        mode = TurningMode::FIRST_PERSON_SNAP;
++    }
++    if ((int)mode == s_loggedMode) {
++        return;
++    }
++    s_loggedMode = (int)mode;
++
++    switch (mode) {
++        case TurningMode::FIRST_PERSON_SNAP:
++            Log::print<INFO>("[turn] mode: first person snap, {} degrees", snapAngle);
++            break;
++        case TurningMode::THIRD_PERSON_SNAP:
++            Log::print<INFO>("[turn] mode: third person snap, {} degrees", snapAngle);
++            break;
++        case TurningMode::THIRD_PERSON_SMOOTH:
++            Log::print<INFO>("[turn] mode: third person smooth, the game's right stick");
++            break;
++        default:
++            Log::print<INFO>("[turn] mode: first person smooth, {:.0f} deg/s", GetSettings().GetSmoothTurnSpeed());
++            break;
++    }
++}
++
+ static void UpdateTurning(const XrActionStateVector2f& rightStickSource, float physicalStickX, bool inGame) {
+     static bool s_firstPersonSnapTurnStickLatched = false;
+     static bool s_thirdPersonSnapTurnStickLatched = false;
+     const float stickX = rightStickSource.currentState.x;
+ 
++    LogTurningModeChange(inGame);
++    Camera::SetTurnStickInput(inGame ? std::clamp(stickX + physicalStickX, -1.0f, 1.0f) : 0.0f);
++
+     if (ShouldSnapTurnThirdPerson(inGame) && !ImGuiMenus::g_isOpen) {
+         s_firstPersonSnapTurnStickLatched = false;
+         Camera::SetSmoothTurnInput(0.0f);

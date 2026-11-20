@@ -1116,9 +1116,19 @@ v06's, unchanged; 0055 is the only Cemu patch added. `VERSION` stays 0.5.0.
   VPAD sample plus a Sense stick in XR) is withheld from VPAD, and `hook_OverrideThirdPersonChaseStickYaw` /
   `hook_OverrideThirdPersonTailStickYaw` (`camera.cpp`) replace the game's per-frame smooth yaw delta with one
   `-direction * angle` step. The tail site takes the smooth delta back out of the base yaw so the following `fmadds`
-  cannot add it again. Off, both hooks return before writing anything and VPAD is untouched: today's behavior.
+  cannot add it again. Off, both hooks return before writing anything and VPAD is untouched: v0.5.1's behavior.
+- **v0.6.1: the offset of the displaced load.** v0.6.0 moved `lfs f12, 0x194(r1)` in
+  `captureCameraChaseStickYaw` before the trampoline's stack pop but kept the game-frame offset. The trampoline's
+  frame is 0x20 bytes, so the same slot is `0x1B4(r1)` before the pop (as the capture load already said); reading
+  `0x194(r1)` took the game's `0x174` slot. With the setting on the hook overwrites f12, so the step was right; with
+  it off the chase camera applied the wrong slot every frame, which was no turn on foot and a self-turning swim
+  camera in water. Patch bettervr 0036 loads `0x1B4(r1)`, the instruction v0.5.1 executed after the pop.
 - **Log.** One `SnapTurn: turning N degrees in third person` line per step (N is ±30, ±45 or ±60; the sign is the
-  step's direction).
+  step's direction). One `[turn] mode:` line when the effective mode changes (`first person smooth, N deg/s`,
+  `first person snap, N degrees`, `third person smooth, the game's right stick`, `third person snap, N degrees`),
+  and at most one a second `[turn] <source> applied N deg of yaw with the right stick at rest (...)` when a yaw
+  arrives with the stick inside the deadzone for a quarter second or more, at the first-person application and both
+  third-person sites.
 - **Not done:** no comfort fade or blink is added for the third-person step. Patch bettervr 0012. Built, untested on
   console.
 
