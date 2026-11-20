@@ -22,7 +22,9 @@
 //                      second, each shown for two of its 120 Hz refreshes). xrEndFrame composes the
 //                      projection layer and the HUD quad into the frame's eye buffer in one compute
 //                      pass (shaders/compose.comp), on the binding's queue, waits for it, and submits
-//                      it with the head pose the submitted views were rendered from. A mono/cutscene
+//                      it with the head pose the submitted views were rendered from; with
+//                      bettervr.json's asyncCompose the frame pump's next xrWaitFrame does the wait
+//                      and the submit, and Cemu's GPU thread goes on to the next frame. A mono/cutscene
 //                      frame (no stereo render: a rune or map screen, a cutscene) is the 2D picture
 //                      alone in front of the player, black around it, never an eye picture stretched
 //                      across both eyes. Hmd2's social screen shows that view on the TV when
@@ -86,6 +88,7 @@ void PS5Pad_ExternalRumble(float level);
 #include <cmath>
 #include <cstdarg>
 #include <cstdio>
+#include <condition_variable>
 #include <cstring>
 #include <deque>
 #include <memory>
@@ -406,7 +409,12 @@ struct XrSession_T
 	VkCommandBuffer composeCommands = VK_NULL_HANDLE;
 	VkFence composeFence = VK_NULL_HANDLE;
 	bool composePending = false; // the compose was submitted and its fence has not been seen signalled
-	bool composeBusy = false;    // an xrEndFrame is waiting on composeFence without s.lock
+	bool composeBusy = false;    // a FinishCompose is waiting on composeFence without s.lock
+	// the submitted compose's frame still has to wait for its fence and go to Hmd2 (FinishCompose), with the
+	// render pose and compose flags xrEndFrame gave it
+	bool composeFinishDue = false;
+	Pose composeHead{};
+	uint32_t composeFlags = 0;
 	uint64_t gpuStallSince = 0;  // sceKernelGetProcessTime of the first timeout of the stall in progress, 0 when none
 	uint64_t gpuTimeouts = 0, gpuStuckSkips = 0, gpuRecovered = 0;
 
@@ -425,9 +433,10 @@ struct XrSession_T
 	bool eyeCopyLogged = false;
 	// frames Hmd2's TV mirror took, and frames it was asked for but did not take
 	uint64_t tvShown = 0, tvSkipped = 0;
-	// the 5 s [draws] line: when its window began, xrEndFrame's own time and its compose fence wait
-	// in the window, and how many frames the window had. Draw counts and the stereo/replay times come
-	// from Cemu's counters (patches/cemu 0057), taken and cleared at each line.
+	// the 5 s [draws] line: when its window began, xrEndFrame's own time and the compose fence waits
+	// in the window (xrEndFrame's, or the frame pump's with asyncCompose), and how many frames the
+	// window had. Draw counts and the stereo/replay times come from Cemu's counters (patches/cemu 0057,
+	// 0058), taken and cleared at each line.
 	uint64_t drawLogAt = 0, drawLogFrames = 0, drawLogEndUs = 0, drawLogFenceUs = 0;
 };
 
@@ -536,6 +545,10 @@ namespace
 		Pose shownHead{}; // the tracker's pose of the pair the compositor shows again, for Hmd2
 		uint64_t shownAtFrame = 0;
 		bool reproject = true; // bettervr.json's "reproject": 0 submits every frame as rendered from the display time's pose
+		// bettervr.json's "asyncCompose": the frame pump's xrWaitFrame, not xrEndFrame on Cemu's GPU thread, waits for a
+		// frame's compose and submits it to Hmd2 (FinishCompose); off by default
+		bool asyncCompose = false;
+		std::condition_variable composeIdle; // signalled when a FinishCompose's fence wait ends
 		bool tv = true; // bettervr.json's "tv": 0 keeps the TV dark while VR runs
 		// bettervr.json's "profile": one [frame] line every 10 s, splitting the GPU thread's swap, the
 		// VR frame end, the compose fence and hmd2's submit; off by default, nothing is timed when off
@@ -2404,6 +2417,10 @@ XRAPI_ATTR XrResult XRAPI_CALL xrCreateSession(XrInstance, const XrSessionCreate
 	s.gripYaw = BetterVR_PS5_Setting("gripYaw", 17.0f);
 	s.gripRoll = BetterVR_PS5_Setting("gripRoll", 30.0f);
 	s.reproject = BetterVR_PS5_Setting("reproject", 1.0f) != 0.0f;
+	s.asyncCompose = BetterVR_PS5_Setting("asyncCompose", 0.0f) != 0.0f;
+	Log("compose wait: %s (bettervr.json's asyncCompose)",
+		s.asyncCompose ? "on the frame pump's xrWaitFrame, which submits the frame to Hmd2; Cemu's GPU thread goes on to the next frame"
+					   : "in xrEndFrame on Cemu's GPU thread, which submits the frame to Hmd2");
 	s.profile = BetterVR_PS5_Profile();
 	if (s.profile)
 	{
@@ -2819,7 +2836,8 @@ XRAPI_ATTR XrResult XRAPI_CALL xrAcquireSwapchainImage(XrSwapchain swapchain, co
 
 XRAPI_ATTR XrResult XRAPI_CALL xrWaitSwapchainImage(XrSwapchain, const XrSwapchainImageWaitInfo*)
 {
-	// xrEndFrame waits for its own reads before it returns, so an acquired image is always free
+	// an acquired image is free: a compose's reads end before the next frame's compose is recorded (xrEndFrame waits
+	// for them, or with asyncCompose finishes the last compose first), and an image comes round again three acquires on
 	return XR_SUCCESS;
 }
 
@@ -2831,11 +2849,162 @@ XRAPI_ATTR XrResult XRAPI_CALL xrReleaseSwapchainImage(XrSwapchain swapchain, co
 }
 
 // -- frames ----------------------------------------------------------------------------------------
+namespace
+{
+	// How FinishCompose left the frame
+	enum class ComposeFinish
+	{
+		Submitted, // the compose finished and the frame went to Hmd2
+		Open,      // not submitted: the frame stays open and the next xrEndFrame looks at the fence again
+		Failed,    // the run is given up (gpuFailed): the caller leaves s.lock and takes the VR-failed path
+		Lost,      // the session ended or the runtime stopped during the wait
+	};
+
+	// The fence of the compose xrEndFrame submitted, then the Hmd2 submit of the frame it composed. xrEndFrame calls it
+	// at once, unless bettervr.json's asyncCompose is on: then the frame pump's next xrWaitFrame calls it (`pump`), before
+	// it begins the next Hmd2 frame, and Cemu's GPU thread goes on to the next game frame while the GPU composes;
+	// xrEndFrame calls it only for a compose the pump has not taken. The pump takes only a compose that finished in
+	// time; a timeout is left to the GPU thread's next xrEndFrame, which handles it as the synchronous path does.
+	// Called with s.lock held through `lock`; the fence wait leaves it.
+	ComposeFinish FinishCompose(std::unique_lock<std::mutex>& lock, XrSession_T* session, bool pump)
+	{
+		// The wait runs without s.lock: the compose sits on the shared queue behind the module's submit, which can wait on a
+		// timeline value Cemu's GPU thread signals in its next submit, and that thread takes s.lock in xrAcquireSwapchainImage
+		// and the like. Holding the lock here would make the wait cause its own timeout.
+		session->composeBusy = true;
+		const uint64_t fenceStarted = sceKernelGetProcessTime();
+		lock.unlock();
+		const VkResult waited = vk.vkWaitForFences(session->device, 1, &session->composeFence, VK_TRUE, kGpuTimeoutNs);
+		const uint64_t fenceEnded = sceKernelGetProcessTime();
+		lock.lock();
+		session->composeBusy = false;
+		s.composeIdle.notify_all();
+		session->drawLogFenceUs += fenceEnded - fenceStarted;
+		if (s.profile)
+			s.profileFenceNs += (fenceEnded - fenceStarted) * 1000;
+		if (s.stopped || s.session != session)
+			return ComposeFinish::Lost;
+		if (pump && waited != VK_SUCCESS)
+			return ComposeFinish::Open; // still due: the GPU thread's next xrEndFrame waits again and counts the timeout
+		session->composeFinishDue = false;
+		if (!ComposeFenceResult(session, waited) || session->composePending)
+			return session->gpuFailed ? ComposeFinish::Failed : ComposeFinish::Open;
+		session->frameOpen = false;
+		const Pose renderHead = session->composeHead;
+		const uint32_t flags = session->composeFlags;
+		const uint64_t submitStarted = s.profile ? sceKernelGetProcessTime() : 0;
+		const bool submitted = hmd2::submit(ToHmd(renderHead));
+		if (s.profile)
+		{
+			s.profileSubmitNs += (sceKernelGetProcessTime() - submitStarted) * 1000;
+			s.profileFrames++;
+		}
+		// Hmd2's compositor is what puts this frame on the TV: no present of ours and no queue lock
+		if (s.tv && submitted)
+			(hmd2::mirroring() ? session->tvShown : session->tvSkipped)++;
+		if (!s.firstFrameLogged && submitted)
+		{
+			s.firstFrameLogged = true;
+			session->lastFrameLogAt = sceKernelGetProcessTime();
+			Log("VR start 5/5: the first frame is submitted to the headset (%llu ms after the session, %s)",
+				(unsigned long long)((sceKernelGetProcessTime() - s.sessionStartedAt) / 1000),
+				(flags & 3u) ? "with a stereo picture" : "without one yet, the HUD alone or black");
+		}
+		if (!s.firstStereoLogged && submitted && (flags & 3u))
+		{
+			s.firstStereoLogged = true;
+			Log("the first frame with a stereo picture is submitted (frame %llu, eye pictures %s %s, HUD quad %s)", (unsigned long long)session->frames + 1,
+				(flags & 1u) ? "left" : "-", (flags & 2u) ? "right" : "-", (flags & 4u) ? "yes" : "no");
+		}
+		if (++session->frames % 600 == 0)
+		{
+			const hmd2::PaceStats pace = hmd2::take_pace();
+			const hmd2::FlipInfo flip = hmd2::flip_status();
+			// the headset's own frame rate over these 600 frames (the game's is the [perf] line's)
+			const uint64_t now = sceKernelGetProcessTime();
+			const double seconds = session->lastFrameLogAt ? (double)(now - session->lastFrameLogAt) / 1e6 : 0.0;
+			session->lastFrameLogAt = now;
+			Log("%llu frames, %.1f fps submitted over the last 600: nap %.2f ms, BeginFrame %.2f ms, ahead %.2f ms, step %.2f ms; flip shown %llu pending %d; "
+				"repeated %d, queue full %d, missed %d, errors %d, without layers %llu, skipped %llu, waits one frame ahead %llu, ends without a frame %llu, late begins %llu, worn %d; "
+				"GPU timeouts %llu, stuck skips %llu, recovered %llu; "
+				"render pose found %llu, not found %llu, kept %llu; "
+				"head %.2f %.2f %.2f, hand spaces left %.3f %.3f %.3f right %.3f %.3f %.3f, hands posed %d %d; "
+				"plane quads %llu; TV mirror %s, shown %llu skipped %llu",
+				(unsigned long long)session->frames, seconds > 0.0 ? 600.0 / seconds : 0.0, pace.nap_ms, pace.call_ms, pace.ahead_ms, pace.step_ms,
+				(unsigned long long)flip.shown, flip.pending, hmd2::repeated_frames(), hmd2::queue_full_waits(), hmd2::missed_frames(), hmd2::frame_errors(),
+				(unsigned long long)session->emptyFrames, (unsigned long long)session->skipped, (unsigned long long)session->waitsAhead,
+				(unsigned long long)session->endsWithoutFrame, (unsigned long long)session->lateBegins, (unsigned long long)session->gpuTimeouts,
+				(unsigned long long)session->gpuStuckSkips, (unsigned long long)session->gpuRecovered, hmd2::worn() ? 1 : 0, (unsigned long long)session->poseFound,
+				(unsigned long long)session->poseLost, (unsigned long long)session->poseKept, renderHead.p.x, renderHead.p.y, renderHead.p.z,
+				s.handLocated[0].p.x, s.handLocated[0].p.y, s.handLocated[0].p.z, s.handLocated[1].p.x, s.handLocated[1].p.y, s.handLocated[1].p.z,
+				s.hands[0].poseValid ? 1 : 0, s.hands[1].poseValid ? 1 : 0, (unsigned long long)session->planeQuads, s.tv ? "on" : "off",
+				(unsigned long long)session->tvShown, (unsigned long long)session->tvSkipped);
+		}
+		if (s.profile)
+		{
+			const uint64_t now = sceKernelGetProcessTime();
+			if (s.profileAt && now - s.profileAt >= 10'000'000)
+			{
+				const double seconds = (double)(now - s.profileAt) / 1e6;
+#if defined(__PROSPERO__)
+				const uint64_t swapNs = g_ps5FrameSwapNs.exchange(0, std::memory_order_relaxed);
+				const uint64_t vrEndNs = g_ps5FrameVrEndNs.exchange(0, std::memory_order_relaxed);
+				const uint32_t samples = g_ps5FrameProfileSamples.exchange(0, std::memory_order_relaxed);
+				const uint64_t gpuNs = g_ps5GpuBusyNs.load(std::memory_order_relaxed);
+				const double gpuBusy = now > s.profileAt ? (double)(gpuNs - s.profileGpuAt) / 1000.0 * 100.0 / (double)(now - s.profileAt) : 0.0;
+				s.profileGpuAt = gpuNs;
+				const double notifyFrames = samples ? (double)samples : (s.profileFrames ? (double)s.profileFrames : 1.0);
+				const double runtimeFrames = s.profileFrames ? (double)s.profileFrames : notifyFrames;
+				Log("[frame] swap %.2f ms | VR end %.2f ms | compose fence %.2f ms | hmd2 submit %.2f ms | %.1f fps | GPU busy %.0f%% (over %.1f s, %u frames)",
+					(double)swapNs / 1e6 / notifyFrames, (double)vrEndNs / 1e6 / notifyFrames, (double)s.profileFenceNs / 1e6 / runtimeFrames,
+					(double)s.profileSubmitNs / 1e6 / runtimeFrames, notifyFrames / seconds, gpuBusy, seconds, samples);
+#endif
+				s.profileAt = now;
+				s.profileFenceNs = s.profileSubmitNs = 0;
+				s.profileFrames = 0;
+			}
+		}
+		return ComposeFinish::Submitted;
+	}
+
+	// xrEndFrame's FinishCompose: true when the frame went to Hmd2 and the caller goes on; otherwise `result` is what
+	// xrEndFrame returns, after the VR-failed path for a given-up run
+	bool FinishComposeHere(std::unique_lock<std::mutex>& lock, XrSession_T* session, XrResult& result)
+	{
+		switch (FinishCompose(lock, session, false))
+		{
+		case ComposeFinish::Submitted:
+			return true;
+		case ComposeFinish::Open:
+			result = XR_SUCCESS; // the frame stays open: the next xrEndFrame looks at the fence again
+			return false;
+		case ComposeFinish::Failed:
+			lock.unlock();
+			BetterVR_PS5_VrFailed("the compositor's GPU work did not finish");
+			result = XR_SUCCESS;
+			return false;
+		case ComposeFinish::Lost:
+			break;
+		}
+		result = Lost();
+		return false;
+	}
+}
+
 XRAPI_ATTR XrResult XRAPI_CALL xrWaitFrame(XrSession session, const XrFrameWaitInfo*, XrFrameState* state)
 {
 	// hmd2's pacing naps here: not under the lock, so poses can be located meanwhile
 	if (s.stopped)
 		return Lost();
+	// bettervr.json's asyncCompose: the last frame waits for its compose here and goes to Hmd2, before the next Hmd2
+	// frame is begun, at the moment xrEndFrame would have submitted it
+	if (s.asyncCompose)
+	{
+		std::unique_lock lock(s.lock);
+		s.composeIdle.wait(lock, [session] { return !session->composeBusy; });
+		if (!s.stopped && s.session == session && session->composeFinishDue)
+			FinishCompose(lock, session, true);
+	}
 	hmd2::wait_slot();
 	s_waitFrames++;
 	std::lock_guard lock(s.lock);
@@ -2884,6 +3053,17 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
 	std::unique_lock lock(s.lock);
 	if (s.stopped)
 		return Lost();
+	// bettervr.json's asyncCompose: a compose the frame pump has not taken yet is finished first, since this frame's Hmd2
+	// frame, compose commands, descriptor set and fence are free only once it is done
+	if (session->composeFinishDue)
+	{
+		s.composeIdle.wait(lock, [session] { return !session->composeBusy; });
+		if (s.stopped || s.session != session)
+			return Lost();
+		XrResult result = XR_SUCCESS;
+		if (session->composeFinishDue && !FinishComposeHere(lock, session, result))
+			return result;
+	}
 	// A back-to-back xrEndFrame (a repeated frame renders nothing) comes before the pump's next xrWaitFrame has begun
 	// the Hmd2 frame: begin it here and submit late, instead of dropping the picture (BeginFrame does not nap)
 	if (!session->frameOpen && !session->gpuFailed && session->hmdUp)
@@ -3362,104 +3542,16 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
 		Log("the compositor's GPU work failed; the headset stops here and nothing is freed");
 		return XR_ERROR_RUNTIME_FAILURE;
 	}
-	// The wait runs without s.lock: the compose sits on the shared queue behind the module's submit, which can wait on a
-	// timeline value Cemu's GPU thread signals in its next submit, and that thread takes s.lock in xrAcquireSwapchainImage
-	// and the like. Holding the lock here would make the wait cause its own timeout.
-	session->composeBusy = true;
-	const uint64_t fenceStarted = sceKernelGetProcessTime();
-	lock.unlock();
-	const VkResult waited = vk.vkWaitForFences(session->device, 1, &session->composeFence, VK_TRUE, kGpuTimeoutNs);
-	const uint64_t fenceEnded = sceKernelGetProcessTime();
-	lock.lock();
-	session->composeBusy = false;
-	session->drawLogFenceUs += fenceEnded - fenceStarted;
-	if (s.profile)
-		s.profileFenceNs += (fenceEnded - fenceStarted) * 1000;
-	if (s.stopped || s.session != session)
-		return Lost();
-	if (!ComposeFenceResult(session, waited) || session->composePending)
-	{
-		if (session->gpuFailed)
-		{
-			lock.unlock();
-			BetterVR_PS5_VrFailed("the compositor's GPU work did not finish");
-		}
-		return XR_SUCCESS; // the frame stays open: the next xrEndFrame looks at the fence again
-	}
-	session->frameOpen = false;
-	const uint64_t submitStarted = s.profile ? sceKernelGetProcessTime() : 0;
-	const bool submitted = hmd2::submit(ToHmd(renderHead));
-	if (s.profile)
-	{
-		s.profileSubmitNs += (sceKernelGetProcessTime() - submitStarted) * 1000;
-		s.profileFrames++;
-	}
-	// Hmd2's compositor is what puts this frame on the TV: no present of ours and no queue lock
-	if (s.tv && submitted)
-		(hmd2::mirroring() ? session->tvShown : session->tvSkipped)++;
-	if (!s.firstFrameLogged && submitted)
-	{
-		s.firstFrameLogged = true;
-		session->lastFrameLogAt = sceKernelGetProcessTime();
-		Log("VR start 5/5: the first frame is submitted to the headset (%llu ms after the session, %s)",
-			(unsigned long long)((sceKernelGetProcessTime() - s.sessionStartedAt) / 1000),
-			(params.flags & 3u) ? "with a stereo picture" : "without one yet, the HUD alone or black");
-	}
-	if (!s.firstStereoLogged && submitted && (params.flags & 3u))
-	{
-		s.firstStereoLogged = true;
-		Log("the first frame with a stereo picture is submitted (frame %llu, eye pictures %s %s, HUD quad %s)", (unsigned long long)session->frames + 1,
-			(params.flags & 1u) ? "left" : "-", (params.flags & 2u) ? "right" : "-", (params.flags & 4u) ? "yes" : "no");
-	}
-	if (++session->frames % 600 == 0)
-	{
-		const hmd2::PaceStats pace = hmd2::take_pace();
-		const hmd2::FlipInfo flip = hmd2::flip_status();
-		// the headset's own frame rate over these 600 frames (the game's is the [perf] line's)
-		const uint64_t now = sceKernelGetProcessTime();
-		const double seconds = session->lastFrameLogAt ? (double)(now - session->lastFrameLogAt) / 1e6 : 0.0;
-		session->lastFrameLogAt = now;
-		Log("%llu frames, %.1f fps submitted over the last 600: nap %.2f ms, BeginFrame %.2f ms, ahead %.2f ms, step %.2f ms; flip shown %llu pending %d; "
-			"repeated %d, queue full %d, missed %d, errors %d, without layers %llu, skipped %llu, waits one frame ahead %llu, ends without a frame %llu, late begins %llu, worn %d; "
-			"GPU timeouts %llu, stuck skips %llu, recovered %llu; "
-			"render pose found %llu, not found %llu, kept %llu; "
-			"head %.2f %.2f %.2f, hand spaces left %.3f %.3f %.3f right %.3f %.3f %.3f, hands posed %d %d; "
-			"plane quads %llu; TV mirror %s, shown %llu skipped %llu",
-			(unsigned long long)session->frames, seconds > 0.0 ? 600.0 / seconds : 0.0, pace.nap_ms, pace.call_ms, pace.ahead_ms, pace.step_ms,
-			(unsigned long long)flip.shown, flip.pending, hmd2::repeated_frames(), hmd2::queue_full_waits(), hmd2::missed_frames(), hmd2::frame_errors(),
-			(unsigned long long)session->emptyFrames, (unsigned long long)session->skipped, (unsigned long long)session->waitsAhead,
-			(unsigned long long)session->endsWithoutFrame, (unsigned long long)session->lateBegins, (unsigned long long)session->gpuTimeouts,
-			(unsigned long long)session->gpuStuckSkips, (unsigned long long)session->gpuRecovered, hmd2::worn() ? 1 : 0, (unsigned long long)session->poseFound,
-			(unsigned long long)session->poseLost, (unsigned long long)session->poseKept, renderHead.p.x, renderHead.p.y, renderHead.p.z,
-			s.handLocated[0].p.x, s.handLocated[0].p.y, s.handLocated[0].p.z, s.handLocated[1].p.x, s.handLocated[1].p.y, s.handLocated[1].p.z,
-			s.hands[0].poseValid ? 1 : 0, s.hands[1].poseValid ? 1 : 0, (unsigned long long)session->planeQuads, s.tv ? "on" : "off",
-			(unsigned long long)session->tvShown, (unsigned long long)session->tvSkipped);
-	}
-	if (s.profile)
-	{
-		const uint64_t now = sceKernelGetProcessTime();
-		if (s.profileAt && now - s.profileAt >= 10'000'000)
-		{
-			const double seconds = (double)(now - s.profileAt) / 1e6;
-#if defined(__PROSPERO__)
-			const uint64_t swapNs = g_ps5FrameSwapNs.exchange(0, std::memory_order_relaxed);
-			const uint64_t vrEndNs = g_ps5FrameVrEndNs.exchange(0, std::memory_order_relaxed);
-			const uint32_t samples = g_ps5FrameProfileSamples.exchange(0, std::memory_order_relaxed);
-			const uint64_t gpuNs = g_ps5GpuBusyNs.load(std::memory_order_relaxed);
-			const double gpuBusy = now > s.profileAt ? (double)(gpuNs - s.profileGpuAt) / 1000.0 * 100.0 / (double)(now - s.profileAt) : 0.0;
-			s.profileGpuAt = gpuNs;
-			const double notifyFrames = samples ? (double)samples : (s.profileFrames ? (double)s.profileFrames : 1.0);
-			const double runtimeFrames = s.profileFrames ? (double)s.profileFrames : notifyFrames;
-			Log("[frame] swap %.2f ms | VR end %.2f ms | compose fence %.2f ms | hmd2 submit %.2f ms | %.1f fps | GPU busy %.0f%% (over %.1f s, %u frames)",
-				(double)swapNs / 1e6 / notifyFrames, (double)vrEndNs / 1e6 / notifyFrames, (double)s.profileFenceNs / 1e6 / runtimeFrames,
-				(double)s.profileSubmitNs / 1e6 / runtimeFrames, notifyFrames / seconds, gpuBusy, seconds, samples);
-#endif
-			s.profileAt = now;
-			s.profileFenceNs = s.profileSubmitNs = 0;
-			s.profileFrames = 0;
-		}
-	}
-	return XR_SUCCESS;
+	session->composeHead = renderHead;
+	session->composeFlags = params.flags;
+	session->composeFinishDue = true;
+	// bettervr.json's asyncCompose: the frame pump's next xrWaitFrame waits for this compose and submits the frame, and
+	// Cemu's GPU thread goes on to the next game frame while the GPU composes
+	if (s.asyncCompose)
+		return XR_SUCCESS;
+	XrResult result = XR_SUCCESS;
+	FinishComposeHere(lock, session, result);
+	return result;
 }
 
 // -- paths and actions -------------------------------------------------------------------------------
