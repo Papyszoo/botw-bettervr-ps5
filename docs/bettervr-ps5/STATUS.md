@@ -3,6 +3,79 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-20: v0.7 draws: index lists kept across frames and unchanged view arrays kept, to cut the 1.25x record; built, untested on console
+
+The v0.6.0 logs at 1.25x VR Resolution (2480x2560 an eye, asyncCompose on) averaged 55.5 fps against 58.2 at 1x: the
+GPU was about 80% busy and the GPU thread's record set the rate, 16-19 ms at 5-9k draws. Holding 60 there needs the
+record about 1.0 ms shorter at 5-6k draws, 1.5 ms at 6-7k, 2.3 at 7-8k and 3.0 at 8-9k. The record split at 1.25x
+(5.3k and 8.6k draws a frame, about 1,500 sequences either way) puts about 8.7 us into each draw sequence (setup 1.8,
+the first draw's uniforms 0.9, indices 0.95, buffers 0.7, pipeline and sets 0.6, binds and the draw 2.1, the commands
+between 1.7) and about 0.8 us into each continued draw. Index lists were decoded about 1,800-2,000 times a frame
+(6-7 MB), 1.7-1.9 ms, because Cemu's eight-list index cache is emptied at every GPU wait and every finished command
+buffer, a dozen times a frame. Descriptor sets and pipelines are not made during play (0.1 and 0 a frame), and Cemu
+already skips unchanged pipeline, vertex buffer, index buffer, viewport and scissor binds, so the binds that remain are
+the driver's recording of new state.
+
+**Index lists kept across frames (patch cemu 0059, `bettervr.json`'s `indexCache`, on).** A decoded index list is also
+kept by its pointer, count, primitive mode, index type and restart index. Until Cemu's next flush it is trusted as the
+cache trusts its own entries; after one, its bytes are hashed with the vertex cache's page hash and the list is used
+again if the hash is the same, or decoded again into new memory if not (the GPU may still read the old memory, which
+goes once the command buffer is done). Lists unused for 60 frames go, the kept lists hold 32 MB at most, and the
+immediate draws' index array, which Cemu rewrites between draws, is never kept. The index heap's reservations keep
+their heap address, so letting one go no longer searches every live allocation. No key or `"indexCache": 1` runs it;
+`"indexCache": 0` gives Cemu's own cache. The boot log says `[bettervr] Index cache: index lists kept across frames...`
+or `... decoded again after each of Cemu's flushes ("indexCache": 0)`.
+
+**View arrays kept when nothing changed (patch cemu 0060).** A multiview shader's uniforms hold both views, and every
+continued draw built the right view's half again for each stage, also for a stage the draw did not touch. The build
+reads the stage's left uniforms and their buffer registers, which the draw's dirty flags cover, and the right view's
+data, whose epoch every change moves on; a continued draw with none of them changed keeps the arrays, which is what the
+build would have written.
+
+**The `[draws]` line** adds `| kept index lists used again N, changed N (N KB held)`. `index lists` still counts the
+lists decoded. Expected at 1.25x if most lists are static: `index lists` from about 1,900 to a few hundred a frame,
+`indices` in the record split from 1.7-1.9 ms to under 1 ms, `uniforms` 0.2-0.5 ms lower at the same draw counts,
+and the record 0.6-1.4 ms shorter at 5-7k draws. That reaches 60 at 5-6k draws, not reliably above.
+
+**RADV threaded recording, not made default.** The rest of a sequence's cost is mostly the driver recording new
+pipeline, descriptor, vertex and index state at the draw (`binds and the draw`, about 2.1 us a sequence and 0.24 us a
+continued draw). The driver's own layer (`RADV_THREADED_RECORDING=1` in `ps5cemu.json`'s `radvEnvironment`) queues
+each `vkCmd*` with its arguments copied and records them on a worker thread; `vkEndCommandBuffer` waits for the worker
+(about a dozen submits a frame), destroys and frees wait for it, and the worker spins 50 us on the clock before it
+sleeps. If the worker gets a core of its own, the GPU thread keeps only the copying, an estimated 1.5-3 ms off the
+record at 5-9k draws; on a busy core it can cost instead. It has never run in a game, so it stays off by default and
+Test request 70 runs it. It does not conflict with 0059 or 0060: those cut Cemu's own work, which stays on the GPU
+thread either way, and kept lists keep their index buffer offsets, so fewer index binds reach the queue.
+
+New patches: cemu 0059, 0060; no BetterVR patch.
+
+**Test request 70 (v0.7 draws at 1.25x, 13.60 console).** Install the `BotW-VR-v...zip` from this head's green
+"BetterVR build" run and start Breath of the Wild in VR with the headset and both Sense controllers. Keep
+`"profile": true` in `/data/botwvr/launcher/bettervr.json` with no `"indexCache"` key, and set BetterVR's menu >
+System > VR Resolution > 1.25x (restart the game). Use two spots for every run, the same each time: the busy outdoor
+spot of Test request 69 (grass and trees in view; the 1.25x log had 7-9k draws there), and a calm spot (inside a shrine
+or a house, 3-5k draws). At each, stand still 30 s, then walk a small circle for 30 s.
+
+1. **Defaults.** The boot log must have `Index cache: index lists kept across frames`. Say whether anything looks
+   different from the last build in either eye: missing or stretched triangles, flickering grass or foliage, an object
+   in one eye only, or a wrong shape after a load or fast travel.
+2. **Threaded recording.** Add `"radvEnvironment": {"RADV_THREADED_RECORDING": "1"}` to
+   `/data/botwvr/launcher/ps5cemu.json` and restart the app; the boot log must have
+   `RADV_THREADED_RECORDING=1 (radvEnvironment in ps5cemu.json)`. Same two spots. Say whether it stutters or feels
+   different. Then remove the key again.
+3. **Optional, index cache off.** Only at the busy spot, set `"indexCache": 0` in `bettervr.json` and restart; the boot
+   log must say `("indexCache": 0)`. Then remove the key.
+
+Send each run's `boot.log` (Settings > Diagnostics > Copy logs to USB):
+- `LC_ALL=C grep -a "Index cache:\|RADV_THREADED\|compose wait:\|\[draws\]\|\[frame\]\|\[perf\]" boot.log`
+- `LC_ALL=C grep -a "fps submitted\|radv/ps5 submissions\|VR start" boot.log`
+
+**What it decides.** Run 1 against the v0.6.0 1.25x log at the same draw counts (5-6k: record 16.1-16.6 ms, indices
+1.7-1.8, uniforms 2.0-2.1, 56.5 fps; 8-9k: 18.9, 1.9, 2.7, 51.0 fps): `index lists` and `indices` must fall and
+`kept ... used again` must carry most lists, with `KB held` under 32,768 and no visual change; then `indexCache` stays
+on. Run 2 decides threaded recording: if `binds and the draw` and the record fall and the fps rises with no stutter
+and `[perf]`'s GPU thread idle stays sane, a later build sets it for BotW VR; if the record does not fall or frames
+over 20 ms rise, it stays off. Run 3, if sent, is the same-session control for run 1.
 ## 2026-11-20: a black-bars 2D layer reaches the quad as the game drew it; built, untested on console
 
 The v0.6.1 report (13.60, new game): the first rune's 2D-only panel is alone on black again, but its picture looks

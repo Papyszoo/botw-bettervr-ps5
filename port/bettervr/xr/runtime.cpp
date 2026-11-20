@@ -121,6 +121,11 @@ extern std::atomic<uint64_t> g_ps5PipelinesMade;
 extern std::atomic<uint64_t> g_ps5DrawPhaseTicks[6];
 extern std::atomic<uint64_t> g_ps5IndexDecodes;
 extern std::atomic<uint64_t> g_ps5IndexBytes;
+// patches/cemu 0059: bettervr.json's indexCache, the kept index lists used again and found changed, and the bytes
+// they hold
+extern std::atomic<uint64_t> g_ps5IndexReused;
+extern std::atomic<uint64_t> g_ps5IndexChanged;
+extern std::atomic<uint64_t> g_ps5IndexKeptBytes;
 extern uint64_t _rdtscFrequency;
 #endif
 
@@ -1407,7 +1412,8 @@ namespace
 		const double frames = (double)session->drawLogFrames;
 		const double recordMs = (double)g_ps5RecordNs.exchange(0, std::memory_order_relaxed) / 1e6 / frames;
 		Log("[draws] per frame: multiview %.1f, replay %.1f, total %.1f | record %.2f ms | replay %.2f ms | compose %.2f ms | xr end %.2f ms (over %llu frames, %.1f s)"
-			" | sequences %.1f, index lists %.1f (%.0f KB), sets made %.2f, pipelines made %.2f",
+			" | sequences %.1f, index lists %.1f (%.0f KB), sets made %.2f, pipelines made %.2f"
+			" | kept index lists used again %.1f, changed %.1f (%.0f KB held)",
 			(double)g_ps5DrawsMultiview.exchange(0, std::memory_order_relaxed) / frames,
 			(double)g_ps5DrawsReplay.exchange(0, std::memory_order_relaxed) / frames,
 			(double)g_ps5DrawsTotal.exchange(0, std::memory_order_relaxed) / frames, recordMs,
@@ -1418,7 +1424,10 @@ namespace
 			(double)g_ps5IndexDecodes.exchange(0, std::memory_order_relaxed) / frames,
 			(double)g_ps5IndexBytes.exchange(0, std::memory_order_relaxed) / 1024.0 / frames,
 			(double)g_ps5DescriptorSetsMade.exchange(0, std::memory_order_relaxed) / frames,
-			(double)g_ps5PipelinesMade.exchange(0, std::memory_order_relaxed) / frames);
+			(double)g_ps5PipelinesMade.exchange(0, std::memory_order_relaxed) / frames,
+			(double)g_ps5IndexReused.exchange(0, std::memory_order_relaxed) / frames,
+			(double)g_ps5IndexChanged.exchange(0, std::memory_order_relaxed) / frames,
+			(double)g_ps5IndexKeptBytes.load(std::memory_order_relaxed) / 1024.0);
 		// bettervr.json's profile: where the record's time went. The rest of the record, between the draws, is the
 		// command stream's own work: register writes, texture copies and clears, queries and the like.
 		double phaseMs[6];

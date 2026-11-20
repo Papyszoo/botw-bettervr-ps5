@@ -1,0 +1,96 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ps5cemu <ps5cemu@localhost>
+Date: Fri, 20 Nov 2026 17:13:01 +0100
+Subject: [PATCH] PS5: a continued draw keeps a stage's view arrays when
+ nothing they are built from changed; built, untested on console
+
+Multiview shaders keep both views' uniforms in one buffer, and every draw of a sequence built the right
+half again (uniformData_updateViewArrays: the right view's constants and uniform blocks looked up and
+copied over the left half), also for a stage whose uniforms the draw did not touch. That build reads the
+stage's left uniforms and their buffer registers, which the draw's dirty flags cover, and the right
+view's data, whose epoch every change moves on. A continued draw with no dirty constants or uniform
+buffers for the stage, the same shader, the same right-view epoch and the same stereo and multiview
+state as the last build keeps the arrays as they are, which is what the build would write again; nothing
+is uploaded, as before, since nothing changed.
+---
+ .../HW/Latte/Renderer/Vulkan/VulkanRenderer.h |  3 +++
+ .../Renderer/Vulkan/VulkanRendererCore.cpp    |  8 +++++-
+ .../Renderer/Vulkan/VulkanRendererView.cpp    | 26 +++++++++++++++++++
+ 3 files changed, 36 insertions(+), 1 deletion(-)
+
+diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.h b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.h
+index cec97179..cb2fd27c 100644
+--- a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.h
++++ b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.h
+@@ -1077,6 +1077,9 @@ private:
+ 	void view_preparePairDescriptorSets(PipelineInfo* pipeline_info, VkDescriptorSetInfo*& vertexDS, VkDescriptorSetInfo*& pixelDS, VkDescriptorSetInfo*& geometryDS);
+ 	bool uniformData_buildRightView(LatteDecompilerShader* shader, const float* leftUniformData, float* rightUniformData);
+ 	bool uniformData_updateViewArrays(LatteDecompilerShader* shader, float* uniformData);
++#if defined(CEMU_PS5)
++	bool uniformData_viewArraysUnchanged(LatteDecompilerShader* shader);
++#endif
+ 
+ 	VulkanFoveationState m_foveation;
+ 	FoveationPattern foveation_getPattern(bool isRightPass) const;
+diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRendererCore.cpp b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRendererCore.cpp
+index 794bf391..2f97f668 100644
+--- a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRendererCore.cpp
++++ b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRendererCore.cpp
+@@ -589,7 +589,13 @@ void VulkanRenderer::uniformData_updateUniformVarsIncremental(uint32 shaderStage
+ 		uint32* uniformRegData = (uint32*)(LatteGPUState.contextRegister + mmSQ_ALU_CONSTANT0_0 + shaderAluConst);
+ 		memcpy(GET_UNIFORM_DATA_PTR(shader->uniform.loc_uniformRegister), uniformRegData, shader->uniform.count_uniformRegister * 16);
+ 	}
+-	if (shader->hasViewArrays && (uniformData_updateViewArrays(shader, uniformBuf) || (hasChange && LatteView_IsStereo())))
++#if defined(CEMU_PS5)
++	// nothing the stage's view arrays are built from changed: building them again would come out the same
++	const bool viewArraysUnchanged = !aluConstDirty && uniformBufferDirtyMask == 0 && shader->hasViewArrays && uniformData_viewArraysUnchanged(shader);
++#else
++	const bool viewArraysUnchanged = false;
++#endif
++	if (shader->hasViewArrays && !viewArraysUnchanged && (uniformData_updateViewArrays(shader, uniformBuf) || (hasChange && LatteView_IsStereo())))
+ 		hasChange = true;
+ 	if (hasChange)
+ 	{
+diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRendererView.cpp b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRendererView.cpp
+index 50bf02c5..95975523 100644
+--- a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRendererView.cpp
++++ b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRendererView.cpp
+@@ -283,12 +283,38 @@ bool VulkanRenderer::uniformData_buildRightView(LatteDecompilerShader* shader, c
+ 	return isModified;
+ }
+ 
++#if defined(CEMU_PS5)
++// what each stage's view arrays were last built from (uniformData_updateViewArrays): the build reads the stage's left
++// uniforms and their buffer registers, which a draw's dirty flags cover, and the right view's data, whose epoch any
++// change moves on. A continued draw that changes none of them would build the same arrays, so it keeps them
++// (uniformData_viewArraysUnchanged)
++static struct
++{
++	LatteDecompilerShader* shader;
++	uint32 rightDataEpoch;
++	bool isMultiview;
++} s_viewArraysBuilt[3];
++
++bool VulkanRenderer::uniformData_viewArraysUnchanged(LatteDecompilerShader* shader)
++{
++	const uint32 stage = (uint32)shader->shaderType;
++	if (stage >= 3 || shader->uniform.loc_viewMask < 0)
++		return false;
++	const auto& built = s_viewArraysBuilt[stage];
++	return built.shader == shader && built.rightDataEpoch == LatteView_GetRightDataEpoch() && built.isMultiview == (LatteView_IsStereo() && LatteView_IsMultiviewRequested());
++}
++#endif
++
+ bool VulkanRenderer::uniformData_updateViewArrays(LatteDecompilerShader* shader, float* uniformData)
+ {
+ 	if (shader->uniform.loc_viewMask < 0)
+ 		return false;
+ 	uint8* data = (uint8*)uniformData;
+ 	uint32 viewMask = 0;
++#if defined(CEMU_PS5)
++	if ((uint32)shader->shaderType < 3)
++		s_viewArraysBuilt[(uint32)shader->shaderType] = { shader, LatteView_GetRightDataEpoch(), LatteView_IsStereo() && LatteView_IsMultiviewRequested() };
++#endif
+ 	if (LatteView_IsStereo() && LatteView_IsMultiviewRequested())
+ 	{
+ 		uint32 remappedSize = (uint32)shader->list_remappedUniformEntries.size() * 16;
