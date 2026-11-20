@@ -3,6 +3,68 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-20: the first-time pick-up panel is the 2D layer alone for the whole event; built, untested on console
+
+The v0.6.0 report (13.60): the first Bird Egg pickup ran `Demo002_0` while the item panel was up
+(`play7/logs/boot.log` 1607-1609, 610.976-614.392; also 446.345-448.214 and 63.021-65.380). The panel was sharp and
+steady, but the 3D picture behind it jumped to a different camera angle almost every frame (behind, side, above): a
+violent strobe in the headset.
+
+`Demo002_0` is "Pick up Get Demo" in upstream's table (`patch_Settings_Cutscenes.asm:60`), started directly or at
+`GetAnotherInnerItem`; the game runs it when an item type is picked up for the first time. In play3-play7 the three
+starts in `play7/logs/boot.log` are at `Demo002_0` and play3/play6 also log it at `GetAnotherInnerItem` (21 starts).
+Chests use other ids: `Demo000_0` "Treasure Chest Get Demo" (52 starts in play3-play7) and `Demo000_2` "Treasure
+Chest Get Demo (inventory full)" (11), both first person and `PAN_OFF` like `Demo002_0`; cooking is `Demo001_0`. The
+runes are `Demo003_0` at `Item01`-`Item03` (9 starts).
+
+**Why the camera jumped.** `Demo002_0` is first person with camera rotation ignored, so BetterVR's event trampoline
+(`patch_FirstPersonMode_Events.asm`) skips every `CameraEvent` action it covers (`Look`, `LookDirect`, `Turn`,
+`Idling`, `Move`, ...) and marks it finished so the event can go on. The pick-up demo's 3D picture is a scripted
+camera move around Link and the item; each cue is marked finished on the frame it starts, so the demo steps through
+its camera cues at frame rate instead of at their authored timing. The 3D layer keeps being captured and submitted
+as a fresh stereo pair, so the runtime never falls into mono and the headset shows a new scripted angle every 60 Hz
+frame. It is not an eye swap: both eyes take the same middle base pose, and only the base camera changes per frame.
+
+**The fix.** New patch bettervr 0037 adds `Demo002_0` to the 2D-only presentation patch 0032 introduced for
+`Demo003_0`: `GameState::UseBlackBarsDuringEvents()` returns true for it, so the 3D capture releases early and the
+projection layer stays out of `xrEndFrame` from the event's first frame; the 2D layer alone is composed with black
+around it, as in Test request 66. `Demo000_0`/`Demo000_2` stay out: their 3D picture is the chest opening, the scene
+to watch, and the report is the pick-up panel. No other event changed; no Cemu or runtime change.
+
+Logs: `2D-only presentation starts for 'Demo002_0' (the 2D layer alone, black around it)` at the event's start, and
+`2D-only presentation ends for 'Demo002_0'` at its end.
+
+**Test request 71 (v0.6.1 first-time pick-up 2D presentation, 13.60 console).** Install the `BotW-VR-v...zip` from
+this head's green "BetterVR build" run and start Breath of the Wild in VR.
+
+1. **Normal play and another cutscene, unchanged.** Play about 60 s in the open world, then trigger a cutscene that
+   is not an item get (a memory, or a tower). Does the world still have depth, and does the cutscene still play in 3D
+   as before?
+2. **A first-time pick-up (the report's case).** Pick up an item type the save has never picked up, so the big panel
+   appears (a new game's first Apple or Bird Egg, or any material you have not taken on this save; the small toast
+   means that type was already taken). Stand still for the first 3 s, then turn your head left and right and lean. Is
+   the panel on black from its first frame, with no 3D picture behind it at any point, and does it stay put in the
+   room when you turn? Repeat once with a second new item type if one is available and say which items they were.
+3. **A chest, unchanged.** Open a chest. The chest and Link's hands must still show in 3D as before; no 2D-only line
+   may name `Demo000_0` or `Demo000_2`. Say whether the item panel after the chest opens looks as it did in v0.6.0.
+4. **Send**, from `/data/ps5cemu/logs/boot.log`:
+   - `LC_ALL=C grep -a "2D-only presentation\|Event 'Demo002_0'\|Event 'Demo000_" boot.log`
+   - `LC_ALL=C grep -a "compose mode" boot.log`
+   - `LC_ALL=C grep -a "\[draws\]" boot.log`
+
+**Expected if it works:** `2D-only presentation starts for 'Demo002_0'` on the same frame as the event's started
+line, then `compose mode mono (frame N): no projection layer or eye picture this frame` from the first frame of the
+event, with no `compose mode stereo` between it and `2D-only presentation ends for 'Demo002_0'`; the panel sits on
+black for the whole event, and the `multiview` numbers keep moving under it because the game still draws. The next
+`compose mode stereo` line is after the event's end. The chest step has no 2D-only line and its `compose mode`
+stays stereo.
+
+**What it decides:** a mono line from the event's first frame and a steady panel on black close the report. A
+`compose mode stereo` line after the 2D-only line means the projection layer still went out and the flag did not
+reach the renderer; send the lines from step 4. A black or missing panel means the change took the 2D layer with it,
+and the next step is gating the projection layer in the renderer instead. A 2D-only line for a chest means the list
+is too wide.
+
 ## 2026-11-20: v0.6.1 hotfix: third-person smooth turning reads the game's own yaw delta again; built, untested on console
 
 The v0.6.0 report (13.60, DualSense, the Sense controllers off after 251 s; Camera Mode Third Person from 376 s):
