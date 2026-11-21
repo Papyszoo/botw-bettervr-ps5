@@ -25,22 +25,23 @@ surf row sends weight to the large motor and grain to the small one.
 PlayerNormal is `0x101E0498` (坂滑り), two hands, a low scrape whose level runs 0.18 to 0.60 between still and
 18 m/s, with a 17 Hz roughness on both hands and half the level on the pad's small motor. `0x101E0990`
 (坂滑り着地) is the landing: one thump scaled by the speed it had, 0.25 to 0.75 before the row, and a headset pulse
-only at 12 m/s or more and only when the row's Headset tick is on. Default: on, 60 %, Hands and DualSense, Headset
-off.
+only at 12 m/s or more and only when the row's Headset tick is on, and it follows the Headset Limit like Damage
+Taken. Default: on, 60 %, Hands and DualSense, Headset off.
 
 **Traversal (one row, four behaviours).** Paraglider: a 0.10-0.45 wind bed that grows with speed and a dive; the
-headset gets a 300-600 ms gust every 6-12 s through the direct pulse path, never a bed. Swim: a splash on entry, a
-0.08-0.38 rush with a 1.2 Hz swell, a drip on exit. Climb: hand over hand at 1.1-2.2 steps a second from the vertical
-speed, alternating hands, for the wall (`0x101E0390`) and the ladder (`0x101E0658`) states. Gallop: 2-4 Hz from the
-horse's speed while `Player::IsRiding(true)`, alternating hands. Default: on, 55 %, Hands and Headset, DualSense off.
-The splash, drip and gust are one-shots; none of them is queued as a `Haptics::Play` event.
+headset gets a 300-600 ms gust every 6-12 s through the direct pulse path, never a bed, and it follows the Headset
+Limit like Damage Taken. Swim: a splash on entry, a 0.08-0.38 rush with a 1.2 Hz swell, a drip on exit. Climb: hand
+over hand at 1.1-2.2 steps a second from the vertical speed, alternating hands, for the wall (`0x101E0390`) and the
+ladder (`0x101E0658`) states. Gallop: 2-4 Hz from the horse's speed while `Player::IsRiding(true)`, alternating hands.
+Default: on, 55 %, Hands and Headset, DualSense off. The splash, drip and gust are one-shots; none of them is queued
+as a `Haptics::Play` event.
 
 **Low Health.** Link's life at player `+0x540` (the field the V3 console scan proved) against the highest life seen
-since this Link appeared: one beat per 1.1 s at half life, 0.55 s near death, no beat above half, with a 55 % stop so
-a life on the line does not flicker. The hands get a 0.18 s low thump, silent between beats; the headset gets the same
-beat as a continuous level, so at the 60 % default it is about 12-15 Hz, below Damage Taken's pulse, and it follows
-the row's strength and the Headset Limit. Default: on, 60 %, Hands and Headset, DualSense off. A save loaded at low
-life reads as full until life rises or falls on that actor, because the fraction has no proven maximum field to use.
+since this Link appeared: one beat per 1.1 s at half life, 0.55 s near death, no beat above half. The hands get a
+0.18 s low thump, silent between beats; the headset gets the same beat as a continuous level, so at the 60 % default
+it is about 12-15 Hz, below Damage Taken's pulse, and it follows the row's strength and the Headset Limit. Default:
+on, 60 %, Hands and Headset, DualSense off. A save loaded at low life reads as full until life rises or falls on
+that actor, because the fraction has no proven maximum field to use.
 
 **Weather & Water (idea 6; rows in patch bettervr 0046, the effect in the director, the ear in
 `port/bettervr/audio_bands.h`).** Cemu's TV output is analysed on its own audio thread, outside `PS5AudioAPI`'s
@@ -48,9 +49,10 @@ queue mutex: three band envelopes (low 20-120 Hz, mid 150-1.5k, high 2-8k) and b
 Steady high band with many micro-onsets reads as rain, a steady mid and low band with few onsets as water, and a slow
 low swell as wind. The mixer synthesises the result at 60 Hz: the rain bed is a randomised 6-30 tick-a-second train
 plus a low bed, water a smoother 0.6 Hz flowing bed, wind a 0.22 Hz swell. A low transient during rain or water is
-thunder: a 0.30 s hand thump and, only when the row's Headset tick is on, one fixed 25 Hz, 180 ms pulse through the
-direct path. Default: on, 35 %, Hands and Headset, DualSense off. One tap per mixer tick at most, never a
-`Haptics::Play` per drop, so a heavy downpour cannot fill the event queue. Waterfalls, rivers and some music will
+thunder: a 0.30 s hand thump and, only when the row's Headset tick is on, one 180 ms pulse through the direct path
+at a fixed strength before the Headset Limit (about 19 Hz at the 60 % default), like Damage Taken. Default: on,
+35 %, Hands and Headset, DualSense off. One tap per mixer tick at most, never a `Haptics::Play` per drop, so a heavy
+downpour cannot fill the event queue. Waterfalls, rivers and some music will
 read as rain or water until the thresholds are tuned; the row is named for what the detector hears.
 
 **Footsteps & Ground and Surfaces (beta) (idea 7).** A step is one stride of distance travelled in the logged walk
@@ -58,30 +60,32 @@ states (移動 and the side/step-up variants), never while gliding, swimming, cl
 grows with speed, the cadence is 1.2-4.5 steps a second, and the tick alternates hands. Default: on, 50 %, Hands,
 DualSense off. `Surfaces (beta)` is off until tuned: when on, the mixer asks the audio thread for the 160 ms after
 each step, reads the transient's band peaks, and turns them into a continuous timbre (hardness, grain, decay) for the
-next ticks, with the pad's large/small balance following hardness. It never labels a material from memory and never
-logs per frame.
+next ticks, with the pad's large/small balance following hardness. Its strength is how much of that timbre replaces
+the neutral footstep, not a switch; the Footsteps row keeps its own hands and pad tick, and the Surfaces row's ticks
+take the tinted step and its bed. It never labels a material from memory and never logs per frame.
 
 **Diagnostics for the tuning runs.** `[vib] env` prints the band levels, onset rates and the rain/water/wind weights
-at 2 Hz (240 lines); `[vib] weather` and `[vib] thunder` print each transition and clap (40 lines); `[vib] step`
-prints speed, cadence, hand, the same band levels and the current surface coordinates once per step (96 lines);
-`[vib] surface` prints a new classification when it moves (60 lines). All obey `HapticsLogPatterns`, and all are
-capped like the existing `[vib]` lines.
+at 2 Hz (1800 lines, 15 minutes, enough for the six 20 s stops plus travel and weather waiting); `[vib] weather` and
+`[vib] thunder` print each transition and clap (240 lines); `[vib] step` prints speed, cadence, hand, the same band
+levels and the current surface coordinates once per step (240 lines, enough for about 10 steps on each of seven
+surfaces twice); `[vib] surface` prints a new classification when it moves (60 lines). All obey
+`HapticsLogPatterns`, and all are capped like the existing `[vib]` lines.
 
 **Parry and flurry are not implemented in this build.** Their PlayerNormal hashes are in no console log, and the
 public decomp's action names (`actionPlayerGuardJust`, `actionPlayerCutAfterJust`) have no V208 hash map, so calling
 a state a parry would be a guess. Instead, patch bettervr 0044 publishes the state and the shield's guard to a capped
 probe: every new state while the shield is up, and every state for two seconds after a backflip or a side step (a
 flurry follows a perfect dodge), is logged as `[vib] combat probe: state '...' (0x...) ...`, at most 24 lines. The
-existing once-per-state `[vib] PlayerNormal state` line stays. Test request 75's parry and flurry decide whether a
+existing once-per-state `[vib] PlayerNormal state` line stays. Test request 76's parry and flurry decide whether a
 Combat Peaks row can be built next.
 
 **Frame cost (4.12).** The director is called once from `mix()` on the existing mixer thread: a few aligned guest
-reads (the actor matrix, the life field, the riding flag), five atomic loads from the audio ear and arithmetic, well
+reads (the actor matrix, the life field, the riding flag), six atomic loads from the audio ear and arithmetic, well
 under a millisecond a second of mixer time. On the audio thread the three biquads, six envelope followers and two
-onset detectors cost about 1-2 Mflop/s, roughly 1-2 µs of a 5 ms block, and run after `FeedBlock` has released its
-queue mutex; the block is only read, never copied. There is no new thread, no allocation and no lock in the hot
-path. The GPU thread and the record are untouched. Logs are capped; nothing is logged per frame, per drop or per
-beat.
+onset detectors cost about 1-2 Mflop/s, roughly 5-10 µs of Cemu's 12 ms TV block (576 frames at 48 kHz), and run
+after `FeedBlock` has released its queue mutex; the block is only read, never copied. The analysis takes no lock of
+its own; its caller already holds Cemu's AX shared lock. There is no new thread and no allocation. The GPU thread
+and the record are untouched. Logs are capped; nothing is logged per frame, per drop or per beat.
 
 New patches: bettervr 0043 (hands and motors), 0044 (state/guard publish and the mixer's layer), 0045 (the part A
 rows and their defaults), 0046 (Weather & Water, Footsteps & Ground, Surfaces (beta) and their defaults); no Cemu
@@ -89,7 +93,7 @@ patch. `port/cemu/PS5AudioAPI.cpp` now feeds the ear after its queue unlock. New
 `port/bettervr/haptics_ps5.h/.cpp`, `port/bettervr/audio_bands.h` (the header-only ear `PS5AudioAPI` feeds), the host
 test `tools/tests/test-bettervr-haptics.cpp`.
 
-**Test request 75 (v0.8 haptics, 13.60 console).** Install the `BotW-VR-v...zip` from this head's green
+**Test request 76 (v0.8 haptics, 13.60 console).** Install the `BotW-VR-v...zip` from this head's green
 "BetterVR build" run and start Breath of the Wild in VR with the headset, both Sense controllers and the DualSense
 on. Leave the Vibration page's master switch and Headset Limit at their defaults (on, 60 %); the new rows should
 read Weather & Water 35 % [Hands, Headset], Footsteps & Ground 50 % [Hands], Surfaces (beta) off, Shield Surf 60 %
@@ -102,7 +106,9 @@ the other rows as they are, and leave `HapticsLogPatterns` on (the default) so t
    should still feel as they did on the pad.
 2. **Shield Surf.** Surf for 10 s or more on grass, then snow, then stone, and say whether the bed rises and falls
    with speed. Jump and land hard; the landing should be one thump. Then tick Shield Surf's Headset column and repeat
-   a landing at speed (12 m/s or more) for the headset tick, and turn it back off.
+   a landing at speed (12 m/s or more) for the headset tick, and turn it back off. As a control, slide down the same
+   slope on foot without the shield (no surf) and send both groups of `[vib] PlayerNormal state` lines, so the log
+   shows whether `0x101E0498` is the shield surf or every on-foot slope slide.
 3. **Traversal.** Glide for 30 s including a dive; the wind bed should grow in the dive and the headset should gust
    every 6-12 s. Swim in, swim fast, climb out; climb a wall and a ladder; ride a horse at a walk, a trot and a
    gallop (the gallop should be 2-4 Hz and alternate hands).
@@ -122,11 +128,15 @@ the other rows as they are, and leave `HapticsLogPatterns` on (the default) so t
    the game keeps one state through them.
 8. **Comfort.** After the checks, play 20 minutes with the rows on and say which effects are too strong, tiring or
    unnoticeable, and whether the headset gusts and beat are comfortable. The defaults change first, not the code.
+9. **Music and dialogue without rain.** With no rain or water nearby, play through music and spoken dialogue for a
+   few minutes: say whether Weather & Water and Footsteps & Ground are felt during music or speech, and whether that
+   is acceptable at the defaults. The `[vib] env` and `[vib] weather` lines show what the detector heard.
 
 Send `boot.log` (Settings > Diagnostics > Copy logs to USB):
 `LC_ALL=C grep -a "\[vib\] haptics\|\[vib\] env\|\[vib\] weather\|\[vib\] thunder\|\[vib\] step\|\[vib\] surface\|\[vib\] surf\|\[vib\] traversal\|\[vib\] health\|\[vib\] combat probe\|\[vib\] PlayerNormal" boot.log`
 
-**What it decides.** The feel and the levels of the rows and whether their defaults stay; the thresholds behind the
+**What it decides.** The feel and the levels of the rows and whether their defaults stay, including whether Weather
+& Water and Footsteps & Ground are acceptable during music and dialogue with no rain; the thresholds behind the
 rain, water, wind and surface detectors; the usefulness of the two-motor split; and the parry/flurry hashes. If the
 probe names distinct states, Combat Peaks (0.8's idea 3) can be built from them; if it shows the same state through a
 parry and a normal attack, the next step is an action-name hook rather than another state hash.
