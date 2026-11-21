@@ -39,7 +39,7 @@ constexpr uint32_t kPendingSurfLanding = 1;
 constexpr uint32_t kLifeOffset = 0x540;
 constexpr int32_t kLifeMax = 480;
 
-// Test request 76's tuning run: six 20 s weather stops plus travel and weather waiting at 2 Hz, about 140 steps
+// Test request 77's tuning run: six 20 s weather stops plus travel and weather waiting at 2 Hz, about 140 steps
 // on seven surfaces twice, and enough transitions for the later stops after music has flipped the weather lines
 constexpr int kEnvLogCap = 1800;
 constexpr int kWeatherLogCap = 240;

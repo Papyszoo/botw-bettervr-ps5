@@ -13,7 +13,7 @@ that a one-hand event is now felt on that hand only. Everything new runs inside 
 (`rendering/rumble.h`) as one extra layer from a PS5-only director (`port/bettervr/haptics_ps5.cpp`); there is no
 second mixer, no new thread, no queue and no GPU or record work.
 
-**Hands and motors (patch bettervr 0043, `port/cemu/PS5PadController.cpp`, `port/bettervr/xr/runtime.cpp`).** The
+**Hands and motors (patch bettervr 0044, `port/cemu/PS5PadController.cpp`, `port/bettervr/xr/runtime.cpp`).** The
 mixer's `add()` now takes the hand an event belongs to: an input rumble fills only its own Sense controller, while
 the game's pattern and the page's test stay on both. Input rumbles were already tagged left or right, so a guard is
 now felt on the shield hand and a bow draw on the drawing hand; a two-handed event still fills both. The pad's large
@@ -21,7 +21,7 @@ and small motors take separate levels through `BetterVR_PS5_PadVibration(large, 
 `PS5Pad_ExternalRumble(large, small)`; the existing rows send the same level to both, exactly as before, and the new
 surf row sends weight to the large motor and grain to the small one.
 
-**Shield Surf (rows and defaults in patch bettervr 0045; the effect in the director).** The bed is on while
+**Shield Surf (rows and defaults in patch bettervr 0046; the effect in the director).** The bed is on while
 PlayerNormal is `0x101E0498` (坂滑り), two hands, a low scrape whose level runs 0.18 to 0.60 between still and
 18 m/s, with a 17 Hz roughness on both hands and half the level on the pad's small motor. `0x101E0990`
 (坂滑り着地) is the landing: one thump scaled by the speed it had, 0.25 to 0.75 before the row, and a headset pulse
@@ -43,7 +43,7 @@ it is about 12-15 Hz, below Damage Taken's pulse, and it follows the row's stren
 on, 60 %, Hands and Headset, DualSense off. A save loaded at low life reads as full until life rises or falls on
 that actor, because the fraction has no proven maximum field to use.
 
-**Weather & Water (idea 6; rows in patch bettervr 0046, the effect in the director, the ear in
+**Weather & Water (idea 6; rows in patch bettervr 0047, the effect in the director, the ear in
 `port/bettervr/audio_bands.h`).** Cemu's TV output is analysed on its own audio thread, outside `PS5AudioAPI`'s
 queue mutex: three band envelopes (low 20-120 Hz, mid 150-1.5k, high 2-8k) and broadband plus high-band onset rates.
 Steady high band with many micro-onsets reads as rain, a steady mid and low band with few onsets as water, and a slow
@@ -73,10 +73,10 @@ surfaces twice); `[vib] surface` prints a new classification when it moves (60 l
 
 **Parry and flurry are not implemented in this build.** Their PlayerNormal hashes are in no console log, and the
 public decomp's action names (`actionPlayerGuardJust`, `actionPlayerCutAfterJust`) have no V208 hash map, so calling
-a state a parry would be a guess. Instead, patch bettervr 0044 publishes the state and the shield's guard to a capped
+a state a parry would be a guess. Instead, patch bettervr 0045 publishes the state and the shield's guard to a capped
 probe: every new state while the shield is up, and every state for two seconds after a backflip or a side step (a
 flurry follows a perfect dodge), is logged as `[vib] combat probe: state '...' (0x...) ...`, at most 24 lines. The
-existing once-per-state `[vib] PlayerNormal state` line stays. Test request 76's parry and flurry decide whether a
+existing once-per-state `[vib] PlayerNormal state` line stays. Test request 77's parry and flurry decide whether a
 Combat Peaks row can be built next.
 
 **Frame cost (4.12).** The director is called once from `mix()` on the existing mixer thread: a few aligned guest
@@ -87,13 +87,13 @@ after `FeedBlock` has released its queue mutex; the block is only read, never co
 its own; its caller already holds Cemu's AX shared lock. There is no new thread and no allocation. The GPU thread
 and the record are untouched. Logs are capped; nothing is logged per frame, per drop or per beat.
 
-New patches: bettervr 0043 (hands and motors), 0044 (state/guard publish and the mixer's layer), 0045 (the part A
-rows and their defaults), 0046 (Weather & Water, Footsteps & Ground, Surfaces (beta) and their defaults); no Cemu
+New patches: bettervr 0044 (hands and motors), 0045 (state/guard publish and the mixer's layer), 0046 (the part A
+rows and their defaults), 0047 (Weather & Water, Footsteps & Ground, Surfaces (beta) and their defaults); no Cemu
 patch. `port/cemu/PS5AudioAPI.cpp` now feeds the ear after its queue unlock. New files:
 `port/bettervr/haptics_ps5.h/.cpp`, `port/bettervr/audio_bands.h` (the header-only ear `PS5AudioAPI` feeds), the host
 test `tools/tests/test-bettervr-haptics.cpp`.
 
-**Test request 76 (v0.8 haptics, 13.60 console).** Install the `BotW-VR-v...zip` from this head's green
+**Test request 77 (v0.8 haptics, 13.60 console).** Install the `BotW-VR-v...zip` from this head's green
 "BetterVR build" run and start Breath of the Wild in VR with the headset, both Sense controllers and the DualSense
 on. Leave the Vibration page's master switch and Headset Limit at their defaults (on, 60 %); the new rows should
 read Weather & Water 35 % [Hands, Headset], Footsteps & Ground 50 % [Hands], Surfaces (beta) off, Shield Surf 60 %
