@@ -3924,6 +3924,21 @@ void BetterVR_PS5_TvPresent()
 	s_tvPresents++;
 }
 
+// port/app/ingame.cpp, on the render thread: the console's own keyboard is up (app/ime_dialog.cpp), so the
+// pad is the system dialog's and the game is left an idle controller (controls.cpp, patches/bettervr 0048).
+// While it is set the app's keyboard answers the game; nothing else reads it.
+static std::atomic<bool> s_gameInputBlocked{false};
+
+void BetterVR_PS5_SetGameInputBlocked(bool blocked)
+{
+	s_gameInputBlocked = blocked;
+}
+
+bool BetterVR_PS5_GameInputBlocked()
+{
+	return s_gameInputBlocked;
+}
+
 // app/ingame.cpp, on the render thread: the in-game menu opens (1), closes (0), and each frame it is up (2).
 // Log only: whether the headset's frame loop keeps turning under the menu (xrWaitFrame, xrEndFrame, hmd2
 // submits) and whether Cemu keeps presenting the TV. A line when it opens and closes, and one a second between.
@@ -3960,6 +3975,7 @@ void BetterVR_PS5_MenuProbe(int what)
 // ends with VrTracker2 live faults the tracker (third_party/hmd2/hmd2.h).
 void BetterVR_PS5_Stop()
 {
+	s_gameInputBlocked = false; // the console's keyboard, if it was up, is the app's to end (app/ime_dialog.cpp)
 	std::lock_guard lock(s.lock);
 	if (s.stopped.exchange(true))
 		return;

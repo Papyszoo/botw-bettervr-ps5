@@ -123,6 +123,8 @@ add_library(CemuPS5 STATIC
 	app/gameinfo.cpp
 	app/gameinfo.h
 	app/graphic_packs.cpp
+	app/ime_dialog.cpp
+	app/ime_dialog.h
 	app/ingame.cpp
 	app/ingame.h
 	app/ingame3ds.cpp
