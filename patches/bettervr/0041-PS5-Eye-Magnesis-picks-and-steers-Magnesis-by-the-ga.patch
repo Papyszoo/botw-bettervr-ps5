@@ -6,17 +6,17 @@ Subject: [PATCH] PS5: Eye Magnesis picks and steers Magnesis by the gaze with
  targets by the gaze; built, untested on console
 
 ---
- src/game/botw/camera/stereo_view.cpp |  20 ++-
- src/game/botw/game_state.cpp         |  10 ++
+ src/game/botw/camera/stereo_view.cpp |  20 +-
+ src/game/botw/game_state.cpp         |  10 +
  src/game/botw/game_state.h           |   2 +
  src/game/botw/input/controls.cpp     |  13 ++
  src/game/botw/player/hand_aim.cpp    |  12 ++
  src/game/botw/player/hand_aim.h      |   3 +
- src/game/botw/player/magnesis.cpp    | 217 +++++++++++++++++++++++++++
- src/game/botw/player/magnesis.h      |   7 +
+ src/game/botw/player/magnesis.cpp    | 272 +++++++++++++++++++++++++--
+ src/game/botw/player/magnesis.h      |   8 +
  src/rendering/imgui_menus.cpp        |   6 +
- src/utils/mod_settings.h             |   4 +
- 10 files changed, 293 insertions(+), 1 deletion(-)
+ src/utils/mod_settings.h             |   2 +-
+ 10 files changed, 334 insertions(+), 14 deletions(-)
 
 diff --git a/src/game/botw/camera/stereo_view.cpp b/src/game/botw/camera/stereo_view.cpp
 index 59ab0b3..ff781cc 100644
@@ -64,10 +64,10 @@ index 59ab0b3..ff781cc 100644
  }
  
 diff --git a/src/game/botw/game_state.cpp b/src/game/botw/game_state.cpp
-index 91b492c..9ef2a45 100644
+index a1022b7..b67768b 100644
 --- a/src/game/botw/game_state.cpp
 +++ b/src/game/botw/game_state.cpp
-@@ -261,6 +261,16 @@ bool GameState::IsCameraFinderModeActive() {
+@@ -276,6 +276,16 @@ bool GameState::IsCameraFinderModeActive() {
      return runeMgr != 0 && (Guest::Get<uint32_t>(runeMgr + RuneMgrFlagsOffset).getLE() & RuneActiveMask) != 0 && Guest::Get<uint32_t>(runeMgr + RuneMgrSelectedRuneOffset).getLE() == CameraRune;
  }
  
@@ -85,10 +85,10 @@ index 91b492c..9ef2a45 100644
      return IsScopeModeActive() || IsCameraFinderModeActive();
  }
 diff --git a/src/game/botw/game_state.h b/src/game/botw/game_state.h
-index a510358..2ad4a69 100644
+index 6ae6429..dd78c54 100644
 --- a/src/game/botw/game_state.h
 +++ b/src/game/botw/game_state.h
-@@ -36,6 +36,8 @@ namespace GameState {
+@@ -37,6 +37,8 @@ namespace GameState {
  
      bool IsScopeModeActive();
      bool IsCameraFinderModeActive();
@@ -98,7 +98,7 @@ index a510358..2ad4a69 100644
      bool UseFlatCameraPresentation();
      bool UseMonoFrameBufferTemporarilyDuringMenusOrPictures();
 diff --git a/src/game/botw/input/controls.cpp b/src/game/botw/input/controls.cpp
-index 07b97cb..75fa361 100644
+index 3154ee7..1ce03e7 100644
 --- a/src/game/botw/input/controls.cpp
 +++ b/src/game/botw/input/controls.cpp
 @@ -9,6 +9,7 @@
@@ -109,7 +109,7 @@ index 07b97cb..75fa361 100644
  #include "instance.h"
  #include "rendering/renderer.h"
  #include "rendering/haptics.h"
-@@ -1289,6 +1290,17 @@ static void RemapRightStickToCameraZoom(uint32_t& buttonHold, XrActionStateVecto
+@@ -1339,6 +1340,17 @@ static void RemapRightStickToCameraZoom(uint32_t& buttonHold, XrActionStateVecto
      rightStickSource.currentState = { 0.0f, 0.0f };
  }
  
@@ -127,7 +127,7 @@ index 07b97cb..75fa361 100644
  static void ReadHandObservations(ControlState& state) {
      const Weapons::HandObservations hands = Weapons::ReadHandObservations();
      state.leftHandEquipType = hands.equipTypes[OpenXR::EyeSide::LEFT];
-@@ -1523,6 +1535,7 @@ static void ProcessGameplayInput(uint32_t& buttonHold, OpenXR::InputState& input
+@@ -1573,6 +1585,7 @@ static void ProcessGameplayInput(uint32_t& buttonHold, OpenXR::InputState& input
      ProcessRightTriggerBindings(buttonHold, inputs, state, rightGesture);
  
      RemapRightStickToCameraZoom(buttonHold, rightStickSource);
@@ -168,7 +168,7 @@ index c834c07..5b4332b 100644
 +    bool TryGetGazeWorldRay(const glm::vec3& stageDirection, glm::vec3& outOrigin, glm::vec3& outDirection);
  }
 diff --git a/src/game/botw/player/magnesis.cpp b/src/game/botw/player/magnesis.cpp
-index 25ed231..1cfde2f 100644
+index 25ed231..afb60a3 100644
 --- a/src/game/botw/player/magnesis.cpp
 +++ b/src/game/botw/player/magnesis.cpp
 @@ -2,6 +2,7 @@
@@ -179,7 +179,30 @@ index 25ed231..1cfde2f 100644
  #include "utils/debug_draw.h"
  
  static constexpr uint32_t MagneManagerInstanceAddress = 0x10467BE0;
-@@ -121,6 +122,208 @@ static float HandReach(const XrSpaceLocation& handLocation) {
+@@ -24,11 +25,8 @@ static constexpr float MagneCancelSafetyMargin = 0.6f;
+ static constexpr float MagneFallbackCancelAngle = 0.45f;
+ static constexpr float MagneFallbackCancelHeight = 2.0f;
+ 
+-// the hand's distance to the object scales with the reach ratio to this power, so a short pull brings a far object close
+-static constexpr float MagneReachGain = 2.0f;
+ static constexpr float MagneMinReach = 0.15f;
+ static constexpr float MagneGripThreshold = 0.51f;
+-static constexpr float MagneMaxSwingPitch = 1.4f;
+ static constexpr float MagneMinYawHorizontal = 0.2f;
+ 
+ static bool s_aimGripHeld = false;
+@@ -36,7 +34,9 @@ static float s_gripReach = 0.0f;
+ static float s_gripHandYaw = 0.0f;
+ static float s_gripHandPitch = 0.0f;
+ static float s_lastHandYaw = 0.0f;
+-static glm::vec3 s_gripHandToObject = glm::vec3(0.0f);
++static glm::vec3 s_gripHandPos = glm::vec3(0.0f);
++static glm::vec3 s_gripObjectOffset = glm::vec3(0.0f);
++static uint64_t s_lastHandSteerLogNs = 0;
+ 
+ // angular velocity per radian the object is behind the hand, and its cap in radians per second
+ static constexpr float MagneSpinGain = 15.0f;
+@@ -121,6 +121,222 @@ static float HandReach(const XrSpaceLocation& handLocation) {
      return std::max(glm::length(headToHand), MagneMinReach);
  }
  
@@ -240,6 +263,16 @@ index 25ed231..1cfde2f 100644
 +    return std::acos(glm::clamp(glm::dot(a, b), -1.0f, 1.0f));
 +}
 +
++static float WrapRadians(float angle) {
++    while (angle > glm::pi<float>()) {
++        angle -= glm::two_pi<float>();
++    }
++    while (angle < -glm::pi<float>()) {
++        angle += glm::two_pi<float>();
++    }
++    return angle;
++}
++
 +// the stage-space direction the eyes look along, smoothed, or empty when no valid sample came for EyeGazeHoldNs
 +static std::optional<glm::vec3> SampleEyeGaze() {
 +    std::scoped_lock lock(s_eyeGazeMutex);
@@ -271,22 +304,26 @@ index 25ed231..1cfde2f 100644
 +}
 +
 +std::optional<glm::fvec3> Magnesis::GetPickGaze() {
-+    if (!GetSettings().eyeMagnesis && !GetSettings().eyeRunePick) {
-+        return std::nullopt;
-+    }
-+
++    // the rune the game has out is what makes a bad pick index visible, so say it whether or not a row is on
 +    const int32_t rune = GameState::GetActiveRune();
 +    static int32_t s_loggedRune = -1;
 +    if (rune != s_loggedRune) {
 +        Log::print<INFO>("[magnesis] rune out: {} (Magnesis {}, Stasis {}, Cryonis {})", rune, MagnesisRune, StasisRune, CryonisRune);
++        if (rune == CryonisRune && GetSettings().eyeRunePick) {
++            Log::print<INFO>("[magnesis] Cryonis places its pillar from the camera's ray, not from the screen point this pick moves; Eye Rune Pick leaves Cryonis to the camera");
++        }
 +        s_loggedRune = rune;
 +    }
 +
-+    // a held object is steered, not picked; Stasis and Cryonis hold nothing
-+    const bool magnesis = rune == MagnesisRune && GetSettings().eyeMagnesis && !IsFresh(s_lastHeldBodyNs, EyeFreshNs);
-+    const bool stasisOrCryonis = (rune == StasisRune || rune == CryonisRune) && GetSettings().eyeRunePick;
++    if (!GetSettings().eyeMagnesis && !GetSettings().eyeRunePick) {
++        return std::nullopt;
++    }
++
++    // a held object is steered, not picked; the pick is Stasis's, and Magnesis's while its row or Eye Rune Pick is on
++    const bool magnesis = rune == MagnesisRune && (GetSettings().eyeMagnesis || GetSettings().eyeRunePick) && !IsFresh(s_lastHeldBodyNs, EyeFreshNs);
++    const bool stasis = rune == StasisRune && GetSettings().eyeRunePick;
 +    std::optional<glm::vec3> gaze;
-+    if ((magnesis || stasisOrCryonis) && GameState::IsFirstPerson()) {
++    if ((magnesis || stasis) && GameState::IsFirstPerson()) {
 +        gaze = SampleEyeGaze();
 +    }
 +
@@ -388,7 +425,7 @@ index 25ed231..1cfde2f 100644
  static bool DriveMagnesisAimFromController(uint32_t action) {
      const uint32_t manager = Guest::Get<BEType<uint32_t>>(MagneManagerInstanceAddress).getLE();
      if (!IsPlausiblePPCPointer(manager)) {
-@@ -147,6 +350,13 @@ static bool DriveMagnesisAimFromController(uint32_t action) {
+@@ -147,6 +363,13 @@ static bool DriveMagnesisAimFromController(uint32_t action) {
          return false;
      }
  
@@ -402,10 +439,53 @@ index 25ed231..1cfde2f 100644
      const OpenXR::InputState inputs = Tracking::Hands();
      glm::vec3 handPos = glm::vec3(0.0f);
      glm::vec3 handForward = glm::vec3(0.0f, 0.0f, -1.0f);
-@@ -192,6 +402,11 @@ static bool DriveMagnesisAimFromController(uint32_t action) {
-     const float stickPitch = glm::clamp(std::atan2(s_gripHandToObject.y, glm::length(glm::vec2(s_gripHandToObject.x, s_gripHandToObject.z))) + handPitch - s_gripHandPitch, -MagneMaxSwingPitch, MagneMaxSwingPitch);
-     const glm::vec3 handToObject = stickLength * glm::vec3(std::cos(stickPitch) * std::sin(stickYaw), std::sin(stickPitch), std::cos(stickPitch) * std::cos(stickYaw));
-     const glm::vec3 targetOffset = handPos + handToObject - playerPos;
+@@ -175,7 +398,7 @@ static bool DriveMagnesisAimFromController(uint32_t action) {
+         return false;
+     }
+ 
+-    // holding the hand further out pushes the object further away
++    // the hand's distance to the object is the log's, not the stick's: a wrist twist must not change the distance
+     const glm::vec3 headToHand = FlattenHorizontally(ToGLM(inputs.shared.poseLocation[OpenXR::EyeSide::RIGHT].pose.position) - glm::vec3(headPose.value()[3]));
+     const float reach = std::max(glm::length(headToHand), MagneMinReach);
+ 
+@@ -183,15 +406,38 @@ static bool DriveMagnesisAimFromController(uint32_t action) {
+         s_gripReach = reach;
+         s_gripHandYaw = handYaw;
+         s_gripHandPitch = handPitch;
+-        s_gripHandToObject = objectPos - handPos;
++        s_gripHandPos = handPos;
++        // the object starts where it is, and the hand moves it from there; the gaze's distance or the hand's lever
++        // is never captured, so a grab after the eyes steered does not swing the object around the hand
++        s_gripObjectOffset = objectPos - playerPos;
+     }
+ 
+-    // the object hangs on a stick from the hand that turns and tilts with where the hand points, twisting the wrist only spins it
+-    const float stickLength = glm::length(s_gripHandToObject) * std::pow(reach / s_gripReach, MagneReachGain);
+-    const float stickYaw = std::atan2(s_gripHandToObject.x, s_gripHandToObject.z) + handYaw - s_gripHandYaw;
+-    const float stickPitch = glm::clamp(std::atan2(s_gripHandToObject.y, glm::length(glm::vec2(s_gripHandToObject.x, s_gripHandToObject.z))) + handPitch - s_gripHandPitch, -MagneMaxSwingPitch, MagneMaxSwingPitch);
+-    const glm::vec3 handToObject = stickLength * glm::vec3(std::cos(stickPitch) * std::sin(stickYaw), std::sin(stickPitch), std::cos(stickPitch) * std::cos(stickYaw));
+-    const glm::vec3 targetOffset = handPos + handToObject - playerPos;
++    // the hand's turn since the grip turns the object around the player, and its travel since the grip moves it;
++    // a wrist twist turns the body through the spin hook, never its distance
++    const float handYawDelta = WrapRadians(handYaw - s_gripHandYaw);
++    const float handPitchDelta = handPitch - s_gripHandPitch;
++    glm::vec3 steerOffset = s_gripObjectOffset;
++    steerOffset = glm::angleAxis(handYawDelta, glm::vec3(0.0f, 1.0f, 0.0f)) * steerOffset;
++    const glm::vec3 steerHorizontal(steerOffset.x, 0.0f, steerOffset.z);
++    if (glm::length2(steerHorizontal) > 0.0001f) {
++        const glm::vec3 steerRight = glm::normalize(glm::cross(glm::vec3(0.0f, 1.0f, 0.0f), steerHorizontal));
++        steerOffset = glm::angleAxis(-handPitchDelta, steerRight) * steerOffset;
++    }
++    steerOffset += handPos - s_gripHandPos;
++    const glm::vec3 targetOffset = steerOffset;
++
++    const uint64_t now = GetTimeStamp();
++    if (now - s_lastHandSteerLogNs >= 500'000'000) {
++        s_lastHandSteerLogNs = now;
++        Log::print<INFO>("[magnesis] hand steer: dir {:.0f} {:.0f} deg, object {:.2f} m, reach {:.2f}x, move {:.2f} m",
++            glm::degrees(handYaw), glm::degrees(handPitch), glm::length(objectOffset), s_gripReach > 0.0f ? reach / s_gripReach : 1.0f,
++            glm::length(handPos - s_gripHandPos));
++    }
 +    return ApplyMagnesisAim(action, manager, playerPos, objectPos, objectOffset, targetOffset);
 +}
 +
@@ -414,7 +494,7 @@ index 25ed231..1cfde2f 100644
      const glm::vec3 aimOffset = FlattenHorizontally(targetOffset);
      const float distance = glm::length(aimOffset);
      if (!IsAllFinite(targetOffset) || distance < 0.001f) {
-@@ -254,6 +469,8 @@ static void hook_GetMagnesisHeldBodySpin(PPCInterpreter_t* hCPU) {
+@@ -254,6 +500,8 @@ static void hook_GetMagnesisHeldBodySpin(PPCInterpreter_t* hCPU) {
      if (!IsPlausiblePPCPointer(manager)) {
          return;
      }
@@ -424,50 +504,49 @@ index 25ed231..1cfde2f 100644
      // doors and sliding blocks hang on constraints that a forced spin would fight
      uint8_t fixedObjectFlag = 0;
 diff --git a/src/game/botw/player/magnesis.h b/src/game/botw/player/magnesis.h
-index 334a0ed..8d69fad 100644
+index 334a0ed..895ed4f 100644
 --- a/src/game/botw/player/magnesis.h
 +++ b/src/game/botw/player/magnesis.h
-@@ -2,4 +2,11 @@
+@@ -2,4 +2,12 @@
  
  namespace Magnesis {
      void RegisterHooks();
 +
-+    // PS5: with Eye Magnesis (Magnesis) or Eye Rune Pick (Stasis, Cryonis) on while that rune picks a target, the
-+    // stage-space direction the eyes look along, for the game's screen-point pick (stereo_view.cpp)
++    // PS5: with Eye Magnesis (Magnesis) or Eye Rune Pick (Magnesis, Stasis) on while that rune picks a target, the
++    // stage-space direction the eyes look along, for the game's screen-point pick (stereo_view.cpp); Cryonis places
++    // from the camera's ray and is left alone
 +    std::optional<glm::fvec3> GetPickGaze();
 +    // PS5: whether the eyes steer a held object, and the right stick's up/down that then pushes and pulls it
 +    bool IsSteeringByGaze();
 +    void SetPushPullStick(float stickY);
  }
 diff --git a/src/rendering/imgui_menus.cpp b/src/rendering/imgui_menus.cpp
-index 82ba13c..e1a35af 100644
+index e76dd37..6c78ff7 100644
 --- a/src/rendering/imgui_menus.cpp
 +++ b/src/rendering/imgui_menus.cpp
-@@ -1191,6 +1191,12 @@ void RND_Renderer::ImGuiOverlay::DrawControlsPage(bool* changed) {
-                 DrawSetting(ICON_MS_EYE_TRACKING, "Eye Aim Assist", "Bends a throw up to 15 degrees, and an arrow up to 5 degrees, toward your eye-tracked gaze. An arrow is nudged only while the gaze is already within 5 degrees of the aim. Off by default.", [&]() {
-                     DrawToggle(settings.eyeAimAssist, changed);
+@@ -1197,6 +1197,12 @@ void RND_Renderer::ImGuiOverlay::DrawControlsPage(bool* changed) {
+                         return fmt::format("{:.0f}%", value * 100.0f);
+                     }, changed);
                  });
 +                DrawSetting(ICON_MS_EYE_TRACKING, "Eye Magnesis", "With Magnesis out, the grab takes the metal object you look at. A held object goes where you look, and the right stick's up and down push and pull it; the grip and wrist still turn it. Without an eye-tracked gaze, Magnesis is the hand's as before. Off by default.", [&]() {
 +                    DrawToggle(settings.eyeMagnesis, changed);
 +                });
-+                DrawSetting(ICON_MS_EYE_TRACKING, "Eye Rune Pick", "Stasis and Cryonis take the target you look at instead of the one in the middle of the view. Off by default.", [&]() {
++                DrawSetting(ICON_MS_EYE_TRACKING, "Eye Rune Pick (Magnesis & Stasis)", "Magnesis and Stasis take the target you look at instead of the one in the middle of the view. Cryonis places its pillar from the camera's ray, so the eyes cannot move it. Off by default.", [&]() {
 +                    DrawToggle(settings.eyeRunePick, changed);
 +                });
              }
              EndCard();
          }
 diff --git a/src/utils/mod_settings.h b/src/utils/mod_settings.h
-index d19dd27..df34046 100644
+index fadd731..0b5bcd0 100644
 --- a/src/utils/mod_settings.h
 +++ b/src/utils/mod_settings.h
-@@ -629,6 +629,10 @@ struct ModSettings {
-     // Eye tracking (port/bettervr/xr/runtime.cpp): the Eye Aim Assist row bends a throw and a bow shot
-     // toward the gaze (XR eye gaze)
-     BoolSetting eyeAimAssist{ "EyeAimAssist", false };
-+    // Eye Magnesis (game/botw/player/magnesis.cpp): Magnesis picks and steers by the gaze, the right stick's
-+    // up/down pushes and pulls; Eye Rune Pick: Stasis and Cryonis pick by the gaze
-+    BoolSetting eyeMagnesis{ "EyeMagnesis", false };
-+    BoolSetting eyeRunePick{ "EyeRunePick", false };
+@@ -648,7 +648,7 @@ struct ModSettings {
+     // toward the gaze (XR eye gaze), from off to the whole angle; an old saved "true" is 25 %
+     EyeAimAssistSetting eyeAimAssist;
+     // Eye Magnesis (game/botw/player/magnesis.cpp): Magnesis picks and steers by the gaze, the right stick's
+-    // up/down pushes and pulls; Eye Rune Pick: Stasis and Cryonis pick by the gaze
++    // up/down pushes and pulls; Eye Rune Pick: Magnesis and Stasis pick by the gaze (Cryonis places from the camera)
+     BoolSetting eyeMagnesis{ "EyeMagnesis", false };
+     BoolSetting eyeRunePick{ "EyeRunePick", false };
  
-     // Vibration (the Vibration page, rendering/imgui_menus.cpp): one on/off, strength and set of devices per
-     // situation, and the headset motor's own cap. The defaults are what v0.5.0 did: BetterVR's rumbles and the

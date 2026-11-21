@@ -5,17 +5,17 @@ Subject: [PATCH] PS5: the Eye Aim Assist switch bends a throw and a bow shot
  toward the gaze; built, untested on console
 
 ---
- src/game/botw/input/controls.cpp | 17 +++++-----
- src/game/botw/player/bow.cpp     | 54 ++++++++++++++++++++++++++++++++
- src/rendering/imgui_menus.cpp    |  4 +--
- src/utils/mod_settings.h         |  5 +--
- 4 files changed, 68 insertions(+), 12 deletions(-)
+ src/game/botw/input/controls.cpp | 25 +++++++------
+ src/game/botw/player/bow.cpp     | 62 ++++++++++++++++++++++++++++++++
+ src/rendering/imgui_menus.cpp    | 10 ++++--
+ src/utils/mod_settings.h         | 27 ++++++++++++--
+ 4 files changed, 109 insertions(+), 15 deletions(-)
 
 diff --git a/src/game/botw/input/controls.cpp b/src/game/botw/input/controls.cpp
-index fda8fe6..07b97cb 100644
+index 98ab03a..3154ee7 100644
 --- a/src/game/botw/input/controls.cpp
 +++ b/src/game/botw/input/controls.cpp
-@@ -817,10 +817,10 @@ static void ProcessLeftTriggerBindings(
+@@ -865,10 +865,11 @@ static void ProcessLeftTriggerBindings(
      }    
  }
  
@@ -23,33 +23,45 @@ index fda8fe6..07b97cb 100644
 -// hand's speed. The assist acts only on a valid eye-gaze sample: without one the velocity is handed
 -// back unchanged, as the release direction is the player's own. `hand` is the hand the throw left
 -// from, so a left-hand throw is bent around the left hand's position rather than the right's.
-+// A throw is bent toward where the player looks, by at most 15 degrees, keeping the hand's speed.
-+// The assist acts only on a valid eye-gaze sample: without one the velocity is handed back
-+// unchanged, as the release direction is the player's own. `hand` is the hand the throw left from,
-+// so a left-hand throw is bent around the left hand's position rather than the right's.
++// A throw is bent toward where the player looks by the Eye Aim Assist strength, from none to the whole angle
++// between the hand and the gaze point, keeping the hand's speed. The assist acts only on a valid eye-gaze
++// sample: without one the velocity is handed back unchanged, as the release direction is the player's own.
++// `hand` is the hand the throw left from, so a left-hand throw is bent around the left hand's position rather
++// than the right's.
  static bool NormalizeDirection(const glm::fvec3& direction, glm::fvec3& outDirection) {
      if (!glm::all(glm::isfinite(direction)) || glm::dot(direction, direction) <= 1.0e-6f)
          return false;
-@@ -828,7 +828,7 @@ static bool NormalizeDirection(const glm::fvec3& direction, glm::fvec3& outDirec
+@@ -876,11 +877,11 @@ static bool NormalizeDirection(const glm::fvec3& direction, glm::fvec3& outDirec
      return true;
  }
  
 -static glm::fvec3 ApplyGazeThrowAssist(const glm::fvec3& velocity, const OpenXR::InputState& inputs, OpenXR::EyeSide hand) {
 +static glm::fvec3 ApplyEyeAimThrowAssist(const glm::fvec3& velocity, const OpenXR::InputState& inputs, OpenXR::EyeSide hand) {
      constexpr float targetDistance = 10.0f;
-     constexpr float maxBendDegrees = 15.0f;
+-    constexpr float maxBendDegrees = 15.0f;
  
-@@ -858,7 +858,8 @@ static glm::fvec3 ApplyGazeThrowAssist(const glm::fvec3& velocity, const OpenXR:
-     const float bend = std::min(angle, glm::radians(maxBendDegrees));
+-    if (!glm::all(glm::isfinite(velocity)) || glm::dot(velocity, velocity) <= 1.0e-6f)
++    const float strength = GetSettings().eyeAimAssist;
++    if (strength <= 0.0f || !glm::all(glm::isfinite(velocity)) || glm::dot(velocity, velocity) <= 1.0e-6f)
+         return velocity;
+     const std::optional<glm::fmat4> head = Tracking::HeadPose();
+     if (!head.has_value())
+@@ -903,10 +904,12 @@ static glm::fvec3 ApplyGazeThrowAssist(const glm::fvec3& velocity, const OpenXR:
+     const float angle = std::acos(std::clamp(glm::dot(current, wanted), -1.0f, 1.0f));
+     if (angle < glm::radians(0.5f))
+         return velocity;
+-    const float bend = std::min(angle, glm::radians(maxBendDegrees));
++    // full strength throws straight at the gaze point; below it the same share of the angle is taken
++    const float bend = angle * strength;
      const glm::fvec3 axis = glm::cross(current, wanted);
      const glm::fvec3 assisted = glm::dot(axis, axis) > 1.0e-8f ? glm::angleAxis(bend, glm::normalize(axis)) * current : current;
 -    Log::print<INFO>("[Throw] gaze assist bent {:.1f} degrees toward the gaze", glm::degrees(bend));
-+    Log::print<INFO>("[Throw] eye aim assist: {} hand, {:.1f} degrees to gaze, {:.1f} applied",
-+        hand == OpenXR::EyeSide::LEFT ? "left" : "right", glm::degrees(angle), glm::degrees(bend));
++    Log::print<INFO>("[Throw] eye aim assist: {} hand, {:.1f} degrees to gaze, {:.0f}% strength, {:.1f} applied",
++        hand == OpenXR::EyeSide::LEFT ? "left" : "right", glm::degrees(angle), strength * 100.0f, glm::degrees(bend));
      return assisted * glm::length(velocity);
  }
  
-@@ -919,10 +920,10 @@ static void ProcessHandThrow(uint32_t& buttonHold, const OpenXR::InputState& inp
+@@ -967,10 +970,10 @@ static void ProcessHandThrow(uint32_t& buttonHold, const OpenXR::InputState& inp
          const float handSpeed = glm::length(releaseVelocity.value());
          const float boost = glm::mix(1.0f, maxThrowBoost, glm::smoothstep(boostStartSpeed, boostFullSpeed, handSpeed));
          glm::fvec3 throwVelocity = glm::mat3(Camera::GetReferenceMtx()) * releaseVelocity.value() * boost;
@@ -63,32 +75,33 @@ index fda8fe6..07b97cb 100644
          Player::RequestHandThrow(throwVelocity);
          Log::print<CONTROLS>("[Throw] released with hand speed {:.2f}, boosted {:.2f}x", handSpeed, boost);
 diff --git a/src/game/botw/player/bow.cpp b/src/game/botw/player/bow.cpp
-index 0279ff2..7862655 100644
+index 0279ff2..33d7061 100644
 --- a/src/game/botw/player/bow.cpp
 +++ b/src/game/botw/player/bow.cpp
-@@ -49,6 +49,9 @@ struct BowVisualizationState {
+@@ -49,6 +49,10 @@ struct BowVisualizationState {
      bool hasAtRange = false;
      bool hasFallSpeedRatioByRange = false;
      bool usedSyntheticTargetPos = false;
 +    bool eyeAimAssisted = false;
 +    float eyeAimRawDegrees = 0.0f;
 +    float eyeAimAppliedDegrees = 0.0f;
++    float eyeAimStrength = 0.0f;
      uint32_t weaponPtr = 0;
      float drawAmount = 0.0f;
      float launchSpeed = 0.0f;
-@@ -1121,6 +1124,51 @@ static const char* GetBowParamActionKindName(BowParamActionKind actionKind) {
+@@ -1121,6 +1125,58 @@ static const char* GetBowParamActionKindName(BowParamActionKind actionKind) {
      }
  }
  
-+// Eye Aim Assist bends a player's arrow toward where the player looks, by no more than 5 degrees, and
-+// only while the gaze is already inside that cone of the aim: a gaze further off leaves the arrow where
-+// the bow points. The target moves with the direction, so a homing arrow and the actor's launch
-+// transform agree.
++// Eye Aim Assist pulls a player's arrow toward where the player looks by its strength, and only while the gaze
++// is already inside a cone that widens as the strength falls (5 degrees at a quarter, none at full): a gaze
++// further off leaves the arrow where the bow points. The target moves with the direction, so a homing arrow and
++// the actor's launch transform agree.
 +static bool ApplyEyeAimBowAssist(BowVisualizationState& state) {
-+    constexpr float maxBendDegrees = 5.0f;
 +    constexpr float gazeDistance = kLaunchTargetDistance;
 +
-+    if (!GetSettings().eyeAimAssist || !state.hasLaunchOrigin || !state.hasLaunchDirection)
++    const float strength = GetSettings().eyeAimAssist;
++    if (strength <= 0.0f || !state.hasLaunchOrigin || !state.hasLaunchDirection)
 +        return false;
 +    const std::optional<glm::fvec3> gaze = Tracking::EyeGaze();
 +    if (!gaze.has_value() || !HasFiniteDirection(*gaze))
@@ -106,7 +119,8 @@ index 0279ff2..7862655 100644
 +
 +    const glm::vec3 aim = glm::normalize(state.launchDirection);
 +    const float angle = std::acos(glm::clamp(glm::dot(aim, wanted), -1.0f, 1.0f));
-+    if (angle > glm::radians(maxBendDegrees) || angle < glm::radians(0.5f))
++    const float gate = strength >= 0.999f ? glm::pi<float>() : glm::radians(5.0f) / strength;
++    if (angle > gate || angle < glm::radians(0.5f))
 +        return false;
 +
 +    float targetDistance = kLaunchTargetDistance;
@@ -116,19 +130,25 @@ index 0279ff2..7862655 100644
 +            targetDistance = distance;
 +    }
 +
-+    state.launchDirection = wanted;
-+    state.targetPos = state.launchOrigin + wanted * targetDistance;
++    const float bend = angle * strength;
++    const glm::vec3 axis = glm::cross(aim, wanted);
++    const glm::vec3 assisted = strength >= 0.999f ? wanted :
++        (glm::dot(axis, axis) > 1.0e-8f ? glm::angleAxis(bend, glm::normalize(axis)) * aim : aim);
++
++    state.launchDirection = assisted;
++    state.targetPos = state.launchOrigin + assisted * targetDistance;
 +    state.hasTargetPos = true;
 +    state.eyeAimAssisted = true;
 +    state.eyeAimRawDegrees = glm::degrees(angle);
-+    state.eyeAimAppliedDegrees = glm::degrees(angle);
++    state.eyeAimAppliedDegrees = glm::degrees(bend);
++    state.eyeAimStrength = strength;
 +    return true;
 +}
 +
  static bool TryBuildBowVisualizationState(BowVisualizationState& outState, long cameraFrameIdx = -1) {
      outState = {};
  
-@@ -1214,6 +1262,8 @@ static bool TryBuildBowVisualizationState(BowVisualizationState& outState, long
+@@ -1214,6 +1270,8 @@ static bool TryBuildBowVisualizationState(BowVisualizationState& outState, long
          }
      }
  
@@ -137,45 +157,80 @@ index 0279ff2..7862655 100644
      outState.launchSpeed = liveBowState.launchSpeed;
      outState.firstSpeed = outState.hasLaunchDirection ? outState.launchDirection * outState.launchSpeed : glm::vec3(0.0f, 0.0f, -outState.launchSpeed);
      outState.relativeVel = glm::vec3(0.0f);
-@@ -1441,6 +1491,10 @@ static void hook_OverrideArrowShotTransform(PPCInterpreter_t* hCPU) {
+@@ -1441,6 +1499,10 @@ static void hook_OverrideArrowShotTransform(PPCInterpreter_t* hCPU) {
          if (TryBuildBowVisualizationState(launchState) && launchState.hasLaunchOrigin && launchState.hasLaunchDirection) {
              StorePendingShotOverride(launchState);
              SetTransformFromLaunchPose(transform, launchState.launchOrigin, launchState.launchDirection);
 +            if (launchState.eyeAimAssisted) {
-+                Log::print<INFO>("[BowShot] eye aim assist: arrow, {:.1f} degrees to gaze, {:.1f} applied",
-+                    launchState.eyeAimRawDegrees, launchState.eyeAimAppliedDegrees);
++                Log::print<INFO>("[BowShot] eye aim assist: arrow, {:.1f} degrees to gaze, {:.0f}% strength, {:.1f} applied",
++                    launchState.eyeAimRawDegrees, launchState.eyeAimStrength * 100.0f, launchState.eyeAimAppliedDegrees);
 +            }
              Log::print<ARROW_SHOT_CAPTURE>(
                  "[BowShot] Override transform origin={} direction={} previewAi=0x{:08X}",
                  launchState.launchOrigin,
 diff --git a/src/rendering/imgui_menus.cpp b/src/rendering/imgui_menus.cpp
-index 7b032b8..82ba13c 100644
+index 7b032b8..e76dd37 100644
 --- a/src/rendering/imgui_menus.cpp
 +++ b/src/rendering/imgui_menus.cpp
-@@ -1188,8 +1188,8 @@ void RND_Renderer::ImGuiOverlay::DrawControlsPage(bool* changed) {
+@@ -1188,8 +1188,14 @@ void RND_Renderer::ImGuiOverlay::DrawControlsPage(bool* changed) {
                  DrawEnumSegments(settings.swingSensitivity, swingChoices, changed);
              });
              if (VRManager::instance().XR->m_capabilities.supportsEyeGaze && BetterVR_PS5_EyeGazeAvailable() != 0) {
 -                DrawSetting(ICON_MS_EYE_TRACKING, "Gaze Throw Assist", "Bends a throw up to 15 degrees toward your eye-tracked gaze; without a gaze sample a throw is unchanged. Off by default.", [&]() {
 -                    DrawToggle(settings.eyeGazeThrowAssist, changed);
-+                DrawSetting(ICON_MS_EYE_TRACKING, "Eye Aim Assist", "Bends a throw up to 15 degrees, and an arrow up to 5 degrees, toward your eye-tracked gaze. An arrow is nudged only while the gaze is already within 5 degrees of the aim. Off by default.", [&]() {
-+                    DrawToggle(settings.eyeAimAssist, changed);
++                DrawSetting(ICON_MS_EYE_TRACKING, "Eye Aim Assist", "Bends a throw and pulls an arrow toward your eye-tracked gaze by its strength, from off to the whole angle to the gaze point. Full throws straight at that point and lets an arrow follow the gaze; below Full an arrow is helped only while the gaze is near the aim. Off by default; an old on is 25%.", [&]() {
++                    DrawFloatSlider(settings.eyeAimAssist, 0.0f, 1.0f, [](float value) {
++                        if (value <= 0.001f)
++                            return std::string("Off");
++                        if (value >= 0.999f)
++                            return std::string("Full");
++                        return fmt::format("{:.0f}%", value * 100.0f);
++                    }, changed);
                  });
              }
              EndCard();
 diff --git a/src/utils/mod_settings.h b/src/utils/mod_settings.h
-index a39332a..d19dd27 100644
+index a39332a..fadd731 100644
 --- a/src/utils/mod_settings.h
 +++ b/src/utils/mod_settings.h
-@@ -626,8 +626,9 @@ struct ModSettings {
+@@ -249,6 +249,24 @@ public:
+     }
+ };
+ 
++// a strength from off to full; the Eye Aim Assist row was an on/off switch, and its old "true" is 25 %
++class EyeAimAssistSetting : public FloatSetting {
++public:
++    EyeAimAssistSetting(): FloatSetting("EyeAimAssist", 0.0f, 0.0f, 1.0f) {}
++
++    void Deserialize(std::string_view valueString) override {
++        if (IEquals(valueString, "true") || IEquals(valueString, "on")) {
++            *this = 0.25f;
++            return;
++        }
++        if (IEquals(valueString, "false") || IEquals(valueString, "off")) {
++            *this = 0.0f;
++            return;
++        }
++        FloatSetting::Deserialize(valueString);
++    }
++};
++
+ class BoolSetting : public ModSetting<bool> {
+ private:
+     void (*m_onChange)(bool);
+@@ -626,8 +644,13 @@ struct ModSettings {
      FloatSetting adaptiveTriggerStrength{ "AdaptiveTriggerStrength", 1.0f, 0.0f, 1.0f };
  #endif
  
 -    // Eye tracking (port/bettervr/xr/runtime.cpp): a released throw bends toward the gaze (XR eye gaze)
 -    BoolSetting eyeGazeThrowAssist{ "EyeGazeThrowAssist", false };
 +    // Eye tracking (port/bettervr/xr/runtime.cpp): the Eye Aim Assist row bends a throw and a bow shot
-+    // toward the gaze (XR eye gaze)
-+    BoolSetting eyeAimAssist{ "EyeAimAssist", false };
++    // toward the gaze (XR eye gaze), from off to the whole angle; an old saved "true" is 25 %
++    EyeAimAssistSetting eyeAimAssist;
++    // Eye Magnesis (game/botw/player/magnesis.cpp): Magnesis picks and steers by the gaze, the right stick's
++    // up/down pushes and pulls; Eye Rune Pick: Stasis and Cryonis pick by the gaze
++    BoolSetting eyeMagnesis{ "EyeMagnesis", false };
++    BoolSetting eyeRunePick{ "EyeRunePick", false };
  
      // Vibration (the Vibration page, rendering/imgui_menus.cpp): one on/off, strength and set of devices per
      // situation, and the headset motor's own cap. The defaults are what v0.5.0 did: BetterVR's rumbles and the
