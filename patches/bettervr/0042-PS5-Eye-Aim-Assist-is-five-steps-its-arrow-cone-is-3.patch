@@ -5,15 +5,16 @@ Subject: [PATCH] PS5: Eye Aim Assist is five steps, its arrow cone is 30
  degrees, and the hand's Magnesis pushes, pulls and turns overhead objects
  without a clamp; built, untested on console
 
+The hand path's push and pull offset is clamped against the hand's own distance every frame, so a full pull followed by the hand coming in or tilting up keeps the object in front at the pull's floor instead of letting the distance go negative and turn it around.
 ---
- src/game/botw/input/controls.cpp  |  6 +--
+ src/game/botw/input/controls.cpp  |  6 +-
  src/game/botw/player/bow.cpp      | 26 ++++++---
- src/game/botw/player/magnesis.cpp | 90 ++++++++++++++++++++++++-------
+ src/game/botw/player/magnesis.cpp | 94 ++++++++++++++++++++++++-------
  src/game/botw/player/magnesis.h   |  3 +-
- src/rendering/imgui_menus.cpp     | 28 ++++++----
- src/utils/mod_settings.cpp        | 12 +++++
- src/utils/mod_settings.h          |  9 +++-
- 7 files changed, 134 insertions(+), 40 deletions(-)
+ src/rendering/imgui_menus.cpp     | 28 ++++++---
+ src/utils/mod_settings.cpp        | 12 ++++
+ src/utils/mod_settings.h          |  9 ++-
+ 7 files changed, 138 insertions(+), 40 deletions(-)
 
 diff --git a/src/game/botw/input/controls.cpp b/src/game/botw/input/controls.cpp
 index 1ce03e7..e654a92 100644
@@ -99,7 +100,7 @@ index 54a3ca2..8df50c1 100644
                  "[BowShot] Override transform origin={} direction={} previewAi=0x{:08X}",
                  launchState.launchOrigin,
 diff --git a/src/game/botw/player/magnesis.cpp b/src/game/botw/player/magnesis.cpp
-index f8b955d..6d37fbb 100644
+index f8b955d..c021f2a 100644
 --- a/src/game/botw/player/magnesis.cpp
 +++ b/src/game/botw/player/magnesis.cpp
 @@ -29,7 +29,6 @@ static constexpr float MagneFallbackCancelHeight = 2.0f;
@@ -167,7 +168,7 @@ index f8b955d..6d37fbb 100644
  
      const glm::vec2 headOffset = glm::vec2(headPos.x - playerPos.x, headPos.z - playerPos.z);
      const glm::vec2 steerFlat = glm::vec2(steer.x, steer.z);
-@@ -418,47 +442,75 @@ static bool DriveMagnesisAimFromController(uint32_t action) {
+@@ -418,47 +442,79 @@ static bool DriveMagnesisAimFromController(uint32_t action) {
          // the gaze-picked object starts where it is, and the hand moves it from there; the gaze's distance or the
          // hand's lever is never captured, so a grab after the eyes steered does not swing the object around the hand
          s_gripObjectOffset = objectPos - playerPos;
@@ -232,6 +233,10 @@ index f8b955d..6d37fbb 100644
 +            // it was asked, so a push that reached the end does not have to be undone before a pull answers
 +            s_handPushPull += gameDistance - s_handWroteDistance;
 +        }
++        // the hand's own distance moves every frame (the arm's reach, the tilt): keep the offset off the pull's floor
++        // for the distance the hand has now, so a full pull followed by the hand coming in cannot make the distance
++        // negative and turn the object around
++        s_handPushPull = std::max(s_handPushPull, std::min(0.0f, EyeMinDistance - handDistance));
 +        const uint64_t last = s_lastHandSteerNs.load();
 +        const float dt = last == 0 ? 0.0f : std::min((float)(now - last) * 1.0e-9f, 0.05f);
 +        const float distance = PushPullDistance(handDistance + s_handPushPull, dt);
