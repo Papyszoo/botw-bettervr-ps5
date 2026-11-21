@@ -3,6 +3,71 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-21: in VR the software keyboard is the console's own, so a stable's horse name can be typed where the player is looking; built, untested on console
+
+**The report this acts on.** A console report (13.60, VR, Sense) of the stable's naming screen: the keyboard never
+showed and the game waited. The cause is the port's own keyboard sheet: Cemu hands its swkbd to `PS5Cemu_DrawKeyboard`
+(`port/app/ingame.cpp`, patch cemu 0039), which draws it into Cemu's TV picture. In BetterVR's stereo frames that
+picture is neither the headset's nor, with the TV mirror on, the TV's: the stereo path skips Cemu's TV game picture
+and the TV shows Hmd2's social screen, so the sheet is drawn where nobody sees it. With the TV mirror off it is on
+the TV only, never in the headset. Flat play was and is fine, and the game's own wait has no end: Cemu's swkbd has
+no cancel and no timeout.
+
+**The fix, on the PS5 side only.** While `ps5vr::Stereo()` runs, `PS5Cemu_DrawKeyboard` opens the console's own
+keyboard (libSceImeDialog, new `port/app/ime_dialog.cpp`) once per game appearance, with the form's text and the
+limit the game set (UTF-16 units, as swkbd counts them). It polls the dialog once a frame on the render thread, the
+one all swkbd state lives on, and on OK writes the typed text into the form and returns done, exactly as its sheet
+did, so Cemu's `swkbd_finishInput` decides it to the game. A cancel, a dialog the system abandons, and one it
+refuses all decide the text the game gave: swkbd has no cancel a game could take, and the game must never wait on a
+keyboard nobody can see. Flat play and the M2 flat screen keep the sheet unchanged.
+
+**The game's input while it is up.** The console's keyboard is the system's, so the pad is its: patch bettervr 0048
+has `hook_InjectXRInput` write an idle VPAD status while `BetterVR_PS5_GameInputBlocked` is set
+(`port/bettervr/xr/runtime.cpp`) and holds the pad's and the Sense's Options from the game's pause. The state above
+that write still runs, so a button held when the dialog closes is not read as a fresh press. The DualSense never
+reached the emulated GamePad while swkbd is active (`OverlayTakesInput`), as before.
+
+**Logs, capped at 24 lines each run, never the text.** `[ime] swkbd asked for a keyboard: N units, limit M
+(form|keyboard); the console's opened (0x0)`, or `... it did not open (0x...): the text it gave is decided`; `[ime]
+the console's keyboard: OK, N units`; `... cancelled; the text it gave is decided (swkbd has none to take)`; `...
+ended without an answer (...)`, with the close status and the length, never the text.
+
+**Where the layout comes from.** The SDK has no header for this dialog, and none is used: the 96-byte parameter
+block, its 16-byte result, the statuses (0 none, 1 running, 2 finished) and the outcomes (0 OK, 1 cancelled, 2
+aborted) are the ones public PS5 homebrew opens it with (ps5-payload-dev's offact, prospero-win's pw_osk_ps5.c),
+which the PS4 reimplementations share. Its text is 16 bits a unit whatever the toolchain's `wchar_t` is. The module
+stub is one of the SDK's, which `tools/link.sh` already links.
+
+**What is not known until the console run.** Whether the system draws this dialog in an hmd2 session's headset at
+all: it is a system 2D layer composited over the title's TV output, and the headset gets Hmd2's own eye buffers. That
+is Test request 78's first question and this design stands or falls on it; where it does not show, the fallback above
+still leaves the game playable instead of waiting forever.
+
+Patches: bettervr 0048 (the idle pad), cemu 0063 (the hook is told form or keyboard-only, for the request line); new
+files `port/app/ime_dialog.h/.cpp`; no GPU, frame-path or record change.
+
+**Test request 78 (v0.8 console keyboard in VR, 13.60 console).** Install the `BotW-VR-v...zip` from this head's
+green "BetterVR build" run and start Breath of the Wild in VR with the headset, both Sense controllers and the
+DualSense on. Load a save that can reach a stable (or ride to one), register a horse and reach the naming screen.
+
+1. **Does the console's keyboard show?** Say whether the PS5 keyboard appears in the headset, only on the TV, or
+   nowhere. This is the question the design rests on.
+2. **Does the name reach the game?** Type a name and accept it: does the naming screen close, and does the name show
+   in the stable and the pause menu? If it does not, say whether the game went on with the name it gave (the
+   fallback) or stayed waiting.
+3. **Cancel.** Show the keyboard again (rename the horse, or any other text prompt) and press the dialog's cancel:
+   the game should continue with the text it gave, not wait.
+4. **Flat, unchanged.** Play on TV and name a horse: the port's own sheet must still be the one that shows and types.
+
+**Send**, from `/data/ps5cemu/logs/boot.log`:
+
+- `LC_ALL=C grep -a "\[ime\]" boot.log`
+- which of steps 1-4 happened, where the keyboard was seen in each, and whether the pad moved Link while it was up.
+
+**What it decides.** Step 1 decides whether the console's dialog is visible in the headset; if it is TV-only, the
+next step is a keyboard drawn in BetterVR's own overlay. Step 2 decides that the typed text reaches swkbd. Step 3
+decides the cancel and fallback paths. Step 4 guards flat play and the M2 flat screen.
+
 ## 2026-11-21: v0.8 haptics: hands that are hands, the pad's two motors, weather and footsteps from the game's audio, shield surf, traversal and a low-health heartbeat; parry and flurry wait on a console run; built, untested on console
 
 **What this build changes.** The proposal's haptics work through section 4.7, except parry and flurry (4.3): the per-hand Sense
