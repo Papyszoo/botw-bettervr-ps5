@@ -1,0 +1,376 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ps5cemu <ps5cemu@localhost>
+Date: Sat, 21 Nov 2026 11:29:33 +0100
+Subject: [PATCH] PS5: Eye Aim Assist is five steps, its arrow cone is 30
+ degrees, and the hand's Magnesis pushes, pulls and turns overhead objects
+ without a clamp; built, untested on console
+
+---
+ src/game/botw/input/controls.cpp  |  6 +--
+ src/game/botw/player/bow.cpp      | 26 ++++++---
+ src/game/botw/player/magnesis.cpp | 90 ++++++++++++++++++++++++-------
+ src/game/botw/player/magnesis.h   |  3 +-
+ src/rendering/imgui_menus.cpp     | 28 ++++++----
+ src/utils/mod_settings.cpp        | 12 +++++
+ src/utils/mod_settings.h          |  9 +++-
+ 7 files changed, 134 insertions(+), 40 deletions(-)
+
+diff --git a/src/game/botw/input/controls.cpp b/src/game/botw/input/controls.cpp
+index 1ce03e7..e654a92 100644
+--- a/src/game/botw/input/controls.cpp
++++ b/src/game/botw/input/controls.cpp
+@@ -1340,10 +1340,10 @@ static void RemapRightStickToCameraZoom(uint32_t& buttonHold, XrActionStateVecto
+     rightStickSource.currentState = { 0.0f, 0.0f };
+ }
+ 
+-// PS5: while Eye Magnesis steers a held object, the right stick's up/down pushes and pulls it instead of reaching
+-// the game, where it would raise and lower it
++// PS5: while Eye Magnesis or the hand steers a held object, the right stick's up/down pushes and pulls it instead
++// of reaching the game, where it would raise and lower it
+ static void RemapRightStickToMagnesisDistance(XrActionStateVector2f& rightStickSource) {
+-    if (!Magnesis::IsSteeringByGaze()) {
++    if (!Magnesis::IsSteeringByGaze() && !Magnesis::IsSteeringByHand()) {
+         return;
+     }
+ 
+diff --git a/src/game/botw/player/bow.cpp b/src/game/botw/player/bow.cpp
+index 54a3ca2..8df50c1 100644
+--- a/src/game/botw/player/bow.cpp
++++ b/src/game/botw/player/bow.cpp
+@@ -50,6 +50,7 @@ struct BowVisualizationState {
+     bool hasFallSpeedRatioByRange = false;
+     bool usedSyntheticTargetPos = false;
+     bool eyeAimAssisted = false;
++    bool eyeAimOutsideCone = false;
+     float eyeAimRawDegrees = 0.0f;
+     float eyeAimAppliedDegrees = 0.0f;
+     float eyeAimStrength = 0.0f;
+@@ -1125,10 +1126,11 @@ static const char* GetBowParamActionKindName(BowParamActionKind actionKind) {
+     }
+ }
+ 
+-// Eye Aim Assist pulls a player's arrow toward where the player looks by its strength, and only while the gaze
+-// is already inside a cone that widens as the strength falls (20 degrees at a quarter, none at full): a gaze
+-// further off leaves the arrow where the bow points. The target moves with the direction, so a homing arrow and
+-// the actor's launch transform agree.
++// Eye Aim Assist pulls a player's arrow toward where the player looks by its strength. Below Full the gaze has to
++// be within one cone of 30 degrees, wide enough that a normal shot is helped at every step; Full follows the gaze
++// from any angle. The target moves with the direction, so a homing arrow and the actor's launch transform agree.
++static constexpr float kEyeAimConeDegrees = 30.0f;
++
+ static bool ApplyEyeAimBowAssist(BowVisualizationState& state) {
+     constexpr float gazeDistance = kLaunchTargetDistance;
+ 
+@@ -1151,8 +1153,14 @@ static bool ApplyEyeAimBowAssist(BowVisualizationState& state) {
+ 
+     const glm::vec3 aim = glm::normalize(state.launchDirection);
+     const float angle = std::acos(glm::clamp(glm::dot(aim, wanted), -1.0f, 1.0f));
+-    const float gate = strength >= 0.999f ? glm::pi<float>() : glm::radians(5.0f) / strength;
+-    if (angle > gate || angle < glm::radians(0.5f))
++    const bool full = strength >= 0.999f;
++    if (!full && angle > glm::radians(kEyeAimConeDegrees)) {
++        state.eyeAimOutsideCone = true;
++        state.eyeAimRawDegrees = glm::degrees(angle);
++        state.eyeAimStrength = strength;
++        return false;
++    }
++    if (angle < glm::radians(0.5f))
+         return false;
+ 
+     float targetDistance = kLaunchTargetDistance;
+@@ -1164,7 +1172,7 @@ static bool ApplyEyeAimBowAssist(BowVisualizationState& state) {
+ 
+     const float bend = angle * strength;
+     const glm::vec3 axis = glm::cross(aim, wanted);
+-    const glm::vec3 assisted = strength >= 0.999f ? wanted :
++    const glm::vec3 assisted = full ? wanted :
+         (glm::dot(axis, axis) > 1.0e-8f ? glm::angleAxis(bend, glm::normalize(axis)) * aim : aim);
+ 
+     state.launchDirection = assisted;
+@@ -1503,6 +1511,10 @@ static void hook_OverrideArrowShotTransform(PPCInterpreter_t* hCPU) {
+                 Log::print<INFO>("[BowShot] eye aim assist: arrow, {:.1f} degrees to gaze, {:.0f}% strength, {:.1f} applied",
+                     launchState.eyeAimRawDegrees, launchState.eyeAimStrength * 100.0f, launchState.eyeAimAppliedDegrees);
+             }
++            else if (launchState.eyeAimOutsideCone) {
++                Log::print<INFO>("[BowShot] eye aim assist: arrow, {:.1f} degrees to gaze, {:.0f}% strength, outside the {:.0f} degree cone, unchanged",
++                    launchState.eyeAimRawDegrees, launchState.eyeAimStrength * 100.0f, kEyeAimConeDegrees);
++            }
+             Log::print<ARROW_SHOT_CAPTURE>(
+                 "[BowShot] Override transform origin={} direction={} previewAi=0x{:08X}",
+                 launchState.launchOrigin,
+diff --git a/src/game/botw/player/magnesis.cpp b/src/game/botw/player/magnesis.cpp
+index f8b955d..6d37fbb 100644
+--- a/src/game/botw/player/magnesis.cpp
++++ b/src/game/botw/player/magnesis.cpp
+@@ -29,7 +29,6 @@ static constexpr float MagneFallbackCancelHeight = 2.0f;
+ static constexpr float MagneReachGain = 2.0f;
+ static constexpr float MagneMinReach = 0.15f;
+ static constexpr float MagneGripThreshold = 0.51f;
+-static constexpr float MagneMaxSwingPitch = 1.4f;
+ static constexpr float MagneMinYawHorizontal = 0.2f;
+ 
+ static bool s_aimGripHeld = false;
+@@ -41,6 +40,9 @@ static glm::vec3 s_gripHandToObject = glm::vec3(0.0f);
+ static glm::vec3 s_gripHandPos = glm::vec3(0.0f);
+ static glm::vec3 s_gripPlayerPos = glm::vec3(0.0f);
+ static glm::vec3 s_gripObjectOffset = glm::vec3(0.0f);
++static float s_handPushPull = 0.0f;
++static float s_handWroteDistance = 0.0f;
++static std::atomic<uint64_t> s_lastHandSteerNs = 0;
+ static uint64_t s_lastHandSteerLogNs = 0;
+ 
+ // angular velocity per radian the object is behind the hand, and its cap in radians per second
+@@ -193,6 +195,23 @@ static float WrapRadians(float angle) {
+     return angle;
+ }
+ 
++// the right stick's push (up) or pull (down) on a distance: full deflection is squared so the middle is fine
++// control, and a pull stops at EyeMinDistance unless the distance is already closer
++static float PushPullDistance(float distance, float dt) {
++    const float stick = IsFresh(s_pushPullStickNs, EyeFreshNs) ? s_pushPullStick.load() : 0.0f;
++    const float pushPull = stick * std::abs(stick) * EyePushPullSpeed * dt;
++    return pushPull < 0.0f ? std::max(distance + pushPull, std::min(distance, EyeMinDistance)) : distance + pushPull;
++}
++
++// turns the vector a grip started from by the hand's yaw and pitch since that grip: a yaw about the world's up,
++// then a pitch about the horizontal axis that yaw leaves the vector over. Unlike a spherical pitch with a clamp,
++// this has no angle where the hand's tilt stops or reverses, so an object above the hand keeps following it.
++static glm::vec3 TurnLeverByHand(const glm::vec3& gripLever, float gripYaw, float yawDelta, float pitchDelta) {
++    const float yaw = gripYaw + yawDelta;
++    const glm::vec3 right(std::cos(yaw), 0.0f, -std::sin(yaw)); // cross(up, the yaw's horizontal direction)
++    return glm::angleAxis(-pitchDelta, right) * (glm::angleAxis(yawDelta, glm::vec3(0.0f, 1.0f, 0.0f)) * gripLever);
++}
++
+ // the stage-space direction the eyes look along, smoothed, or empty when no valid sample came for EyeGazeHoldNs
+ static std::optional<glm::vec3> SampleEyeGaze() {
+     std::scoped_lock lock(s_eyeGazeMutex);
+@@ -259,6 +278,12 @@ bool Magnesis::IsSteeringByGaze() {
+     return IsFresh(s_lastEyeSteerNs, EyeFreshNs);
+ }
+ 
++// PS5: the hand paths steer a held object too, and the right stick's up/down then pushes and pulls it exactly as
++// it does the eyes'
++bool Magnesis::IsSteeringByHand() {
++    return IsFresh(s_lastHandSteerNs, EyeFreshNs);
++}
++
+ void Magnesis::SetPushPullStick(float stickY) {
+     s_pushPullStick = std::isfinite(stickY) ? glm::clamp(stickY, -1.0f, 1.0f) : 0.0f;
+     s_pushPullStickNs = GetTimeStamp();
+@@ -307,8 +332,7 @@ static bool DriveMagnesisAimFromGaze(uint32_t action, uint32_t manager, float ga
+ 
+     // the stick pushes or pulls on the game's own distance, which the game keeps inside its magnesis range
+     const float stick = IsFresh(s_pushPullStickNs, EyeFreshNs) ? s_pushPullStick.load() : 0.0f;
+-    const float pushPull = stick * std::abs(stick) * EyePushPullSpeed * dt;
+-    const float distance = pushPull < 0.0f ? std::max(gameDistance + pushPull, std::min(gameDistance, EyeMinDistance)) : gameDistance + pushPull;
++    const float distance = PushPullDistance(gameDistance, dt);
+ 
+     const glm::vec2 headOffset = glm::vec2(headPos.x - playerPos.x, headPos.z - playerPos.z);
+     const glm::vec2 steerFlat = glm::vec2(steer.x, steer.z);
+@@ -418,47 +442,75 @@ static bool DriveMagnesisAimFromController(uint32_t action) {
+         // the gaze-picked object starts where it is, and the hand moves it from there; the gaze's distance or the
+         // hand's lever is never captured, so a grab after the eyes steered does not swing the object around the hand
+         s_gripObjectOffset = objectPos - playerPos;
++        // the right stick's distance starts at the grip and its first frame has no time to integrate
++        s_handPushPull = 0.0f;
++        s_handWroteDistance = 0.0f;
++        s_lastHandSteerNs = 0;
+     }
+ 
++    // the hand's turn since the grip, for both paths: no spherical angle and no pitch clamp, so a hand over an
++    // object above it keeps control of it
++    const float handYawDelta = WrapRadians(handYaw - s_gripHandYaw);
++    const float handPitchDelta = handPitch - s_gripHandPitch;
++
+     // PS5: with both eye rows off the hand path is upstream's own; a gaze-picked object (Eye Rune Pick) or a hold
+     // the eyes handed back (Eye Magnesis with no gaze sample) is steered from where it is instead
+     const bool gazePick = GetSettings().eyeRunePick || GetSettings().eyeMagnesis;
+     glm::vec3 targetOffset;
+     if (!gazePick) {
+         // the object hangs on a stick from the hand that turns and tilts with where the hand points, twisting the wrist only spins it
+-        const float stickLength = glm::length(s_gripHandToObject) * std::pow(reach / s_gripReach, MagneReachGain);
+-        const float stickYaw = std::atan2(s_gripHandToObject.x, s_gripHandToObject.z) + handYaw - s_gripHandYaw;
+-        const float stickPitch = glm::clamp(std::atan2(s_gripHandToObject.y, glm::length(glm::vec2(s_gripHandToObject.x, s_gripHandToObject.z))) + handPitch - s_gripHandPitch, -MagneMaxSwingPitch, MagneMaxSwingPitch);
+-        const glm::vec3 handToObject = stickLength * glm::vec3(std::cos(stickPitch) * std::sin(stickYaw), std::sin(stickPitch), std::cos(stickPitch) * std::cos(stickYaw));
++        const float leverLength = glm::length(s_gripHandToObject);
++        const float stickLength = leverLength * std::pow(reach / s_gripReach, MagneReachGain);
++        const float gripYaw = std::atan2(s_gripHandToObject.x, s_gripHandToObject.z);
++        glm::vec3 handToObject = s_gripHandToObject;
++        if (leverLength > 0.0001f) {
++            handToObject = TurnLeverByHand(handToObject, gripYaw, handYawDelta, handPitchDelta) * (stickLength / leverLength);
++        }
+         targetOffset = handPos + handToObject - playerPos;
+     }
+     else {
+         // the hand's turn since the grip turns the object around the player, and its travel since the grip moves it;
+         // a wrist twist turns the body through the spin hook, never its distance
+-        const float handYawDelta = WrapRadians(handYaw - s_gripHandYaw);
+-        const float handPitchDelta = handPitch - s_gripHandPitch;
+-        glm::vec3 steerOffset = s_gripObjectOffset;
+-        steerOffset = glm::angleAxis(handYawDelta, glm::vec3(0.0f, 1.0f, 0.0f)) * steerOffset;
+-        const glm::vec3 steerHorizontal(steerOffset.x, 0.0f, steerOffset.z);
+-        if (glm::length2(steerHorizontal) > 0.0001f) {
+-            const glm::vec3 steerRight = glm::normalize(glm::cross(glm::vec3(0.0f, 1.0f, 0.0f), steerHorizontal));
+-            steerOffset = glm::angleAxis(-handPitchDelta, steerRight) * steerOffset;
+-        }
++        const float gripYaw = std::atan2(s_gripObjectOffset.x, s_gripObjectOffset.z);
++        glm::vec3 steerOffset = TurnLeverByHand(s_gripObjectOffset, gripYaw, handYawDelta, handPitchDelta);
+         // the hand's travel since the grip relative to Link: handPos carries his own walk, and the object is placed
+         // relative to him
+         steerOffset += (handPos - playerPos) - (s_gripHandPos - s_gripPlayerPos);
+         targetOffset = steerOffset;
+     }
+ 
++    // PS5: the right stick's up/down pushes and pulls the hand's distance the same way it does the eyes' (the eye
++    // path's own helper); the hand still sets the direction, the height and the arm's reach
+     const uint64_t now = GetTimeStamp();
++    const glm::vec3 handAim = FlattenHorizontally(targetOffset);
++    const float handDistance = glm::length(handAim);
++    if (handDistance > 0.001f) {
++        if (s_handWroteDistance > 0.0f && std::abs(gameDistance - s_handWroteDistance) > 0.5f) {
++            // the game kept the distance inside its own range: count the stick from where it stopped, not from where
++            // it was asked, so a push that reached the end does not have to be undone before a pull answers
++            s_handPushPull += gameDistance - s_handWroteDistance;
++        }
++        const uint64_t last = s_lastHandSteerNs.load();
++        const float dt = last == 0 ? 0.0f : std::min((float)(now - last) * 1.0e-9f, 0.05f);
++        const float distance = PushPullDistance(handDistance + s_handPushPull, dt);
++        s_handPushPull = distance - handDistance;
++        targetOffset.x = handAim.x * (distance / handDistance);
++        targetOffset.z = handAim.z * (distance / handDistance);
++    }
++
+     if (now - s_lastHandSteerLogNs >= 500'000'000) {
+         s_lastHandSteerLogNs = now;
+         const glm::vec3 handTravel = (handPos - playerPos) - (s_gripHandPos - s_gripPlayerPos);
+-        Log::print<INFO>("[magnesis] hand steer: dir {:.0f} {:.0f} deg, object {:.2f} m, reach {:.2f}x, move {:.2f} m, path {}",
++        Log::print<INFO>("[magnesis] hand steer: dir {:.0f} {:.0f} deg, object {:.2f} m, reach {:.2f}x, move {:.2f} m, stick {:.2f}, path {}",
+             glm::degrees(handYaw), glm::degrees(handPitch), glm::length(objectOffset), s_gripReach > 0.0f ? reach / s_gripReach : 1.0f,
+-            glm::length(handTravel), gazePick ? "gaze pick" : "upstream");
++            glm::length(handTravel), IsFresh(s_pushPullStickNs, EyeFreshNs) ? s_pushPullStick.load() : 0.0f, gazePick ? "gaze pick" : "upstream");
+     }
+-    return ApplyMagnesisAim(action, manager, playerPos, objectPos, objectOffset, targetOffset);
++    if (!ApplyMagnesisAim(action, manager, playerPos, objectPos, objectOffset, targetOffset)) {
++        return false;
++    }
++    s_handWroteDistance = glm::length(FlattenHorizontally(targetOffset));
++    s_lastHandSteerNs = now;
++    return true;
+ }
+ 
+ // turns a hold point, relative to the player, into the game's aim, inside the game's own release thresholds
+diff --git a/src/game/botw/player/magnesis.h b/src/game/botw/player/magnesis.h
+index 895ed4f..ef5d488 100644
+--- a/src/game/botw/player/magnesis.h
++++ b/src/game/botw/player/magnesis.h
+@@ -7,7 +7,8 @@ namespace Magnesis {
+     // stage-space direction the eyes look along, for the game's screen-point pick (stereo_view.cpp); Cryonis places
+     // from the camera's ray and is left alone
+     std::optional<glm::fvec3> GetPickGaze();
+-    // PS5: whether the eyes steer a held object, and the right stick's up/down that then pushes and pulls it
++    // PS5: whether the eyes or the hand steer a held object; the right stick's up/down then pushes and pulls it
+     bool IsSteeringByGaze();
++    bool IsSteeringByHand();
+     void SetPushPullStick(float stickY);
+ }
+diff --git a/src/rendering/imgui_menus.cpp b/src/rendering/imgui_menus.cpp
+index 6c78ff7..4f884c4 100644
+--- a/src/rendering/imgui_menus.cpp
++++ b/src/rendering/imgui_menus.cpp
+@@ -410,7 +410,18 @@ static void DrawFloatSlider(FloatSetting& setting, float minValue, float maxValu
+     ImGui::PushID(setting.name);
+     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - ResetButtonReserve());
+     float value = setting;
+-    if (ImGui::SliderFloat("##value", &value, minValue, maxValue, format(value).c_str())) {
++    // the label arrives finished ("97%"), while ImGui takes a printf format: a percent is doubled so it shows as
++    // written and ImGui still reads the value back instead of rounding every step to the label's leading text
++    const std::string label = format(value);
++    std::string escaped;
++    escaped.reserve(label.size() + 4);
++    for (char c : label) {
++        if (c == '%') {
++            escaped += '%';
++        }
++        escaped += c;
++    }
++    if (ImGui::SliderFloat("##value", &value, minValue, maxValue, escaped.c_str())) {
+         setting = std::clamp(value, minValue, maxValue);
+         *changed = true;
+     }
+@@ -1188,14 +1199,13 @@ void RND_Renderer::ImGuiOverlay::DrawControlsPage(bool* changed) {
+                 DrawEnumSegments(settings.swingSensitivity, swingChoices, changed);
+             });
+             if (VRManager::instance().XR->m_capabilities.supportsEyeGaze && BetterVR_PS5_EyeGazeAvailable() != 0) {
+-                DrawSetting(ICON_MS_EYE_TRACKING, "Eye Aim Assist", "Bends a throw and pulls an arrow toward your eye-tracked gaze by its strength, from off to the whole angle to the gaze point. Full throws straight at that point and lets an arrow follow the gaze; below Full an arrow is helped only while the gaze is near the aim. Off by default; an old on is 25%.", [&]() {
+-                    DrawFloatSlider(settings.eyeAimAssist, 0.0f, 1.0f, [](float value) {
+-                        if (value <= 0.001f)
+-                            return std::string("Off");
+-                        if (value >= 0.999f)
+-                            return std::string("Full");
+-                        return fmt::format("{:.0f}%", value * 100.0f);
+-                    }, changed);
++                DrawSetting(ICON_MS_EYE_TRACKING, "Eye Aim Assist", "Pulls a throw and an arrow a share of the way to your eye-tracked gaze: Off, 25%, 50% or 75% of the angle, or Full straight at the gaze point. Below Full an arrow is pulled only while the gaze is within 30 degrees of where the bow points. Off by default; an old on is 25%.", [&]() {
++                    static constexpr const char* kStrengthChoices[] = { "Off", "25%", "50%", "75%", "Full" };
++                    int selected = (int)std::lround((float)settings.eyeAimAssist * 4.0f);
++                    if (Segmented(settings.eyeAimAssist.name, kStrengthChoices, &selected)) {
++                        settings.eyeAimAssist = (float)selected * 0.25f;
++                        *changed = true;
++                    }
+                 });
+                 DrawSetting(ICON_MS_EYE_TRACKING, "Eye Magnesis", "With Magnesis out, the grab takes the metal object you look at. A held object goes where you look, and the right stick's up and down push and pull it; the grip and wrist still turn it. Without an eye-tracked gaze, Magnesis is the hand's as before. Off by default.", [&]() {
+                     DrawToggle(settings.eyeMagnesis, changed);
+diff --git a/src/utils/mod_settings.cpp b/src/utils/mod_settings.cpp
+index 87fd34d..07d0b23 100644
+--- a/src/utils/mod_settings.cpp
++++ b/src/utils/mod_settings.cpp
+@@ -113,6 +113,18 @@ static void Settings_ReadLine(ImGuiContext*, ImGuiSettingsHandler*, void* entry,
+             return;
+         }
+     }
++    // the eye throw assist was an on/off switch before it became the Eye Aim Assist row's five strengths; its
++    // "true" is that row's 25 % step, and the next save writes the new key only
++    if (IEquals(nameView, "EyeGazeThrowAssist")) {
++        std::string_view valueView = lineView.substr(sepIndex + 1, lineView.size() - sepIndex - 1);
++        valueView.remove_prefix(std::min(valueView.find_first_not_of(" \t"), valueView.size()));
++        valueView.remove_suffix(std::min(valueView.size() - valueView.find_last_not_of(" \t") - 1, valueView.size()));
++        if (IEquals(valueView, "true")) {
++            s->eyeAimAssist = 0.25f;
++            Log::print<INFO>("The retired EyeGazeThrowAssist=true is Eye Aim Assist 25 %");
++        }
++        return;
++    }
+     auto options = s->GetOptions();
+     for (ModSettingBase* option : options) {
+         if (IEquals(option->name, nameView)) {
+diff --git a/src/utils/mod_settings.h b/src/utils/mod_settings.h
+index e693995..dbbea25 100644
+--- a/src/utils/mod_settings.h
++++ b/src/utils/mod_settings.h
+@@ -1,5 +1,6 @@
+ #pragma once
+ #include <cerrno>
++#include <cmath>
+ #include <cstdlib>
+ 
+ #include "rendering/haptic_types.h"
+@@ -249,13 +250,19 @@ public:
+     }
+ };
+ 
+-// a strength from off to full; the Eye Aim Assist row was an on/off switch, and its old "true" is 25 %
++// a strength from off to full, in the row's five steps; the Eye Aim Assist row was an on/off switch, and its old
++// "true" is 25 %
+ class EyeAimAssistSetting : public FloatSetting {
+ public:
+     using FloatSetting::operator=;
+ 
+     EyeAimAssistSetting(): FloatSetting("EyeAimAssist", 0.0f, 0.0f, 1.0f) {}
+ 
++    // Off, 25 %, 50 %, 75 % or Full: a value saved by a build whose row was a slider takes the nearest step
++    float NormalizeValue(float value) const override {
++        return std::round(std::clamp(value, 0.0f, 1.0f) * 4.0f) * 0.25f;
++    }
++
+     void Deserialize(std::string_view valueString) override {
+         if (IEquals(valueString, "true") || IEquals(valueString, "on")) {
+             *this = 0.25f;

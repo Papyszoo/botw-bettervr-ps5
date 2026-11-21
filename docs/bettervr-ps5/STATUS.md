@@ -3,6 +3,60 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-21: Eye Aim Assist is five steps with one 30-degree cone and a row that reads, and the hand's Magnesis pushes, pulls and follows an object above the player; built, untested on console
+
+**The v0.7rc3 run these act on (13.60, 1.25x).** In the recording a right press on Eye Aim Assist stepped the value
+Off, 25 %, Off, 75 %, Off, and the label showed `97%` followed by junk characters: the row was a slider, and
+`DrawFloatSlider` handed its finished label to `ImGui::SliderFloat`, which takes a printf format. The display
+formatted the value through "97%" and read bytes past the `%`; the rounding pass sanitized the trailing `%` to an
+empty format, formatted nothing,
+read 0 back, and every step landed on Off. The saved strength was whatever the broken slider last left (the log's
+one shot below Full read `39% strength`), so the displayed step and the strength in use never agreed.
+
+**The row (ours).** Eye Aim Assist is the Controls page's existing segmented row, not a new widget: **Off, 25 %,
+50 %, 75 %, Full**, plain ASCII, with the strength set to exactly 0, 0.25, 0.5, 0.75 or 1. `EyeAimAssistSetting`
+snaps every value it takes, saved ones included, to the nearest of the five, and reads an old `EyeAimAssist=true` as
+25 %; the retired rc2 key `EyeGazeThrowAssist=true` is read as 25 % in `mod_settings.cpp` too. A right press on the
+row now only moves the focus between the five buttons; the value changes on select, so one press does one thing.
+`DrawFloatSlider` also doubles a `%` in its label, which fixes the garbled text and the snapped value on every other
+row that shows a percent (the DualSense strength row among them). The menu's navigation input is upstream's and is
+unchanged: the left Sense thumbstick feeds `navigate`/`move`, a diagonal picks one axis by `|x| >= |y|`, a held
+direction refires every 0.5 s, the right stick is not read by the menu, the DualSense's sticks are added only when
+no Sense is connected, and `HostWindow::QueryPointer` returns nothing on PS5, so no hand pointer hovers rows.
+
+**The steps (ours).** The throw keeps the raw angle times the strength, with Full the whole angle. An arrow now has
+one cone below Full, **30 degrees**, wide enough that the 10-25 degree shots the log shows are helped at every step;
+the old gate was 5 degrees / strength (20 at 25 %, 10 at 50 %, 6.7 at 75 %), so 50 % and 75 % did nothing on exactly
+those shots. Full is unchanged: the arrow follows the gaze from any angle. Each step bends its share of the angle
+(25 % a quarter, 50 % half, 75 % three quarters). A shot outside the cone now logs at INFO
+(`[BowShot] eye aim assist: arrow, 44.6 degrees to gaze, 50% strength, outside the 30 degree cone, unchanged`) so a
+shot with no visible change says why.
+
+**Hand Magnesis distance (ours).** With both eye rows off the hand path still steers as upstream, but the right
+stick's up/down now pushes and pulls the distance in both hand paths, through the eye path's own
+`PushPullDistance` and the same input remap (`IsSteeringByHand` joins `IsSteeringByGaze`). The arm-reach stick keeps
+its upstream behaviour, and a pull stops at 1.5 m. The `hand steer` line gains `stick` so the next run can tell the
+stick from the hand. The game's own range is respected: when it did not take the last distance write, the next push
+or pull counts from where it stopped, so reaching the end does not leave a dead push to undo.
+
+**An object above the player (ours in both hand paths, upstream's composition in one).** The upstream hand path
+built a spherical yaw and pitch and clamped the pitch at ±80.2 degrees (`MagneMaxSwingPitch`): above that the hand's
+tilt did nothing and then swung the object outward, which reads as the controls doing the opposite. The gaze-pick
+path took its pitch axis from the object's horizontal offset, which shrinks to noise when the object is overhead.
+Both now turn the grip-time vector by the hand's yaw and pitch since the grip (`TurnLeverByHand`), with the axis
+taken from the grip's own yaw, so no angle is clamped or singular. At normal heights this is the same rotation as
+before (checked against the spherical formula to 1e-14 m); the log's `hand steer` lines reached 80-84 degrees of
+pitch, the region the old clamp and the near-zero axis sat in.
+
+**The balloon challenge was not running fast.** `[clock] guest clock 10.077 s over 10.077 s of host time (ratio
+1.000); 59.8 game frames per guest second` runs through the session, with 59.7-60.0 fps submitted; 1.25x is the VR
+resolution, not a speed. During the Korok balloon challenge (421-429 s) the shots were 23.5, 20.4, 10.7, 5.5, 11.9,
+8.7 and 7.8 degrees to the gaze at 100 % strength, and each took its whole angle, so Full did what it does; the
+challenge is harder in VR rather than sped up. Nothing changed for it.
+
+New patch bettervr 0042 (`controls.cpp`, `bow.cpp`, `magnesis.cpp/.h`, `imgui_menus.cpp`, `mod_settings.cpp/.h`); no
+Cemu change. Test requests 73 and 74 carry the new steps.
+
 ## 2026-11-21: v0.7 draws: index lists kept across frames, unchanged view arrays kept, texture units kept while their SQ_TEX registers are unchanged, and the render passes begun and submits counted, to cut the 1.25x record; built, untested on console
 
 **The console run these act on (the v0.7rc2 build at 1.25x, before patches 0061 and 0062).** The console log averaged
@@ -254,7 +308,8 @@ Controls: turn **Eye Magnesis** and **Eye Rune Pick** on.
    quickly? Look straight at it for 10 seconds: does it stay put, or sink or drift? Turn the head and walk: it should
    come along.
 3. **Push and pull.** Right stick up and down: does it go away and come closer? Push it to the far end, then pull:
-   does it answer at once? Does left/right still turn as before?
+   does it answer at once? Does left/right still turn as before? The `hand steer` line's `stick` shows the deflection
+   the hand paths used.
 4. **Turning.** Hold the right grip and twist the wrist both ways: it must turn in place and not slide. Let go of
    the grip quickly once: say if the object is dropped.
 5. **Blinks and closed eyes.** Blink normally while steering: no jerk? Close the eyes for 2 seconds: the object should
@@ -265,14 +320,19 @@ Controls: turn **Eye Magnesis** and **Eye Rune Pick** on.
    right, up and down: the object must move the same way from where it is, not the opposite way. Turn the hand to
    point elsewhere: it should turn around you, not swing on an 11-14 m arm. Hold the grip and twist the wrist both
    ways: it must rotate and keep its distance. Say if any move goes the wrong way.
-8. **Stasis.** With Stasis out, look (eyes only) at an object off the middle: does it highlight, and does the trigger
+8. **An object above you (both hand paths).** With Eye Rune Pick on and Eye Magnesis off, grab a metal object high
+   above the player (a crate on a ledge, or lift one and keep it there). Tilt the hand up and down slowly: the object
+   must follow the tilt the same way at 60, 80 and 85 degrees, with no dead spot near straight up and no swing the
+   other way. Do it once more with both eye rows off: the hand path is upstream's apart from this tilt. Send the
+   `hand steer` lines' `dir` values for both.
+9. **Stasis.** With Stasis out, look (eyes only) at an object off the middle: does it highlight, and does the trigger
    freeze that one?
-9. **Cryonis.** With Eye Rune Pick on and Cryonis out, look at water off the middle: the pillar preview is expected to
-   stay where the camera points, and the log must say why. Say whether it moved at all.
-10. **Both off, then the gaze pick.** Turn both **Eye Magnesis** and **Eye Rune Pick** off: Magnesis picking, steering
-    and the right stick must behave as in v0.6, with the hand's own stick as upstream has it. Then turn **Eye Rune
-    Pick** back on with **Eye Magnesis** still off and repeat step 7: that is the new hand steering. Try both and say
-    which feels right.
+10. **Cryonis.** With Eye Rune Pick on and Cryonis out, look at water off the middle: the pillar preview is expected to
+    stay where the camera points, and the log must say why. Say whether it moved at all.
+11. **Both off, then the gaze pick.** Turn both **Eye Magnesis** and **Eye Rune Pick** off: Magnesis picking and
+    steering must behave as in v0.6, with the hand's own stick as upstream has it, and the right stick's up/down now
+    pushes and pulls instead of raising and lowering. Then turn **Eye Rune Pick** back on with **Eye Magnesis** still
+    off and repeat step 7: that is the new hand steering. Try both and say which feels right.
 
 **Send back:** what each step did, and from `/data/ps5cemu/logs/boot.log`:
 `LC_ALL=C grep -a "\[magnesis\]\|Supports Eye Tracking" boot.log`.
@@ -280,10 +340,11 @@ Controls: turn **Eye Magnesis** and **Eye Rune Pick** on.
 **What it decides.** Step 1 whether the game takes an off-centre pick point (if not, the pick needs a different
 hook and steering still stands); the `rune out` lines the rune indices and that they show without a row on; step 2
 the dead zone and smoothing; step 3 the stick speed and whether `game` follows `wrote` at the range end; step 4 that
-turning no longer moves the object; step 5 the hand-over; step 6 the release thresholds; step 7 the hand's direction,
-the hand-over from gaze and that a wrist twist keeps the distance (`hand steer`'s `reach` may still move with the
-hand, but `object D m` must not change on a twist); step 8 Stasis; step 9 that Cryonis is left to the camera and its
-line is clear; step 10 the upstream hand path with both rows off and which of the two hand steers feels right.
+turning no longer moves the object; step 5 the hand-over; step 6 the release thresholds; step 7 the hand's direction
+and that a wrist twist keeps the distance (`hand steer`'s `reach` may still move with the hand, but `object D m` must
+not change on a twist); step 8 that the turned lever follows a hand above an overhead object with no clamp or
+reversal; step 9 Stasis; step 10 that Cryonis is left to the camera and its line is clear; step 11 the upstream hand
+path with both rows off, the stick's push and pull there, and which of the two hand steers feels right.
 
 ## 2026-11-20: eye tracking is offered to the game, and one strength bends a throw and an arrow; built, untested on console
 
@@ -322,37 +383,41 @@ extension and the hidden state are in `port/bettervr/xr/runtime.cpp` and `third_
 "BetterVR build" run and start Breath of the Wild in VR with the headset and both Sense controllers. Keep eye tracking
 on and calibrated in the PS5's Settings > Accessories > PS VR2.
 
-1. **The row and the strength.** Open BetterVR's menu > Controls > Motion Controls. **Eye Aim Assist** is a slider:
-   **Off**, then any percentage, then **Full**. It must start at Off. Set **25%**, quit to the library and start the
-   game again: it must still be 25%. (A firmware with no verified gaze table, or eye tracking off, must show no row.)
-   Leave it at 25% for steps 2 and 4, then use 50%, 75% and Full in steps 3 and 5.
+1. **The row and the strength.** Open BetterVR's menu > Controls > Motion Controls. **Eye Aim Assist** is one row of
+   five buttons: **Off**, **25%**, **50%**, **75%**, **Full**. It must start at Off. A right press must only move the
+   focus from button to button, never change the value; press select to set one. Set **25%**, quit to the library and
+   start the game again: it must still be 25%. (A firmware with no verified gaze table, or eye tracking off, must show
+   no row.) Leave it at 25% for steps 2 and 4, then use 50%, 75% and Full in steps 3 and 5.
 2. **A throw at 25%.** Hold something throwable (a bomb or a weapon) and look 10-20 degrees left of where the head
    faces, at a tree or an enemy; throw it at that target. Do it once looking left and once looking right, so a
    mirrored sign shows. At 25% the throw should bend a quarter of the way to the gaze, not the whole way.
 3. **The strength on a throw.** Repeat step 2 at 50%, 75% and Full. The object should land nearer the target at each
    step, and at Full it should fly straight at the point you look at, not at the hand's direction.
 4. **Arrows across the aim.** At 25%, draw the bow and shoot a target just left of the bow's aim, then one just right,
-   each within about 20 degrees of the aim. Each arrow should bend a quarter of the way toward the gaze. Repeat at
-   Full: an arrow should fly along the gaze even when the bow points 30 degrees away.
-5. **A gaze outside the cone.** At 25%, aim at a target, look 25-30 degrees away from the bow's aim, and shoot. The
-   arrow must go where the bow points, and no `[BowShot] eye aim assist` line may appear. At Full there is no gate:
-   the same shot must follow the gaze.
-6. **The same throw, Off.** Set the slider to Off and repeat step 2: the object must go where the hand throws, and no
+   each within about 20-25 degrees of the aim. Each arrow should bend a quarter of the way toward the gaze and land
+   visibly nearer that target. Repeat at 50% and 75%: each step should bend more. At Full: an arrow should fly along
+   the gaze even when the bow points 40 degrees away.
+5. **A gaze outside the cone.** Below Full the cone is 30 degrees. At 25%, aim at a target, look 35-40 degrees away
+   from the bow's aim, and shoot: the arrow must go where the bow points, and the log must say
+   `outside the 30 degree cone, unchanged`. At Full there is no gate: the same shot must follow the gaze.
+6. **The same throw, Off.** Set the row to Off and repeat step 2: the object must go where the hand throws, and no
    `[Throw] eye aim assist` line may appear.
 7. **A blink.** Blink or close your eyes as a throw is released and as an arrow is shot: no assist line, and the throw
    or arrow goes where the hand or bow pointed.
 
-**Send back:** whether the slider appeared, started at Off and kept its percentage across a restart; what the throws
-and arrows did in steps 2-6; and from `/data/ps5cemu/logs/boot.log`:
+**Send back:** whether the row showed five buttons, started at Off, moved only its focus on a right press and kept its
+step across a restart; what the throws and arrows did in steps 2-6; and from `/data/ps5cemu/logs/boot.log`:
 
 - `LC_ALL=C grep -a "Supports Eye Tracking\|gaze: XR_EXT\|eye aim assist" boot.log`
 - the `[gaze] ... valid 1` and `valid 0` lines around the throws and shots (the first minute has two a second, then
   one every 10 s), if the grep above does not already show them.
 
-Each assisted line now reads `... degrees to gaze, N% strength, M applied`: send those, with the step they came from.
-**What it decides.** Step 1 the row, the saved percentage and an old saved on showing 25%; step 2-3 that the throw's
-bend is the raw angle times the strength, with Full taking the whole angle; step 4-5 the cone that widens as the
-strength falls and disappears at Full; step 6 the off path; step 7 that a blink does not bend anything.
+An assisted line reads `... degrees to gaze, N% strength, M applied`, and a shot outside the cone reads
+`... outside the 30 degree cone, unchanged`: send those, with the step they came from.
+**What it decides.** Step 1 the five-step row, that a right press only moves the focus, the saved step and an old
+saved on showing 25%; step 2-3 that the throw's bend is the raw angle times the strength, with Full taking the whole
+angle; step 4 the quarter, half and three-quarter bends on an arrow; step 5 the one cone and its line; step 6 the off
+path; step 7 that a blink does not bend anything.
 
 ## 2026-11-20: first person with the DualSense follows the first-person Snap Turn step; built, untested on console
 
@@ -3681,7 +3746,7 @@ One build for the console test, from the v0.7 draws and gaze branches on top of 
   preset is BetterVR's menu > System > VR Resolution > 1.25x (restart the game). RADV threaded recording stays a
   `ps5cemu.json` experiment. Test request 72.
 - **Eye Aim Assist.** BetterVR's menu > Controls > Motion Controls, first person only, drawn while the runtime offers
-  a gaze pose. Off by default (`EyeAimAssist`). Test request 73.
+  a gaze pose. Five steps, Off by default to Full (`EyeAimAssist`). Test request 73.
 - **Eye Magnesis.** BetterVR's menu > Controls > Motion Controls, first person only, under Eye Aim Assist. Off by
   default (`EyeMagnesis`). Test request 74.
 - **Eye Rune Pick.** BetterVR's menu > Controls > Motion Controls, first person only, under Eye Magnesis. Off by
