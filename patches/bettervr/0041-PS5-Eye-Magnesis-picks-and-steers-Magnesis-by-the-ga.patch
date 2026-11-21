@@ -2,8 +2,8 @@ From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: ps5cemu <ps5cemu@localhost>
 Date: Fri, 20 Nov 2026 18:21:30 +0100
 Subject: [PATCH] PS5: Eye Magnesis picks and steers Magnesis by the gaze with
- the right stick as push and pull, and Eye Rune Pick picks Stasis and Cryonis
- targets by the gaze; built, untested on console
+ the right stick as push and pull, and Eye Rune Pick picks Magnesis and Stasis
+ by the gaze; built, untested on console
 
 ---
  src/game/botw/camera/stereo_view.cpp |  20 +-
@@ -12,11 +12,11 @@ Subject: [PATCH] PS5: Eye Magnesis picks and steers Magnesis by the gaze with
  src/game/botw/input/controls.cpp     |  13 ++
  src/game/botw/player/hand_aim.cpp    |  12 ++
  src/game/botw/player/hand_aim.h      |   3 +
- src/game/botw/player/magnesis.cpp    | 272 +++++++++++++++++++++++++--
+ src/game/botw/player/magnesis.cpp    | 287 ++++++++++++++++++++++++++-
  src/game/botw/player/magnesis.h      |   8 +
  src/rendering/imgui_menus.cpp        |   6 +
  src/utils/mod_settings.h             |   2 +-
- 10 files changed, 334 insertions(+), 14 deletions(-)
+ 10 files changed, 354 insertions(+), 9 deletions(-)
 
 diff --git a/src/game/botw/camera/stereo_view.cpp b/src/game/botw/camera/stereo_view.cpp
 index 59ab0b3..ff781cc 100644
@@ -168,7 +168,7 @@ index c834c07..5b4332b 100644
 +    bool TryGetGazeWorldRay(const glm::vec3& stageDirection, glm::vec3& outOrigin, glm::vec3& outDirection);
  }
 diff --git a/src/game/botw/player/magnesis.cpp b/src/game/botw/player/magnesis.cpp
-index 25ed231..afb60a3 100644
+index 25ed231..f8b955d 100644
 --- a/src/game/botw/player/magnesis.cpp
 +++ b/src/game/botw/player/magnesis.cpp
 @@ -2,6 +2,7 @@
@@ -179,30 +179,18 @@ index 25ed231..afb60a3 100644
  #include "utils/debug_draw.h"
  
  static constexpr uint32_t MagneManagerInstanceAddress = 0x10467BE0;
-@@ -24,11 +25,8 @@ static constexpr float MagneCancelSafetyMargin = 0.6f;
- static constexpr float MagneFallbackCancelAngle = 0.45f;
- static constexpr float MagneFallbackCancelHeight = 2.0f;
- 
--// the hand's distance to the object scales with the reach ratio to this power, so a short pull brings a far object close
--static constexpr float MagneReachGain = 2.0f;
- static constexpr float MagneMinReach = 0.15f;
- static constexpr float MagneGripThreshold = 0.51f;
--static constexpr float MagneMaxSwingPitch = 1.4f;
- static constexpr float MagneMinYawHorizontal = 0.2f;
- 
- static bool s_aimGripHeld = false;
-@@ -36,7 +34,9 @@ static float s_gripReach = 0.0f;
- static float s_gripHandYaw = 0.0f;
+@@ -37,6 +38,10 @@ static float s_gripHandYaw = 0.0f;
  static float s_gripHandPitch = 0.0f;
  static float s_lastHandYaw = 0.0f;
--static glm::vec3 s_gripHandToObject = glm::vec3(0.0f);
+ static glm::vec3 s_gripHandToObject = glm::vec3(0.0f);
 +static glm::vec3 s_gripHandPos = glm::vec3(0.0f);
++static glm::vec3 s_gripPlayerPos = glm::vec3(0.0f);
 +static glm::vec3 s_gripObjectOffset = glm::vec3(0.0f);
 +static uint64_t s_lastHandSteerLogNs = 0;
  
  // angular velocity per radian the object is behind the hand, and its cap in radians per second
  static constexpr float MagneSpinGain = 15.0f;
-@@ -121,6 +121,222 @@ static float HandReach(const XrSpaceLocation& handLocation) {
+@@ -121,6 +126,222 @@ static float HandReach(const XrSpaceLocation& handLocation) {
      return std::max(glm::length(headToHand), MagneMinReach);
  }
  
@@ -425,7 +413,7 @@ index 25ed231..afb60a3 100644
  static bool DriveMagnesisAimFromController(uint32_t action) {
      const uint32_t manager = Guest::Get<BEType<uint32_t>>(MagneManagerInstanceAddress).getLE();
      if (!IsPlausiblePPCPointer(manager)) {
-@@ -147,6 +363,13 @@ static bool DriveMagnesisAimFromController(uint32_t action) {
+@@ -147,6 +368,13 @@ static bool DriveMagnesisAimFromController(uint32_t action) {
          return false;
      }
  
@@ -439,25 +427,68 @@ index 25ed231..afb60a3 100644
      const OpenXR::InputState inputs = Tracking::Hands();
      glm::vec3 handPos = glm::vec3(0.0f);
      glm::vec3 handForward = glm::vec3(0.0f, 0.0f, -1.0f);
-@@ -175,7 +398,7 @@ static bool DriveMagnesisAimFromController(uint32_t action) {
+@@ -175,7 +403,7 @@ static bool DriveMagnesisAimFromController(uint32_t action) {
          return false;
      }
  
 -    // holding the hand further out pushes the object further away
-+    // the hand's distance to the object is the log's, not the stick's: a wrist twist must not change the distance
++    // the hand's distance from the head: upstream's stick scales the object's distance with it, and the log shows it
      const glm::vec3 headToHand = FlattenHorizontally(ToGLM(inputs.shared.poseLocation[OpenXR::EyeSide::RIGHT].pose.position) - glm::vec3(headPose.value()[3]));
      const float reach = std::max(glm::length(headToHand), MagneMinReach);
  
-@@ -183,15 +406,38 @@ static bool DriveMagnesisAimFromController(uint32_t action) {
+@@ -183,15 +411,58 @@ static bool DriveMagnesisAimFromController(uint32_t action) {
          s_gripReach = reach;
          s_gripHandYaw = handYaw;
          s_gripHandPitch = handPitch;
--        s_gripHandToObject = objectPos - handPos;
 +        s_gripHandPos = handPos;
-+        // the object starts where it is, and the hand moves it from there; the gaze's distance or the hand's lever
-+        // is never captured, so a grab after the eyes steered does not swing the object around the hand
++        s_gripPlayerPos = playerPos;
++        // upstream's stick, from the hand to the object as it is at the grip
+         s_gripHandToObject = objectPos - handPos;
++        // the gaze-picked object starts where it is, and the hand moves it from there; the gaze's distance or the
++        // hand's lever is never captured, so a grab after the eyes steered does not swing the object around the hand
 +        s_gripObjectOffset = objectPos - playerPos;
++    }
++
++    // PS5: with both eye rows off the hand path is upstream's own; a gaze-picked object (Eye Rune Pick) or a hold
++    // the eyes handed back (Eye Magnesis with no gaze sample) is steered from where it is instead
++    const bool gazePick = GetSettings().eyeRunePick || GetSettings().eyeMagnesis;
++    glm::vec3 targetOffset;
++    if (!gazePick) {
++        // the object hangs on a stick from the hand that turns and tilts with where the hand points, twisting the wrist only spins it
++        const float stickLength = glm::length(s_gripHandToObject) * std::pow(reach / s_gripReach, MagneReachGain);
++        const float stickYaw = std::atan2(s_gripHandToObject.x, s_gripHandToObject.z) + handYaw - s_gripHandYaw;
++        const float stickPitch = glm::clamp(std::atan2(s_gripHandToObject.y, glm::length(glm::vec2(s_gripHandToObject.x, s_gripHandToObject.z))) + handPitch - s_gripHandPitch, -MagneMaxSwingPitch, MagneMaxSwingPitch);
++        const glm::vec3 handToObject = stickLength * glm::vec3(std::cos(stickPitch) * std::sin(stickYaw), std::sin(stickPitch), std::cos(stickPitch) * std::cos(stickYaw));
++        targetOffset = handPos + handToObject - playerPos;
++    }
++    else {
++        // the hand's turn since the grip turns the object around the player, and its travel since the grip moves it;
++        // a wrist twist turns the body through the spin hook, never its distance
++        const float handYawDelta = WrapRadians(handYaw - s_gripHandYaw);
++        const float handPitchDelta = handPitch - s_gripHandPitch;
++        glm::vec3 steerOffset = s_gripObjectOffset;
++        steerOffset = glm::angleAxis(handYawDelta, glm::vec3(0.0f, 1.0f, 0.0f)) * steerOffset;
++        const glm::vec3 steerHorizontal(steerOffset.x, 0.0f, steerOffset.z);
++        if (glm::length2(steerHorizontal) > 0.0001f) {
++            const glm::vec3 steerRight = glm::normalize(glm::cross(glm::vec3(0.0f, 1.0f, 0.0f), steerHorizontal));
++            steerOffset = glm::angleAxis(-handPitchDelta, steerRight) * steerOffset;
++        }
++        // the hand's travel since the grip relative to Link: handPos carries his own walk, and the object is placed
++        // relative to him
++        steerOffset += (handPos - playerPos) - (s_gripHandPos - s_gripPlayerPos);
++        targetOffset = steerOffset;
++    }
++
++    const uint64_t now = GetTimeStamp();
++    if (now - s_lastHandSteerLogNs >= 500'000'000) {
++        s_lastHandSteerLogNs = now;
++        const glm::vec3 handTravel = (handPos - playerPos) - (s_gripHandPos - s_gripPlayerPos);
++        Log::print<INFO>("[magnesis] hand steer: dir {:.0f} {:.0f} deg, object {:.2f} m, reach {:.2f}x, move {:.2f} m, path {}",
++            glm::degrees(handYaw), glm::degrees(handPitch), glm::length(objectOffset), s_gripReach > 0.0f ? reach / s_gripReach : 1.0f,
++            glm::length(handTravel), gazePick ? "gaze pick" : "upstream");
      }
++    return ApplyMagnesisAim(action, manager, playerPos, objectPos, objectOffset, targetOffset);
++}
  
 -    // the object hangs on a stick from the hand that turns and tilts with where the hand points, twisting the wrist only spins it
 -    const float stickLength = glm::length(s_gripHandToObject) * std::pow(reach / s_gripReach, MagneReachGain);
@@ -465,36 +496,12 @@ index 25ed231..afb60a3 100644
 -    const float stickPitch = glm::clamp(std::atan2(s_gripHandToObject.y, glm::length(glm::vec2(s_gripHandToObject.x, s_gripHandToObject.z))) + handPitch - s_gripHandPitch, -MagneMaxSwingPitch, MagneMaxSwingPitch);
 -    const glm::vec3 handToObject = stickLength * glm::vec3(std::cos(stickPitch) * std::sin(stickYaw), std::sin(stickPitch), std::cos(stickPitch) * std::cos(stickYaw));
 -    const glm::vec3 targetOffset = handPos + handToObject - playerPos;
-+    // the hand's turn since the grip turns the object around the player, and its travel since the grip moves it;
-+    // a wrist twist turns the body through the spin hook, never its distance
-+    const float handYawDelta = WrapRadians(handYaw - s_gripHandYaw);
-+    const float handPitchDelta = handPitch - s_gripHandPitch;
-+    glm::vec3 steerOffset = s_gripObjectOffset;
-+    steerOffset = glm::angleAxis(handYawDelta, glm::vec3(0.0f, 1.0f, 0.0f)) * steerOffset;
-+    const glm::vec3 steerHorizontal(steerOffset.x, 0.0f, steerOffset.z);
-+    if (glm::length2(steerHorizontal) > 0.0001f) {
-+        const glm::vec3 steerRight = glm::normalize(glm::cross(glm::vec3(0.0f, 1.0f, 0.0f), steerHorizontal));
-+        steerOffset = glm::angleAxis(-handPitchDelta, steerRight) * steerOffset;
-+    }
-+    steerOffset += handPos - s_gripHandPos;
-+    const glm::vec3 targetOffset = steerOffset;
-+
-+    const uint64_t now = GetTimeStamp();
-+    if (now - s_lastHandSteerLogNs >= 500'000'000) {
-+        s_lastHandSteerLogNs = now;
-+        Log::print<INFO>("[magnesis] hand steer: dir {:.0f} {:.0f} deg, object {:.2f} m, reach {:.2f}x, move {:.2f} m",
-+            glm::degrees(handYaw), glm::degrees(handPitch), glm::length(objectOffset), s_gripReach > 0.0f ? reach / s_gripReach : 1.0f,
-+            glm::length(handPos - s_gripHandPos));
-+    }
-+    return ApplyMagnesisAim(action, manager, playerPos, objectPos, objectOffset, targetOffset);
-+}
-+
 +// turns a hold point, relative to the player, into the game's aim, inside the game's own release thresholds
 +static bool ApplyMagnesisAim(uint32_t action, uint32_t manager, const glm::vec3& playerPos, const glm::vec3& objectPos, const glm::vec3& objectOffset, const glm::vec3& targetOffset) {
      const glm::vec3 aimOffset = FlattenHorizontally(targetOffset);
      const float distance = glm::length(aimOffset);
      if (!IsAllFinite(targetOffset) || distance < 0.001f) {
-@@ -254,6 +500,8 @@ static void hook_GetMagnesisHeldBodySpin(PPCInterpreter_t* hCPU) {
+@@ -254,6 +525,8 @@ static void hook_GetMagnesisHeldBodySpin(PPCInterpreter_t* hCPU) {
      if (!IsPlausiblePPCPointer(manager)) {
          return;
      }

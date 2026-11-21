@@ -75,7 +75,7 @@ index 98ab03a..3154ee7 100644
          Player::RequestHandThrow(throwVelocity);
          Log::print<CONTROLS>("[Throw] released with hand speed {:.2f}, boosted {:.2f}x", handSpeed, boost);
 diff --git a/src/game/botw/player/bow.cpp b/src/game/botw/player/bow.cpp
-index 0279ff2..33d7061 100644
+index 0279ff2..54a3ca2 100644
 --- a/src/game/botw/player/bow.cpp
 +++ b/src/game/botw/player/bow.cpp
 @@ -49,6 +49,10 @@ struct BowVisualizationState {
@@ -94,7 +94,7 @@ index 0279ff2..33d7061 100644
  }
  
 +// Eye Aim Assist pulls a player's arrow toward where the player looks by its strength, and only while the gaze
-+// is already inside a cone that widens as the strength falls (5 degrees at a quarter, none at full): a gaze
++// is already inside a cone that widens as the strength falls (20 degrees at a quarter, none at full): a gaze
 +// further off leaves the arrow where the bow points. The target moves with the direction, so a homing arrow and
 +// the actor's launch transform agree.
 +static bool ApplyEyeAimBowAssist(BowVisualizationState& state) {

@@ -95,10 +95,12 @@ the target is the one in the middle of the view and a held object follows the ha
   left/right is unchanged.
 - **Turning.** Unchanged: the right grip held and the wrist's turn since the squeeze rotate the object (patch 0013's
   spin path). The hand no longer moves it while the eyes steer.
-- **Hand steering (Eye Magnesis off, or no gaze sample).** A grip starts the hand's aim from where the object is, not
-  from a hand-to-object lever: the hand's turn since the grip turns the object around Link, and the hand's travel
-  since the grip moves it, so a grab after the eyes steered does not swing it from 11-14 m away. The wrist's twist
-  turns the body only; it never changes the object's distance, which the old reach-squared stick did.
+- **Hand steering (Eye Rune Pick on, or Eye Magnesis with no gaze sample).** A grip starts the hand's aim from where
+  the object is, not from a hand-to-object lever: the hand's turn since the grip turns the object around Link, and the
+  hand's travel since the grip relative to Link moves it, so a grab after the eyes steered does not swing it from
+  11-14 m away. The wrist's twist turns the body only; it never changes the object's distance, which the old
+  reach-squared stick did. With both eye rows off the hand path is upstream's own: the object hangs on the stick from
+  the hand, and holding the hand further out pushes it further away.
 - **The gaze.** Each sample goes through a low-pass whose cutoff rises with the gaze's speed (2 Hz at rest), in
   stage space, so a head turn while looking at one spot does not swing the ray. A blink keeps the last direction for
   0.6 s; a longer loss hands Magnesis back to the hand.
@@ -109,7 +111,8 @@ and Cryonis out, one `[magnesis] Cryonis places its pillar from the camera's ray
 `[magnesis] eye pick on/off (rune N)`, `[magnesis] eye pick at X Y (centre X Y), N blocks` at most twice a second
 while picking, `[magnesis] eye steering on (distance D)` per hold, and `[magnesis] eye steer: gaze off A deg, distance
 game G (wrote W) now N, stick S, height H` at most twice a second while steering. The hand path adds `[magnesis] hand
-steer: dir Y P deg, object D m, reach Rx, move M m` at most twice a second. `game` against the previous line's `now`
+steer: dir Y P deg, object D m, reach Rx, move M m, path upstream|gaze pick` at most twice a second; `move` is the
+hand's travel since the grip relative to Link, so his own walk is not counted. `game` against the previous line's `now`
 shows whether the game clamps the distance at its range. A new `HandAim::TryGetGazeWorldRay` places the gaze ray where
 the camera puts the eyes, and `GameState::GetActiveRune` reads RuneMgr's selected rune.
 
@@ -144,7 +147,10 @@ Controls: turn **Eye Magnesis** and **Eye Rune Pick** on.
    freeze that one?
 9. **Cryonis.** With Eye Rune Pick on and Cryonis out, look at water off the middle: the pillar preview is expected to
    stay where the camera points, and the log must say why. Say whether it moved at all.
-10. **Off again.** Turn both rows off: picking, steering and the right stick must behave as in v0.6.
+10. **Both off, then the gaze pick.** Turn both **Eye Magnesis** and **Eye Rune Pick** off: Magnesis picking, steering
+    and the right stick must behave as in v0.6, with the hand's own stick as upstream has it. Then turn **Eye Rune
+    Pick** back on with **Eye Magnesis** still off and repeat step 7: that is the new hand steering. Try both and say
+    which feels right.
 
 **Send back:** what each step did, and from `/data/ps5cemu/logs/boot.log`:
 `LC_ALL=C grep -a "\[magnesis\]\|Supports Eye Tracking" boot.log`.
@@ -155,7 +161,7 @@ the dead zone and smoothing; step 3 the stick speed and whether `game` follows `
 turning no longer moves the object; step 5 the hand-over; step 6 the release thresholds; step 7 the hand's direction,
 the hand-over from gaze and that a wrist twist keeps the distance (`hand steer`'s `reach` may still move with the
 hand, but `object D m` must not change on a twist); step 8 Stasis; step 9 that Cryonis is left to the camera and its
-line is clear; step 10 the off path.
+line is clear; step 10 the upstream hand path with both rows off and which of the two hand steers feels right.
 
 ## 2026-11-20: eye tracking is offered to the game, and one strength bends a throw and an arrow; built, untested on console
 
@@ -178,7 +184,7 @@ sample:
   (the left hand when the object was in it), by the raw angle to that point times the strength and at the hand's
   speed. Full takes the whole angle, so the throw goes straight at the gaze point; there is no 15-degree cap;
 - a player's arrow is pulled toward the point 100 m along the same ray, from the bow's own origin, by the raw angle
-  times the strength. The cone it acts in widens as the strength falls (5 degrees at 25%, 10 at 50%, none at Full):
+  times the strength. The cone it acts in widens as the strength falls (20 degrees at 25%, 10 at 50%, none at Full):
   a gaze further off changes nothing, so below Full the assist cannot pull an arrow away from where the bow points.
 
 One log line per assisted throw or shot, at INFO so it needs no debug switch:
