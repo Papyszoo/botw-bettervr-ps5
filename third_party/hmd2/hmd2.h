@@ -250,18 +250,20 @@ bool controller_pose(int tracker_handle, float pos[3], float quat[4]);
 
 // A Sense controller's vibration, through libScePad's own Sense exports (the DualSense setters
 // refuse a Sense handle with 0x80920003). `handle` is the scePadVrControllerReadState handle.
-// Resolved on first use by name, else at Ghost-VR's 13.60 offsets only when the anchor sits exactly
-// where that table has it (never shifted); any other firmware returns kSenseVibrationUnavailable
-// and logs it once. Intensity 0 stops it. UNVERIFIED on hardware.
+// Bound once per process: the firmware table whose anchor sits exactly where it says (never
+// shifted; 13.60's rows), else the link-time import when the loader's address lies in libScePad's
+// executable segment, else kSenseVibrationUnavailable. Each route choice is logged once with both
+// addresses. Intensity 0 stops it. UNVERIFIED on hardware.
 constexpr int kSenseVibrationUnavailable = (int)0x80000001;
 int sense_set_vibration_mode(int handle, int mode);
 int sense_set_vibration(int handle, uint8_t intensity);
 
 // The PS VR2 headset's motor, sceHmd2SetVibration(int handle, uint32_t level): one motor with no direction, level
 // 0..25. Bound on first use by name, else at PS5VR's offset for the libSceHmd2 build whose anchor string sits exactly
-// where our table says (never shifted); the offset is not from our own dump, so the bind, the level and any failure
-// are logged and the Vibration page's test button is the proof. A build without the anchor returns
-// kHmd2VibrationUnavailable (logged once) and the headset simply stays still: never fatal. UNVERIFIED on hardware.
+// where our table says (never shifted; 13.60, 12.40, 11.60, 10.x, 9.00, 8.40, 7.61 and 5.50); the offset is not from
+// our own dump, so the bind, the level and any failure are logged and the Vibration page's test button is the proof.
+// A build without the anchor returns kHmd2VibrationUnavailable (logged once) and the headset simply stays still:
+// never fatal. UNVERIFIED on hardware.
 constexpr int kHmd2VibrationUnavailable = (int)0x80000001;
 int set_vibration(int level);
 
@@ -277,9 +279,10 @@ bool pad_triggers_available();
 
 // A Sense controller pair's adaptive triggers, through libScePad's own both-hands export (the DualSense setter
 // refuses a Sense handle). `param` is the same 0x78-byte ScePadTriggerEffectParam as the DualSense's: command[0]
-// belongs to the left controller and command[1] to the right. Resolved by name, else at the 13.60 table's offset
-// only when the anchor sits exactly there (never shifted); any other firmware returns kPadTriggerUnavailable and
-// logs it once. UNVERIFIED on hardware.
+// belongs to the left controller and command[1] to the right. Bound once per process: the firmware table whose
+// anchor sits exactly there (13.60's row, or 12.40's under its own anchor), else the link-time import when its
+// address lies in libScePad's executable segment, else kPadTriggerUnavailable. The choice is logged once with both
+// addresses. UNVERIFIED on hardware.
 int sense_set_trigger_effects(int left_handle, int right_handle, const void* param);
 
 int eye_size();     // per-eye width

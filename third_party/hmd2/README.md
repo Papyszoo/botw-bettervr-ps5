@@ -38,6 +38,19 @@ tested and working on his console with the PS VR2 Sense controllers and with a D
 
 ## Changed here
 
+- Wider firmware coverage (2026-11-21): the headset motor and the gaze probe now also bind on 9.00's
+  libSceHmd2 (PS5VR's `vr_exports_900.h` rows, under our existing anchor); the labels for the 13.60
+  and 11.60 tables say that 13.00/13.20/13.42 and 11.40 ship the same builds (selection is still by
+  anchor). The Sense setters are link-time NID imports as well as table rows: the table wins when its
+  anchor matches (13.60 for the three rows it has, 12.40 for the both-hands triggers under HLA-PSVR2
+  PR 5's `"/dev/ctrlp_sync"` anchor at 0x1b630 and its 0x84c0 row), else the import is used only when
+  its address is inside libScePad's executable segment, else the setter stays off. One line per
+  setter logs the table address, the import address and the one used: `hmd2: Sense <name>: table
+  ..., import ..., using ...`. The four names' NIDs are checked on a PC
+  (`tools/tests/test-bettervr-nids.py`). The two vibration exports are missing from the SDK's
+  libScePad stub, so `tools/gen-scepad-stub.py` adds them to a stub with the SDK's own export list
+  and SONAME (`tools/link.sh`, `tools/package.sh`). Nothing here has run on a console.
+
 - `hmd2::submit(const Pose&)` (2026-11-04): `submit()` with the head pose the image was rendered
   from, in place of the one `begin_frame()` predicted. The OpenXR runtime over hmd2
   (`port/bettervr/xr`) takes that pose from the views BetterVR submits. `submit()` itself is
@@ -47,8 +60,8 @@ tested and working on his console with the PS VR2 Sense controllers and with a D
   time under its NID `2JgFB2n9oUM`) for the DualSense, and `sense_set_trigger_effects` for the
   Sense controllers (by name, else `scePadVrControllerSetTriggerEffects` at the 13.60 table's
   `0xa730` after the existing anchor check). It takes the caller's 0x78-byte DualSense layout,
-  command[0] on the left controller and command[1] on the right; the one-hand export is not bound on
-  13.60 and is not used. Nothing here has run on a console.
+  command[0] on the left controller and command[1] on the right; the one-hand export is bound and
+  logged but not called. Nothing here has run on a console.
 
 - Export tables for 12.40, 11.60, 10.x, 9.00, 8.40 and 5.50 (2026-11-08): `hmd2_exports.h` is the
   one regenerated in photo-splat-vr at commit `143d355`, which adds those firmware to Hmd2 and

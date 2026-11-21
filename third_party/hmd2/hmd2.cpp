@@ -36,6 +36,15 @@ int sceKernelDlsym(int handle, const char *name, void **addr);
 // stub's symbol into its NID (2JgFB2n9oUM), and the loader binds that from libScePad, so the name table
 // sceKernelDlsym reads is not involved (it cannot see the name on 13.60).
 int scePadSetTriggerEffect(int handle, const void *param);
+// The Sense controllers' four setters, imported at link time (tools/link.sh builds their libScePad
+// stub): the loader binds each by the NID its name hashes to (Wf6-PNCyY20, DGCwN1Lmmys, v8P+9PRqg10,
+// 6Cdc9bbjrRY), so the name table sceKernelDlsym reads is not involved. The GOT holds the bound
+// address; bind_sense() takes it only when it lies in libScePad's executable segment, and only where
+// no anchor-checked table has a row.
+int scePadVrControllerSetVibrationMode(int handle, int mode);
+int scePadVrControllerSetVibration(int handle, uint8_t intensity);
+int scePadVrControllerSetTriggerEffect(int handle, const void *param);
+int scePadVrControllerSetTriggerEffects(int left_handle, int right_handle, const void *param);
 int sceKernelGetModuleList(int32_t *handles, size_t num, size_t *actual);
 int sceKernelGetModuleInfo(int handle, void *info);
 int sceKernelAllocateDirectMemory(int64_t start, int64_t end, size_t len, size_t align, int type,
@@ -572,6 +581,20 @@ const export_table_t *module_table_scan(const ModuleInfo *info, const char *file
     return nullptr;
 }
 
+// The table tags are builds, not console versions: PS5VR 1.3.4 checked that 13.00, 13.20, 13.42 and
+// 13.60 ship one libSceHmd2 build, and 11.40 one with 11.60's. The label says so, since selection is
+// by anchor and a console has no other way to know which build it supplied. No other file is labelled:
+// the same tags on VrTracker2, VrHand or libScePad do not imply those libraries are shared too.
+const char *firmware_label(const char *file, int fw) {
+    if (std::strcmp(file, "libSceHmd2.sprx") == 0) {
+        if (fw == 1360)
+            return " (13.00, 13.20 and 13.42 share this build)";
+        if (fw == 1160)
+            return " (11.40 shares this build)";
+    }
+    return "";
+}
+
 // The table of the firmware whose anchor sits in this library, or nullptr. `scan` allows the
 // anchor string to have moved: the offsets then move with it. Off for a library whose code
 // offsets are only right where its own table has the anchor.
@@ -585,8 +608,9 @@ const export_table_t *module_table(int handle, const char *file, const export_ta
     }
     for (size_t k = 0; k < tables_n; k++) {
         if (anchor_matches(&info, *base, tables[k].anchor)) {
-            logf("hmd2: %s: firmware table %d.%02d, base %p", file, tables[k].fw / 100,
-                 tables[k].fw % 100, reinterpret_cast<void *>(*base));
+            logf("hmd2: %s: firmware table %d.%02d%s, base %p", file, tables[k].fw / 100,
+                 tables[k].fw % 100, firmware_label(file, tables[k].fw),
+                 reinterpret_cast<void *>(*base));
             return &tables[k];
         }
     }
@@ -725,6 +749,12 @@ const export_sig_t kExports_libSceHmd2Gaze_1000[] = {
     {"sceHmd2InternalGazeStart", 0x31400u},
     {"sceHmd2InternalGazeStop", 0x31420u},
 };
+// PS5VR's vr_exports_900.h rows, under the 9.00 anchor our core table already has (0x13b4e2).
+const export_sig_t kExports_libSceHmd2Gaze_900[] = {
+    {"sceHmd2GazeGetResult", 0x35ec0u},
+    {"sceHmd2InternalGazeStart", 0x31870u},
+    {"sceHmd2InternalGazeStop", 0x31890u},
+};
 const export_sig_t kExports_libSceHmd2Gaze_840[] = {
     {"sceHmd2GazeGetResult", 0x34950u},
     {"sceHmd2InternalGazeStart", 0x30a60u},
@@ -745,6 +775,7 @@ const export_table_t kTables_libSceHmd2Gaze[] = {
     {1240, kExports_libSceHmd2Gaze_1240, 3, &kAnchor_libSceHmd2_1240},
     {1160, kExports_libSceHmd2Gaze_1160, 3, &kAnchor_libSceHmd2_1160},
     {1000, kExports_libSceHmd2Gaze_1000, 3, &kAnchor_libSceHmd2_1000},
+    {900, kExports_libSceHmd2Gaze_900, 3, &kAnchor_libSceHmd2_900},
     {840, kExports_libSceHmd2Gaze_840, 3, &kAnchor_libSceHmd2_840},
     {761, kExports_libSceHmd2Gaze_761, 3, &kAnchor_libSceHmd2_761},
     {550, kExports_libSceHmd2Gaze_550, 3, &kAnchor_libSceHmd2_550},
@@ -841,51 +872,158 @@ void bind_vrhand() {
         logf("hmd2: libSceVrHand not usable here, hand tracking stays off");
 }
 
-// -- the Sense controllers' own vibration exports ----------------------------
+// -- the Sense controllers' own setters --------------------------------------
 // libScePad's scePadSetVibrationMode / scePadSetVibration refuse a Sense controller's handle
 // (0x80920003); the Sense has exports of its own that take the scePadVrControllerReadState handle.
-// Their names (NIDs Wf6-PNCyY20 and DGCwN1Lmmys), the 13.60 offsets and the anchor string are
-// Ghost-VR's firmware facts (GPL-3.0, psvr2.c); no code is taken from it.
-// These offsets are verified on 13.60 only, and a moved anchor does not move them correctly: a
-// 12.40 console had the anchor 0x4050 lower, and the first call at the moved mode offset aborted
-// (signal 6, issue #2). So libScePad is never scanned: the exports bind by name, or at the table's
-// offsets when the anchor sits exactly where it says, and every other firmware leaves them off.
-int (*scePadVrControllerSetVibrationMode)(int handle, int mode) = nullptr;
-int (*scePadVrControllerSetVibration)(int handle, uint8_t intensity) = nullptr;
-const Slot kSenseVibrationSlots[] = {
-    {"scePadVrControllerSetVibrationMode", reinterpret_cast<void **>(&scePadVrControllerSetVibrationMode)},
-    {"scePadVrControllerSetVibration", reinterpret_cast<void **>(&scePadVrControllerSetVibration)},
-};
+// There are two routes per function, tried in this order:
+//   1. the firmware table whose anchor string sits exactly where it says. 13.60's three rows are
+//      Ghost-VR's psvr2.c facts (GPL-3.0); 12.40's both-hands row is HLA-PSVR2 PR 5's, which read it
+//      from that firmware's decrypted libScePad. The 12.40 build's anchor is its own string, not a
+//      moved 13.60 one: a 12.40 console had the 13.60 anchor 0x4050 lower and the first call at a
+//      moved offset aborted (signal 6, issue #2). So libScePad is never scanned.
+//   2. the link-time import (the four externs above), when the loader's address lies in libScePad's
+//      executable segment. A slot left unbound by the loader (it keeps the file's value when the
+//      firmware lacks the NID) is not executable memory, so it is refused rather than called.
+// Off when neither holds. Every function logs one line with both addresses and the one used.
+int (*sense_vibration_mode)(int handle, int mode) = nullptr;
+int (*sense_vibration)(int handle, uint8_t intensity) = nullptr;
+// Bound and logged like the others, but not called: only the both-hands setter has a caller here.
+int (*sense_trigger_effect)(int handle, const void *param) = nullptr;
+int (*sense_trigger_effects)(int left_handle, int right_handle, const void *param) = nullptr;
+
 const export_sig_t kExports_libScePad_1360[] = {
     {"scePadVrControllerSetVibrationMode", 0x100b0u},
     {"scePadVrControllerSetVibration", 0x5610u},
+    {"scePadVrControllerSetTriggerEffects", 0xa730u},
 };
 // the string ends in a line feed (read on a 13.60 console: 5d 0a 00)
 const export_anchor_t kAnchor_libScePad_1360 = {0x1f650u, "scePadCtrlpSyncInit Error : cannot open [%08x]\n"};
-const export_table_t kTables_libScePad[] = {
-    {1360, kExports_libScePad_1360, 2, &kAnchor_libScePad_1360},
+const export_sig_t kExports_libScePad_1240[] = {
+    {"scePadVrControllerSetTriggerEffects", 0x84c0u},
 };
-int g_sense_vibration = 0; // 0 not tried, 1 bound, -1 unavailable
+const export_anchor_t kAnchor_libScePad_1240 = {0x1b630u, "/dev/ctrlp_sync"};
+const export_table_t kTables_libScePad[] = {
+    {1360, kExports_libScePad_1360, 3, &kAnchor_libScePad_1360},
+    {1240, kExports_libScePad_1240, 1, &kAnchor_libScePad_1240},
+};
 
-bool bind_sense_vibration() {
-    if (g_sense_vibration != 0)
-        return g_sense_vibration > 0;
-    g_sense_vibration = -1;
-    const int handle = load_sysmodule(0, "libScePad");
-    if (handle >= 0 &&
-        resolve_module(handle, "libScePad.sprx", kSenseVibrationSlots, kSlots(kSenseVibrationSlots),
-                       kTables_libScePad, sizeof kTables_libScePad / sizeof *kTables_libScePad,
-                       nullptr, false /* optional */, false /* never scan */)) {
-        g_sense_vibration = 1;
-        logf("hmd2: Sense vibration exports bound (mode %p, intensity %p)",
-             reinterpret_cast<void *>(scePadVrControllerSetVibrationMode),
-             reinterpret_cast<void *>(scePadVrControllerSetVibration));
-    } else {
-        scePadVrControllerSetVibrationMode = nullptr;
-        scePadVrControllerSetVibration = nullptr;
-        logf("hmd2: Sense vibration off on this firmware (no verified libScePad table)");
+// PS5_KERNEL_PROT_CPU_EXEC: the module info's segment flags are read=1, write=2, execute=4.
+constexpr int32_t kSegmentExecutable = 4;
+
+struct SenseModule {
+    bool tried = false;
+    int handle = -1;
+    uintptr_t base = 0;
+    ModuleInfo info = {};
+    const export_table_t *table = nullptr;
+};
+SenseModule g_sense;
+
+// libScePad's loaded image, and the table whose anchor sits in it. Once per process.
+bool sense_module() {
+    if (g_sense.tried)
+        return g_sense.handle >= 0 && g_sense.base != 0;
+    g_sense.tried = true;
+    g_sense.handle = load_sysmodule(0, "libScePad");
+    if (g_sense.handle < 0)
+        return false;
+    g_sense.base = module_base(g_sense.handle, "libScePad.sprx", &g_sense.info);
+    if (g_sense.base == 0)
+        return false;
+    uintptr_t base = g_sense.base;
+    g_sense.table = module_table(g_sense.handle, "libScePad.sprx", kTables_libScePad,
+                                 sizeof kTables_libScePad / sizeof *kTables_libScePad, &base,
+                                 false /* never scan */);
+    return true;
+}
+
+// The table's address for `name`, or 0 when this build's table has no row for it.
+uintptr_t sense_table(const char *name, uint32_t *offset) {
+    if (g_sense.table == nullptr)
+        return 0;
+    for (size_t i = 0; i < g_sense.table->count; i++)
+        if (std::strcmp(g_sense.table->exports[i].name, name) == 0) {
+            *offset = g_sense.table->exports[i].offset;
+            return g_sense.base + g_sense.table->exports[i].offset;
+        }
+    return 0;
+}
+
+// Whether `address` is inside one of libScePad's executable segments.
+bool sense_in_code(uintptr_t address) {
+    if (address == 0)
+        return false;
+    for (uint32_t i = 0; i < g_sense.info.nseg && i < 4; i++)
+        if ((g_sense.info.seg[i].prot & kSegmentExecutable) &&
+            address >= g_sense.info.seg[i].addr &&
+            address - g_sense.info.seg[i].addr < g_sense.info.seg[i].size)
+            return true;
+    return false;
+}
+
+// One line per setter: the table's address (or -) with its offset, the loader's import address (or
+// -), which one is used, and, when both exist, whether they are the same address.
+void log_sense_bind(const char *name, uintptr_t table, uint32_t offset, uintptr_t imported,
+                    uintptr_t used) {
+    char table_text[40], import_text[32];
+    if (table != 0)
+        std::snprintf(table_text, sizeof table_text, "%p (+0x%x)", reinterpret_cast<void *>(table),
+                      (unsigned)offset);
+    else
+        std::snprintf(table_text, sizeof table_text, "-");
+    if (imported != 0)
+        std::snprintf(import_text, sizeof import_text, "%p", reinterpret_cast<void *>(imported));
+    else
+        std::snprintf(import_text, sizeof import_text, "-");
+    const char *source = used == 0 ? "off" : used == table ? "table" : "import";
+    char note[96];
+    if (table != 0 && imported != 0)
+        std::snprintf(note, sizeof note, ", import %s the table",
+                      imported == table ? "matches" : "differs from");
+    else if (table != 0)
+        std::snprintf(note, sizeof note, ", no import to compare");
+    else if (imported != 0 && !sense_in_code(imported))
+        std::snprintf(note, sizeof note, ", import not in libScePad's code");
+    else if (imported != 0)
+        std::snprintf(note, sizeof note, ", no table row for this build");
+    else
+        std::snprintf(note, sizeof note, ", no table row and no import");
+    logf("hmd2: Sense %s: table %s, import %s, using %s%s", name, table_text, import_text, source,
+         note);
+}
+
+// The address to call for `name`: the anchor-checked table's, else the guarded import, else 0.
+uintptr_t sense_choice(const char *name, uintptr_t imported) {
+    uint32_t offset = 0;
+    const uintptr_t table = sense_table(name, &offset);
+    const uintptr_t used = table != 0 ? table : sense_in_code(imported) ? imported : 0;
+    log_sense_bind(name, table, offset, imported, used);
+    return used;
+}
+
+// Binds and logs the four setters once. setup() calls it after the resolution probe; the setters
+// themselves call it again, which is a no-op when it already ran.
+void bind_sense() {
+    static bool bound = false;
+    if (bound)
+        return;
+    bound = true;
+    if (!sense_module()) {
+        logf("hmd2: Sense setters: libScePad unavailable (handle 0x%x), off", g_sense.handle);
+        return;
     }
-    return g_sense_vibration > 0;
+    sense_vibration_mode = reinterpret_cast<int (*)(int, int)>(sense_choice(
+        "scePadVrControllerSetVibrationMode",
+        reinterpret_cast<uintptr_t>(&scePadVrControllerSetVibrationMode)));
+    sense_vibration = reinterpret_cast<int (*)(int, uint8_t)>(sense_choice(
+        "scePadVrControllerSetVibration",
+        reinterpret_cast<uintptr_t>(&scePadVrControllerSetVibration)));
+    sense_trigger_effect = reinterpret_cast<int (*)(int, const void *)>(sense_choice(
+        "scePadVrControllerSetTriggerEffect",
+        reinterpret_cast<uintptr_t>(&scePadVrControllerSetTriggerEffect)));
+    sense_trigger_effects = reinterpret_cast<int (*)(int, int, const void *)>(sense_choice(
+        "scePadVrControllerSetTriggerEffects",
+        reinterpret_cast<uintptr_t>(&scePadVrControllerSetTriggerEffects)));
 }
 
 // -- adaptive triggers --------------------------------------------------------
@@ -894,23 +1032,9 @@ bool bind_sense_vibration() {
 // resolves at runtime, and the reason to use it here: sceKernelDlsym matches the name table, which on 13.60 does not
 // see this export. The import cannot be missing on a firmware the app runs on: libScePad has exported the DualSense
 // setter at this NID from 5.50 through 13.60 (AstroBotVR2's profiles and the public NID tables), and a title with a
-// missing import would not load at all. The Sense controllers' both-hands setter (NID v8P+9PRqg10) is not published:
-// by name when the library exports it, else at HLA-PSVR2's 13.60 offset after the same anchor check the vibration
-// above uses. It takes the DualSense's 0x78-byte parameter; the singular one-hand export is not used (it has never
-// been bound on this firmware).
-int (*scePadVrControllerSetTriggerEffects)(int left_handle, int right_handle, const void *param) = nullptr;
+// missing import would not load at all. The Sense controllers' both-hands setter is one of the four bound above
+// (its 13.60 and 12.40 rows and its import); the singular one-hand export is bound and logged but not called.
 int g_pad_trigger = 0;   // 0 not logged yet, 1 the link-time import is in use
-int g_sense_trigger = 0; // 0 not tried, 1 bound, -1 unavailable
-
-const Slot kSenseTriggerSlots[] = {
-    {"scePadVrControllerSetTriggerEffects", reinterpret_cast<void **>(&scePadVrControllerSetTriggerEffects)},
-};
-const export_sig_t kExports_libScePadTriggers_1360[] = {
-    {"scePadVrControllerSetTriggerEffects", 0xa730u},
-};
-const export_table_t kTables_libScePadTriggers[] = {
-    {1360, kExports_libScePadTriggers_1360, 1, &kAnchor_libScePad_1360},
-};
 
 bool bind_pad_trigger() {
     if (g_pad_trigger > 0)
@@ -919,49 +1043,6 @@ bool bind_pad_trigger() {
     logf("hmd2: DualSense trigger effects bound by NID 2JgFB2n9oUM (link-time import, %p)",
          reinterpret_cast<void *>(scePadSetTriggerEffect));
     return true;
-}
-
-bool bind_sense_triggers() {
-    if (g_sense_trigger != 0)
-        return g_sense_trigger > 0;
-    g_sense_trigger = -1;
-    const int handle = load_sysmodule(0, "libScePad");
-    if (handle < 0) {
-        logf("hmd2: Sense trigger effects: libScePad unavailable (handle 0x%x)", handle);
-        return false;
-    }
-    // the name on its own: a missing export leaves the call unavailable
-    bool need_table = false;
-    for (const Slot &slot : kSenseTriggerSlots) {
-        *slot.slot = nullptr;
-        if (sceKernelDlsym(handle, slot.name, slot.slot) != 0 || *slot.slot == nullptr)
-            need_table = true;
-    }
-    if (need_table) {
-        uintptr_t base = 0;
-        const export_table_t *table = module_table(handle, "libScePad.sprx", kTables_libScePadTriggers,
-                                                   sizeof kTables_libScePadTriggers / sizeof *kTables_libScePadTriggers,
-                                                   &base, false /* never scan */);
-        if (table != nullptr) {
-            if (s.fw == 0)
-                s.fw = table->fw;
-            for (const Slot &slot : kSenseTriggerSlots) {
-                if (*slot.slot != nullptr)
-                    continue;
-                for (size_t i = 0; i < table->count; i++)
-                    if (std::strcmp(table->exports[i].name, slot.name) == 0)
-                        *slot.slot = reinterpret_cast<void *>(base + table->exports[i].offset);
-            }
-        }
-    }
-    if (scePadVrControllerSetTriggerEffects != nullptr) {
-        g_sense_trigger = 1;
-        logf("hmd2: Sense trigger effects bound (both hands %p)",
-             reinterpret_cast<void *>(scePadVrControllerSetTriggerEffects));
-    } else {
-        logf("hmd2: Sense trigger effects off on this firmware (no verified libScePad table)");
-    }
-    return g_sense_trigger > 0;
 }
 
 // -- textures ---------------------------------------------------------------
@@ -1478,6 +1559,9 @@ bool setup(const Config &config) {
     // Log only: what each resolution route sees for the optional functions. It runs even when the
     // required resolve below fails, so a firmware without a table still says why. No address is used.
     log_resolve_probe(handle);
+    // The four Sense setters: one line each with the table's address, the import's and the one used.
+    // Bound here so every run has the lines, whether or not a controller moves.
+    bind_sense();
     if (handle < 0 || !resolve_module(handle, "libSceHmd2.sprx", kHmd2Slots, kSlots(kHmd2Slots),
                                       kTables_libSceHmd2,
                                       sizeof kTables_libSceHmd2 / sizeof *kTables_libSceHmd2,
@@ -1909,15 +1993,17 @@ bool register_controller(int tracker_handle, bool right_hand) {
 }
 
 int sense_set_vibration_mode(int handle, int mode) {
-    if (!bind_sense_vibration())
+    bind_sense();
+    if (sense_vibration_mode == nullptr)
         return kSenseVibrationUnavailable;
-    return scePadVrControllerSetVibrationMode(handle, mode);
+    return sense_vibration_mode(handle, mode);
 }
 
 int sense_set_vibration(int handle, uint8_t intensity) {
-    if (!bind_sense_vibration())
+    bind_sense();
+    if (sense_vibration == nullptr)
         return kSenseVibrationUnavailable;
-    return scePadVrControllerSetVibration(handle, intensity);
+    return sense_vibration(handle, intensity);
 }
 
 // -- the headset's own motor -------------------------------------------------
@@ -1943,6 +2029,10 @@ const export_sig_t kExports_libSceHmd2Vibration_1160[] = {
 const export_sig_t kExports_libSceHmd2Vibration_1000[] = {
     {"sceHmd2SetVibration", 0x2a6c0u},
 };
+// PS5VR's vr_exports_900.h row, under the 9.00 anchor our core table already has (0x13b4e2).
+const export_sig_t kExports_libSceHmd2Vibration_900[] = {
+    {"sceHmd2SetVibration", 0x2aa90u},
+};
 const export_sig_t kExports_libSceHmd2Vibration_840[] = {
     {"sceHmd2SetVibration", 0x2a1b0u},
 };
@@ -1957,6 +2047,7 @@ const export_table_t kTables_libSceHmd2Vibration[] = {
     {1240, kExports_libSceHmd2Vibration_1240, 1, &kAnchor_libSceHmd2_1240},
     {1160, kExports_libSceHmd2Vibration_1160, 1, &kAnchor_libSceHmd2_1160},
     {1000, kExports_libSceHmd2Vibration_1000, 1, &kAnchor_libSceHmd2_1000},
+    {900, kExports_libSceHmd2Vibration_900, 1, &kAnchor_libSceHmd2_900},
     {840, kExports_libSceHmd2Vibration_840, 1, &kAnchor_libSceHmd2_840},
     {761, kExports_libSceHmd2Vibration_761, 1, &kAnchor_libSceHmd2_761},
     {550, kExports_libSceHmd2Vibration_550, 1, &kAnchor_libSceHmd2_550},
@@ -2018,11 +2109,11 @@ void log_resolve_probe(int hmd2_handle) {
               {"scePadVrControllerSetVibration", "DGCwN1Lmmys"}, kTables_libScePad,
               sizeof kTables_libScePad / sizeof *kTables_libScePad);
     probe_one(pad_handle, "libScePad.sprx", "libScePad",
-              {"scePadVrControllerSetTriggerEffect", "6Cdc9bbjrRY"}, kTables_libScePadTriggers,
-              sizeof kTables_libScePadTriggers / sizeof *kTables_libScePadTriggers);
+              {"scePadVrControllerSetTriggerEffect", "6Cdc9bbjrRY"}, kTables_libScePad,
+              sizeof kTables_libScePad / sizeof *kTables_libScePad);
     probe_one(pad_handle, "libScePad.sprx", "libScePad",
-              {"scePadVrControllerSetTriggerEffects", "v8P+9PRqg10"}, kTables_libScePadTriggers,
-              sizeof kTables_libScePadTriggers / sizeof *kTables_libScePadTriggers);
+              {"scePadVrControllerSetTriggerEffects", "v8P+9PRqg10"}, kTables_libScePad,
+              sizeof kTables_libScePad / sizeof *kTables_libScePad);
 }
 
 int set_vibration(int level) {
@@ -2049,9 +2140,10 @@ int pad_set_trigger_effect(int handle, const void *param) {
 }
 
 int sense_set_trigger_effects(int left_handle, int right_handle, const void *param) {
-    if (!bind_sense_triggers() || scePadVrControllerSetTriggerEffects == nullptr)
+    bind_sense();
+    if (sense_trigger_effects == nullptr)
         return kPadTriggerUnavailable;
-    return scePadVrControllerSetTriggerEffects(left_handle, right_handle, param);
+    return sense_trigger_effects(left_handle, right_handle, param);
 }
 
 bool controller_pose(int tracker_handle, float pos[3], float quat[4]) {

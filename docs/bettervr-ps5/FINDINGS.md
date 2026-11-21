@@ -120,30 +120,48 @@ source or built. Nothing here has been run on a console.
   so either a small OpenXR layer goes on top of hmd2, or BetterVR calls hmd2 directly (see
   `PLAN.md`, M3).
 
-## Firmware coverage of hmd2's optional exports (2026-11-20)
+## Firmware coverage of hmd2's optional exports (2026-11-21)
 
 Checked in the code, not on a console.
 
-- **The headset motor and the gaze probe bind on seven libSceHmd2 tables.** The tables for
-  `sceHmd2SetVibration` and the three gaze exports (`third_party/hmd2/hmd2.cpp`) now carry 13.60,
-  12.40, 11.60, 10.00, 8.40, 7.61 and 5.50. The rows are PS5VR's (`app/src/vr_exports_*.h` in
+- **The headset motor and the gaze probe bind on eight libSceHmd2 tables.** The tables for
+  `sceHmd2SetVibration` and the three gaze exports (`third_party/hmd2/hmd2.cpp`) carry 13.60, 12.40,
+  11.60, 10.00, 9.00, 8.40, 7.61 and 5.50. The rows are PS5VR's (`app/src/vr_exports_*.h` in
   <https://github.com/theghostonline/PS5VR>; the clone used here is the mtp-24 fork), GPL-3.0-or-later,
-  Copyright (C) 2026 Husam Osman. Each table uses the anchor string `hmd2_exports.h` already has for
-  that build, at the same offset, so a build is used only when its anchor sits exactly where the
-  table says. PS5VR has no row for either function on 9.00, and that build stays off. A build with
-  no matching anchor stays off as before, with its one `off on this firmware` line.
-- **The Sense vibration and trigger setters are unchanged:** libScePad's 13.60 table, by name first,
-  never scanned. Their link-time NID imports are v0.7 work.
+  Copyright (C) 2026 Husam Osman. 9.00's rows are `vr_exports_900.h`'s (`sceHmd2SetVibration`
+  0x2aa90, gaze 0x35ec0/0x31870/0x31890) under the 9.00 anchor our core table already has. Each
+  table uses the anchor string `hmd2_exports.h` has for that build, at the same offset, so a build is
+  used only when its anchor sits exactly where the table says. A build with no matching anchor stays
+  off as before, with its one `off on this firmware` line.
+- **The log says which builds share a table.** PS5VR 1.3.4 reports that 13.00, 13.20, 13.42 and
+  13.60 ship one libSceHmd2 build, and 11.40 one with 11.60's. Selection is still by anchor; only the
+  line changed: `firmware table 13.60 (13.00, 13.20 and 13.42 share this build)` and
+  `firmware table 11.60 (11.40 shares this build)`. That is libSceHmd2's label alone; the same tags on
+  VrTracker2, VrHand or libScePad do not imply those libraries are shared.
+- **The Sense setters have two routes per function, table first.** The firmware table wins where its
+  anchor sits exactly: 13.60's `scePadVrControllerSetVibrationMode` 0x100b0, `SetVibration` 0x5610 and
+  both-hands `SetTriggerEffects` 0xa730 (Ghost-VR's `psvr2.c`, GPL-3.0), and 12.40's both-hands
+  `SetTriggerEffects` 0x84c0 behind HLA-PSVR2 PR 5's own `"/dev/ctrlp_sync"` anchor at 0x1b630 (its
+  author had not run it on a console with triggers on). The singular `SetTriggerEffect` has no table
+  row. Where the anchor does not match, the setter is a link-time NID import, used only when its
+  address lies in libScePad's executable segment (the loader's unbound slot is not); otherwise off.
+  One INFO line per setter:
+  `hmd2: Sense <name>: table <addr|-> (+0x...), import <addr|->, using <table|import|off>[, import
+  matches|differs from the table]`. On 13.60 the first three should match their table address.
+- **The two vibration NIDs need a stub.** The SDK's libScePad stub exports the trigger setters but
+  not the vibration ones, so `tools/gen-scepad-stub.py` makes a stub with the SDK's export list plus
+  the two names (same SONAME, one libScePad module), used by `tools/link.sh` and `tools/package.sh`.
+  The four names' NIDs are checked on a PC (`tools/tests/test-bettervr-nids.py`).
 - **A startup probe logs, and never calls, every resolution route.** For the motor, the three gaze
   functions and the four Sense setters it prints one line each:
   `hmd2: resolve <name> dlsym-nid <addr|fail> dlsym-lib <addr|fail> table <addr> (+0x<offset>)`.
   `dlsym-nid` is `sceKernelDlsym` with the NID spelling; `dlsym-lib` is the loader's
   `NID#lib#module` spelling. `table` is the address the bind itself would take, or `-` when no
   table's anchor matches. The probe fills no slot and calls no address. If any spelling returns the
-  table address, userland resolution by NID works, and the resolver planned for v0.7 shrinks to a
-  few lines in `resolve_module`.
-- **Not in this build:** the Sense setters as link-time NID imports and the elevation-helper
-  resolver (research-firmware.md Step A.2 and Step B). Both are v0.7.
+  table address, userland resolution by NID works.
+- **Not in this build:** the elevation-helper resolver (`research-firmware.md` option 4). The headset
+  motor and gaze are not link-time imports: the report gives no NIDs for them and the SDK has no
+  libSceHmd2 stub, so their coverage is the tables above.
 
 ## Reference: RE7-PSVR2 and HLA-PSVR2 behaviour
 

@@ -144,6 +144,22 @@ else
     exit 2
 fi
 
+# The Sense setters are imports from libScePad. The SDK's stub has the two trigger ones but not
+# scePadVrControllerSetVibrationMode / scePadVrControllerSetVibration, so the link and the packaging
+# use a stub with the SDK's export list plus those two (the same SONAME: one libScePad module, as the
+# console has). The converter reads a stub for the module an import belongs to; the NID is the hash
+# of the name, so a stub is only a list of names.
+scepad_stub=$work/libScePad.so
+if [[ ! -f $scepad_stub || $sdk/target/lib/libScePad.so -nt $scepad_stub ||
+    $PS5CEMU_ROOT/tools/gen-scepad-stub.py -nt $scepad_stub || ${BASH_SOURCE[0]} -nt $scepad_stub ]]; then
+    python3 -B "$PS5CEMU_ROOT/tools/gen-scepad-stub.py" "$sdk/target/lib/libScePad.so" \
+        scePadVrControllerSetVibrationMode scePadVrControllerSetVibration >"$work/libScePad.c"
+    clang-18 -target x86_64-sie-ps5 -isysroot "$sdk" -isystem "$sdk/target/include" -std=gnu11 -O2 -fPIC \
+        -fvisibility-nodllstorageclass=default -c "$work/libScePad.c" -o "$work/libScePad.o"
+    "$sdk/bin/prospero-lld" --shared -soname libScePad.prx -o "$scepad_stub" "$work/libScePad.o"
+fi
+stubs=("$scepad_stub" "${stubs[@]}")
+
 # Optional hooks, weak and checked before use, that nothing on the console provides: as null they
 # stay out of the imports, which must all name a system module. The SDK libc's dlfcn wrappers report
 # no dynamic loader without theirs (as ProsperoEden links); zstd's are its tracing.
@@ -175,10 +191,11 @@ netfs_wraps+=(--wrap=fcntl)
 
 # The system modules a title imports from: all the SDK names, but the web process's (WebKit's POSIX
 # layer and its libkernel, which a title does not load; the SDK's libc.a below has what they would
-# have supplied, fnmatch) and the Mono runtime's.
+# have supplied, fnmatch), the Mono runtime's, and libScePad's (the stub above replaces it, with the
+# same SONAME and its two extra exports).
 modules=()
 for module in "$sdk"/target/lib/*.so; do
-    case ${module##*/} in libScePosixForWebKit.so | libkernel_web.so | libmonosgen-2.0.so) ;; *) modules+=("$module") ;; esac
+    case ${module##*/} in libScePosixForWebKit.so | libkernel_web.so | libmonosgen-2.0.so | libScePad.so) ;; *) modules+=("$module") ;; esac
 done
 
 # Mesa's dispatch tables name every entry point weakly, and those nothing defines must read as null

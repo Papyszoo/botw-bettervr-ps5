@@ -3,6 +3,69 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-21: the PS VR2 features on more firmware: the motor and gaze on 9.00, the 12.40 trigger row, and the four Sense setters as link-time imports; built, untested on console
+
+The goal is every PS VR2 feature on as many firmware versions as possible, and never a call to an
+address that has not been checked. This entry adds data rows, one more table and a second resolution
+route, with no change to what a 13.60 console does beyond new log lines.
+
+- **Headset motor and gaze on 9.00.** PS5VR 1.3.4's `vr_exports_900.h` gives `sceHmd2SetVibration`
+  0x2aa90 and the gaze exports 0x35ec0/0x31870/0x31890 under the anchor our 9.00 table already uses
+  (`0x13b4e2`, "Not Initialized"). Both are now in the optional tables, so the motor and the gaze
+  probe cover 13.60, 12.40, 11.60, 10.00, 9.00, 8.40, 7.61 and 5.50 when that build's anchor sits
+  exactly where the table says. 9.00 and 9.05 have not run this build on a console.
+- **Honest labels for shared builds.** PS5VR reports that 13.00, 13.20, 13.42 and 13.60 ship one
+  libSceHmd2 build, and 11.40 one with 11.60's. Selection stays by anchor; the log line now names the
+  other versions, e.g. `firmware table 13.60 (13.00, 13.20 and 13.42 share this build)`. The labels
+  are libSceHmd2's only.
+- **Sense triggers on 12.40.** HLA-PSVR2 PR 5's row, `scePadVrControllerSetTriggerEffects` 0x84c0,
+  sits behind its own anchor `"/dev/ctrlp_sync"` at 0x1b630, never a moved 13.60 one (a 12.40
+  console's 13.60 anchor was 0x4050 lower, and a call at the moved offset aborted, issue #2). The PR
+  author had not run it on a console with triggers on.
+- **The four Sense setters are also link-time NID imports.** `scePadVrControllerSetVibrationMode`
+  (`Wf6-PNCyY20`), `SetVibration` (`DGCwN1Lmmys`), `SetTriggerEffect` (`6Cdc9bbjrRY`) and
+  `SetTriggerEffects` (`v8P+9PRqg10`) are imported from libScePad. Per function: the table whose
+  anchor matches wins (13.60 for the three rows, 12.40 for the both-hands trigger), else the import
+  is used only when the loader's address lies in libScePad's executable segment, else the setter is
+  off as before. One line per setter:
+  `hmd2: Sense <name>: table <addr|-> (+0x...), import <addr|->, using <table|import|off>, import
+  matches|differs from the table|no table row for this build`. The two vibration names are absent
+  from the SDK's libScePad stub, so `tools/gen-scepad-stub.py` makes the stub the link and packaging
+  use (the SDK's export list plus those two, same SONAME); it changes no behaviour by itself. The
+  names' NIDs are checked on a PC (`tools/tests/test-bettervr-nids.py`).
+- **What this does not do.** The headset motor and gaze are not imports: the research report gives no
+  NIDs for them and the SDK has no libSceHmd2 stub. No kernel-side lookup and no elfldr helper is
+  used. On a firmware whose libScePad lacks one of the four NIDs, the app relies on the loader
+  leaving the slot unbound rather than refusing the title; that is public evidence (PS5VR, Backport),
+  not a result from this toolchain, and the executable-segment guard is what keeps an unbound slot
+  from being called. 13.60 remains the only firmware this port has run on a console.
+- **The old binding lines are gone.** `Sense vibration exports bound (...)` and `Sense trigger effects
+  bound (...)` are replaced by the four `hmd2: Sense <name>: table ...` lines; the earlier test
+  requests' expected-log lists that named them should read these instead. The `headset vibration
+  bound ...` and `[gaze] bound ...` lines are unchanged apart from the table labels.
+
+**Test request 75 (v0.7 firmware coverage, 13.60 console).** Install the `BotW-VR-v...zip` from this
+head's green "BetterVR build" run. With the PS VR2 and both Sense controllers on, start the game,
+play about a minute with the Sense controllers in VR so vibration and adaptive triggers are used
+(the bow's draw and release, or the Vibration page's test), then quit and copy the logs.
+
+1. **Send the four lines.** `LC_ALL=C grep -a "hmd2: Sense " boot.log`. Each of
+   `scePadVrControllerSetVibrationMode`, `SetVibration`, `SetTriggerEffect` and `SetTriggerEffects`
+   prints one line with the table address and the import address.
+2. **Say whether the two match.** For the three that also have a 13.60 table row
+   (`SetVibrationMode`, `SetVibration`, `SetTriggerEffects`), does the line read `import matches the
+   table`? For `SetTriggerEffect` there is no table row, so the line should read `no table row for
+   this build` and the import address should look like the other three (same libScePad range).
+3. **Say whether the feel is unchanged.** Vibration in both Sense controllers and the bow's trigger
+   must feel as they did in v0.6; a fall to `off` or a wrong address is the failure this test is for.
+
+**What it decides:** if the three import addresses equal the table addresses, the link-time route is
+proven on 13.60 and the same build can be sent to the 12.40 reporter (issue #2) to see whether the
+imports bind there. If they differ, the table is still what 13.60 uses; the import route then needs
+the 12.40 report before it is trusted on any other firmware. If any address is outside libScePad or
+the setters read `off` on 13.60, that setter's line names it and the table path has to be checked
+again.
+
 ## 2026-11-20: Eye Magnesis and Eye Rune Pick: runes pick what the eyes look at, and a held metal object goes there; built, untested on console
 
 Two new rows under Controls > Motion Controls, after **Eye Aim Assist**, both off by default and drawn only while the

@@ -65,12 +65,13 @@ fi
 [[ -f $boilerplate/runtime/libc.prx ]] || USE_CCACHE=${USE_CCACHE:-0} bash "$boilerplate/tools/rebuild-libc.sh"
 (cd "$boilerplate/runtime" && sha256sum --check --strict --quiet libc.prx.sha256)
 
-# eboot.bin: the AGC link stubs RADV was linked with name its imports from those modules
+# eboot.bin: the AGC link stubs RADV was linked with name its imports from those modules, and the
+# libScePad stub from the link names the Sense setters' imports (tools/link.sh builds it)
 sdk=$PS5_PAYLOAD_SDK
-stubs=()
+stubs=(--stub "$PS5CEMU_BUILD/link/libScePad.so")
 if ((!check)); then
     sdk=${RADV_SDK:-$vulkan/.deps/native/ps5-payload-sdk}
-    stubs=(--stub "$PS5CEMU_BUILD/link/libSceAgc.so" --stub "$PS5CEMU_BUILD/link/libSceAgcDriver.so")
+    stubs+=(--stub "$PS5CEMU_BUILD/link/libSceAgc.so" --stub "$PS5CEMU_BUILD/link/libSceAgcDriver.so")
 fi
 "$tool" link --in "$elf" --out "$work/eboot.elf" --stub-dir "$sdk/target/lib" "${stubs[@]}" \
     --module-sdk 0x02000009 --companion-sdk 0x08050001 --file-name eboot.elf

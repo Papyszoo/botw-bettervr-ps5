@@ -38,6 +38,12 @@ content, merged here.
     `platform/ps5/hmd2/hmd2_exports.h`. The same files for 12.40, 11.60, 10.00,
     8.40 and 5.50 (`vr_exports_1240.h`, `_1160.h`, `_1000.h`, `_840.h`,
     `_550.h`).
+  - `app/src/vr_exports_900.h`: the 9.00 rows for the headset motor
+    (`sceHmd2SetVibration` 0x2aa90) and the three gaze exports
+    (`sceHmd2GazeGetResult` 0x35ec0, `sceHmd2InternalGazeStart` 0x31870,
+    `sceHmd2InternalGazeStop` 0x31890), used with the 9.00 anchor string our
+    Hmd2 table already has. Its `vr_exports.h` note that 13.00, 13.20, 13.42
+    and 13.60 ship one libSceHmd2 build is what the log label repeats.
 
 ### Ghost-VR
 
@@ -50,6 +56,11 @@ content, merged here.
   libSceVrTracker2 offsets and anchor strings for firmware 9.00, which PS5VR
   has no table for. Its tables for the other firmware added here (12.40, 11.60,
   10.x, 8.40, 5.50) were compared with PS5VR's and agree.
+- Used in `platform/ps5/hmd2/hmd2.cpp`: `pc/ps5xr/runtime/src/psvr2.c`'s
+  libScePad 13.60 Sense rows (`scePadVrControllerSetVibrationMode` 0x100b0,
+  `scePadVrControllerSetVibration` 0x5610,
+  `scePadVrControllerSetTriggerEffects` 0xa730) and the 0x1f650 anchor string.
+  Its tables are called only after that anchor matches exactly.
 - Modified for this project: the eye buffers are direct memory filled from the
   CPU, not AGC render targets, so the library needs no GPU API.
 
@@ -79,6 +90,18 @@ content, merged here.
     Hmd2 by address; one command buffer and fence per buffer, a bounded 500 ms
     fence wait before `SetParam`/`SubmitFlip`, and no CPU cache flush after the
     GPU write.
+  - PR 5 (`psvr2.c`): the 12.40 libScePad row for the Sense controllers'
+    both-hands trigger setter, `scePadVrControllerSetTriggerEffects` 0x84c0,
+    read from that firmware's decrypted library, behind its own anchor
+    `"/dev/ctrlp_sync"` at 0x1b630. The PR owner had not run it on a console
+    with triggers on.
 - Modified for this project: the buffers are filled by this project's own
   Vulkan pass instead of an OpenXR swapchain, and framed by `hmd2`'s API.
+
+### NID names
+
+The names whose NIDs the four Sense imports and the resolution probe use are
+the public ones in <https://github.com/zecoxao/sce_symbols>' `aerolib.csv`.
+The NID is the hash of the name (tools/tests/test-bettervr-nids.py checks the
+pairs); no code is taken from that repository.
 
