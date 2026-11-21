@@ -146,6 +146,9 @@ jobs:
       - name: BetterVR adaptive triggers
         run: bash tools/tests/test-bettervr-triggers.sh
 
+      - name: The texture-unit memo's key and invalidation
+        run: bash tools/tests/test-texunit-memo.sh
+
       - name: Switch settings integration syntax
         run: |
           clang++-18 -std=c++20 -Wno-deprecated-declarations -DFMT_HEADER_ONLY -DPS5CEMU_VERSION='"5.0.1"' \

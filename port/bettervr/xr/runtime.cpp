@@ -126,6 +126,12 @@ extern std::atomic<uint64_t> g_ps5IndexBytes;
 extern std::atomic<uint64_t> g_ps5IndexReused;
 extern std::atomic<uint64_t> g_ps5IndexChanged;
 extern std::atomic<uint64_t> g_ps5IndexKeptBytes;
+// patches/cemu 0061: bettervr.json's textureMemo, the texture units answered from the memo instead of the view
+// lookup cache
+extern std::atomic<uint64_t> g_ps5TextureUnitsReused;
+// patches/cemu 0062: bettervr.json's passCounts, the render passes begun and the command buffers submitted
+extern std::atomic<uint64_t> g_ps5PassesBegun;
+extern std::atomic<uint64_t> g_ps5Submits;
 extern uint64_t _rdtscFrequency;
 #endif
 
@@ -1413,7 +1419,8 @@ namespace
 		const double recordMs = (double)g_ps5RecordNs.exchange(0, std::memory_order_relaxed) / 1e6 / frames;
 		Log("[draws] per frame: multiview %.1f, replay %.1f, total %.1f | record %.2f ms | replay %.2f ms | compose %.2f ms | xr end %.2f ms (over %llu frames, %.1f s)"
 			" | sequences %.1f, index lists %.1f (%.0f KB), sets made %.2f, pipelines made %.2f"
-			" | kept index lists used again %.1f, changed %.1f (%.0f KB held)",
+			" | kept index lists used again %.1f, changed %.1f (%.0f KB held)"
+			" | texture units reused %.1f | render passes begun %.1f, submits %.1f",
 			(double)g_ps5DrawsMultiview.exchange(0, std::memory_order_relaxed) / frames,
 			(double)g_ps5DrawsReplay.exchange(0, std::memory_order_relaxed) / frames,
 			(double)g_ps5DrawsTotal.exchange(0, std::memory_order_relaxed) / frames, recordMs,
@@ -1427,7 +1434,10 @@ namespace
 			(double)g_ps5PipelinesMade.exchange(0, std::memory_order_relaxed) / frames,
 			(double)g_ps5IndexReused.exchange(0, std::memory_order_relaxed) / frames,
 			(double)g_ps5IndexChanged.exchange(0, std::memory_order_relaxed) / frames,
-			(double)g_ps5IndexKeptBytes.load(std::memory_order_relaxed) / 1024.0);
+			(double)g_ps5IndexKeptBytes.load(std::memory_order_relaxed) / 1024.0,
+			(double)g_ps5TextureUnitsReused.exchange(0, std::memory_order_relaxed) / frames,
+			(double)g_ps5PassesBegun.exchange(0, std::memory_order_relaxed) / frames,
+			(double)g_ps5Submits.exchange(0, std::memory_order_relaxed) / frames);
 		// bettervr.json's profile: where the record's time went. The rest of the record, between the draws, is the
 		// command stream's own work: register writes, texture copies and clears, queries and the like.
 		double phaseMs[6];

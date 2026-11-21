@@ -1,0 +1,82 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ps5cemu <ps5cemu@localhost>
+Date: Sat, 21 Nov 2026 03:13:22 +0100
+Subject: [PATCH] PS5: the [draws] line counts the render passes begun and the
+ command buffers submitted in a frame (bettervr.json's passCounts); built,
+ untested on console
+
+The 1.25x record split put about 3.2 ms a frame between the draws, the command stream's own work: a
+copy or a render target switch ends the render pass (draw_endRenderPass) and the next draw begins it
+again (draw_setRenderPass), and every submit ends the command buffer and waits for a free one. How
+often that happens in the stereo pass was not counted anywhere, so this adds two counters to the
+existing [draws] line: "render passes begun" and "submits" per frame, each a load and a store on the
+GPU thread as the other counters are. bettervr.json's "passCounts": 0 stops counting and the two read
+0.0.
+
+Batching is not in this patch. Cemu already batches the copies it can: bufferCache_queueCopy keeps
+disjoint uploads in one vkCmdCopyBuffer batch, and flushes only when a new copy overlaps a pending one
+(inside one batch the regions run in no particular order, so an overlap needs the flush). A copy or a
+flush that follows a draw into the same render target cannot stay inside its pass: vkCmdCopyBuffer and
+vkCmdCopyImage may not be recorded in a render pass. The remaining adjacent pairs are the overlapping
+copy batches, which need the ordering the flush gives them; none could be shown to need no barrier
+between them, so only the counters ship and the console log decides whether the splits are worth a
+second patch.
+---
+ src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp  |  7 +++++++
+ .../HW/Latte/Renderer/Vulkan/VulkanRendererCore.cpp   | 11 +++++++++++
+ 2 files changed, 18 insertions(+)
+
+diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
+index 5263f60c..cc1d9d24 100644
+--- a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
++++ b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
+@@ -20,6 +20,9 @@ void PS5Cemu_StreamFrame(const uint8* rgb, int width, int height);
+ // BotW-BetterVR: the console has one graphics queue, which this renderer, BetterVR's host module and the
+ // OpenXR runtime over hmd2 (port/bettervr/xr/runtime.cpp) share: a submit or present on it holds this lock
+ namespace ps5xr { std::mutex& QueueMutex(); }
++// patches/cemu 0062: bettervr.json's passCounts and the [draws] line's submit count (VulkanRendererCore.cpp)
++extern bool g_ps5PassCounts;
++extern std::atomic<uint64> g_ps5Submits;
+ #endif
+ #include "Cafe/HW/Latte/Renderer/Vulkan/VulkanAPI.h"
+ #include "Cafe/HW/Latte/Renderer/Vulkan/LatteTextureVk.h"
+@@ -2556,6 +2559,10 @@ void VulkanRenderer::SubmitCommandBuffer(VkSemaphore signalSemaphore, VkSemaphor
+ 	if (result != VK_SUCCESS)
+ 		UnrecoverableError(fmt::format("failed to submit command buffer. Error {}", result).c_str());
+ 	m_numSubmittedCmdBuffers++;
++#if defined(CEMU_PS5)
++	if (g_ps5PassCounts)
++		g_ps5Submits.store(g_ps5Submits.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
++#endif
+ 
+ 	// check if any previously submitted command buffers have finished execution
+ 	ProcessFinishedCommandBuffers();
+diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRendererCore.cpp b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRendererCore.cpp
+index 2f97f668..d2435350 100644
+--- a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRendererCore.cpp
++++ b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRendererCore.cpp
+@@ -46,6 +46,13 @@ std::atomic<uint64> g_ps5DescriptorSetsMade{0};
+ std::atomic<uint64> g_ps5PipelinesMade{0};
+ std::atomic<uint64> g_ps5DrawPhaseTicks[6]{};
+ 
++// The same line's pass and submit counts (bettervr.json's passCounts, on): a copy or a render target
++// switch ends the render pass and the next draw begins it again, and every submit ends the command buffer
++// and waits for a free one, so the two counts say how often a frame splits its command stream.
++bool g_ps5PassCounts = false;
++std::atomic<uint64> g_ps5PassesBegun{0};
++std::atomic<uint64> g_ps5Submits{0};
++
+ enum class PS5DrawPhase : uint32
+ {
+ 	Sequence,
+@@ -1421,6 +1428,10 @@ void VulkanRenderer::draw_setRenderPass()
+ 	vkObjFramebuffer->flagForCurrentCommandBuffer();
+ 
+ 	performanceMonitor.vk.numBeginRenderpassPerFrame.increment();
++#if defined(CEMU_PS5)
++	if (g_ps5PassCounts)
++		ps5Count(g_ps5PassesBegun);
++#endif
+ }
+ 
+ void VulkanRenderer::draw_endRenderPass()

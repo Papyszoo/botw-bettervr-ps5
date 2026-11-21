@@ -1,0 +1,308 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ps5cemu <ps5cemu@localhost>
+Date: Sat, 21 Nov 2026 03:13:14 +0100
+Subject: [PATCH] PS5: bettervr.json's textureMemo keeps a texture unit's view
+ while its SQ_TEX registers and the view cache are unchanged; built, untested
+ on console
+
+A sequence's first draw resolves every texture unit its shaders use through the view lookup cache
+(LatteTextureViewLookupCache::lookup): the unit's SQ_TEX resource registers to a view, by scanning the
+bucket the registers' address, size and pitch hash to. Breath of the Wild's stereo pass runs about
+1,500 sequences a frame at 1.25x, each with its stages' units resolved again at every sequence, about
+2 us of the record's sequence setup per sequence.
+
+With the switch on, a unit's answer is kept per stage and unit: the seven SQ_TEX resource words as the
+registers hold them, whether the shader samples the unit as depth, and the view it resolved to. A
+sequence whose words are bit-identical, with no view added to or removed from the lookup cache since
+the entry was made, binds that view and skips the scan; everything the words do not carry (the
+texture's data hash, its swizzle and mip address, dynamic textures, the barrier check and the
+effective scale) is still read from the texture on every sequence, as before, so a texture update or
+invalidation needs no notice. The lookup cache's own changes are the one thing that can make the
+answer wrong: Add and RemoveAll move a generation on, and an entry filled under an older one is not
+used, so a destroyed view is never handed back.
+
+What a hit skips, in the sequence setup: LatteTexture_ReconstructGX2Format, the dimension, pitch,
+depth and height arithmetic, and the bucket scan of lookup or lookupWithColorOrDepthType. Estimated
+0.5-1.2 ms off the record at 1.25x at 5-9k draws, from the sequence setup's share; the [draws] line's
+"texture units reused" count shows how many units a frame answered from the memo.
+---
+ src/Cafe/HW/Latte/Core/LatteTextureLegacy.cpp | 214 ++++++++++++------
+ src/Cafe/HW/Latte/Core/LatteTextureView.cpp   |  12 +
+ 2 files changed, 163 insertions(+), 63 deletions(-)
+
+diff --git a/src/Cafe/HW/Latte/Core/LatteTextureLegacy.cpp b/src/Cafe/HW/Latte/Core/LatteTextureLegacy.cpp
+index 033513b2..d744a02e 100644
+--- a/src/Cafe/HW/Latte/Core/LatteTextureLegacy.cpp
++++ b/src/Cafe/HW/Latte/Core/LatteTextureLegacy.cpp
+@@ -10,6 +10,39 @@
+ #include "Cafe/HW/Latte/Renderer/OpenGL/LatteTextureViewGL.h"
+ #endif
+ 
++#if defined(CEMU_PS5)
++#include <atomic>
++#include "PS5TexUnitMemo.h" // ps5cemu/port/cemu: the texture-unit memo's key and invalidation
++
++// The runtime's 5 s [draws] line (port/bettervr/xr/runtime.cpp): the texture units a sequence's setup
++// answered from the memo below instead of the view lookup cache. Cemu's GPU thread adds and the runtime
++// takes it on that thread.
++std::atomic<uint64> g_ps5TextureUnitsReused{0};
++
++// bettervr.json's "textureMemo" (port/app/emulator.cpp, on unless "textureMemo": 0): a texture unit whose
++// SQ_TEX resource registers are the same as at its last resolution, with no view added to or removed from
++// the view lookup cache since, keeps the view it resolved to instead of scanning the cache again. What the
++// registers do not carry (the texture's data and swizzle, the shader's depth comparison) is still read from
++// the texture on every sequence, as before.
++bool g_ps5TextureUnitMemo = false;
++
++// one unit's last resolution: the memo's answer, and what the binding reads from the registers besides it
++struct PS5TexUnitMemo
++{
++	ps5texunit::Entry entry;
++	MPTR physMipAddr = 0;
++	uint32 swizzle = 0;
++	uint32 viewFirstMip = 0;
++	uint32 viewNumMips = 0;
++};
++static PS5TexUnitMemo s_texUnitMemo[3][Latte::GPU_LIMITS::NUM_TEXTURES_PER_STAGE];
++
++static inline void ps5TextureUnitReused()
++{
++	g_ps5TextureUnitsReused.store(g_ps5TextureUnitsReused.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
++}
++#endif
++
+ struct TexScaleXY
+ {
+ 	float xy[2];
+@@ -119,79 +152,134 @@ void LatteTexture_updateTexturesForStage(LatteDecompilerShader* shaderContext, u
+ 		MPTR physAddr = (texRegister.word2.get_BASE_ADDRESS() << 8);
+ 		if (physAddr == MPTR_NULL)
+ 			continue; // invalid data
+-		MPTR physMipAddr = (texRegister.word3.get_MIP_ADDRESS() << 8);
+-
+-		// word0
+-		const auto word0 = texRegister.word0;
+-		auto dim = word0.get_DIM();
+-		uint32 pitch = (word0.get_PITCH() + 1) << 3;
+-		uint32 width = word0.get_WIDTH() + 1;
+-		auto tileMode = word0.get_TILE_MODE();
+-		// word1
+-		const auto word1 = texRegister.word1;
+-		uint32 depth = word1.get_DEPTH();
+-		if (dim == Latte::E_DIM::DIM_2D_ARRAY || dim == Latte::E_DIM::DIM_3D || dim == Latte::E_DIM::DIM_2D_ARRAY_MSAA || dim == Latte::E_DIM::DIM_1D_ARRAY)
++
++		const bool isDepthSampler = shaderContext->textureUsesDepthCompare[textureIndex];
++		const auto word4 = texRegister.word4;
++		// what the binding below reads from the registers besides the view; a memo hit takes them from the
++		// entry, a miss from the registers as before
++		MPTR physMipAddr;
++		uint32 swizzle = 0;
++		uint32 viewFirstMip;
++		uint32 viewNumMips;
++		LatteTextureView* textureView = nullptr;
++#if defined(CEMU_PS5)
++		// bettervr.json's textureMemo: the same SQ_TEX words at the same stage and unit, with no view added or
++		// removed since, resolve to the same view as last time; the view lookup cache is not asked again
++		PS5TexUnitMemo* memo = nullptr;
++		ps5texunit::Key memoKey{};
++		if (g_ps5TextureUnitMemo && (uint32)shaderContext->shaderType < 3)
+ 		{
+-			depth = depth + 1;
++			memoKey.words[0] = texRegister.word0.getRawValue();
++			memoKey.words[1] = texRegister.word1.getRawValue();
++			memoKey.words[2] = texRegister.word2.getRawValue();
++			memoKey.words[3] = texRegister.word3.getRawValue();
++			memoKey.words[4] = texRegister.word4.getRawValue();
++			memoKey.words[5] = texRegister.word5.getRawValue();
++			memoKey.words[6] = texRegister.word6.getRawValue();
++			memoKey.stage = (uint32)shaderContext->shaderType;
++			memoKey.unit = (uint32)textureIndex;
++			memoKey.isDepthSampler = isDepthSampler;
++			memo = &s_texUnitMemo[(uint32)shaderContext->shaderType][textureIndex];
++			if (ps5texunit::Hit(memo->entry, memoKey))
++			{
++				textureView = static_cast<LatteTextureView*>(memo->entry.view);
++				physMipAddr = memo->physMipAddr;
++				swizzle = memo->swizzle;
++				viewFirstMip = memo->viewFirstMip;
++				viewNumMips = memo->viewNumMips;
++				ps5TextureUnitReused();
++			}
+ 		}
+-		else
++#endif
++		if (textureView == nullptr)
+ 		{
+-			if (dim == Latte::E_DIM::DIM_CUBEMAP)
+-				depth = 6 * (depth + 1);
+-			if (depth == 0)
+-				depth = 1;
+-		}
+-		uint32 height = word1.get_HEIGHT() + 1;
+-		if (dim == Latte::E_DIM::DIM_1D || dim == Latte::E_DIM::DIM_1D_ARRAY)
+-			height = 1;
+-		if (Latte::IsCompressedFormat(word1.get_DATA_FORMAT()))
+-			pitch /= 4;
+-		// view slice
+-		const auto word4 = texRegister.word4;
+-		const auto word5 = texRegister.word5;
++			physMipAddr = (texRegister.word3.get_MIP_ADDRESS() << 8);
++
++			// word0
++			const auto word0 = texRegister.word0;
++			auto dim = word0.get_DIM();
++			uint32 pitch = (word0.get_PITCH() + 1) << 3;
++			uint32 width = word0.get_WIDTH() + 1;
++			auto tileMode = word0.get_TILE_MODE();
++			// word1
++			const auto word1 = texRegister.word1;
++			uint32 depth = word1.get_DEPTH();
++			if (dim == Latte::E_DIM::DIM_2D_ARRAY || dim == Latte::E_DIM::DIM_3D || dim == Latte::E_DIM::DIM_2D_ARRAY_MSAA || dim == Latte::E_DIM::DIM_1D_ARRAY)
++			{
++				depth = depth + 1;
++			}
++			else
++			{
++				if (dim == Latte::E_DIM::DIM_CUBEMAP)
++					depth = 6 * (depth + 1);
++				if (depth == 0)
++					depth = 1;
++			}
++			uint32 height = word1.get_HEIGHT() + 1;
++			if (dim == Latte::E_DIM::DIM_1D || dim == Latte::E_DIM::DIM_1D_ARRAY)
++				height = 1;
++			if (Latte::IsCompressedFormat(word1.get_DATA_FORMAT()))
++				pitch /= 4;
++			// view slice
++			const auto word5 = texRegister.word5;
+ 
+-		uint32 viewFirstSlice = word5.get_BASE_ARRAY();
+-		uint32 viewNumSlices = word5.get_LAST_ARRAY() + 1 - viewFirstSlice;
++			uint32 viewFirstSlice = word5.get_BASE_ARRAY();
++			uint32 viewNumSlices = word5.get_LAST_ARRAY() + 1 - viewFirstSlice;
+ 
+-		uint32 viewFirstMip = word4.get_BASE_LEVEL();
+-		uint32 viewNumMips = word5.get_LAST_LEVEL() + 1 - viewFirstMip;
++			viewFirstMip = word4.get_BASE_LEVEL();
++			viewNumMips = word5.get_LAST_LEVEL() + 1 - viewFirstMip;
+ 
+-		cemu_assert_debug(viewNumMips != 0);
++			cemu_assert_debug(viewNumMips != 0);
+ 
+-		Latte::E_GX2SURFFMT format = LatteTexture_ReconstructGX2Format(word1, word4);
++			Latte::E_GX2SURFFMT format = LatteTexture_ReconstructGX2Format(word1, word4);
+ 
+-		// todo - AA
+-		if (dim == Latte::E_DIM::DIM_2D_MSAA)
+-		{
+-			// MSAA only supports one mip level?
+-			// without this we encounter a crash in The Mysterious Cities of Gold: Secret Paths due to it setting mip count to 2 and leaving mip pointer on an invalid uninitialized value
+-			viewFirstMip = 0;
+-			viewNumMips = 1;
+-		}
++			// todo - AA
++			if (dim == Latte::E_DIM::DIM_2D_MSAA)
++			{
++				// MSAA only supports one mip level?
++				// without this we encounter a crash in The Mysterious Cities of Gold: Secret Paths due to it setting mip count to 2 and leaving mip pointer on an invalid uninitialized value
++				viewFirstMip = 0;
++				viewNumMips = 1;
++			}
+ 
+-		// swizzle
+-		uint32 swizzle = 0;
+-		if (Latte::TM_IsMacroTiled(tileMode))
+-		{
+-			// extract swizzle bits from pointer if macro-tiled
+-			swizzle = (physAddr & 0x700);
+-			physAddr &= ~0x700;
+-		}
++			// swizzle
++			swizzle = 0;
++			if (Latte::TM_IsMacroTiled(tileMode))
++			{
++				// extract swizzle bits from pointer if macro-tiled
++				swizzle = (physAddr & 0x700);
++				physAddr &= ~0x700;
++			}
+ 
+-		bool isDepthSampler = shaderContext->textureUsesDepthCompare[textureIndex];
+-		// look for already existing texture
+-		LatteTextureView* textureView;
+-		if (!isDepthSampler)
+-			textureView = LatteTextureViewLookupCache::lookup(physAddr, width, height, depth, pitch, viewFirstMip, viewNumMips, viewFirstSlice, viewNumSlices, format, dim);
+-		else
+-			textureView = LatteTextureViewLookupCache::lookupWithColorOrDepthType(physAddr, width, height, depth, pitch, viewFirstMip, viewNumMips, viewFirstSlice, viewNumSlices, format, dim, true);
+-		if (!textureView)
+-		{
+-			// view not found, create a new mapping which will also create a new texture if necessary
+-			textureView = LatteTexture_CreateMapping(physAddr, physMipAddr, width, height, depth, pitch, tileMode, swizzle, viewFirstMip, viewNumMips, viewFirstSlice, viewNumSlices, format, dim, dim, isDepthSampler);
+-			if (textureView == nullptr)
+-				continue;
+-			LatteGPUState.repeatTextureInitialization = true;
++			// look for already existing texture
++			if (!isDepthSampler)
++				textureView = LatteTextureViewLookupCache::lookup(physAddr, width, height, depth, pitch, viewFirstMip, viewNumMips, viewFirstSlice, viewNumSlices, format, dim);
++			else
++				textureView = LatteTextureViewLookupCache::lookupWithColorOrDepthType(physAddr, width, height, depth, pitch, viewFirstMip, viewNumMips, viewFirstSlice, viewNumSlices, format, dim, true);
++			if (!textureView)
++			{
++				// view not found, create a new mapping which will also create a new texture if necessary
++				textureView = LatteTexture_CreateMapping(physAddr, physMipAddr, width, height, depth, pitch, tileMode, swizzle, viewFirstMip, viewNumMips, viewFirstSlice, viewNumSlices, format, dim, dim, isDepthSampler);
++				if (textureView == nullptr)
++				{
++#if defined(CEMU_PS5)
++					if (memo)
++						ps5texunit::Clear(memo->entry);
++#endif
++					continue;
++				}
++				LatteGPUState.repeatTextureInitialization = true;
++			}
++#if defined(CEMU_PS5)
++			if (memo)
++			{
++				memo->physMipAddr = physMipAddr;
++				memo->swizzle = swizzle;
++				memo->viewFirstMip = viewFirstMip;
++				memo->viewNumMips = viewNumMips;
++				ps5texunit::Fill(memo->entry, memoKey, textureView);
++			}
++#endif
+ 		}
+ 
+ #ifdef ENABLE_OPENGL
+diff --git a/src/Cafe/HW/Latte/Core/LatteTextureView.cpp b/src/Cafe/HW/Latte/Core/LatteTextureView.cpp
+index a18aa866..0c113a16 100644
+--- a/src/Cafe/HW/Latte/Core/LatteTextureView.cpp
++++ b/src/Cafe/HW/Latte/Core/LatteTextureView.cpp
+@@ -4,6 +4,10 @@
+ #include "LatteCachedFBO.h"
+ #include "Cafe/GraphicPack/GraphicPack2.h"
+ 
++#if defined(CEMU_PS5)
++#include "PS5TexUnitMemo.h" // ps5cemu/port/cemu: a view added or removed changes the texture-unit memo's answer
++#endif
++
+ LatteTextureView::LatteTextureView(LatteTexture* texture, sint32 firstMip, sint32 mipCount, sint32 firstSlice, sint32 sliceCount, Latte::E_DIM dim, Latte::E_GX2SURFFMT format, bool registerView)
+ {
+ 	this->baseTexture = texture;
+@@ -128,10 +132,18 @@ void LatteTextureViewLookupCache::Add(LatteTextureView* view, uint32 baseMip, ui
+ 	key = _getViewBucketKeyNoRes(desc.physAddr, desc.pitch);
+ 	texViewBucket_nores[key].list.push_back(desc);
+ 	vectorAppendUnique(view->viewLookUpCacheKeysNoRes, key);
++#if defined(CEMU_PS5)
++	// a lookup made before now would not meet this view: the texture-unit memo (LatteTextureLegacy.cpp) lets go
++	ps5texunit::ViewsChanged();
++#endif
+ }
+ 
+ void LatteTextureViewLookupCache::RemoveAll(LatteTextureView* view)
+ {
++#if defined(CEMU_PS5)
++	// a lookup made before now would still meet this view: the texture-unit memo lets go
++	ps5texunit::ViewsChanged();
++#endif
+ 	for (auto& key : view->viewLookUpCacheKeys)
+ 	{
+ 		auto& bucket = texViewBucket[key].list;
