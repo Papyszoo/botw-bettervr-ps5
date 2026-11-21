@@ -3,6 +3,77 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-21: the shrine respawn holds the third-person camera and its fade reaches the 3D picture without the 16:9 panel; built, untested on console
+
+The rc4 report (13.60): falling into the void in a shrine, the respawn cutscene showed the same third-person camera
+jump as the first-time pick-up, with a dark semi-transparent 16:9 rectangle floating over the 3D picture, then about
+2 s of black with a small dot, then the third-person shot of Link on the shrine floor with the rectangle again. The
+pulled boot log (`logs-rc4b/boot.log` 2880-2920) has `Event 'Demo048_0' started at 'Demo048_0' (first person ON,
+ignore camera rotation ON, game-animated hands OFF)` at 19:52:29.230 and 19:52:46.131, ended at 19:52:34.668 and
+19:52:51.518.
+
+**Which path it took.** `Demo048_0` is "Respawn demo" in upstream's table (`patch_Settings_Cutscenes.asm:118`),
+FP_ON/PAN_OFF. It is not in patch 0032's 2D-only list, and black bars are off, so `UseBlackBarsDuringEvents()` is
+false: the event takes the normal 3D path, with the HUD/2D layer as the 16:9 quad. In this run the event is third
+person (`GetCutsceneCameraMode()` is Third Person; the same log holds `Demo002_0` in third person), so
+`hook_ShouldSkipEventCamera` returns 0 and the demo's `CameraEventAnim`/`Move`/`GameOver` actions run.
+`hook_UpdateCameraForGameplay` follows the event camera every frame, so its base pose steps the way `Demo002_0`'s did;
+`ResolveGameplayBasePose` had no hold for this id.
+
+**The dark rectangle.** The game draws the respawn's black fade into the 2D layer as a semi-transparent full-screen
+rectangle. `Layer2D` reaches the headset as the 16:9 HUD quad at `hudDistance`, so the fade shows as a floating panel;
+the 3D present shader already samples the same layer's corner texel and applies that fade to the 3D picture
+(`present_depth.frag`), so the panel is a second copy. This is upstream's HUD-quad presentation of the game's fade,
+not a 0032/0038 regression: 0038 only changes the black-bars path, which this event does not take.
+
+**The fix.** Patch bettervr 0043 keeps one event-id list in `game_state.cpp`: the camera hold now covers `Demo002_0`
+and the respawn demos `Demo048_0`/`Demo048_1`, and `ResolveGameplayBasePose` holds the pose latched at the event start
+in third person (first person already skips the event camera). While a respawn demo has a fade up,
+`PublishPresentation` sets `suppressFadeQuad`, and `renderer.cpp` leaves the 2D quad out of the composition when a 3D
+picture is presented; the 3D fade is unchanged and the panel is gone. First person, every other event, the black-bars
+path and the 2D-only `Demo003_0` presentation are unchanged. Logs: `Camera hold starts for 'Demo048_0' (third person,
+held at ...; head tracking still applies)` and `Camera hold ends for 'Demo048_0' ...` in third person, and `Fade panel
+hidden for 'Demo048_0' (the 3D picture takes the fade from the 2D layer's corner)` when the fade is up.
+
+**Cause.** The camera jump is upstream's: the event camera runs in third person, and upstream's skip is
+first-person-only. The hold that would have covered it is ours, and 0037 listed only `Demo002_0`. The dark panel is
+upstream's HUD quad showing the game's own fade; none of patches 0032, 0037 or 0038 changed that path.
+
+**Sibling events.** `Demo048_0` is the respawn demo for the shrine and open-world void falls; drowning and lava
+deaths run the same respawn flow, and the table has no separate id for them. `Demo048_1` is the same demo for the Vah
+Ruta battle. Both are included. `Demo019_0` "Retry Demo" and `Demo006_0` "Game Over Demo" are the game-over/retry
+flow, `Demo005_0/1` are the warp demos, and `Demo037_0`/`Demo038_0` are the Lost Woods zone-out/safety reposition;
+they are different events and are not included.
+
+New patch bettervr 0043 (`game_state.cpp/.h`, `camera.cpp/.h`, `game.h`, `renderer.cpp`); no Cemu, runtime or asm
+change.
+
+**Test request 76 (v0.7 respawn camera and fade, 13.60 console).** Install the `BotW-VR-v...zip` from this head's
+green "BetterVR build" run. The report's run was Camera Mode First Person with Comfort > Advanced > Cutscene Camera
+set to Third; the steps below use the camera mode to set the same thing.
+
+1. **A shrine void fall, third person.** Set Camera Mode to Third Person. In a shrine, walk off into the void. Watch
+   the whole respawn: is the 3D picture steady, with no scripted camera step, and does the black fade cover the view
+   without a floating dark rectangle? Does the view stay where it was until the event ends?
+2. **An open-world void fall, third person.** Do the same from a cliff or a hole in the open world (a fall that
+   respawns rather than a normal landing). Same questions.
+3. **A shrine void fall, first person.** Set Camera Mode to First Person and Comfort > Advanced > Cutscene Camera to
+   First. Repeat step 1. Does the 3D picture stay steady, and is the dark rectangle gone?
+4. **An open-world void fall, first person.** Repeat step 2 in first person.
+5. **Normal play and another cutscene, unchanged.** After a respawn, play about a minute and trigger a cutscene that
+   is not a respawn (a memory, a tower, or a chest): it must look as it did in v0.6, with no camera hold line for it
+   and no missing panel.
+
+**Send**, from `/data/ps5cemu/logs/boot.log`:
+
+- `LC_ALL=C grep -a "Event 'Demo048_\|Camera hold\|Fade panel hidden\|2D-only presentation" boot.log`
+- `LC_ALL=C grep -a "compose mode" boot.log`
+- which Camera Mode was set for each step, and whether each fall was a shrine, a cliff, water or lava.
+
+**What it decides.** Steps 1-4 decide whether the respawn now holds the third-person camera and drops the 16:9 fade
+panel in both camera modes. Step 5 decides that the hold list and the fade suppression did not reach any other
+event.
+
 ## 2026-11-21: Eye Aim Assist is five steps with one 30-degree cone and a row that reads, and the hand's Magnesis pushes, pulls and follows an object above the player; built, untested on console
 
 **The v0.7rc3 run these act on (13.60, 1.25x).** In the recording a right press on Eye Aim Assist stepped the value
@@ -3761,3 +3832,5 @@ One build for the console test, from the v0.7 draws and gaze branches on top of 
   default (`EyeMagnesis`). Test request 74.
 - **Eye Rune Pick.** BetterVR's menu > Controls > Motion Controls, first person only, under Eye Magnesis. Off by
   default (`EyeRunePick`). Test request 74.
+- **Respawn camera hold.** The shrine and open-world respawn demos hold the third-person camera and drop the 16:9
+  fade panel. Test request 76.

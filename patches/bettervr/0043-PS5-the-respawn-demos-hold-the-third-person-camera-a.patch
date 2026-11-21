@@ -1,0 +1,226 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ps5cemu <ps5cemu@localhost>
+Date: Sat, 21 Nov 2026 20:10:30 +0100
+Subject: [PATCH] PS5: the respawn demos hold the third-person camera and their
+ fade reaches the 3D picture without the 16:9 panel; built, untested on
+ console
+
+---
+ src/game/botw/camera/camera.cpp | 18 ++++++-----
+ src/game/botw/camera/camera.h   |  2 +-
+ src/game/botw/game_state.cpp    | 56 +++++++++++++++++++++++++--------
+ src/game/botw/game_state.h      |  3 +-
+ src/game/game.h                 |  1 +
+ src/rendering/renderer.cpp      |  5 +++
+ 6 files changed, 62 insertions(+), 23 deletions(-)
+
+diff --git a/src/game/botw/camera/camera.cpp b/src/game/botw/camera/camera.cpp
+index 6d86ac9..3f91087 100644
+--- a/src/game/botw/camera/camera.cpp
++++ b/src/game/botw/camera/camera.cpp
+@@ -24,6 +24,7 @@ static glm::fquat s_wsCameraRotation = glm::identity<glm::fquat>();
+ // keeps the pose it had on the last frame before the event, and the headset moves it from there.
+ static glm::fvec3 s_heldEventCameraPosition = glm::fvec3();
+ static glm::fquat s_heldEventCameraRotation = glm::identity<glm::fquat>();
++static std::string s_heldEventName;
+ static bool s_isHoldingEventCamera = false;
+ static glm::fvec3 s_lastGameplayCameraTarget = glm::fvec3();
+ static bool s_hasGameplayCameraTarget = false;
+@@ -59,7 +60,8 @@ void Camera::SetReferenceMtx(const glm::mat4& referenceMtx) {
+     s_referenceMtx.store(referenceMtx);
+ }
+ 
+-void Camera::LatchEventCameraHold() {
++void Camera::LatchEventCameraHold(std::string_view eventName) {
++    s_heldEventName.assign(eventName);
+     s_heldEventCameraPosition = s_wsCameraPosition;
+     s_heldEventCameraRotation = s_wsCameraRotation;
+ }
+@@ -448,18 +450,18 @@ glm::mat4 Camera::GetFreshReferenceMtx() {
+ }
+ 
+ std::pair<glm::fvec3, glm::fquat> Camera::ResolveGameplayBasePose(const BESeadLookAtCamera& camera) {
+-    // Demo002_0's event camera steps around Link and the item a frame at a time in third person; the view keeps the
+-    // pose it had on the last frame before the event, and the headset moves it from there.
+-    const bool holdEventCamera = Events::IsFirstTimeItemGetActive() && GameState::IsThirdPerson();
++    // The first-time pick-up and the respawn demos step their event camera around Link a frame at a time in third
++    // person; the view keeps the pose it had on the last frame before the event, and the headset moves it from there.
++    const bool holdEventCamera = Events::IsEventCameraHoldActive() && GameState::IsThirdPerson();
+     if (holdEventCamera != s_isHoldingEventCamera) {
+         s_isHoldingEventCamera = holdEventCamera;
+         if (holdEventCamera) {
+-            Log::print<INFO>("Camera hold starts for 'Demo002_0' (third person, held at ({:.2f}, {:.2f}, {:.2f}); head tracking still applies)",
+-                s_heldEventCameraPosition.x, s_heldEventCameraPosition.y, s_heldEventCameraPosition.z);
++            Log::print<INFO>("Camera hold starts for '{}' (third person, held at ({:.2f}, {:.2f}, {:.2f}); head tracking still applies)",
++                s_heldEventName, s_heldEventCameraPosition.x, s_heldEventCameraPosition.y, s_heldEventCameraPosition.z);
+         }
+         else {
+-            Log::print<INFO>("Camera hold ends for 'Demo002_0' (third person, held at ({:.2f}, {:.2f}, {:.2f}))",
+-                s_heldEventCameraPosition.x, s_heldEventCameraPosition.y, s_heldEventCameraPosition.z);
++            Log::print<INFO>("Camera hold ends for '{}' (third person, held at ({:.2f}, {:.2f}, {:.2f}))",
++                s_heldEventName, s_heldEventCameraPosition.x, s_heldEventCameraPosition.y, s_heldEventCameraPosition.z);
+         }
+     }
+     if (holdEventCamera) {
+diff --git a/src/game/botw/camera/camera.h b/src/game/botw/camera/camera.h
+index f6ccf43..2bdc183 100644
+--- a/src/game/botw/camera/camera.h
++++ b/src/game/botw/camera/camera.h
+@@ -15,7 +15,7 @@ namespace Camera {
+ 
+     std::pair<glm::fvec3, glm::fquat> ResolveGameplayBasePose(const BESeadLookAtCamera& camera);
+     void UpdateReferenceMtx(const glm::fvec3& gameplayPos, const glm::fquat& gameplayRot);
+-    void LatchEventCameraHold();
++    void LatchEventCameraHold(std::string_view eventName);
+ 
+     // a hook should pass the same views to each call so everything comes from one XR frame
+     std::pair<glm::fvec3, glm::fquat> BuildMiddlePose(const std::optional<Tracking::HeadViews>& views, const glm::fvec3& gameplayPos, const glm::fquat& gameplayRot);
+diff --git a/src/game/botw/game_state.cpp b/src/game/botw/game_state.cpp
+index b67768b..93a7a4c 100644
+--- a/src/game/botw/game_state.cpp
++++ b/src/game/botw/game_state.cpp
+@@ -13,9 +13,14 @@ static std::atomic_bool s_eventActive = false;
+ // its frames stay fresh stereo pairs and the runtime's mono switch only fires near the end. Present the 2D
+ // layer alone for the whole event, the way a black-bars cutscene is presented.
+ static std::atomic_bool s_2DOnlyPresentation = false;
+-// Demo002_0 is the first-time pick-up panel: its third-person camera cues step the view around Link and the item,
+-// so the camera holds the pose it had on the last frame before the event and only the headset moves it.
+-static std::atomic_bool s_firstTimeItemGet = false;
++// Demo002_0 and the respawn demos run a scripted camera that steps the third-person view around Link a frame at a
++// time, so the camera holds the pose it had on the last frame before the event and only the headset moves it.
++static std::atomic_bool s_eventCameraHold = false;
++// The respawn demos draw their black fade into the 2D layer. The 3D picture already takes that fade from the
++// layer's corner, so the 16:9 quad would show it a second time as a floating panel; it is left off while the
++// fade is up.
++static std::atomic_bool s_respawnDemo = false;
++static std::string s_currentEvent;
+ // the camera picked with the cutscene button, kept across events the game chains together
+ static std::atomic<EventMode> s_eventModeOverride = EventMode::NO_EVENT;
+ static std::atomic_uint32_t s_cameraToggles = 0;
+@@ -74,8 +79,12 @@ bool Events::IsActive() {
+     return s_eventActive.load(std::memory_order_relaxed);
+ }
+ 
+-bool Events::IsFirstTimeItemGetActive() {
+-    return s_firstTimeItemGet.load(std::memory_order_relaxed);
++bool Events::IsEventCameraHoldActive() {
++    return s_eventCameraHold.load(std::memory_order_relaxed);
++}
++
++bool Events::IsRespawnDemoActive() {
++    return s_respawnDemo.load(std::memory_order_relaxed);
+ }
+ 
+ static EventMode GetActiveEventMode() {
+@@ -152,11 +161,22 @@ static void LoadEventSettingsTable(uint32_t tableAddress) {
+ 
+ static void PublishPresentation();
+ 
++// Demo048_0 is the respawn demo, and Demo048_1 its Vah Ruta battle variant; drowning and lava deaths run the
++// same Demo048_0. The Lost Woods zone-out and the game-over/retry demos are different events and keep their own
++// presentation.
++static bool IsRespawnDemo(std::string_view eventName) {
++    return eventName == "Demo048_0" || eventName == "Demo048_1";
++}
++
++// The event camera walks the third-person view around Link in these events; first person already skips it.
++static bool HoldsEventCamera(std::string_view eventName) {
++    return eventName == "Demo002_0" || IsRespawnDemo(eventName);
++}
++
+ // todo: Fix sped-up cutscenes. You can go in-game into a save file that didn't have DLC yet, and it'll give you a sped up Demo200_0.
+ static void hook_GetEventName(PPCInterpreter_t* hCPU) {
+     hCPU->instructionPointer = hCPU->sprNew.LR;
+ 
+-    static std::string s_currentEvent;
+     static std::string s_currentEntryPoint;
+     static std::chrono::steady_clock::time_point s_lastEventEnd = {};
+ 
+@@ -166,7 +186,8 @@ static void hook_GetEventName(PPCInterpreter_t* hCPU) {
+             if (s_2DOnlyPresentation.exchange(false)) {
+                 Log::print<INFO>("2D-only presentation ends for '{}'", s_currentEvent);
+             }
+-            s_firstTimeItemGet = false;
++            s_eventCameraHold = false;
++            s_respawnDemo = false;
+             Log::print<INFO>("Event '{}' has now ended", s_currentEvent);
+             s_currentEvent.clear();
+             s_currentEntryPoint.clear();
+@@ -191,13 +212,15 @@ static void hook_GetEventName(PPCInterpreter_t* hCPU) {
+             Log::print<INFO>("2D-only presentation ends for '{}'", s_currentEvent);
+         }
+     }
+-    // Demo002_0's event camera walks the third-person view around Link and the item; the camera holds the player's
+-    // own pose from the last frame before the event. First person and every other event keep the game camera.
+-    const bool firstTimeItemGet = eventName == "Demo002_0";
+-    if (firstTimeItemGet && s_currentEvent != eventName) {
+-        Camera::LatchEventCameraHold();
++    // A scripted event camera walks the third-person view around Link in these events; the camera holds the
++    // player's own pose from the last frame before the event. First person and every other event keep the game
++    // camera.
++    const bool eventCameraHold = HoldsEventCamera(eventName);
++    if (eventCameraHold && s_currentEvent != eventName) {
++        Camera::LatchEventCameraHold(eventName);
+     }
+-    s_firstTimeItemGet = firstTimeItemGet;
++    s_eventCameraHold = eventCameraHold;
++    s_respawnDemo = IsRespawnDemo(eventName);
+     s_currentEvent = eventName;
+     s_currentEntryPoint = entryPointName;
+     Events::Settings settings = defaultFirstPersonSettings;
+@@ -315,6 +338,13 @@ static void PublishPresentation() {
+     presentation.fadeVisible = Screens::IsAnyFadeVisible();
+     presentation.flatCamera = GameState::UseFlatCameraPresentation();
+     presentation.blackBars = GameState::UseBlackBarsDuringEvents();
++    const bool suppressFadeQuad = Events::IsRespawnDemoActive() && Screens::IsAnyFadeVisible();
++    static bool s_suppressFadeQuadLogged = false;
++    if (suppressFadeQuad && !s_suppressFadeQuadLogged) {
++        Log::print<INFO>("Fade panel hidden for '{}' (the 3D picture takes the fade from the 2D layer's corner)", s_currentEvent);
++    }
++    s_suppressFadeQuadLogged = suppressFadeQuad;
++    presentation.suppressFadeQuad = suppressFadeQuad;
+     presentation.loadingScreenVisible = Screens::IsLoadingVisible();
+     presentation.aimingItemHeld = Weapons::IsAimingItemHeld();
+     presentation.cutsceneActive = Events::IsActive();
+diff --git a/src/game/botw/game_state.h b/src/game/botw/game_state.h
+index dd78c54..9ff6ff8 100644
+--- a/src/game/botw/game_state.h
++++ b/src/game/botw/game_state.h
+@@ -20,7 +20,8 @@ namespace Events {
+     };
+ 
+     bool IsActive();
+-    bool IsFirstTimeItemGetActive();
++    bool IsEventCameraHoldActive();
++    bool IsRespawnDemoActive();
+     void ToggleCameraMode();
+     std::optional<Settings> GetFirstPersonSettings();
+     bool UsesAnimatedHands();
+diff --git a/src/game/game.h b/src/game/game.h
+index c6f6db3..9089773 100644
+--- a/src/game/game.h
++++ b/src/game/game.h
+@@ -27,6 +27,7 @@ namespace Game {
+         bool fadeVisible;
+         bool flatCamera;
+         bool blackBars;
++        bool suppressFadeQuad;
+         bool loadingScreenVisible;
+         bool aimingItemHeld;
+         bool cutsceneActive;
+diff --git a/src/rendering/renderer.cpp b/src/rendering/renderer.cpp
+index 65cfedb..b80da86 100644
+--- a/src/rendering/renderer.cpp
++++ b/src/rendering/renderer.cpp
+@@ -385,6 +385,11 @@ void RND_Renderer::EndFrame() {
+ 
+         if (shouldRender2D) {
+             layer2DQuads = m_layer2D->FinishRendering(hudFrameIdx);
++            // The respawn demos draw their black fade into the 2D layer, and the 3D picture already takes that
++            // fade from the layer's corner; the quad would show it a second time as a floating 16:9 panel.
++            if (game.suppressFadeQuad && shouldRender3D) {
++                layer2DQuads.clear();
++            }
+             m_presented2DLastFrame = !layer2DQuads.empty();
+             m_lastLayer2DQuads = layer2DQuads;
+         }
