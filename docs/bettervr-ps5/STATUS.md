@@ -3,7 +3,15 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
-## 2026-11-20: v0.7 draws: index lists kept across frames and unchanged view arrays kept, to cut the 1.25x record; built, untested on console
+## 2026-11-21: v0.7 draws: index lists kept across frames, unchanged view arrays kept, texture units kept while their SQ_TEX registers are unchanged, and the render passes begun and submits counted, to cut the 1.25x record; built, untested on console
+
+**The console run these act on (the v0.7rc2 build at 1.25x, before patches 0061 and 0062).** The console log averaged
+58.0 fps, median 59.2, with 40 of 113 gameplay windows at exactly 60.0; 60 held to 5,309 draws, and the wall is still
+the record at a budget of about 15.6 ms: 0.7 ms to cut at 5.3-5.6k draws, 1.25 at 5.6-5.9k, 1.4 at 5.9-6.3k, about 2.0
+at 6-7k and 2.8-3 at 7-9k, with the GPU at ~86-91% once at 60 (about 2 ms of headroom). The kept index lists fell to
+10-12 decoded a frame with 99.4% reused and 0 changed, but the record fell only 0.5-0.6 ms: the per-flush re-hash
+gives back about two-thirds of what the decodes were worth, and the view arrays could not be credited (no counter).
+Threaded recording is Test request 72's run 2 and needs no patch.
 
 The v0.6.0 logs at 1.25x VR Resolution (2480x2560 an eye, asyncCompose on) averaged 55.5 fps against 58.2 at 1x: the
 GPU was about 80% busy and the GPU thread's record set the rate, 16-19 ms at 5-9k draws. Holding 60 there needs the
@@ -32,10 +40,37 @@ reads the stage's left uniforms and their buffer registers, which the draw's dir
 data, whose epoch every change moves on; a continued draw with none of them changed keeps the arrays, which is what the
 build would have written.
 
-**The `[draws]` line** adds `| kept index lists used again N, changed N (N KB held)`. `index lists` still counts the
-lists decoded. Expected at 1.25x if most lists are static: `index lists` from about 1,900 to a few hundred a frame,
-`indices` in the record split from 1.7-1.9 ms to under 1 ms, `uniforms` 0.2-0.5 ms lower at the same draw counts,
-and the record 0.6-1.4 ms shorter at 5-7k draws. That reaches 60 at 5-6k draws, not reliably above.
+**Texture units kept while their registers are unchanged (patch cemu 0061, `bettervr.json`'s `textureMemo`, on).** A
+sequence's first draw resolves every texture unit its shaders use through the view lookup cache: the unit's seven
+`SQ_TEX` resource words to a view, by scanning the bucket the registers' address, size and pitch hash to, about 1,500
+sequences a frame at 1.25x and 2 us of setup each. A unit's answer is now kept per stage and unit: the same words, the
+same depth comparison and no view added to or removed from the lookup cache since bind the view again and skip the
+format reconstruction and the scan. The texture's data hash, swizzle, mip address, dynamic textures, the barrier check
+and the effective scale are still read from the texture on every sequence, so a texture update or invalidation needs no
+notice; the lookup cache's generation, moved on by every view added or removed, catches a view destroyed and another
+made at the same address. `"textureMemo": 0` resolves every unit through the cache, and the boot log says which way it
+runs.
+
+**Render passes begun and submits counted (patch cemu 0062, `bettervr.json`'s `passCounts`, on).** A copy or a render
+target switch ends the render pass and the next draw begins it again, and every submit ends the command buffer and waits
+for a free one; how often that happens was not counted. The `[draws]` line now says `render passes begun N, submits N`
+per frame. No batching ships with the counter: Cemu already batches the buffer-cache copies it can (disjoint uploads in
+one `vkCmdCopyBuffer`), and the pairs left over overlap, which is exactly why they flush (regions in one batch run in no
+particular order), so none could be shown to need no barrier between them. `"passCounts": 0` stops counting and the two
+read 0.0.
+
+**The index cache's per-flush re-hash is left as it is.** The console log showed the re-hash giving back about
+two-thirds of what 0059 saves (about 5.8 MB hashed a frame). Skipping it needs proof that the source bytes cannot have
+changed since they were last hashed, and there is no write path to hang that on: the emulated CPU writes guest RAM with
+direct stores from recompiled code and the interpreter, and HLE code writes it through raw pointers, with no hook in any
+of them; instrumenting every store would cost the game's own CPU time. `changed 0` for a whole session is encouraging,
+not proof: a missed write hands the GPU stale indices, which is wrong geometry, so the re-hash stays.
+
+**The `[draws]` line** adds `| kept index lists used again N, changed N (N KB held) | texture units reused N |
+render passes begun N, submits N`. `index lists` still counts the lists decoded. Expected at 1.25x if most lists are
+static: `index lists` from about 1,900 to a few hundred a frame, `indices` in the record split from 1.7-1.9 ms to under
+1 ms, `uniforms` 0.2-0.5 ms lower at the same draw counts, and the record 0.6-1.4 ms shorter at 5-7k draws. That
+reaches 60 at 5-6k draws, not reliably above.
 
 **RADV threaded recording, not made default.** The rest of a sequence's cost is mostly the driver recording new
 pipeline, descriptor, vertex and index state at the draw (`binds and the draw`, about 2.1 us a sequence and 0.24 us a
@@ -44,38 +79,51 @@ each `vkCmd*` with its arguments copied and records them on a worker thread; `vk
 (about a dozen submits a frame), destroys and frees wait for it, and the worker spins 50 us on the clock before it
 sleeps. If the worker gets a core of its own, the GPU thread keeps only the copying, an estimated 1.5-3 ms off the
 record at 5-9k draws; on a busy core it can cost instead. It has never run in a game, so it stays off by default and
-Test request 70 runs it. It does not conflict with 0059 or 0060: those cut Cemu's own work, which stays on the GPU
+Test request 72 runs it. It does not conflict with 0059-0062: those cut Cemu's own work, which stays on the GPU
 thread either way, and kept lists keep their index buffer offsets, so fewer index binds reach the queue.
 
-New patches: cemu 0059, 0060; no BetterVR patch.
+New patches: cemu 0059, 0060, 0061, 0062; no BetterVR patch.
 
-**Test request 70 (v0.7 draws at 1.25x, 13.60 console).** Install the `BotW-VR-v...zip` from this head's green
+**Test request 72 (v0.7 draws at 1.25x, 13.60 console).** Install the `BotW-VR-v...zip` from this head's green
 "BetterVR build" run and start Breath of the Wild in VR with the headset and both Sense controllers. Keep
-`"profile": true` in `/data/botwvr/launcher/bettervr.json` with no `"indexCache"` key, and set BetterVR's menu >
-System > VR Resolution > 1.25x (restart the game). Use two spots for every run, the same each time: the busy outdoor
-spot of Test request 69 (grass and trees in view; the 1.25x log had 7-9k draws there), and a calm spot (inside a shrine
-or a house, 3-5k draws). At each, stand still 30 s, then walk a small circle for 30 s.
+`"profile": true` in `/data/botwvr/launcher/bettervr.json` with no `"indexCache"`, `"textureMemo"` or `"passCounts"`
+key, and set BetterVR's menu > System > VR Resolution > 1.25x (restart the game). Use two spots for every run, the
+same each time: the busy outdoor spot of Test request 69 (grass and trees in view; the 1.25x log had 7-9k draws there),
+and a calm spot (inside a shrine or a house, 3-5k draws). At each, stand still 30 s, then walk a small circle for 30 s.
 
-1. **Defaults.** The boot log must have `Index cache: index lists kept across frames`. Say whether anything looks
-   different from the last build in either eye: missing or stretched triangles, flickering grass or foliage, an object
-   in one eye only, or a wrong shape after a load or fast travel.
+1. **Defaults.** The boot log must have `Index cache: index lists kept across frames`, `Texture unit memo: a unit with
+   unchanged SQ_TEX registers keeps the view it resolved to` and `Pass counts: render passes begun and submits counted`.
+   Say whether anything looks different from the last build in either eye: missing or stretched triangles, flickering
+   grass or foliage, an object in one eye only, a wrong shape after a load or fast travel, or a texture that stays the
+   old one after an event, a video or the inventory.
 2. **Threaded recording.** Add `"radvEnvironment": {"RADV_THREADED_RECORDING": "1"}` to
    `/data/botwvr/launcher/ps5cemu.json` and restart the app; the boot log must have
    `RADV_THREADED_RECORDING=1 (radvEnvironment in ps5cemu.json)`. Same two spots. Say whether it stutters or feels
    different. Then remove the key again.
 3. **Optional, index cache off.** Only at the busy spot, set `"indexCache": 0` in `bettervr.json` and restart; the boot
    log must say `("indexCache": 0)`. Then remove the key.
+4. **Optional, texture memo off.** Only at the busy spot, set `"textureMemo": 0` and restart; the boot log must say
+   `("textureMemo": 0)` and the `[draws]` line's `texture units reused` must read `0.0`. Same route; the fps and the
+   record should fall back toward the last build's at the same draw counts. Then remove the key.
+5. **Optional, pass counts off.** Only at the busy spot, set `"passCounts": 0` and restart; the boot log must say
+   `("passCounts": 0)` and the `[draws]` line must end `render passes begun 0.0, submits 0.0`. It decides nothing about
+   speed; it shows the switch works. Then remove the key.
 
 Send each run's `boot.log` (Settings > Diagnostics > Copy logs to USB):
-- `LC_ALL=C grep -a "Index cache:\|RADV_THREADED\|compose wait:\|\[draws\]\|\[frame\]\|\[perf\]" boot.log`
+- `LC_ALL=C grep -a "Index cache:\|Texture unit memo:\|Pass counts:\|RADV_THREADED\|compose wait:\|\[draws\]\|\[frame\]\|\[perf\]" boot.log`
 - `LC_ALL=C grep -a "fps submitted\|radv/ps5 submissions\|VR start" boot.log`
 
 **What it decides.** Run 1 against the v0.6.0 1.25x log at the same draw counts (5-6k: record 16.1-16.6 ms, indices
 1.7-1.8, uniforms 2.0-2.1, 56.5 fps; 8-9k: 18.9, 1.9, 2.7, 51.0 fps): `index lists` and `indices` must fall and
 `kept ... used again` must carry most lists, with `KB held` under 32,768 and no visual change; then `indexCache` stays
-on. Run 2 decides threaded recording: if `binds and the draw` and the record fall and the fps rises with no stutter
-and `[perf]`'s GPU thread idle stays sane, a later build sets it for BotW VR; if the record does not fall or frames
-over 20 ms rise, it stays off. Run 3, if sent, is the same-session control for run 1.
+on. `texture units reused` should be most of the units a frame's sequences resolve, about ten a sequence (so 12,000-18,000
+a frame at 1.25x), and `sequence setup` in the split should fall by 0.5-1.2 ms with no visual change; if the count or
+the split does not move, `textureMemo` goes. `render passes begun` against `sequences` says whether the copy and flush
+splits are worth a batching patch: near one pass a sequence means almost every sequence splits, a few dozen a frame
+means there is nothing to batch. Run 2 decides threaded recording: if `binds and the draw` and the record fall and the
+fps rises with no stutter and `[perf]`'s GPU thread idle stays sane, a later build sets it for BotW VR; if the record
+does not fall or frames over 20 ms rise, it stays off. Run 3, if sent, is the same-session control for run 1; runs 4
+and 5 are the switches' off controls.
 
 ## 2026-11-20: v0.6.0 ships asyncCompose on: the compose wait leaves Cemu's GPU thread, and the `[draws]` line splits the record; built; asyncCompose tested on console at 1x
 
