@@ -1,0 +1,130 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ps5cemu <ps5cemu@localhost>
+Date: Sat, 21 Nov 2026 15:06:55 +0100
+Subject: [PATCH] PS5: Weather & Water, Footsteps & Ground and Surfaces (beta)
+ are rows on the Vibration page with the proposal's defaults; built, untested
+ on console
+
+---
+ src/rendering/haptic_types.h  |  3 +++
+ src/rendering/imgui_menus.cpp |  8 ++++++--
+ src/utils/mod_settings.cpp    |  9 +++++++++
+ src/utils/mod_settings.h      | 17 ++++++++++++++---
+ 4 files changed, 32 insertions(+), 5 deletions(-)
+
+diff --git a/src/rendering/haptic_types.h b/src/rendering/haptic_types.h
+index 0ffaed2..8d25395 100644
+--- a/src/rendering/haptic_types.h
++++ b/src/rendering/haptic_types.h
+@@ -15,6 +15,9 @@ enum class HapticCategory : uint8_t {
+     Damage,
+     Explosion,
+     // v0.8: the PS5 haptic director's effects (port/bettervr/haptics_ps5.cpp)
++    WeatherWater,
++    FootstepsGround,
++    SurfacesBeta,
+     ShieldSurf,
+     Traversal,
+     LowHealth,
+diff --git a/src/rendering/imgui_menus.cpp b/src/rendering/imgui_menus.cpp
+index 546de79..e552b7d 100644
+--- a/src/rendering/imgui_menus.cpp
++++ b/src/rendering/imgui_menus.cpp
+@@ -1330,7 +1330,7 @@ static void DrawVRResolutionSetting() {
+     });
+ }
+ // the categories the Vibration page lists, in its order; a section's first row opens it with a caption
+-enum class HapticSection : uint8_t { Categories, Movement, Body };
++enum class HapticSection : uint8_t { Categories, World, Movement, Body };
+ struct HapticCategoryRow {
+     HapticCategory category;
+     const char* icon;
+@@ -1339,6 +1339,7 @@ struct HapticCategoryRow {
+ };
+ static const char* HapticSectionLabel(HapticSection section) {
+     switch (section) {
++        case HapticSection::World: return "World";
+         case HapticSection::Movement: return "Movement";
+         case HapticSection::Body: return "Body";
+         case HapticSection::Categories:
+@@ -1355,6 +1356,9 @@ static constexpr HapticCategoryRow kHapticCategoryRows[] = {
+     { HapticCategory::Game, ICON_MS_STADIA_CONTROLLER, "Game Rumble", HapticSection::Categories },
+     { HapticCategory::Damage, ICON_MS_FALLING, "Damage Taken", HapticSection::Categories },
+     { HapticCategory::Explosion, ICON_MS_LOCAL_FIRE_DEPARTMENT, "Explosions", HapticSection::Categories },
++    { HapticCategory::WeatherWater, ICON_MS_ECO, "Weather & Water", HapticSection::World },
++    { HapticCategory::FootstepsGround, ICON_MS_CENTER_FOCUS_STRONG, "Footsteps & Ground", HapticSection::World },
++    { HapticCategory::SurfacesBeta, ICON_MS_PAN_TOOL_ALT, "Surfaces (beta)", HapticSection::World },
+     { HapticCategory::ShieldSurf, ICON_MS_SPEED, "Shield Surf", HapticSection::Movement },
+     { HapticCategory::Traversal, ICON_MS_PARAGLIDING, "Traversal", HapticSection::Movement },
+     { HapticCategory::LowHealth, ICON_MS_FAVORITE, "Low Health", HapticSection::Body },
+@@ -1483,7 +1487,7 @@ void RND_Renderer::ImGuiOverlay::DrawVibrationPage(bool* changed) {
+     const float bottom = ImGui::GetCursorScreenPos().y - ImGui::GetStyle().ItemSpacing.y;
+     window->StateStorage.SetFloat(cardId, bottom - cardMin.y);
+ 
+-    DrawPageNote("Game Rumble is whatever the game asks for itself: damage, hits, explosions and cutscenes all arrive on it today, so turning it down turns all of them down. Damage Taken is the hit that starts one of the game's damage reactions; it is felt on top of Game Rumble unless that row is off. The launcher's Vibration row under Settings > VR stays the DualSense's outer switch. Shield Surf, Traversal and Low Health are synthesised by the haptics director: the first is a scrape that rises with speed and a landing thump, the second the paraglider's wind, the swim's splash and rush, hand-over-hand climbing and the horse's gallop, the third a slow heartbeat below half life. Hands means the hand an input rumble belongs to: a guard is felt on the shield hand and a bow draw on the drawing hand.");
++    DrawPageNote("Game Rumble is whatever the game asks for itself: damage, hits, explosions and cutscenes all arrive on it today, so turning it down turns all of them down. Damage Taken is the hit that starts one of the game's damage reactions; it is felt on top of Game Rumble unless that row is off. The launcher's Vibration row under Settings > VR stays the DualSense's outer switch. Weather & Water listens to the game's audio for rain, water and wind, and its Headset tick is for thunder only; Footsteps & Ground is the walk cadence, and Surfaces (beta) colours it from the same audio and is off until a console run tunes it. Shield Surf, Traversal and Low Health are synthesised by the haptics director: the first is a scrape that rises with speed and a landing thump, the second the paraglider's wind, the swim's splash and rush, hand-over-hand climbing and the horse's gallop, the third a slow heartbeat below half life. Hands means the hand an input rumble belongs to: a guard is felt on the shield hand and a bow draw on the drawing hand.");
+ }
+ 
+ void RND_Renderer::ImGuiOverlay::DrawDisplayPage(bool* changed) {
+diff --git a/src/utils/mod_settings.cpp b/src/utils/mod_settings.cpp
+index 3f2d2c8..5e04c36 100644
+--- a/src/utils/mod_settings.cpp
++++ b/src/utils/mod_settings.cpp
+@@ -26,6 +26,9 @@ BoolSetting& ModSettings::HapticsEnabled(HapticCategory category) {
+         case HapticCategory::Rune: return hapticsRune;
+         case HapticCategory::Damage: return hapticsDamage;
+         case HapticCategory::Explosion: return hapticsExplosion;
++        case HapticCategory::WeatherWater: return hapticsWeatherWater;
++        case HapticCategory::FootstepsGround: return hapticsFootstepsGround;
++        case HapticCategory::SurfacesBeta: return hapticsSurfacesBeta;
+         case HapticCategory::ShieldSurf: return hapticsShieldSurf;
+         case HapticCategory::Traversal: return hapticsTraversal;
+         case HapticCategory::LowHealth: return hapticsLowHealth;
+@@ -45,6 +48,9 @@ UIntSetting& ModSettings::HapticsStrength(HapticCategory category) {
+         case HapticCategory::Rune: return hapticsRuneStrength;
+         case HapticCategory::Damage: return hapticsDamageStrength;
+         case HapticCategory::Explosion: return hapticsExplosionStrength;
++        case HapticCategory::WeatherWater: return hapticsWeatherWaterStrength;
++        case HapticCategory::FootstepsGround: return hapticsFootstepsGroundStrength;
++        case HapticCategory::SurfacesBeta: return hapticsSurfacesBetaStrength;
+         case HapticCategory::ShieldSurf: return hapticsShieldSurfStrength;
+         case HapticCategory::Traversal: return hapticsTraversalStrength;
+         case HapticCategory::LowHealth: return hapticsLowHealthStrength;
+@@ -64,6 +70,9 @@ UIntSetting& ModSettings::HapticsDevices(HapticCategory category) {
+         case HapticCategory::Rune: return hapticsRuneDevices;
+         case HapticCategory::Damage: return hapticsDamageDevices;
+         case HapticCategory::Explosion: return hapticsExplosionDevices;
++        case HapticCategory::WeatherWater: return hapticsWeatherWaterDevices;
++        case HapticCategory::FootstepsGround: return hapticsFootstepsGroundDevices;
++        case HapticCategory::SurfacesBeta: return hapticsSurfacesBetaDevices;
+         case HapticCategory::ShieldSurf: return hapticsShieldSurfDevices;
+         case HapticCategory::Traversal: return hapticsTraversalDevices;
+         case HapticCategory::LowHealth: return hapticsLowHealthDevices;
+diff --git a/src/utils/mod_settings.h b/src/utils/mod_settings.h
+index 255e39f..e23c0b8 100644
+--- a/src/utils/mod_settings.h
++++ b/src/utils/mod_settings.h
+@@ -695,9 +695,20 @@ struct ModSettings {
+     BoolSetting hapticsExplosion{ "HapticsExplosion", true };
+     UIntSetting hapticsExplosionStrength{ "HapticsExplosionStrength", 100, 0, 100 };
+     UIntSetting hapticsExplosionDevices{ "HapticsExplosionDevices", HapticDeviceSense | HapticDeviceHeadset, 0, HapticDeviceAll };
+-    // v0.8's effects: the haptic director's rows (port/bettervr/haptics_ps5.cpp). Shield Surf is the bed and the
+-    // landing, Traversal is the paraglider, swim, climb and gallop, Low Health is the heartbeat; the defaults are
+-    // the proposal's (docs/bettervr-ps5/STATUS.md, the v0.8 haptics entry).
++    // v0.8's effects: the haptic director's rows (port/bettervr/haptics_ps5.cpp). Weather & Water is the
++    // audio-driven rain, water and wind with thunder on the headset; Footsteps & Ground is the cadence and
++    // Surfaces (beta) is its audio-classified material layer, off until a console run tunes it. Shield Surf is
++    // the bed and the landing, Traversal is the paraglider, swim, climb and gallop, Low Health is the heartbeat;
++    // the defaults are the proposal's (docs/bettervr-ps5/STATUS.md, the v0.8 haptics entry).
++    BoolSetting hapticsWeatherWater{ "HapticsWeatherWater", true };
++    UIntSetting hapticsWeatherWaterStrength{ "HapticsWeatherWaterStrength", 35, 0, 100 };
++    UIntSetting hapticsWeatherWaterDevices{ "HapticsWeatherWaterDevices", HapticDeviceSense | HapticDeviceHeadset, 0, HapticDeviceAll };
++    BoolSetting hapticsFootstepsGround{ "HapticsFootstepsGround", true };
++    UIntSetting hapticsFootstepsGroundStrength{ "HapticsFootstepsGroundStrength", 50, 0, 100 };
++    UIntSetting hapticsFootstepsGroundDevices{ "HapticsFootstepsGroundDevices", HapticDeviceSense, 0, HapticDeviceAll };
++    BoolSetting hapticsSurfacesBeta{ "HapticsSurfacesBeta", false };
++    UIntSetting hapticsSurfacesBetaStrength{ "HapticsSurfacesBetaStrength", 50, 0, 100 };
++    UIntSetting hapticsSurfacesBetaDevices{ "HapticsSurfacesBetaDevices", HapticDeviceSense, 0, HapticDeviceAll };
+     BoolSetting hapticsShieldSurf{ "HapticsShieldSurf", true };
+     UIntSetting hapticsShieldSurfStrength{ "HapticsShieldSurfStrength", 60, 0, 100 };
+     UIntSetting hapticsShieldSurfDevices{ "HapticsShieldSurfDevices", HapticDeviceSense | HapticDevicePad, 0, HapticDeviceAll };

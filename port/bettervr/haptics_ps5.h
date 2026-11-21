@@ -106,4 +106,98 @@ inline float FallingEnvelope(float progress) {
 	const float left = 1.0f - Clamp01(progress);
 	return left * left;
 }
+
+// Weather & Water: the audio detector's three band levels (0..1) and its micro-onset rate (per second). The
+// heuristics are deliberately simple and conservative; the [vib] env lines are what a console run tunes.
+struct WeatherMix {
+	float rain = 0.0f;
+	float water = 0.0f;
+	float wind = 0.0f;
+};
+inline WeatherMix WeatherFromBands(float low, float mid, float high, float microOnsets) {
+	const float rain = Clamp01((high - 0.18f) * 1.6f) * Clamp01(microOnsets / 10.0f);
+	const float water = Clamp01((mid * 1.2f + low * 0.5f - 0.28f) * 1.5f) * (1.0f - 0.65f * rain);
+	const float wind = Clamp01((low * 1.5f + mid * 0.25f - 0.22f) * 1.7f) * (1.0f - 0.50f * rain) *
+	                   (1.0f - 0.60f * water);
+	return {rain, water, wind};
+}
+// the rain bed is a randomised tick train, never one event per drop: 6-30 ticks a second, each a short tap
+inline float RainTickHz(float rain) {
+	return 6.0f + 24.0f * Clamp01(rain);
+}
+inline constexpr float kRainTickSeconds = 0.07f;
+inline float RainTickLevel(float rain, float random) {
+	return (0.35f + 0.45f * Clamp01(rain)) * (0.55f + 0.45f * Clamp01(random));
+}
+inline float RainBedLevel(float rain) {
+	return 0.25f + 0.45f * Clamp01(rain);
+}
+inline float WaterBedLevel(float water) {
+	return 0.28f + 0.50f * Clamp01(water);
+}
+inline float WindBedLevel(float wind) {
+	return 0.25f + 0.45f * Clamp01(wind);
+}
+// thunder keeps a fixed direct-pulse strength so it is felt at the 35 % default; the row's Headset tick gates it
+inline constexpr float kThunderHeadsetStrength = 1.0f; // 25 Hz through the runtime's sqrt mapping
+inline constexpr int kThunderHeadsetMs = 180;
+inline constexpr float kThunderHandLevel = 0.55f;
+inline constexpr float kThunderHandSeconds = 0.30f;
+inline constexpr float kThunderMinSeconds = 6.0f;
+
+// Footsteps & Ground: the walk states in the console logs (移動 and the side/step-up variants). Unknown states
+// do not step: a guess here would tick through a glide or a cutscene.
+inline bool IsWalkState(uint32_t state) {
+	switch (state) {
+	case 0x101E064C: // 移動
+	case 0x101E06D0: // 移動
+	case 0x101E08C0: // 移動
+	case 0x101E04A4: // サイドステップ
+	case 0x101E069C: // 段差登り
+	case 0x101E0E84: // 段差登り
+		return true;
+	default:
+		return false;
+	}
+}
+// one step per stride, and the stride grows with speed, so the cadence follows distance rather than a timer
+inline float StepStride(float speed) {
+	return 0.70f + 0.50f * Unit(speed, 6.0f);
+}
+inline float StepRateHz(float speed) {
+	if (speed <= 0.35f)
+		return 0.0f;
+	return std::min(4.5f, speed / StepStride(speed));
+}
+inline float StepLevel(float speed) {
+	return 0.28f + 0.24f * Unit(speed, 6.0f);
+}
+
+// the material layer's two coordinates: hardness (spectral balance) and grain (high over mid), plus the
+// transient's decay. They move timbre continuously instead of naming a surface.
+struct SurfaceTone {
+	float level = 0.34f;
+	float seconds = 0.14f;
+	float largeShare = 1.0f;
+	float smallShare = 0.35f;
+	float bed = 0.04f;
+};
+inline SurfaceTone SurfaceToneFrom(float hardness, float grain, float decay) {
+	const float h = Clamp01(hardness);
+	const float g = Clamp01(grain);
+	const float d = Clamp01(decay);
+	SurfaceTone tone;
+	tone.level = 0.26f + 0.30f * h;
+	tone.seconds = 0.09f + 0.12f * (1.0f - d);
+	tone.smallShare = 0.20f + 0.60f * h;
+	tone.largeShare = 1.0f - 0.35f * h;
+	tone.bed = 0.10f * (1.0f - h) + 0.06f * (1.0f - g) * (1.0f - d);
+	return tone;
+}
+inline SurfaceTone NeutralSurfaceTone() {
+	return SurfaceToneFrom(0.35f, 0.30f, 0.55f);
+}
+inline float FootstepLevel(float speed, const SurfaceTone& tone) {
+	return tone.level * (0.72f + 0.28f * Unit(speed, 6.0f));
+}
 }

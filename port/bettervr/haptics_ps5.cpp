@@ -6,6 +6,7 @@
 // be strong on the headset (a surf landing, a glide gust) go through the direct pulse path. No thread, no queue,
 // no GPU work and no per-frame logging.
 #include "pch.h"
+#include "audio_bands.h"
 #include "haptics_ps5.h"
 
 #include "cemu/guest_memory.h"
@@ -148,6 +149,13 @@ public:
 				m_landUntil = 0.0;
 				m_splashUntil = 0.0;
 				m_dripUntil = 0.0;
+				m_rainNext = 0.0;
+				m_rainTickUntil = 0.0;
+				m_thunderUntil = 0.0;
+				m_stepTick = -1.0;
+				m_stepOn = false;
+				m_stepPhase = 0.0f;
+				m_thunderSeen = ps5audio::Shared().thunder.load(std::memory_order_relaxed);
 				m_state = s_stateHash.load(std::memory_order_relaxed);
 			}
 			return;
@@ -168,6 +176,13 @@ public:
 			m_landUntil = 0.0;
 			m_splashUntil = 0.0;
 			m_dripUntil = 0.0;
+			m_rainNext = 0.0;
+			m_rainTickUntil = 0.0;
+			m_thunderUntil = 0.0;
+			m_thunderSeen = ps5audio::Shared().thunder.load(std::memory_order_relaxed);
+			m_stepTick = -1.0;
+			m_stepOn = false;
+			m_stepPhase = 0.0f;
 			m_nextBeat = now;
 			s_pending.store(0, std::memory_order_relaxed);
 		}
@@ -188,6 +203,8 @@ public:
 		ModSettings& settings = GetSettings();
 		UpdateSurf(now, dt, settings, senseLeft, senseRight, padLarge, padSmall);
 		UpdateTraversal(now, dt, settings, senseLeft, senseRight, padLarge, padSmall);
+		UpdateAmbience(now, dt, settings, senseLeft, senseRight, padLarge, padSmall);
+		UpdateFootsteps(now, dt, settings, senseLeft, senseRight, padLarge, padSmall);
 		UpdateHealth(now, settings, senseLeft, senseRight, padLarge, padSmall, headset);
 	}
 
@@ -246,6 +263,24 @@ private:
 		m_splashUntil = 0.0;
 		m_dripUntil = 0.0;
 		m_gustAt = 0.0;
+		m_rainNext = 0.0;
+		m_rainTickUntil = 0.0;
+		m_rainTickLevel = 0.0f;
+		m_waterPhase = 0.0f;
+		m_windPhase = 0.0f;
+		m_thunderSeen = ps5audio::Shared().thunder.load(std::memory_order_relaxed);
+		m_thunderUntil = 0.0;
+		m_thunderLevel = 0.0f;
+		m_lastThunderAt = -100.0;
+		m_stepOn = false;
+		m_stepPhase = 0.0f;
+		m_stepHand = 0;
+		m_stepTick = -1.0;
+		m_stepGeneration = 0;
+		m_surface = ps5hapt::NeutralSurfaceTone();
+		m_surfaceHardness = 0.35f;
+		m_surfaceGrain = 0.30f;
+		m_surfaceDecay = 0.55f;
 		m_hasPos = false;
 		m_speed = 0.0f;
 		m_vertical = 0.0f;
@@ -397,10 +432,10 @@ private:
 		// the splash and the drip outlive the state that started them
 		if (now < m_splashUntil)
 			AddBoth(m_splashLevel * ps5hapt::FallingEnvelope(1.0f - (float)((m_splashUntil - now) / ps5hapt::kSplashSeconds)),
-			        devices, senseLeft, senseRight, padLarge, padSmall, 0.50f);
+			        devices, senseLeft, senseRight, padLarge, padSmall, 1.0f, 0.50f);
 		if (now < m_dripUntil)
 			AddBoth(m_dripLevel * ps5hapt::FallingEnvelope(1.0f - (float)((m_dripUntil - now) / ps5hapt::kDripSeconds)),
-			        devices, senseLeft, senseRight, padLarge, padSmall, 0.50f);
+			        devices, senseLeft, senseRight, padLarge, padSmall, 1.0f, 0.50f);
 
 		switch (mode)
 		{
@@ -408,7 +443,7 @@ private:
 		{
 			m_swellPhase = std::fmod(m_swellPhase + dt * 2.0f * glm::pi<float>() * 0.7f, 2.0f * glm::pi<float>());
 			const float level = ps5hapt::GlideLevel(m_speed, std::max(0.0f, -m_vertical)) * gain * (0.85f + 0.15f * std::sin(m_swellPhase));
-			AddBoth(level, devices, senseLeft, senseRight, padLarge, padSmall, 0.45f);
+			AddBoth(level, devices, senseLeft, senseRight, padLarge, padSmall, 1.0f, 0.45f);
 			if ((devices & HapticDeviceHeadset) && now >= m_gustAt)
 			{
 				const int ms = 300 + (int)(301.0f * Rand01());
@@ -423,7 +458,7 @@ private:
 		{
 			m_swellPhase = std::fmod(m_swellPhase + dt * 2.0f * glm::pi<float>() * 1.2f, 2.0f * glm::pi<float>());
 			const float level = ps5hapt::SwimRushLevel(m_speed) * gain * (0.86f + 0.14f * std::sin(m_swellPhase));
-			AddBoth(level, devices, senseLeft, senseRight, padLarge, padSmall, 0.45f);
+			AddBoth(level, devices, senseLeft, senseRight, padLarge, padSmall, 1.0f, 0.45f);
 			break;
 		}
 		case Mode::Climb:
@@ -445,7 +480,7 @@ private:
 				const float level = m_climbLevel * ps5hapt::FallingEnvelope(progress);
 				if (devices & HapticDeviceSense)
 					*(m_climbHand == 0 ? senseLeft : senseRight) = std::max(*(m_climbHand == 0 ? senseLeft : senseRight), level);
-				AddPad(level, devices, padLarge, padSmall, 0.60f);
+				AddPad(level, devices, padLarge, padSmall, 1.0f, 0.60f);
 			}
 			break;
 		}
@@ -468,7 +503,7 @@ private:
 				const float level = m_gallopLevel * ps5hapt::FallingEnvelope(progress);
 				if (devices & HapticDeviceSense)
 					*(m_gallopHand == 0 ? senseLeft : senseRight) = std::max(*(m_gallopHand == 0 ? senseLeft : senseRight), level);
-				AddPad(level, devices, padLarge, padSmall, 0.60f);
+				AddPad(level, devices, padLarge, padSmall, 1.0f, 0.60f);
 			}
 			break;
 		}
@@ -476,6 +511,217 @@ private:
 		default:
 			break;
 		}
+	}
+
+	// Weather & Water (idea 6): the audio detector's three bands become a rain tick train, a smoother water bed
+	// and a slow wind swell. Thunder is a low transient during rain or water and goes through the direct headset
+	// pulse only when the row's Headset tick is on. The bands are logged at 2 Hz so one console run can tune them.
+	void UpdateAmbience(double now, float dt, ModSettings& settings, float* senseLeft, float* senseRight,
+	                    float* padLarge, float* padSmall)
+	{
+		const ps5audio::Snapshot audio = ps5audio::Shared().Now();
+		const ps5hapt::WeatherMix mix = ps5hapt::WeatherFromBands(audio.low, audio.mid, audio.high, audio.micro);
+		const float gain = settings.GetHapticsGain(HapticCategory::WeatherWater);
+		const uint32_t devices = settings.GetHapticsDeviceMask(HapticCategory::WeatherWater);
+
+		if (HapticsLogging() && now >= m_envLogAt && m_envLogs < 240)
+		{
+			m_envLogAt = now + 0.5;
+			++m_envLogs;
+			const std::string row = gain > 0.0f
+			                            ? fmt::format("Weather & Water {:.0f}% [{}]",
+			                                          (unsigned)settings.HapticsStrength(HapticCategory::WeatherWater).load(),
+			                                          DescribeDevices(devices))
+			                            : std::string("Weather & Water off");
+			Log::print<INFO>("[vib] env: low {:.2f} mid {:.2f} high {:.2f}, onsets {:.1f}/s micro {:.1f}/s -> "
+			                 "rain {:.2f} water {:.2f} wind {:.2f}, {}",
+			                 audio.low, audio.mid, audio.high, audio.onsets, audio.micro, mix.rain, mix.water, mix.wind, row);
+		}
+
+		auto transition = [&](bool& on, bool next, const char* name, float level) {
+			if (on == next)
+				return;
+			on = next;
+			if (CanLog(m_weatherLogs, 40))
+				Log::print<INFO>("[vib] weather: {} {} at {:.2f}, bands low {:.2f} mid {:.2f} high {:.2f}, micro {:.1f}/s",
+				                 name, next ? "on" : "off", level, audio.low, audio.mid, audio.high, audio.micro);
+		};
+		transition(m_rainOn, mix.rain > 0.20f, "rain", mix.rain);
+		transition(m_waterOn, mix.water > 0.20f, "water", mix.water);
+		transition(m_windOn, mix.wind > 0.20f, "wind", mix.wind);
+
+		const uint32_t thunder = audio.thunder;
+		if (m_thunderSeen == 0)
+			m_thunderSeen = thunder; // a clap from before this Link is not replayed on him
+		else if (thunder != m_thunderSeen)
+		{
+			m_thunderSeen = thunder;
+			const bool stormy = mix.rain > 0.20f || mix.water > 0.30f;
+			if (gain > 0.0f && devices != 0 && stormy && now >= m_lastThunderAt + ps5hapt::kThunderMinSeconds)
+			{
+				m_lastThunderAt = now;
+				m_thunderUntil = now + ps5hapt::kThunderHandSeconds;
+				m_thunderLevel = ps5hapt::kThunderHandLevel * gain;
+				if (devices & HapticDeviceHeadset)
+				{
+					const int hz = BetterVR_PS5_HeadsetPulse(ps5hapt::kThunderHeadsetStrength, ps5hapt::kThunderHeadsetMs);
+					if (CanLog(m_weatherLogs, 40))
+						Log::print<INFO>("[vib] thunder: hands {:.2f} for {:.0f} ms, headset {} Hz for {} ms [{}]",
+						                 m_thunderLevel, ps5hapt::kThunderHandSeconds * 1000.0f, hz,
+						                 ps5hapt::kThunderHeadsetMs, DescribeDevices(devices));
+				}
+				else if (CanLog(m_weatherLogs, 40))
+					Log::print<INFO>("[vib] thunder: hands {:.2f}, headset off (Weather & Water's Headset tick)",
+					                 m_thunderLevel);
+			}
+		}
+
+		if (gain <= 0.0f || devices == 0)
+		{
+			m_rainTickUntil = 0.0;
+			m_thunderUntil = 0.0;
+			return;
+		}
+
+		// the rain bed and its randomised taps; at most one tap a mixer tick, never a queue event
+		if (mix.rain > 0.05f)
+		{
+			if (now >= m_rainNext)
+			{
+				const float chance = std::clamp(ps5hapt::RainTickHz(mix.rain) / 60.0f, 0.0f, 1.0f);
+				if (Rand01() < chance)
+				{
+					m_rainTickUntil = now + ps5hapt::kRainTickSeconds;
+					m_rainTickLevel = ps5hapt::RainTickLevel(mix.rain, Rand01()) * gain;
+				}
+				m_rainNext = now + 1.0 / 60.0;
+			}
+			AddBoth(ps5hapt::RainBedLevel(mix.rain) * gain, devices, senseLeft, senseRight, padLarge, padSmall, 0.35f,
+			        1.0f);
+		}
+		else
+			m_rainNext = 0.0;
+
+		m_waterPhase = std::fmod(m_waterPhase + dt * 2.0f * glm::pi<float>() * 0.60f, 2.0f * glm::pi<float>());
+		m_windPhase = std::fmod(m_windPhase + dt * 2.0f * glm::pi<float>() * 0.22f, 2.0f * glm::pi<float>());
+		if (mix.water > 0.05f)
+			AddBoth(ps5hapt::WaterBedLevel(mix.water) * gain * (0.88f + 0.12f * std::sin(m_waterPhase)), devices,
+			        senseLeft, senseRight, padLarge, padSmall, 1.0f, 0.25f);
+		if (mix.wind > 0.05f)
+			AddBoth(ps5hapt::WindBedLevel(mix.wind) * gain * (0.86f + 0.14f * std::sin(m_windPhase)), devices,
+			        senseLeft, senseRight, padLarge, padSmall, 1.0f, 0.10f);
+
+		if (now < m_rainTickUntil)
+		{
+			const float progress = 1.0f - (float)((m_rainTickUntil - now) / ps5hapt::kRainTickSeconds);
+			AddBoth(m_rainTickLevel * ps5hapt::FallingEnvelope(progress), devices, senseLeft, senseRight, padLarge,
+			        padSmall, 0.35f, 1.0f);
+		}
+		if (now < m_thunderUntil)
+		{
+			const float progress = 1.0f - (float)((m_thunderUntil - now) / ps5hapt::kThunderHandSeconds);
+			AddBoth(m_thunderLevel * ps5hapt::FallingEnvelope(progress), devices, senseLeft, senseRight, padLarge,
+			        padSmall, 0.90f, 0.20f);
+		}
+	}
+
+	// Footsteps & Ground (idea 7): a step per stride from the distance walked, alternating hands. The material
+	// layer (Surfaces, beta) asks the audio thread for the 160 ms after the step and colours the next ticks with
+	// the transient's hardness, grain and decay. No event is queued per step.
+	void UpdateFootsteps(double now, float dt, ModSettings& settings, float* senseLeft, float* senseRight,
+	                     float* padLarge, float* padSmall)
+	{
+		const float gain = settings.GetHapticsGain(HapticCategory::FootstepsGround);
+		const uint32_t devices = settings.GetHapticsDeviceMask(HapticCategory::FootstepsGround);
+		const float surfaceGain = settings.GetHapticsGain(HapticCategory::SurfacesBeta);
+		const uint32_t surfaceDevices = settings.GetHapticsDeviceMask(HapticCategory::SurfacesBeta);
+		const bool surfaces = surfaceGain > 0.0f && surfaceDevices != 0;
+
+		if (m_stepGeneration != 0 && ps5audio::StepReady(m_stepGeneration))
+		{
+			const ps5audio::StepResult result = ps5audio::Step(m_stepGeneration);
+			m_stepGeneration = 0;
+			if (result.valid)
+			{
+				const float hardness = result.hardness;
+				const float grain = result.grain;
+				const float decay = result.decay;
+				const bool changed = std::abs(hardness - m_surfaceHardness) > 0.08f ||
+				                     std::abs(grain - m_surfaceGrain) > 0.10f ||
+				                     std::abs(decay - m_surfaceDecay) > 0.10f;
+				m_surface = ps5hapt::SurfaceToneFrom(hardness, grain, decay);
+				m_surfaceHardness = hardness;
+				m_surfaceGrain = grain;
+				m_surfaceDecay = decay;
+				if ((changed || m_surfaceLogs < 3) && CanLog(m_surfaceLogs, 60))
+					Log::print<INFO>("[vib] surface: low {:.2f} mid {:.2f} high {:.2f} -> hardness {:.2f} grain {:.2f} "
+					                 "decay {:.2f}; tick {:.2f} for {:.2f} s, pad large {:.2f} small {:.2f}",
+					                 result.low, result.mid, result.high, hardness, grain, decay, m_surface.level,
+					                 m_surface.seconds, m_surface.largeShare, m_surface.smallShare);
+			}
+		}
+
+		const bool walking = gain > 0.0f && devices != 0 && ps5hapt::IsWalkState(m_state) &&
+		                     !Player::IsRiding(true) && std::abs(m_vertical) < 1.2f && m_speed > 0.35f;
+		if (!walking)
+		{
+			if (m_stepOn)
+			{
+				m_stepOn = false;
+				m_stepPhase = 0.0f;
+				m_stepTick = -1.0;
+				if (CanLog(m_stepLogs, 96))
+					Log::print<INFO>("[vib] step: off");
+			}
+			return;
+		}
+		if (!m_stepOn)
+		{
+			m_stepOn = true;
+			m_stepPhase = 0.0f;
+			m_stepHand = 0;
+			m_stepTick = -1.0;
+			if (CanLog(m_stepLogs, 96))
+				Log::print<INFO>("[vib] step: on at {:.1f} m/s, {:.2f} steps/s, Surfaces (beta) {}", m_speed,
+				                 ps5hapt::StepRateHz(m_speed), surfaces ? "on" : "off");
+		}
+
+		m_stepPhase += m_speed * dt / ps5hapt::StepStride(m_speed);
+		if (m_stepPhase >= 1.0f)
+		{
+			m_stepPhase = std::fmod(m_stepPhase, 1.0f);
+			m_stepHand ^= 1;
+			m_stepTick = now;
+			const ps5hapt::SurfaceTone tone = surfaces ? m_surface : ps5hapt::NeutralSurfaceTone();
+			m_stepSeconds = tone.seconds;
+			m_stepTickLevel = ps5hapt::FootstepLevel(m_speed, tone) * gain;
+			if (surfaces)
+				m_stepGeneration = ps5audio::RequestStep();
+			if (CanLog(m_stepLogs, 96))
+			{
+				const ps5audio::Snapshot audio = ps5audio::Shared().Now();
+				Log::print<INFO>("[vib] step: {:.1f} m/s, {:.2f} steps/s, hand {}, bands low {:.2f} mid {:.2f} high "
+				                 "{:.2f}; surface hardness {:.2f} grain {:.2f} decay {:.2f} -> {:.2f} for {:.2f} s, "
+				                 "Surfaces (beta) {}",
+				                 m_speed, ps5hapt::StepRateHz(m_speed), m_stepHand == 0 ? "left" : "right", audio.low,
+				                 audio.mid, audio.high, m_surfaceHardness, m_surfaceGrain, m_surfaceDecay, m_stepTickLevel,
+				                 m_stepSeconds, surfaces ? "on" : "off");
+			}
+		}
+
+		if (m_stepTick >= 0.0 && now - m_stepTick < m_stepSeconds)
+		{
+			const float progress = (float)((now - m_stepTick) / m_stepSeconds);
+			const float level = m_stepTickLevel * ps5hapt::FallingEnvelope(progress);
+			if (devices & HapticDeviceSense)
+				*(m_stepHand == 0 ? senseLeft : senseRight) =
+				    std::max(*(m_stepHand == 0 ? senseLeft : senseRight), level);
+			const ps5hapt::SurfaceTone tone = surfaces ? m_surface : ps5hapt::NeutralSurfaceTone();
+			AddPad(level, surfaces ? surfaceDevices : devices, padLarge, padSmall, tone.largeShare, tone.smallShare);
+		}
+		// a soft surface leaves a bed under the ticks (grass, snow, ice); stone's is nearly zero
+		if (surfaces && m_surface.bed > 0.0f)
+			AddBoth(m_surface.bed * gain * 0.60f, devices, senseLeft, senseRight, padLarge, padSmall, 0.80f, 0.20f);
 	}
 
 	void UpdateHealth(double now, ModSettings& settings, float* senseLeft, float* senseRight, float* padLarge,
@@ -542,9 +788,10 @@ private:
 			*headset = std::max(*headset, ps5hapt::HeartHeadLevel(fraction) * gain * envelope);
 	}
 
-	// a bed or a one-shot for both hands, and the pad's two motors when the row has it
+	// a bed or a one-shot for both hands, and the pad's two motors when the row has it; the shares are the
+	// level each motor takes, so rain can live on the small motor and water on the large one
 	void AddBoth(float level, uint32_t devices, float* senseLeft, float* senseRight, float* padLarge, float* padSmall,
-	             float padSmallShare)
+	             float padLargeShare, float padSmallShare)
 	{
 		if (level <= 0.0f)
 			return;
@@ -553,14 +800,15 @@ private:
 			*senseLeft = std::max(*senseLeft, level);
 			*senseRight = std::max(*senseRight, level);
 		}
-		AddPad(level, devices, padLarge, padSmall, padSmallShare);
+		AddPad(level, devices, padLarge, padSmall, padLargeShare, padSmallShare);
 	}
 
-	void AddPad(float level, uint32_t devices, float* padLarge, float* padSmall, float padSmallShare)
+	void AddPad(float level, uint32_t devices, float* padLarge, float* padSmall, float padLargeShare,
+	            float padSmallShare)
 	{
 		if (level <= 0.0f || (devices & HapticDevicePad) == 0)
 			return;
-		*padLarge = std::max(*padLarge, level);
+		*padLarge = std::max(*padLarge, level * padLargeShare);
 		*padSmall = std::max(*padSmall, level * padSmallShare);
 	}
 
@@ -604,6 +852,36 @@ private:
 	double m_gustAt = 0.0;
 	float m_swellPhase = 0.0f;
 	int m_traversalLogs = 0;
+
+	bool m_rainOn = false;
+	bool m_waterOn = false;
+	bool m_windOn = false;
+	double m_rainNext = 0.0;
+	double m_rainTickUntil = 0.0;
+	float m_rainTickLevel = 0.0f;
+	float m_waterPhase = 0.0f;
+	float m_windPhase = 0.0f;
+	uint32_t m_thunderSeen = 0;
+	double m_thunderUntil = 0.0;
+	float m_thunderLevel = 0.0f;
+	double m_lastThunderAt = -100.0;
+	double m_envLogAt = 0.0;
+	int m_envLogs = 0;
+	int m_weatherLogs = 0;
+
+	bool m_stepOn = false;
+	float m_stepPhase = 0.0f;
+	int m_stepHand = 0;
+	double m_stepTick = -1.0;
+	float m_stepTickLevel = 0.0f;
+	float m_stepSeconds = 0.0f;
+	uint32_t m_stepGeneration = 0;
+	ps5hapt::SurfaceTone m_surface = ps5hapt::NeutralSurfaceTone();
+	float m_surfaceHardness = 0.35f;
+	float m_surfaceGrain = 0.30f;
+	float m_surfaceDecay = 0.55f;
+	int m_stepLogs = 0;
+	int m_surfaceLogs = 0;
 
 	int32_t m_life = -1;
 	int32_t m_lifeMax = 0;

@@ -17,6 +17,7 @@
 #include <string>
 
 #include "util/helpers/helpers.h"
+#include "../bettervr/audio_bands.h"
 #include "../ps5/pad.h"
 
 extern "C"
@@ -123,6 +124,11 @@ bool PS5AudioAPI::FeedBlock(sint16* data)
 		std::lock_guard lock(m_mutex);
 		m_queue.Push(data);
 	}
+	// The haptic director's band analysis (port/bettervr/audio_bands.h): on this thread, outside the queue
+	// mutex, after the block is queued so the lock is never held across the filters. The DualSense speaker
+	// carries the GamePad's sound, not the mix, so only the TV output is heard.
+	if (!m_padSpeaker)
+		ps5audio::Analyze(data, m_samplesPerBlock, m_channels, m_samplerate);
 	// the output thread may be waiting for a whole grain
 	m_wake.notify_all();
 	return true;

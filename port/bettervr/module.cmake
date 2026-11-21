@@ -4,7 +4,8 @@
 # there, after add_library(BetterVR ...), in place of platform_linux.cpp.
 #
 #   PlatformPS5.cpp  the platform functions, the log in the boot log and the generic atomic functions
-#   haptics_ps5.cpp  the v0.8 haptic director: Shield Surf, Traversal and Low Health on the mixer thread
+#   haptics_ps5.cpp  the v0.8 haptic director: Weather & Water, Footsteps & Ground, Shield Surf, Traversal and
+#                    Low Health on the mixer thread (audio_bands.h is the header-only ear PS5AudioAPI feeds)
 #   xr/runtime.cpp   the OpenXR runtime over hmd2, the one that answers the module's xr functions (the
 #                    vendored loader is not built: dependencies/CMakeLists.txt)
 
