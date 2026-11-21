@@ -3,6 +3,95 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-21: v0.8 haptics part A: hands that are hands, the pad's two motors, shield surf, traversal and a low-health heartbeat; parry and flurry wait on a console run; built, untested on console
+
+**What this build changes.** Four pieces of the proposal's haptics work (sections 4.0-4.5): the per-hand Sense
+routing and the DualSense's two-motor split, then Shield Surf, Traversal and Low Health as rows on the existing
+Vibration page. Existing categories keep their strengths, devices and envelopes; the one intended change to them is
+that a one-hand event is now felt on that hand only. Everything new runs inside BetterVR's existing 60 Hz mixer
+(`rendering/rumble.h`) as one extra layer from a PS5-only director (`port/bettervr/haptics_ps5.cpp`); there is no
+second mixer, no new thread, no queue and no GPU or record work.
+
+**Hands and motors (patch bettervr 0043, `port/cemu/PS5PadController.cpp`, `port/bettervr/xr/runtime.cpp`).** The
+mixer's `add()` now takes the hand an event belongs to: an input rumble fills only its own Sense controller, while
+the game's pattern and the page's test stay on both. Input rumbles were already tagged left or right, so a guard is
+now felt on the shield hand and a bow draw on the drawing hand; a two-handed event still fills both. The pad's large
+and small motors take separate levels through `BetterVR_PS5_PadVibration(large, small)` and
+`PS5Pad_ExternalRumble(large, small)`; the existing rows send the same level to both, exactly as before, and the new
+surf row sends weight to the large motor and grain to the small one.
+
+**Shield Surf (rows and defaults in patch bettervr 0045; the effect in the director).** The bed is on while
+PlayerNormal is `0x101E0498` (坂滑り), two hands, a low scrape whose level runs 0.18 to 0.60 between still and
+18 m/s, with a 17 Hz roughness on both hands and half the level on the pad's small motor. `0x101E0990`
+(坂滑り着地) is the landing: one thump scaled by the speed it had, 0.25 to 0.75 before the row, and a headset pulse
+only at 12 m/s or more and only when the row's Headset tick is on. Default: on, 60 %, Hands and DualSense, Headset
+off.
+
+**Traversal (one row, four behaviours).** Paraglider: a 0.10-0.45 wind bed that grows with speed and a dive; the
+headset gets a 300-600 ms gust every 6-12 s through the direct pulse path, never a bed. Swim: a splash on entry, a
+0.08-0.38 rush with a 1.2 Hz swell, a drip on exit. Climb: hand over hand at 1.1-2.2 steps a second from the vertical
+speed, alternating hands, for the wall (`0x101E0390`) and the ladder (`0x101E0658`) states. Gallop: 2-4 Hz from the
+horse's speed while `Player::IsRiding(true)`, alternating hands. Default: on, 55 %, Hands and Headset, DualSense off.
+The splash, drip and gust are one-shots; none of them is queued as a `Haptics::Play` event.
+
+**Low Health.** Link's life at player `+0x540` (the field the V3 console scan proved) against the highest life seen
+since this Link appeared: one beat per 1.1 s at half life, 0.55 s near death, no beat above half, with a 55 % stop so
+a life on the line does not flicker. The hands get a 0.18 s low thump, silent between beats; the headset gets the same
+beat as a continuous level, so at the 60 % default it is about 12-15 Hz, below Damage Taken's pulse, and it follows
+the row's strength and the Headset Limit. Default: on, 60 %, Hands and Headset, DualSense off. A save loaded at low
+life reads as full until life rises or falls on that actor, because the fraction has no proven maximum field to use.
+
+**Parry and flurry are not implemented in this build.** Their PlayerNormal hashes are in no console log, and the
+public decomp's action names (`actionPlayerGuardJust`, `actionPlayerCutAfterJust`) have no V208 hash map, so calling
+a state a parry would be a guess. Instead, patch bettervr 0044 publishes the state and the shield's guard to a capped
+probe: every new state while the shield is up, and every state for two seconds after a backflip or a side step (a
+flurry follows a perfect dodge), is logged as `[vib] combat probe: state '...' (0x...) ...`, at most 24 lines. The
+existing once-per-state `[vib] PlayerNormal state` line stays. Test request 75's parry and flurry decide whether a
+Combat Peaks row can be built next.
+
+**Frame cost (4.12).** The director is called once from `mix()` on the existing mixer thread: a few aligned guest
+reads (the actor matrix, the life field, the riding flag) and arithmetic, well under a millisecond a second of mixer
+time. The audio thread, the GPU thread and the record are untouched. Logs are transition-only and capped; nothing is
+logged per frame or per beat.
+
+New patches: bettervr 0043 (hands and motors), 0044 (state/guard publish and the mixer's layer), 0045 (the three rows
+and their defaults); no Cemu change. New files: `port/bettervr/haptics_ps5.h/.cpp`, the host test
+`tools/tests/test-bettervr-haptics.cpp`.
+
+**Test request 75 (v0.8 haptics part A, 13.60 console).** Install the `BotW-VR-v...zip` from this head's green
+"BetterVR build" run and start Breath of the Wild in VR with the headset, both Sense controllers and the DualSense
+on. Leave the Vibration page's master switch and Headset Limit at their defaults (on, 60 %); the three new rows should
+read Shield Surf 60 % [Hands, DualSense], Traversal 55 % [Hands, Headset], Low Health 60 % [Hands, Headset]. Leave
+the other rows as they are, and leave `HapticsLogPatterns` on (the default) so the lines below exist.
+
+1. **Hands and motors.** Raise the shield and lower it: the rumble should be in the shield hand only. Draw a bow:
+   the draw rumble in the drawing hand only. The game's own combat rumble stays on both. Rest a hand on the DualSense
+   during a surf and say whether the large motor carries the weight and the small one the grain; the existing rows
+   should still feel as they did on the pad.
+2. **Shield Surf.** Surf for 10 s or more on grass, then snow, then stone, and say whether the bed rises and falls
+   with speed. Jump and land hard; the landing should be one thump. Then tick Shield Surf's Headset column and repeat
+   a landing at speed (12 m/s or more) for the headset tick, and turn it back off.
+3. **Traversal.** Glide for 30 s including a dive; the wind bed should grow in the dive and the headset should gust
+   every 6-12 s. Swim in, swim fast, climb out; climb a wall and a ladder; ride a horse at a walk, a trot and a
+   gallop (the gallop should be 2-4 Hz and alternate hands).
+4. **Low Health.** Start at full life, then take damage to just below half; the beat should start at about 1.1 s and
+   speed up as life falls. Heal above half; it should stop. Say whether the headset beat is comfortable and well
+   below a damage hit.
+5. **Parry and flurry.** Parry a Guardian beam or a melee blow (shield up, A on the beat), then do a flurry (a
+   backflip dodge and attacks). Send every `[vib] combat probe` line and the `[vib] PlayerNormal state` lines around
+   each; if no probe line appears, say so and send the PlayerNormal lines anyway, so the next build knows whether
+   the game keeps one state through them.
+6. **Comfort.** After the checks, play 20 minutes with the rows on and say which effects are too strong, tiring or
+   unnoticeable, and whether the headset gusts and beat are comfortable. The defaults change first, not the code.
+
+Send `boot.log` (Settings > Diagnostics > Copy logs to USB):
+`LC_ALL=C grep -a "\[vib\] haptics\|\[vib\] surf\|\[vib\] traversal\|\[vib\] health\|\[vib\] combat probe\|\[vib\] PlayerNormal" boot.log`
+
+**What it decides.** The feel and the levels of the three rows and whether their defaults stay; the usefulness of the
+two-motor split; and the parry/flurry hashes. If the probe names distinct states, Combat Peaks (0.8's idea 3) can be
+built from them; if it shows the same state through a parry and a normal attack, the next step is an action-name hook
+rather than another state hash.
+
 ## 2026-11-21: the shrine respawn holds the third-person camera and its fade reaches the 3D picture without the 16:9 panel; built, untested on console
 
 The rc4 report (13.60): falling into the void in a shrine, the respawn cutscene showed the same third-person camera
