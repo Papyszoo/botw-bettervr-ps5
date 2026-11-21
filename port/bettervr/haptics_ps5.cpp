@@ -529,7 +529,7 @@ private:
 			m_envLogAt = now + 0.5;
 			++m_envLogs;
 			const std::string row = gain > 0.0f
-			                            ? fmt::format("Weather & Water {:.0f}% [{}]",
+			                            ? fmt::format("Weather & Water {}% [{}]",
 			                                          (unsigned)settings.HapticsStrength(HapticCategory::WeatherWater).load(),
 			                                          DescribeDevices(devices))
 			                            : std::string("Weather & Water off");
