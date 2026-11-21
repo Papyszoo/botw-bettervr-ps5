@@ -35,6 +35,16 @@ std::atomic<int64_t> s_guardChangedNs{0};
 std::atomic<int64_t> s_guardPressedNs{0};
 constexpr uint32_t kPendingSurfLanding = 1;
 
+// Link's life, in quarter hearts (the field the V3 console scan proved)
+constexpr uint32_t kLifeOffset = 0x540;
+constexpr int32_t kLifeMax = 480;
+
+// Test request 76's tuning run: six 20 s weather stops plus travel and weather waiting at 2 Hz, about 140 steps
+// on seven surfaces twice, and enough transitions for the later stops after music has flipped the weather lines
+constexpr int kEnvLogCap = 1800;
+constexpr int kWeatherLogCap = 240;
+constexpr int kStepLogCap = 240;
+
 bool HapticsLogging()
 {
 	return GetSettings().hapticsLogPatterns;
@@ -59,6 +69,17 @@ std::string DescribeDevices(uint32_t devices)
 	if (devices & HapticDevicePad)
 		text += text.empty() ? "pad" : "+pad";
 	return text.empty() ? "none" : text;
+}
+
+// The mixer reads a few fields after the game thread publishes the player. Check that the address is still the one
+// the actor list named, and that the block still carries that actor's name, before and after the reads: a load can
+// free the block and a new actor can take the address between two ticks.
+bool IsCurrentPlayer(uint32_t player)
+{
+	if (player == 0 || Guest::s_baseAddress == 0 || Player::GetAddress() != player)
+		return false;
+	const auto name = Guest::Get<sead::FixedSafeString40>(player + offsetof(ActorWiiU, name));
+	return std::strncmp(name.data, "GameROMPlayer", sizeof("GameROMPlayer")) == 0;
 }
 
 // v0.8's parry/flurry diagnosis: their PlayerNormal hashes are not in any console log, and the public decomp's
@@ -132,9 +153,18 @@ public:
 		m_lastNs = nowNs;
 		const double now = (double)nowNs * 1.0e-9;
 		const uint32_t player = Player::GetAddress();
+		const bool loading = Guest::s_baseAddress != 0 && Screens::IsLoadingVisible();
+		if (loading)
+		{
+			// a load can put the new Link at the old actor's address: his life high-water is not the old one's
+			m_player = 0;
+			m_lifeMax = 0;
+			m_life = -1;
+			m_healthOn = false;
+		}
 
-		// a menu, a load or no Link yet: no effect may linger into it
-		if (player == 0 || Guest::s_baseAddress == 0 || !GameState::IsInGame())
+		// a menu, a load, a swapped actor or no Link yet: no effect may linger into it
+		if (!IsCurrentPlayer(player) || !GameState::IsInGame() || loading)
 		{
 			s_pending.store(0, std::memory_order_relaxed); // a landing while no effect runs is not a thump later
 			if (m_running)
@@ -194,7 +224,15 @@ public:
 				Log::print<INFO>("[vib] haptics: director on the 60 Hz mixer, per-hand Sense and two pad motors; Shield Surf, Traversal and Low Health on the Vibration page");
 		}
 
-		SamplePlayer(dt);
+		SamplePlayer(dt, player);
+		m_riding = Player::IsRiding(true);
+		m_lifeNow = Guest::Get<int32_t>(player + kLifeOffset).getLE();
+		if (!IsCurrentPlayer(player))
+		{
+			// the actor changed under this tick: its matrix, life and flags are not one Link's
+			m_hasPos = false;
+			return;
+		}
 		m_state = s_stateHash.load(std::memory_order_relaxed);
 		const uint32_t pending = s_pending.exchange(0, std::memory_order_acq_rel);
 		if (pending & kPendingSurfLanding)
@@ -204,22 +242,16 @@ public:
 		UpdateSurf(now, dt, settings, senseLeft, senseRight, padLarge, padSmall);
 		UpdateTraversal(now, dt, settings, senseLeft, senseRight, padLarge, padSmall);
 		UpdateAmbience(now, dt, settings, senseLeft, senseRight, padLarge, padSmall);
-		UpdateFootsteps(now, dt, settings, senseLeft, senseRight, padLarge, padSmall);
+		UpdateFootsteps(now, dt, settings, senseLeft, senseRight, padLarge, padSmall, headset);
 		UpdateHealth(now, settings, senseLeft, senseRight, padLarge, padSmall, headset);
 	}
 
 private:
 	enum class Mode : uint8_t { None, Glide, Swim, Climb, Gallop };
 
-	void SamplePlayer(float dt)
+	void SamplePlayer(float dt, uint32_t player)
 	{
-		const uint32_t mtxAddress = Player::GetMtxAddress();
-		if (mtxAddress == 0)
-		{
-			m_hasPos = false;
-			return;
-		}
-		const BEMatrix34 mtx = Guest::Get<BEMatrix34>(mtxAddress);
+		const BEMatrix34 mtx = Guest::Get<BEMatrix34>(player + offsetof(ActorWiiU, mtx));
 		const glm::fvec3 pos{ mtx.pos_x.getLE(), mtx.pos_y.getLE(), mtx.pos_z.getLE() };
 		if (!glm::all(glm::isfinite(pos)))
 		{
@@ -246,8 +278,10 @@ private:
 		m_player = player;
 		m_state = s_stateHash.load(std::memory_order_relaxed);
 		m_life = -1;
+		m_lifeNow = -1;
 		m_lifeMax = 0; // the fraction is against the highest life this actor has had
 		m_healthOn = false;
+		m_riding = false;
 		m_nextBeat = 0.0;
 		m_beatAt = 0.0;
 		m_surfOn = false;
@@ -278,6 +312,7 @@ private:
 		m_stepTick = -1.0;
 		m_stepGeneration = 0;
 		m_surface = ps5hapt::NeutralSurfaceTone();
+		m_stepTone = ps5hapt::NeutralSurfaceTone();
 		m_surfaceHardness = 0.35f;
 		m_surfaceGrain = 0.30f;
 		m_surfaceDecay = 0.55f;
@@ -336,7 +371,7 @@ private:
 				const bool headset = (devices & HapticDeviceHeadset) != 0;
 				if (headset && m_speed >= ps5hapt::kSurfLandingHeadsetSpeed)
 				{
-					const int hz = BetterVR_PS5_HeadsetPulse(0.45f, 140);
+					const int hz = BetterVR_PS5_HeadsetPulse(0.45f * settings.GetHapticsHeadsetLimit(), 140);
 					if (CanLog(m_surfLogs))
 						Log::print<INFO>("[vib] surf: landing at {:.1f} m/s -> hands {:.2f}, pad large {:.2f} small {:.2f}, headset {} Hz for 140 ms",
 						                 m_speed, m_landLevel, m_landLevel, m_landLevel * 0.60f, hz);
@@ -378,7 +413,7 @@ private:
 			mode = Mode::Swim;
 		else if (m_state == ps5hapt::kClimb || m_state == ps5hapt::kLadder)
 			mode = Mode::Climb;
-		else if (Player::IsRiding(true))
+		else if (m_riding)
 			mode = Mode::Gallop;
 
 		if (mode != m_mode)
@@ -447,7 +482,7 @@ private:
 			if ((devices & HapticDeviceHeadset) && now >= m_gustAt)
 			{
 				const int ms = 300 + (int)(301.0f * Rand01());
-				const int hz = BetterVR_PS5_HeadsetPulse(ps5hapt::kGlideGustStrength, ms);
+				const int hz = BetterVR_PS5_HeadsetPulse(ps5hapt::kGlideGustStrength * settings.GetHapticsHeadsetLimit(), ms);
 				if (CanLog(m_traversalLogs))
 					Log::print<INFO>("[vib] traversal: paraglider gust {} Hz for {} ms", hz, ms);
 				m_gustAt = now + 6.0 + 6.0 * Rand01();
@@ -524,7 +559,7 @@ private:
 		const float gain = settings.GetHapticsGain(HapticCategory::WeatherWater);
 		const uint32_t devices = settings.GetHapticsDeviceMask(HapticCategory::WeatherWater);
 
-		if (HapticsLogging() && now >= m_envLogAt && m_envLogs < 240)
+		if (HapticsLogging() && now >= m_envLogAt && m_envLogs < kEnvLogCap)
 		{
 			m_envLogAt = now + 0.5;
 			++m_envLogs;
@@ -542,7 +577,7 @@ private:
 			if (on == next)
 				return;
 			on = next;
-			if (CanLog(m_weatherLogs, 40))
+			if (CanLog(m_weatherLogs, kWeatherLogCap))
 				Log::print<INFO>("[vib] weather: {} {} at {:.2f}, bands low {:.2f} mid {:.2f} high {:.2f}, micro {:.1f}/s",
 				                 name, next ? "on" : "off", level, audio.low, audio.mid, audio.high, audio.micro);
 		};
@@ -564,13 +599,14 @@ private:
 				m_thunderLevel = ps5hapt::kThunderHandLevel * gain;
 				if (devices & HapticDeviceHeadset)
 				{
-					const int hz = BetterVR_PS5_HeadsetPulse(ps5hapt::kThunderHeadsetStrength, ps5hapt::kThunderHeadsetMs);
-					if (CanLog(m_weatherLogs, 40))
+					const int hz = BetterVR_PS5_HeadsetPulse(
+					    ps5hapt::kThunderHeadsetStrength * settings.GetHapticsHeadsetLimit(), ps5hapt::kThunderHeadsetMs);
+					if (CanLog(m_weatherLogs, kWeatherLogCap))
 						Log::print<INFO>("[vib] thunder: hands {:.2f} for {:.0f} ms, headset {} Hz for {} ms [{}]",
 						                 m_thunderLevel, ps5hapt::kThunderHandSeconds * 1000.0f, hz,
 						                 ps5hapt::kThunderHeadsetMs, DescribeDevices(devices));
 				}
-				else if (CanLog(m_weatherLogs, 40))
+				else if (CanLog(m_weatherLogs, kWeatherLogCap))
 					Log::print<INFO>("[vib] thunder: hands {:.2f}, headset off (Weather & Water's Headset tick)",
 					                 m_thunderLevel);
 			}
@@ -629,13 +665,14 @@ private:
 	// layer (Surfaces, beta) asks the audio thread for the 160 ms after the step and colours the next ticks with
 	// the transient's hardness, grain and decay. No event is queued per step.
 	void UpdateFootsteps(double now, float dt, ModSettings& settings, float* senseLeft, float* senseRight,
-	                     float* padLarge, float* padSmall)
+	                     float* padLarge, float* padSmall, float* headset)
 	{
 		const float gain = settings.GetHapticsGain(HapticCategory::FootstepsGround);
 		const uint32_t devices = settings.GetHapticsDeviceMask(HapticCategory::FootstepsGround);
 		const float surfaceGain = settings.GetHapticsGain(HapticCategory::SurfacesBeta);
 		const uint32_t surfaceDevices = settings.GetHapticsDeviceMask(HapticCategory::SurfacesBeta);
 		const bool surfaces = surfaceGain > 0.0f && surfaceDevices != 0;
+		const ps5hapt::SurfaceTone neutral = ps5hapt::NeutralSurfaceTone();
 
 		if (m_stepGeneration != 0 && ps5audio::StepReady(m_stepGeneration))
 		{
@@ -661,8 +698,14 @@ private:
 			}
 		}
 
-		const bool walking = gain > 0.0f && devices != 0 && ps5hapt::IsWalkState(m_state) &&
-		                     !Player::IsRiding(true) && std::abs(m_vertical) < 1.2f && m_speed > 0.35f;
+		// the row's strength is how much of the measured tone replaces the neutral footstep, not a switch: at 0 %
+		// the tick is the neutral one, at 100 % the full surface, and the Footsteps row keeps its own devices
+		const ps5hapt::SurfaceTone surfaceTone =
+		    surfaces ? ps5hapt::BlendSurfaceTone(neutral, m_surface, surfaceGain) : neutral;
+		const uint32_t tickDevices = devices | (surfaces ? surfaceDevices : 0u);
+
+		const bool walking = gain > 0.0f && devices != 0 && ps5hapt::IsWalkState(m_state) && !m_riding &&
+		                     std::abs(m_vertical) < 1.2f && m_speed > 0.35f;
 		if (!walking)
 		{
 			if (m_stepOn)
@@ -670,7 +713,7 @@ private:
 				m_stepOn = false;
 				m_stepPhase = 0.0f;
 				m_stepTick = -1.0;
-				if (CanLog(m_stepLogs, 96))
+				if (CanLog(m_stepLogs, kStepLogCap))
 					Log::print<INFO>("[vib] step: off");
 			}
 			return;
@@ -681,7 +724,7 @@ private:
 			m_stepPhase = 0.0f;
 			m_stepHand = 0;
 			m_stepTick = -1.0;
-			if (CanLog(m_stepLogs, 96))
+			if (CanLog(m_stepLogs, kStepLogCap))
 				Log::print<INFO>("[vib] step: on at {:.1f} m/s, {:.2f} steps/s, Surfaces (beta) {}", m_speed,
 				                 ps5hapt::StepRateHz(m_speed), surfaces ? "on" : "off");
 		}
@@ -692,12 +735,12 @@ private:
 			m_stepPhase = std::fmod(m_stepPhase, 1.0f);
 			m_stepHand ^= 1;
 			m_stepTick = now;
-			const ps5hapt::SurfaceTone tone = surfaces ? m_surface : ps5hapt::NeutralSurfaceTone();
-			m_stepSeconds = tone.seconds;
-			m_stepTickLevel = ps5hapt::FootstepLevel(m_speed, tone) * gain;
+			m_stepTone = surfaceTone;
+			m_stepSeconds = m_stepTone.seconds;
+			m_stepTickLevel = ps5hapt::FootstepLevel(m_speed, m_stepTone) * gain;
 			if (surfaces)
 				m_stepGeneration = ps5audio::RequestStep();
-			if (CanLog(m_stepLogs, 96))
+			if (CanLog(m_stepLogs, kStepLogCap))
 			{
 				const ps5audio::Snapshot audio = ps5audio::Shared().Now();
 				Log::print<INFO>("[vib] step: {:.1f} m/s, {:.2f} steps/s, hand {}, bands low {:.2f} mid {:.2f} high "
@@ -713,35 +756,32 @@ private:
 		{
 			const float progress = (float)((now - m_stepTick) / m_stepSeconds);
 			const float level = m_stepTickLevel * ps5hapt::FallingEnvelope(progress);
-			if (devices & HapticDeviceSense)
+			if (tickDevices & HapticDeviceSense)
 				*(m_stepHand == 0 ? senseLeft : senseRight) =
 				    std::max(*(m_stepHand == 0 ? senseLeft : senseRight), level);
-			const ps5hapt::SurfaceTone tone = surfaces ? m_surface : ps5hapt::NeutralSurfaceTone();
-			AddPad(level, surfaces ? surfaceDevices : devices, padLarge, padSmall, tone.largeShare, tone.smallShare);
+			AddPad(level, tickDevices, padLarge, padSmall, m_stepTone.largeShare, m_stepTone.smallShare);
+			if (tickDevices & HapticDeviceHeadset)
+				*headset = std::max(*headset, level);
 		}
 		// a soft surface leaves a bed under the ticks (grass, snow, ice); stone's is nearly zero
 		if (surfaces && m_surface.bed > 0.0f)
-			AddBoth(m_surface.bed * gain * 0.60f, devices, senseLeft, senseRight, padLarge, padSmall, 0.80f, 0.20f);
+			AddBoth(m_surface.bed * gain * surfaceGain * 0.60f, surfaceDevices, senseLeft, senseRight, padLarge,
+			        padSmall, 0.80f, 0.20f);
 	}
 
 	void UpdateHealth(double now, ModSettings& settings, float* senseLeft, float* senseRight, float* padLarge,
 	                  float* padSmall, float* headset)
 	{
-		constexpr uint32_t kLifeOffset = 0x540; // quarter hearts, the field the V3 console scan proved
-		constexpr int32_t kLifeMax = 480;
-		if (m_player == 0)
-			return;
-		const int32_t life = Guest::Get<int32_t>(m_player + kLifeOffset).getLE();
-		if (life < 0 || life > kLifeMax)
+		if (m_player == 0 || m_lifeNow < 0 || m_lifeNow > kLifeMax)
 			return; // a load's or a menu's value: no beat, and the high-water is kept
-		m_life = life;
-		m_lifeMax = std::max(m_lifeMax, life);
+		m_life = m_lifeNow;
+		m_lifeMax = std::max(m_lifeMax, m_life);
 
 		const float gain = settings.GetHapticsGain(HapticCategory::LowHealth);
 		const uint32_t devices = settings.GetHapticsDeviceMask(HapticCategory::LowHealth);
 		const bool lives = m_life > 0 && m_lifeMax >= 4;
 		const float fraction = lives ? (float)m_life / (float)m_lifeMax : 1.0f;
-		// 50 % starts the beat, 55 % stops it: a life sitting on the line does not flicker
+		// half starts the beat; above half there is none (the period is already zero there)
 		if (!m_healthOn && lives && gain > 0.0f && devices != 0 && fraction <= ps5hapt::kHeartLifeHalf)
 		{
 			m_healthOn = true;
@@ -753,7 +793,7 @@ private:
 				                 ps5hapt::HeartHandLevel(fraction) * gain, ps5hapt::HeartHeadLevel(fraction) * gain,
 				                 DescribeDevices(devices));
 		}
-		else if (m_healthOn && (!lives || gain <= 0.0f || devices == 0 || fraction > 0.55f))
+		else if (m_healthOn && (!lives || gain <= 0.0f || devices == 0 || fraction > ps5hapt::kHeartLifeHalf))
 		{
 			m_healthOn = false;
 			if (CanLog(m_healthLogs, 12))
@@ -827,6 +867,7 @@ private:
 	glm::fvec3 m_pos = {};
 	float m_speed = 0.0f;
 	float m_vertical = 0.0f;
+	bool m_riding = false;
 
 	bool m_surfOn = false;
 	double m_surfEnter = 0.0;
@@ -877,6 +918,7 @@ private:
 	float m_stepSeconds = 0.0f;
 	uint32_t m_stepGeneration = 0;
 	ps5hapt::SurfaceTone m_surface = ps5hapt::NeutralSurfaceTone();
+	ps5hapt::SurfaceTone m_stepTone = ps5hapt::NeutralSurfaceTone();
 	float m_surfaceHardness = 0.35f;
 	float m_surfaceGrain = 0.30f;
 	float m_surfaceDecay = 0.55f;
@@ -884,6 +926,7 @@ private:
 	int m_surfaceLogs = 0;
 
 	int32_t m_life = -1;
+	int32_t m_lifeNow = -1;
 	int32_t m_lifeMax = 0;
 	bool m_healthOn = false;
 	double m_nextBeat = 0.0;

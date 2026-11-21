@@ -45,7 +45,7 @@ inline constexpr float kSurfLandingSeconds = 0.35f;
 inline float GlideLevel(float speed, float descent) {
 	return std::min(0.45f, 0.10f + 0.22f * Unit(speed, 18.0f) + 0.18f * Unit(descent, 10.0f));
 }
-inline constexpr float kGlideGustStrength = 0.42f; // fixed: the direct pulse path, not the row's level; 300-600 ms
+inline constexpr float kGlideGustStrength = 0.42f; // fixed before the Headset Limit, not the row's level; 300-600 ms
 
 // Swim: an entry splash, a submerged rush that rises with speed, and an exit drip.
 inline float SwimRushLevel(float speed) {
@@ -76,7 +76,7 @@ inline constexpr float kGallopStepSeconds = 0.20f;
 
 // Low health: one beat per 1.1 s at half life, 0.55 s near death; above half life there is no beat. The hands get
 // the lower thump and the headset a continuous level for the beat's length (a body signal, below Damage Taken's
-// pulse). The director adds a little hysteresis so a life at exactly half does not flicker.
+// pulse). At exactly half the beat is on; above it there is none.
 inline constexpr float kHeartLifeHalf = 0.5f;
 inline float HeartPeriod(float lifeFraction) {
 	if (lifeFraction > kHeartLifeHalf)
@@ -138,8 +138,8 @@ inline float WaterBedLevel(float water) {
 inline float WindBedLevel(float wind) {
 	return 0.25f + 0.45f * Clamp01(wind);
 }
-// thunder keeps a fixed direct-pulse strength so it is felt at the 35 % default; the row's Headset tick gates it
-inline constexpr float kThunderHeadsetStrength = 1.0f; // 25 Hz through the runtime's sqrt mapping
+// thunder keeps a fixed direct-pulse strength before the Headset Limit; the row's Headset tick gates it
+inline constexpr float kThunderHeadsetStrength = 1.0f; // 25 Hz at a 100 % limit through the runtime's sqrt mapping
 inline constexpr int kThunderHeadsetMs = 180;
 inline constexpr float kThunderHandLevel = 0.55f;
 inline constexpr float kThunderHandSeconds = 0.30f;
@@ -196,6 +196,18 @@ inline SurfaceTone SurfaceToneFrom(float hardness, float grain, float decay) {
 }
 inline SurfaceTone NeutralSurfaceTone() {
 	return SurfaceToneFrom(0.35f, 0.30f, 0.55f);
+}
+// Surfaces (beta) strength: how much of the measured tone replaces the neutral footstep, so the row is a level and
+// not a switch; 0 leaves the tick exactly as the Footsteps row had it
+inline SurfaceTone BlendSurfaceTone(const SurfaceTone& neutral, const SurfaceTone& surface, float amount) {
+	const float t = Clamp01(amount);
+	SurfaceTone tone;
+	tone.level = neutral.level + (surface.level - neutral.level) * t;
+	tone.seconds = neutral.seconds + (surface.seconds - neutral.seconds) * t;
+	tone.largeShare = neutral.largeShare + (surface.largeShare - neutral.largeShare) * t;
+	tone.smallShare = neutral.smallShare + (surface.smallShare - neutral.smallShare) * t;
+	tone.bed = neutral.bed + (surface.bed - neutral.bed) * t;
+	return tone;
 }
 inline float FootstepLevel(float speed, const SurfaceTone& tone) {
 	return tone.level * (0.72f + 0.28f * Unit(speed, 6.0f));

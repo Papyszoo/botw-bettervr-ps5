@@ -138,6 +138,15 @@ int main()
 			"surface timings and motor shares stay in their ranges");
 		Check(FootstepLevel(3.0f, NeutralSurfaceTone()) > 0.15f &&
 		      FootstepLevel(3.0f, NeutralSurfaceTone()) < 0.40f, "the neutral footstep sits in a usable range");
+
+		const SurfaceTone neutral = NeutralSurfaceTone();
+		Check(Distance(BlendSurfaceTone(neutral, hard, 0.0f).level, neutral.level) < 1e-6f,
+			"Surfaces at 0 % leaves the footstep's level alone");
+		Check(Distance(BlendSurfaceTone(neutral, hard, 1.0f).level, hard.level) < 1e-6f,
+			"Surfaces at 100 % reaches the measured surface's level");
+		Check(BlendSurfaceTone(neutral, hard, 0.5f).level > neutral.level &&
+		      BlendSurfaceTone(neutral, hard, 0.5f).level < hard.level,
+			"Surfaces strength moves the footstep's level between neutral and the surface");
 	}
 
 	// The audio analyser: a low tone, a high tone, an onset train and one captured footstep.

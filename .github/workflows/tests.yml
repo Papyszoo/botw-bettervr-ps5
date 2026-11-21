@@ -147,6 +147,7 @@ jobs:
         run: bash tools/tests/test-bettervr-triggers.sh
 
       - name: BetterVR haptics
+        if: always()
         run: bash tools/tests/test-bettervr-haptics.sh
 
       - name: BetterVR import NIDs
