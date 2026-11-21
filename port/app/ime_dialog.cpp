@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "ime_dialog.h"
 
+#ifndef PS5IME_CHECK
 #include "../ps5/log.h"
+#endif
 
 #include <algorithm>
 #include <cstring>
+#include <mutex>
 
 extern "C"
 {
@@ -16,6 +19,8 @@ extern "C"
 	int32_t sceImeDialogGetStatus();
 	int32_t sceImeDialogGetResult(void* result);
 	int32_t sceImeDialogTerm();
+	// libkernel's clock, for the dialog's own limit
+	uint64_t sceKernelGetProcessTime();
 }
 
 namespace
@@ -55,25 +60,47 @@ namespace
 	constexpr int32_t kOutcomeOk = 0;
 	constexpr int32_t kOutcomeCancelled = 1;
 	constexpr int32_t kOutcomeAborted = 2;
-	constexpr uint32_t kMaxTextLength = 2048; // SCE_IME_DIALOG_MAX_TEXT_LENGTH
 	// A dialog that reports NONE once it was taken never comes up on this firmware: a second, then the
 	// caller decides the text it has. The hook polls once a frame.
 	constexpr int kGracePolls = 120;
+	// A dialog the player cannot see (or one left unanswered) must not hold the game: after 90 s of
+	// the console's clock it ends as a cancel would, and the game takes the text it gave.
+	constexpr uint64_t kAnswerTimeUs = 90ull * 1000 * 1000;
 	// No title and no placeholder of the app's own: the field holds the game's text, and the port has no
 	// name for another game's prompt. Empty rather than null, so the system never reads an address it was
 	// not given.
 	const uint16_t kNothing[] = {0};
 
+	std::mutex s_mutex; // Open, Poll and Close, which the stop watchdog also reaches
 	ImeParam s_param;
-	uint16_t s_text[kMaxTextLength + 1]; // the dialog writes here while it is up: it outlives the calls
+	uint16_t s_text[ps5ime::kMaxTextLength + 1]; // the dialog writes here while it is up: it outlives the calls
 	int s_polls;
+	uint64_t s_openedAt; // sceKernelGetProcessTime, for the answer time
 	bool s_open;
 	bool s_terminated;
+
+	void CloseLocked()
+	{
+		if (!s_open)
+			return;
+		s_open = false;
+		if (s_terminated)
+			return;
+		s_terminated = true;
+#ifdef PS5IME_CHECK
+		(void)sceImeDialogTerm();
+#else
+		const int32_t rc = sceImeDialogTerm();
+		if (rc < 0)
+			ps5log::Line("[ime] ending the console's keyboard: {:#x}", (uint32_t)rc);
+#endif
+	}
 }
 
 bool ps5ime::Open(std::u16string_view text, int maxLength, int32_t& rc)
 {
-	Close();
+	std::lock_guard lock(s_mutex);
+	CloseLocked();
 	rc = 0;
 	const uint32_t limit = (uint32_t)std::clamp(maxLength, 0, (int)kMaxTextLength);
 	if (limit == 0)
@@ -97,12 +124,14 @@ bool ps5ime::Open(std::u16string_view text, int maxLength, int32_t& rc)
 	rc = sceImeDialogInit(&s_param, nullptr);
 	if (rc < 0)
 		return false;
+	s_openedAt = sceKernelGetProcessTime();
 	s_open = true;
 	return true;
 }
 
 int ps5ime::Poll(std::u16string& text, int32_t& rc)
 {
+	std::lock_guard lock(s_mutex);
 	rc = 0;
 	if (!s_open)
 	{
@@ -113,19 +142,24 @@ int ps5ime::Poll(std::u16string& text, int32_t& rc)
 	if (status == kStatusRunning)
 	{
 		s_polls = 0;
+		if (sceKernelGetProcessTime() - s_openedAt >= kAnswerTimeUs)
+		{
+			CloseLocked();
+			return 4; // up too long: the game's text stands, as on a cancel
+		}
 		return 0;
 	}
 	if (status == kStatusNone)
 	{
 		if (++s_polls < kGracePolls)
 			return 0;
-		Close();
+		CloseLocked();
 		rc = -1;
 		return -1; // taken, never shown
 	}
 	if (status != kStatusFinished)
 	{
-		Close();
+		CloseLocked();
 		rc = status;
 		return -1;
 	}
@@ -133,7 +167,7 @@ int ps5ime::Poll(std::u16string& text, int32_t& rc)
 	rc = sceImeDialogGetResult(&result);
 	if (rc < 0)
 	{
-		Close();
+		CloseLocked();
 		return -1;
 	}
 	const int32_t outcome = result.outcome;
@@ -147,7 +181,7 @@ int ps5ime::Poll(std::u16string& text, int32_t& rc)
 			length++;
 		typed.assign((const char16_t*)s_text, length);
 	}
-	Close();
+	CloseLocked();
 	rc = outcome;
 	if (outcome == kOutcomeOk)
 	{
@@ -163,13 +197,6 @@ int ps5ime::Poll(std::u16string& text, int32_t& rc)
 
 void ps5ime::Close()
 {
-	if (!s_open)
-		return;
-	s_open = false;
-	if (s_terminated)
-		return;
-	s_terminated = true;
-	const int32_t rc = sceImeDialogTerm();
-	if (rc < 0)
-		ps5log::Line("[ime] ending the console's keyboard: {:#x}", (uint32_t)rc);
+	std::lock_guard lock(s_mutex);
+	CloseLocked();
 }

@@ -77,6 +77,9 @@ jobs:
       - name: Keyboards
         run: bash tools/tests/test-keyboard.sh
 
+      - name: The console keyboard's dialog
+        run: bash tools/tests/test-ime-dialog.sh
+
       - name: Network shares
         run: bash tools/tests/test-netfs.sh
 

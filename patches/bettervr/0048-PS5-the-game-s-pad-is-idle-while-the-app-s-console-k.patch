@@ -2,14 +2,15 @@ From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: ps5cemu <ps5cemu@localhost>
 Date: Sat, 21 Nov 2026 21:15:01 +0100
 Subject: [PATCH] PS5: the game's pad is idle while the app's console keyboard
- is up, and its Options is not the game's pause; built, untested on console
+ is up, and an Options press that runs into or through it ends with it; built,
+ untested on console
 
 ---
- src/game/botw/input/controls.cpp | 21 +++++++++++++++++++--
- 1 file changed, 19 insertions(+), 2 deletions(-)
+ src/game/botw/input/controls.cpp | 42 ++++++++++++++++++++++++++++++--
+ 1 file changed, 40 insertions(+), 2 deletions(-)
 
 diff --git a/src/game/botw/input/controls.cpp b/src/game/botw/input/controls.cpp
-index bfbd680..8f86fc4 100644
+index bfbd680..128e2b5 100644
 --- a/src/game/botw/input/controls.cpp
 +++ b/src/game/botw/input/controls.cpp
 @@ -22,6 +22,8 @@
@@ -21,7 +22,31 @@ index bfbd680..8f86fc4 100644
  #endif
  
  static ButtonState s_inventoryMapButton;
-@@ -1659,8 +1661,11 @@ static void hook_InjectXRInput(PPCInterpreter_t* hCPU) {
+@@ -1128,6 +1130,9 @@ extern "C" bool BetterVR_PS5_ToggleModMenu() {
+ struct OptionsButtonState {
+     bool wasDown = false;
+     bool recenterLogged = false;
++    // a press that ran into or through the app's console keyboard: it ends with it, and its release is
++    // not the game's pause
++    bool ignored = false;
+     std::chrono::steady_clock::time_point downAt;
+ };
+ 
+@@ -1136,6 +1141,13 @@ static OptionsButtonState s_padOptions;
+ 
+ static void ProcessOptionsButton(uint32_t& buttonHold, ControlState& state, bool down, bool pad, OptionsButtonState& s) {
+     const auto now = std::chrono::steady_clock::now();
++    if (s.ignored) {
++        // held through the dialog: followed until it is let go, so no press starts after it either
++        if (!down)
++            s.ignored = false;
++        s.wasDown = down;
++        return;
++    }
+     if (down && !s.wasDown) {
+         s.wasDown = true;
+         s.recenterLogged = false;
+@@ -1659,8 +1671,22 @@ static void hook_InjectXRInput(PPCInterpreter_t* hCPU) {
      // the pad's + is the same Options press: the game never sees it while it is held, so a hold never pauses (the
      // recenter is the runtime's) and the release sends the tap
      vpadStatus.hold = vpadStatus.hold.getLE() & ~static_cast<uint32_t>(VPAD_BUTTON_PLUS);
@@ -31,11 +56,22 @@ index bfbd680..8f86fc4 100644
 +    if (!BetterVR_PS5_GameInputBlocked()) {
 +        ProcessOptionsButton(newXRBtnHold, state, BetterVR_PS5_OptionsDown(), false, s_senseOptions);
 +        ProcessOptionsButton(newXRBtnHold, state, (physicalHold & VPAD_BUTTON_PLUS) != 0, true, s_padOptions);
++    } else {
++        // A press held into or started in the dialog ends with it: the state follows the button, and
++        // ProcessOptionsButton drops its release, so the game is not paused after the keyboard closes.
++        const bool senseDown = BetterVR_PS5_OptionsDown();
++        const bool padDown = (physicalHold & VPAD_BUTTON_PLUS) != 0;
++        if (senseDown)
++            s_senseOptions.ignored = true;
++        if (padDown)
++            s_padOptions.ignored = true;
++        s_senseOptions.wasDown = senseDown;
++        s_padOptions.wasDown = padDown;
 +    }
  #endif
      UpdateGuide(inputs, isMenuOpen);
      HandGestureState leftGesture = {};
-@@ -1719,6 +1724,18 @@ static void hook_InjectXRInput(PPCInterpreter_t* hCPU) {
+@@ -1719,6 +1745,18 @@ static void hook_InjectXRInput(PPCInterpreter_t* hCPU) {
  
      OpenXRMotionBridge::UpdateVPADStatus(inputs, vpadStatus);
  

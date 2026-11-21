@@ -13,8 +13,10 @@
 // toolchain's wchar_t is. There is no SDK header for it and none is used here: the SDK ships the
 // module's stub, which tools/link.sh already links.
 //
-// Everything here runs on Cemu's render thread, the one swkbd_render runs on: swkbd's state stays on
-// that thread, as it does for the port's sheet.
+// Open and Poll run on Cemu's render thread, the one swkbd_render runs on, where the game's form is
+// read as it was for the port's sheet. Close also comes from the stop watchdog (app/emulator.cpp's
+// LeaveEndingToSystem) before the process is replaced; one mutex keeps the three apart, so a Term never
+// runs inside a poll.
 
 #pragma once
 
@@ -24,13 +26,16 @@
 
 namespace ps5ime
 {
+	// The dialog's longest text, in UTF-16 units: a game's larger limit is clamped to it.
+	constexpr int kMaxTextLength = 2048;
 	// Opens the dialog with the game's text and its limit in UTF-16 units. True when the system took
 	// it; false with rc set (or rc 0 when there is no room for a character) when it did not, and the
 	// caller decides the text it has so the game never waits on a keyboard that cannot show.
 	bool Open(std::u16string_view text, int maxLength, int32_t& rc);
 	// One poll, once a frame while Up: 0 while the player types, 1 when OK (text is what was typed),
-	// 2 when the player cancelled, 3 when the system abandoned it; negative, with rc, when it never
-	// appeared or could not be read. Every ending closes it.
+	// 2 when the player cancelled, 3 when the system abandoned it, 4 when no answer came within 90 s
+	// (the text is the game's); negative, with rc, when it never appeared or could not be read. Every
+	// ending closes it.
 	int Poll(std::u16string& text, int32_t& rc);
 	// Ends it whatever its state, so the next appearance opens a fresh one. Called when the app leaves
 	// the game or VR stops under it.
