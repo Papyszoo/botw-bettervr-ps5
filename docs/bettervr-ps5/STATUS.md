@@ -30,37 +30,44 @@ not a 0032/0038 regression: 0038 only changes the black-bars path, which this ev
 and the respawn demos `Demo048_0`/`Demo048_1`, and `ResolveGameplayBasePose` holds the pose latched at the event start
 in third person (first person already skips the event camera). While a respawn demo has a fade up,
 `PublishPresentation` sets `suppressFadeQuad`, and `renderer.cpp` leaves the 2D quad out of the composition when a 3D
-picture is presented; the 3D fade is unchanged and the panel is gone. First person, every other event, the black-bars
-path and the 2D-only `Demo003_0` presentation are unchanged. Logs: `Camera hold starts for 'Demo048_0' (third person,
-held at ...; head tracking still applies)` and `Camera hold ends for 'Demo048_0' ...` in third person, and `Fade panel
-hidden for 'Demo048_0' (the 3D picture takes the fade from the 2D layer's corner)` when the fade is up.
+picture is presented; the 3D fade is unchanged and the panel is gone. The first-person camera hold is unchanged (first
+person already skips the event camera); the fade panel is dropped in both camera modes. Every other event, the
+black-bars path and the 2D-only `Demo003_0` presentation are unchanged.
+Logs: `Camera hold starts for 'Demo048_0' (third person, held at ...; head tracking still applies)` and
+`Camera hold ends for 'Demo048_0' ...` in third person, and `Fade panel hidden for 'Demo048_0' (the 3D picture
+takes the fade from the 2D layer's corner)` when the fade is up.
 
 **Cause.** The camera jump is upstream's: the event camera runs in third person, and upstream's skip is
 first-person-only. The hold that would have covered it is ours, and 0037 listed only `Demo002_0`. The dark panel is
 upstream's HUD quad showing the game's own fade; none of patches 0032, 0037 or 0038 changed that path.
 
 **Sibling events.** `Demo048_0` is the respawn demo for the shrine and open-world void falls; drowning and lava
-deaths run the same respawn flow, and the table has no separate id for them. `Demo048_1` is the same demo for the Vah
-Ruta battle. Both are included. `Demo019_0` "Retry Demo" and `Demo006_0` "Game Over Demo" are the game-over/retry
-flow, `Demo005_0/1` are the warp demos, and `Demo037_0`/`Demo038_0` are the Lost Woods zone-out/safety reposition;
-they are different events and are not included.
+deaths are expected to run the same flow, but that is not confirmed, and the table has no separate id for them.
+`Demo048_1` is the same demo for the Vah Ruta battle. Both are included. `Demo019_0` "Retry Demo" and `Demo006_0`
+"Game Over Demo" are the game-over/retry flow, `Demo005_0/1` are the warp demos, and `Demo037_0`/`Demo038_0` are
+the Lost Woods zone-out/safety reposition; they are different events and are not included.
 
 New patch bettervr 0043 (`game_state.cpp/.h`, `camera.cpp/.h`, `game.h`, `renderer.cpp`); no Cemu, runtime or asm
-change.
+change. BetterVR build run 44939688206 on `645e425` succeeded.
 
-**Test request 76 (v0.7 respawn camera and fade, 13.60 console).** Install the `BotW-VR-v...zip` from this head's
-green "BetterVR build" run. The report's run was Camera Mode First Person with Comfort > Advanced > Cutscene Camera
-set to Third; the steps below use the camera mode to set the same thing.
+**Test request 76 (v0.7 respawn camera and fade, 13.60 console).** Install the `BotW-VR-v...zip` from the green
+"BetterVR build" run on `645e425`. The report's run was Camera Mode First Person with Comfort > Advanced > Cutscene
+Camera set to Third; the steps below use the camera mode to set the same thing. Before step 1, set Comfort > Advanced >
+**2D Cutscene Screen** to **Off** (the Gentle preset has it On; with it On a third-person event takes the black-bars
+path, no 3D picture is presented, and this test cannot decide the fix).
 
-1. **A shrine void fall, third person.** Set Camera Mode to Third Person. In a shrine, walk off into the void. Watch
-   the whole respawn: is the 3D picture steady, with no scripted camera step, and does the black fade cover the view
-   without a floating dark rectangle? Does the view stay where it was until the event ends?
+1. **A shrine void fall, third person.** Set Camera Mode to Third Person, with 2D Cutscene Screen off. In a shrine,
+   walk off into the void. Watch the whole respawn: is the 3D picture steady, with no scripted camera step, and does
+   the black fade cover the view without a floating dark rectangle? Does the view stay where it was until the event
+   ends?
 2. **An open-world void fall, third person.** Do the same from a cliff or a hole in the open world (a fall that
    respawns rather than a normal landing). Same questions.
 3. **A shrine void fall, first person.** Set Camera Mode to First Person and Comfort > Advanced > Cutscene Camera to
-   First. Repeat step 1. Does the 3D picture stay steady, and is the dark rectangle gone?
+   First; 2D Cutscene Screen stays Off. Repeat step 1. Does the 3D picture stay steady, and is the dark rectangle gone?
 4. **An open-world void fall, first person.** Repeat step 2 in first person.
-5. **Normal play and another cutscene, unchanged.** After a respawn, play about a minute and trigger a cutscene that
+5. **Vah Ruta, if a save has reached it.** In the Vah Ruta battle, trigger the respawn demo (`Demo048_1`), for example
+   by falling into the void there. Same questions as step 1. This is the only step that reaches `Demo048_1`.
+6. **Normal play and another cutscene, unchanged.** After a respawn, play about a minute and trigger a cutscene that
    is not a respawn (a memory, a tower, or a chest): it must look as it did in v0.6, with no camera hold line for it
    and no missing panel.
 
@@ -68,11 +75,12 @@ set to Third; the steps below use the camera mode to set the same thing.
 
 - `LC_ALL=C grep -a "Event 'Demo048_\|Camera hold\|Fade panel hidden\|2D-only presentation" boot.log`
 - `LC_ALL=C grep -a "compose mode" boot.log`
-- which Camera Mode was set for each step, and whether each fall was a shrine, a cliff, water or lava.
+- which Camera Mode and 2D Cutscene Screen setting were used for each step, and whether each fall was a shrine, a
+  cliff, water or lava.
 
 **What it decides.** Steps 1-4 decide whether the respawn now holds the third-person camera and drops the 16:9 fade
-panel in both camera modes. Step 5 decides that the hold list and the fade suppression did not reach any other
-event.
+panel in both camera modes. Step 5 decides that the Vah Ruta id takes the same path. Step 6 decides that the hold
+list and the fade suppression did not reach any other event.
 
 ## 2026-11-21: Eye Aim Assist is five steps with one 30-degree cone and a row that reads, and the hand's Magnesis pushes, pulls and follows an object above the player; built, untested on console
 
