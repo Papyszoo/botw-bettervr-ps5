@@ -538,10 +538,10 @@ index e76dd37..6c78ff7 100644
              EndCard();
          }
 diff --git a/src/utils/mod_settings.h b/src/utils/mod_settings.h
-index fadd731..0b5bcd0 100644
+index f0c666f..e693995 100644
 --- a/src/utils/mod_settings.h
 +++ b/src/utils/mod_settings.h
-@@ -648,7 +648,7 @@ struct ModSettings {
+@@ -650,7 +650,7 @@ struct ModSettings {
      // toward the gaze (XR eye gaze), from off to the whole angle; an old saved "true" is 25 %
      EyeAimAssistSetting eyeAimAssist;
      // Eye Magnesis (game/botw/player/magnesis.cpp): Magnesis picks and steers by the gaze, the right stick's

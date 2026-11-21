@@ -8,8 +8,8 @@ Subject: [PATCH] PS5: the Eye Aim Assist switch bends a throw and a bow shot
  src/game/botw/input/controls.cpp | 25 +++++++------
  src/game/botw/player/bow.cpp     | 62 ++++++++++++++++++++++++++++++++
  src/rendering/imgui_menus.cpp    | 10 ++++--
- src/utils/mod_settings.h         | 27 ++++++++++++--
- 4 files changed, 109 insertions(+), 15 deletions(-)
+ src/utils/mod_settings.h         | 29 +++++++++++++--
+ 4 files changed, 111 insertions(+), 15 deletions(-)
 
 diff --git a/src/game/botw/input/controls.cpp b/src/game/botw/input/controls.cpp
 index 98ab03a..3154ee7 100644
@@ -190,16 +190,18 @@ index 7b032b8..e76dd37 100644
              }
              EndCard();
 diff --git a/src/utils/mod_settings.h b/src/utils/mod_settings.h
-index a39332a..fadd731 100644
+index a39332a..f0c666f 100644
 --- a/src/utils/mod_settings.h
 +++ b/src/utils/mod_settings.h
-@@ -249,6 +249,24 @@ public:
+@@ -249,6 +249,26 @@ public:
      }
  };
  
 +// a strength from off to full; the Eye Aim Assist row was an on/off switch, and its old "true" is 25 %
 +class EyeAimAssistSetting : public FloatSetting {
 +public:
++    using FloatSetting::operator=;
++
 +    EyeAimAssistSetting(): FloatSetting("EyeAimAssist", 0.0f, 0.0f, 1.0f) {}
 +
 +    void Deserialize(std::string_view valueString) override {
@@ -218,7 +220,7 @@ index a39332a..fadd731 100644
  class BoolSetting : public ModSetting<bool> {
  private:
      void (*m_onChange)(bool);
-@@ -626,8 +644,13 @@ struct ModSettings {
+@@ -626,8 +646,13 @@ struct ModSettings {
      FloatSetting adaptiveTriggerStrength{ "AdaptiveTriggerStrength", 1.0f, 0.0f, 1.0f };
  #endif
  
