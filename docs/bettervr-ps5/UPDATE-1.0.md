@@ -940,6 +940,23 @@ v06's, unchanged; 0055 is the only Cemu patch added. `VERSION` stays 0.5.0.
 - **View arrays kept when unchanged (v0.7, patch cemu 0060).** A continued multiview draw no longer builds a stage's
   right-view half again when the stage's constants and uniform buffers are clean and the right view's data epoch,
   shader and stereo state are the same as at the last build.
+- **Texture units kept while their SQ_TEX registers are unchanged (v0.7, patch cemu 0061, `textureMemo`, on).** A
+  sequence's setup resolves each stage's texture units through the view lookup cache once per sequence (about 1,500 a
+  frame at 1.25x, 2 us of setup each). A unit's seven `SQ_TEX` resource words, its stage and unit, its depth
+  comparison and the view they resolved to are kept, and the same words with no view added to or removed from the
+  lookup cache since bind that view again, skipping the format reconstruction and the bucket scan. The texture's data
+  hash, swizzle, mip address, dynamic textures, the barrier check and the effective scale are still read from the
+  texture every sequence, so texture updates and invalidations need no notice; the lookup cache's generation catches a
+  view destroyed and another made at the same address. `"textureMemo": 0` resolves every unit through the cache. The
+  `[draws]` line adds `texture units reused N`; the estimate is 0.5-1.2 ms off the record at 5-9k draws.
+- **Render passes begun and submits counted (v0.7, patch cemu 0062, `passCounts`, on).** The `[draws]` line adds
+  `render passes begun N, submits N` per frame, the count that decides whether the copy and flush render-pass splits
+  are worth batching. No batching ships: Cemu already batches disjoint buffer-cache copies, and the copies left over
+  overlap, which is why they flush. `"passCounts": 0` stops counting.
+- **The index cache's re-hash is unchanged.** Skipping the per-flush hash needs proof that the source bytes cannot
+  have changed, and the emulated CPU writes guest RAM with direct stores (recompiled code, the interpreter, HLE
+  pointers) with no hook in any of them; instrumenting every store would cost the game's CPU time. `changed 0` for a
+  session is not proof, and stale indices are wrong geometry.
 - **RADV threaded recording stays a `ps5cemu.json` switch.** The rest of the 1.25x record is mostly the driver
   recording new state at each sequence's first draw. The driver's layer (`RADV_THREADED_RECORDING=1`) moves that to a
   worker and leaves the copying of each command's arguments on the GPU thread, an estimated 1.5-3 ms at 5-9k draws if
@@ -1233,7 +1250,8 @@ Nothing here has run on a console. The mip chain's cost and the skipped passes n
 the HUD quads' edges need a headset. The optional FSR/upscale for presets below 1x is not done; the compose boxes
 BetterVR's already-upscaled eye image. The compose fence wait leaves Cemu's GPU thread with `asyncCompose`, on by
 default since the 13.60 console result; Test request 69 checks the default at 1x and 1.5x and the `"asyncCompose": 0`
-path. Index lists kept across frames (0059) and unchanged view arrays kept (0060) target the 1.25x record; Test
+path. Index lists kept across frames (0059), unchanged view arrays kept (0060), texture units kept while their SQ_TEX
+registers are unchanged (0061) and the render pass and submit counts (0062) target the 1.25x record; Test
 request 72 measures them and RADV threaded recording at 1.25x. The Sense trigger
 payload, which of its two formats the firmware accepts, and its return-code meaning are unverified; the DualSense's
 pad handle is opened in vibration mode 2. The headset's

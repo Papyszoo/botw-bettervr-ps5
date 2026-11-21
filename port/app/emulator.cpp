@@ -88,6 +88,12 @@ extern std::atomic<uint64> g_ps5FrameVrEndNs;
 extern std::atomic<uint32> g_ps5FrameProfileSamples;
 // patches/cemu 0059: bettervr.json's indexCache, index lists kept past the index cache's flushes (LatteIndices.cpp)
 extern bool g_ps5KeepIndexLists;
+// patches/cemu 0061: bettervr.json's textureMemo, a texture unit with unchanged SQ_TEX registers keeping the view
+// it resolved to (LatteTextureLegacy.cpp)
+extern bool g_ps5TextureUnitMemo;
+// patches/cemu 0062: bettervr.json's passCounts, the [draws] line's render passes begun and submits
+// (VulkanRendererCore.cpp)
+extern bool g_ps5PassCounts;
 extern "C" bool BetterVR_PS5_Profile();
 extern "C" float BetterVR_PS5_Setting(const char* name, float fallback); // bettervr.json
 #if defined(__PROSPERO__)
@@ -424,6 +430,19 @@ namespace ps5emu
 			ps5log::Line("[bettervr] Index cache: {} (bettervr.json's indexCache)",
 				g_ps5KeepIndexLists ? "index lists kept across frames, used again while their bytes are the same"
 					: "index lists decoded again after each of Cemu's flushes (\"indexCache\": 0)");
+			// bettervr.json's "textureMemo": a sequence's texture unit whose SQ_TEX resource registers are the same
+			// as at its last resolution, with no view added to or removed from the view lookup cache since, keeps
+			// the view it resolved to; on unless "textureMemo": 0
+			g_ps5TextureUnitMemo = BetterVR_PS5_Setting("textureMemo", 1.0f) != 0.0f;
+			ps5log::Line("[bettervr] Texture unit memo: {} (bettervr.json's textureMemo)",
+				g_ps5TextureUnitMemo ? "a unit with unchanged SQ_TEX registers keeps the view it resolved to"
+					: "every unit resolved through the view lookup cache (\"textureMemo\": 0)");
+			// bettervr.json's "passCounts": the [draws] line counts the render passes begun and the command buffers
+			// submitted in a frame; on unless "passCounts": 0
+			g_ps5PassCounts = BetterVR_PS5_Setting("passCounts", 1.0f) != 0.0f;
+			ps5log::Line("[bettervr] Pass counts: {} (bettervr.json's passCounts)",
+				g_ps5PassCounts ? "render passes begun and submits counted in the [draws] line"
+					: "not counted (\"passCounts\": 0)");
 			// bettervr.json's "profile": the [perf] lines get the GPU's busy time, and the runtime
 			// logs one [frame] line every 10 s; off unless asked for
 			if (BetterVR_PS5_Profile())
