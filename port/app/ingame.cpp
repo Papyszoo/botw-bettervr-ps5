@@ -922,7 +922,7 @@ bool PS5Cemu_DrawKeyboard(std::u16string& text, sint32 maxLength, bool counted, 
 	// text it gave, since the sheet cannot be typed on behind it.
 	if (s_imeStage == ImeStage::Up || s_imeStage == ImeStage::Opening)
 	{
-		EndImeDialog(nullptr);
+		ps5ingame::EndImeDialog(nullptr);
 		s_imeAppearance = 0;
 		return true;
 	}
@@ -967,7 +967,7 @@ void PS5Cemu_RenderOverlay()
 	// returns before the PS5 branch), so the dialog would stay up and patch bettervr 0048 would keep the
 	// game's pad idle. A TV frame always runs: end it here.
 	if ((s_imeStage == ImeStage::Up || s_imeStage == ImeStage::Opening) && !swkbd_hasKeyboardInputHook())
-		EndImeDialog("the game dismissed its keyboard; ended, the text it gave is decided");
+		ps5ingame::EndImeDialog("the game dismissed its keyboard; ended, the text it gave is decided");
 	const float scale = UiScale();
 	if (s_menuOpen)
 	{
