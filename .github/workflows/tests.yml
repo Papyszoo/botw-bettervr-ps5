@@ -146,6 +146,9 @@ jobs:
       - name: BetterVR adaptive triggers
         run: bash tools/tests/test-bettervr-triggers.sh
 
+      - name: BetterVR haptics
+        run: bash tools/tests/test-bettervr-haptics.sh
+
       - name: BetterVR import NIDs
         run: python3 -B tools/tests/test-bettervr-nids.py
 

@@ -4,6 +4,7 @@
 # there, after add_library(BetterVR ...), in place of platform_linux.cpp.
 #
 #   PlatformPS5.cpp  the platform functions, the log in the boot log and the generic atomic functions
+#   haptics_ps5.cpp  the v0.8 haptic director: Shield Surf, Traversal and Low Health on the mixer thread
 #   xr/runtime.cpp   the OpenXR runtime over hmd2, the one that answers the module's xr functions (the
 #                    vendored loader is not built: dependencies/CMakeLists.txt)
 
@@ -12,6 +13,7 @@ set(PS5_HMD2 "${CEMU_PS5_PORT_DIR}/../third_party/hmd2")
 
 target_sources(BetterVR PRIVATE
 	"${PS5_BETTERVR_DIR}/PlatformPS5.cpp"
+	"${PS5_BETTERVR_DIR}/haptics_ps5.cpp"
 	"${PS5_BETTERVR_DIR}/xr/runtime.cpp"
 )
 # neither is BetterVR's code: no pch.h in front of them

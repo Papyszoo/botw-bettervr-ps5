@@ -1,0 +1,160 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ps5cemu <ps5cemu@localhost>
+Date: Sat, 21 Nov 2026 14:15:18 +0100
+Subject: [PATCH] PS5: Shield Surf, Traversal and Low Health are rows on the
+ Vibration page with the proposal's defaults; built, untested on console
+
+---
+ src/rendering/haptic_types.h  |  4 ++++
+ src/rendering/imgui_menus.cpp | 44 +++++++++++++++++++++++++----------
+ src/utils/mod_settings.cpp    |  9 +++++++
+ src/utils/mod_settings.h      | 12 ++++++++++
+ 4 files changed, 57 insertions(+), 12 deletions(-)
+
+diff --git a/src/rendering/haptic_types.h b/src/rendering/haptic_types.h
+index 23e9792..0ffaed2 100644
+--- a/src/rendering/haptic_types.h
++++ b/src/rendering/haptic_types.h
+@@ -14,6 +14,10 @@ enum class HapticCategory : uint8_t {
+     Game,
+     Damage,
+     Explosion,
++    // v0.8: the PS5 haptic director's effects (port/bettervr/haptics_ps5.cpp)
++    ShieldSurf,
++    Traversal,
++    LowHealth,
+     Count,
+ };
+ 
+diff --git a/src/rendering/imgui_menus.cpp b/src/rendering/imgui_menus.cpp
+index 4f884c4..546de79 100644
+--- a/src/rendering/imgui_menus.cpp
++++ b/src/rendering/imgui_menus.cpp
+@@ -1329,22 +1329,35 @@ static void DrawVRResolutionSetting() {
+         Log::print<WARNING>("VR resolution: no preset for {} in {}", kVRResolutionLabels[selected], kResolutionMultiplierCategory);
+     });
+ }
+-// the categories the Vibration page lists, in its order
++// the categories the Vibration page lists, in its order; a section's first row opens it with a caption
++enum class HapticSection : uint8_t { Categories, Movement, Body };
+ struct HapticCategoryRow {
+     HapticCategory category;
+     const char* icon;
+     const char* label;
++    HapticSection section;
+ };
++static const char* HapticSectionLabel(HapticSection section) {
++    switch (section) {
++        case HapticSection::Movement: return "Movement";
++        case HapticSection::Body: return "Body";
++        case HapticSection::Categories:
++        default: return "Categories";
++    }
++}
+ static constexpr HapticCategoryRow kHapticCategoryRows[] = {
+-    { HapticCategory::Swing, ICON_MS_SWORDS, "Weapon Swings" },
+-    { HapticCategory::Bow, ICON_MS_BOW_ARC, "Bow" },
+-    { HapticCategory::Guard, ICON_MS_SHIELD, "Shield & Guard" },
+-    { HapticCategory::Equip, ICON_MS_BACK_HAND, "Gear & Inventory" },
+-    { HapticCategory::UseThrow, ICON_MS_SPEED, "Attacks, Items & Throws" },
+-    { HapticCategory::Rune, ICON_MS_TABLET_ANDROID, "Runes" },
+-    { HapticCategory::Game, ICON_MS_STADIA_CONTROLLER, "Game Rumble" },
+-    { HapticCategory::Damage, ICON_MS_FALLING, "Damage Taken" },
+-    { HapticCategory::Explosion, ICON_MS_LOCAL_FIRE_DEPARTMENT, "Explosions" },
++    { HapticCategory::Swing, ICON_MS_SWORDS, "Weapon Swings", HapticSection::Categories },
++    { HapticCategory::Bow, ICON_MS_BOW_ARC, "Bow", HapticSection::Categories },
++    { HapticCategory::Guard, ICON_MS_SHIELD, "Shield & Guard", HapticSection::Categories },
++    { HapticCategory::Equip, ICON_MS_BACK_HAND, "Gear & Inventory", HapticSection::Categories },
++    { HapticCategory::UseThrow, ICON_MS_SPEED, "Attacks, Items & Throws", HapticSection::Categories },
++    { HapticCategory::Rune, ICON_MS_TABLET_ANDROID, "Runes", HapticSection::Categories },
++    { HapticCategory::Game, ICON_MS_STADIA_CONTROLLER, "Game Rumble", HapticSection::Categories },
++    { HapticCategory::Damage, ICON_MS_FALLING, "Damage Taken", HapticSection::Categories },
++    { HapticCategory::Explosion, ICON_MS_LOCAL_FIRE_DEPARTMENT, "Explosions", HapticSection::Categories },
++    { HapticCategory::ShieldSurf, ICON_MS_SPEED, "Shield Surf", HapticSection::Movement },
++    { HapticCategory::Traversal, ICON_MS_PARAGLIDING, "Traversal", HapticSection::Movement },
++    { HapticCategory::LowHealth, ICON_MS_FAVORITE, "Low Health", HapticSection::Body },
+ };
+ 
+ // the strength slider's narrow home in the categories table (DrawPercentSlider's reset button does not fit)
+@@ -1417,7 +1430,14 @@ void RND_Renderer::ImGuiOverlay::DrawVibrationPage(bool* changed) {
+         ImGui::TableSetupColumn("Headset", ImGuiTableColumnFlags_WidthFixed, 72.0f);
+         ImGui::TableSetupColumn("DualSense", ImGuiTableColumnFlags_WidthFixed, 88.0f);
+         ImGui::TableHeadersRow();
+-        for (const HapticCategoryRow& row : kHapticCategoryRows) {
++        for (size_t i = 0; i < std::size(kHapticCategoryRows); i++) {
++            const HapticCategoryRow& row = kHapticCategoryRows[i];
++            if (i > 0 && row.section != kHapticCategoryRows[i - 1].section) {
++                ImGui::TableNextRow();
++                ImGui::TableSetColumnIndex(0);
++                ImGui::AlignTextToFramePadding();
++                ImGui::TextDisabled("%s", HapticSectionLabel(row.section));
++            }
+             BoolSetting& enabled = settings.HapticsEnabled(row.category);
+             UIntSetting& strength = settings.HapticsStrength(row.category);
+             UIntSetting& devices = settings.HapticsDevices(row.category);
+@@ -1463,7 +1483,7 @@ void RND_Renderer::ImGuiOverlay::DrawVibrationPage(bool* changed) {
+     const float bottom = ImGui::GetCursorScreenPos().y - ImGui::GetStyle().ItemSpacing.y;
+     window->StateStorage.SetFloat(cardId, bottom - cardMin.y);
+ 
+-    DrawPageNote("Game Rumble is whatever the game asks for itself: damage, hits, explosions and cutscenes all arrive on it today, so turning it down turns all of them down. Damage Taken is the hit that starts one of the game's damage reactions; it is felt on top of Game Rumble unless that row is off. The launcher's Vibration row under Settings > VR stays the DualSense's outer switch.");
++    DrawPageNote("Game Rumble is whatever the game asks for itself: damage, hits, explosions and cutscenes all arrive on it today, so turning it down turns all of them down. Damage Taken is the hit that starts one of the game's damage reactions; it is felt on top of Game Rumble unless that row is off. The launcher's Vibration row under Settings > VR stays the DualSense's outer switch. Shield Surf, Traversal and Low Health are synthesised by the haptics director: the first is a scrape that rises with speed and a landing thump, the second the paraglider's wind, the swim's splash and rush, hand-over-hand climbing and the horse's gallop, the third a slow heartbeat below half life. Hands means the hand an input rumble belongs to: a guard is felt on the shield hand and a bow draw on the drawing hand.");
+ }
+ 
+ void RND_Renderer::ImGuiOverlay::DrawDisplayPage(bool* changed) {
+diff --git a/src/utils/mod_settings.cpp b/src/utils/mod_settings.cpp
+index 07d0b23..3f2d2c8 100644
+--- a/src/utils/mod_settings.cpp
++++ b/src/utils/mod_settings.cpp
+@@ -26,6 +26,9 @@ BoolSetting& ModSettings::HapticsEnabled(HapticCategory category) {
+         case HapticCategory::Rune: return hapticsRune;
+         case HapticCategory::Damage: return hapticsDamage;
+         case HapticCategory::Explosion: return hapticsExplosion;
++        case HapticCategory::ShieldSurf: return hapticsShieldSurf;
++        case HapticCategory::Traversal: return hapticsTraversal;
++        case HapticCategory::LowHealth: return hapticsLowHealth;
+         case HapticCategory::Game:
+         case HapticCategory::Count:
+         default: return hapticsGame;
+@@ -42,6 +45,9 @@ UIntSetting& ModSettings::HapticsStrength(HapticCategory category) {
+         case HapticCategory::Rune: return hapticsRuneStrength;
+         case HapticCategory::Damage: return hapticsDamageStrength;
+         case HapticCategory::Explosion: return hapticsExplosionStrength;
++        case HapticCategory::ShieldSurf: return hapticsShieldSurfStrength;
++        case HapticCategory::Traversal: return hapticsTraversalStrength;
++        case HapticCategory::LowHealth: return hapticsLowHealthStrength;
+         case HapticCategory::Game:
+         case HapticCategory::Count:
+         default: return hapticsGameStrength;
+@@ -58,6 +64,9 @@ UIntSetting& ModSettings::HapticsDevices(HapticCategory category) {
+         case HapticCategory::Rune: return hapticsRuneDevices;
+         case HapticCategory::Damage: return hapticsDamageDevices;
+         case HapticCategory::Explosion: return hapticsExplosionDevices;
++        case HapticCategory::ShieldSurf: return hapticsShieldSurfDevices;
++        case HapticCategory::Traversal: return hapticsTraversalDevices;
++        case HapticCategory::LowHealth: return hapticsLowHealthDevices;
+         case HapticCategory::Game:
+         case HapticCategory::Count:
+         default: return hapticsGameDevices;
+diff --git a/src/utils/mod_settings.h b/src/utils/mod_settings.h
+index dbbea25..255e39f 100644
+--- a/src/utils/mod_settings.h
++++ b/src/utils/mod_settings.h
+@@ -695,6 +695,18 @@ struct ModSettings {
+     BoolSetting hapticsExplosion{ "HapticsExplosion", true };
+     UIntSetting hapticsExplosionStrength{ "HapticsExplosionStrength", 100, 0, 100 };
+     UIntSetting hapticsExplosionDevices{ "HapticsExplosionDevices", HapticDeviceSense | HapticDeviceHeadset, 0, HapticDeviceAll };
++    // v0.8's effects: the haptic director's rows (port/bettervr/haptics_ps5.cpp). Shield Surf is the bed and the
++    // landing, Traversal is the paraglider, swim, climb and gallop, Low Health is the heartbeat; the defaults are
++    // the proposal's (docs/bettervr-ps5/STATUS.md, the v0.8 haptics entry).
++    BoolSetting hapticsShieldSurf{ "HapticsShieldSurf", true };
++    UIntSetting hapticsShieldSurfStrength{ "HapticsShieldSurfStrength", 60, 0, 100 };
++    UIntSetting hapticsShieldSurfDevices{ "HapticsShieldSurfDevices", HapticDeviceSense | HapticDevicePad, 0, HapticDeviceAll };
++    BoolSetting hapticsTraversal{ "HapticsTraversal", true };
++    UIntSetting hapticsTraversalStrength{ "HapticsTraversalStrength", 55, 0, 100 };
++    UIntSetting hapticsTraversalDevices{ "HapticsTraversalDevices", HapticDeviceSense | HapticDeviceHeadset, 0, HapticDeviceAll };
++    BoolSetting hapticsLowHealth{ "HapticsLowHealth", true };
++    UIntSetting hapticsLowHealthStrength{ "HapticsLowHealthStrength", 60, 0, 100 };
++    UIntSetting hapticsLowHealthDevices{ "HapticsLowHealthDevices", HapticDeviceSense | HapticDeviceHeadset, 0, HapticDeviceAll };
+ 
+     // the category's own settings; an unknown category is the game's pattern, never silent by accident
+     BoolSetting& HapticsEnabled(HapticCategory category);

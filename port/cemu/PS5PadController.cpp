@@ -209,7 +209,8 @@ void PS5PadController::stop_rumble()
 
 // BotW-BetterVR on PS5 (port/bettervr/xr/runtime.cpp): the runtime takes the DualSense's rumble over when its VR
 // session begins and gives it back when the game ends, so the game's pattern and BetterVR's never double. The
-// level is the mixer's (0..1, player 1's pad); ps5pad's launcher switch stays the outer gate.
+// levels are the mixer's (0..1, player 1's pad), large motor and small; ps5pad's launcher switch stays the outer
+// gate. A row that does not split the motors sends the same level to both, as Cemu's own rumble does.
 extern "C" void PS5Pad_SetExternalRumble(bool on)
 {
 	if (s_externalRumble.exchange(on) == on)
@@ -221,12 +222,13 @@ extern "C" void PS5Pad_SetExternalRumble(bool on)
 									   : "Cemu's own pattern output is back");
 }
 
-extern "C" void PS5Pad_ExternalRumble(float level)
+extern "C" void PS5Pad_ExternalRumble(float large, float small)
 {
 	if (!s_externalRumble.load())
 		return;
-	const auto motor = static_cast<uint8>(std::clamp(level, 0.0f, 1.0f) * 255.0f);
-	ps5pad::SetVibration(0, motor, motor);
+	const auto largeMotor = static_cast<uint8>(std::clamp(large, 0.0f, 1.0f) * 255.0f);
+	const auto smallMotor = static_cast<uint8>(std::clamp(small, 0.0f, 1.0f) * 255.0f);
+	ps5pad::SetVibration(0, largeMotor, smallMotor);
 }
 
 std::string PS5PadController::get_button_name(uint64 button) const

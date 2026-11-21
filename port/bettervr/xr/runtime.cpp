@@ -78,9 +78,9 @@ int BetterVR_PS5_WriteSetting(const char* name, float value);
 // port/bettervr/VrPS5.cpp: bettervr.json's "profile" (true/false or 1/0), read once
 bool BetterVR_PS5_Profile();
 // port/cemu/PS5PadController.cpp: the DualSense while a VR session runs (Cemu's own rumble output is held back,
-// so the game's pattern and BetterVR's mixer never fire the pad twice). The level is 0..1.
+// so the game's pattern and BetterVR's mixer never fire the pad twice). The levels are 0..1, large motor then small.
 void PS5Pad_SetExternalRumble(bool on);
-void PS5Pad_ExternalRumble(float level);
+void PS5Pad_ExternalRumble(float large, float small);
 }
 
 #include <algorithm>
@@ -1938,8 +1938,10 @@ namespace
 
 	struct DeviceSinkState
 	{
-		int wanted = 0; // the mixer's last level (headset 0..25 Hz, pad 0..255)
-		int sent = -1;  // what the device last took; -1 none yet
+		int wanted = 0;      // the mixer's last level (headset 0..25 Hz, pad large 0..255)
+		int wantedSmall = 0; // the pad's small motor (0..255); the headset has one
+		int sent = -1;       // what the device last took; -1 none yet
+		int sentSmall = -1;
 		bool capped = false;
 		int cappedLevel = -1; // the level the 2 s cap cut, so it stays off until the level changes
 		XrTime sameAt = 0;
@@ -2018,11 +2020,14 @@ namespace
 	void ApplyPad()
 	{
 		const XrTime now = Now();
-		const int wanted = now < s_pad.testUntil ? kPadTestLevel : s_pad.wanted;
-		if (wanted == s_pad.sent)
+		const bool testing = now < s_pad.testUntil;
+		const int wantedLarge = testing ? kPadTestLevel : s_pad.wanted;
+		const int wantedSmall = testing ? kPadTestLevel : s_pad.wantedSmall;
+		if (wantedLarge == s_pad.sent && wantedSmall == s_pad.sentSmall)
 			return;
-		PS5Pad_ExternalRumble(wanted / 255.0f);
-		s_pad.sent = wanted;
+		PS5Pad_ExternalRumble(wantedLarge / 255.0f, wantedSmall / 255.0f);
+		s_pad.sent = wantedLarge;
+		s_pad.sentSmall = wantedSmall;
 	}
 }
 
@@ -2062,12 +2067,13 @@ extern "C" int BetterVR_PS5_HeadsetPulse(float strength, int ms)
 	return hz;
 }
 
-extern "C" void BetterVR_PS5_PadVibration(float amplitude)
+extern "C" void BetterVR_PS5_PadVibration(float large, float small)
 {
 	std::lock_guard lock(s.lock);
 	if (s.stopped)
 		return;
-	s_pad.wanted = (int)std::lround(std::clamp(amplitude, 0.0f, 1.0f) * 255.0f);
+	s_pad.wanted = (int)std::lround(std::clamp(large, 0.0f, 1.0f) * 255.0f);
+	s_pad.wantedSmall = (int)std::lround(std::clamp(small, 0.0f, 1.0f) * 255.0f);
 	ApplyPad();
 }
 
@@ -2093,8 +2099,9 @@ extern "C" void BetterVR_PS5_TestPad()
 		VibLog("test pad: no VR session is driving the DualSense");
 		return;
 	}
-	PS5Pad_ExternalRumble(kPadTestLevel / 255.0f);
+	PS5Pad_ExternalRumble(kPadTestLevel / 255.0f, kPadTestLevel / 255.0f);
 	s_pad.sent = kPadTestLevel;
+	s_pad.sentSmall = kPadTestLevel;
 	s_pad.testUntil = Now() + kDeviceTestHold;
 	VibLog("test pad: level %d for 400 ms on the DualSense (player 1)", kPadTestLevel);
 }
@@ -2491,7 +2498,9 @@ XRAPI_ATTR XrResult XRAPI_CALL xrDestroySession(XrSession session)
 	if (s.padTakenOver)
 	{
 		s.padTakenOver = false;
-		PS5Pad_ExternalRumble(0.0f);
+		PS5Pad_ExternalRumble(0.0f, 0.0f);
+		s_pad.sent = 0;
+		s_pad.sentSmall = 0;
 		PS5Pad_SetExternalRumble(false);
 	}
 	EndSessionObjects(session);
@@ -2516,6 +2525,8 @@ XRAPI_ATTR XrResult XRAPI_CALL xrBeginSession(XrSession session, const XrSession
 	{
 		s.padTakenOver = true;
 		PS5Pad_SetExternalRumble(true);
+		s_pad.sent = -1; // the first mixer level of this session is sent, even if the last session ended on it
+		s_pad.sentSmall = -1;
 	}
 	QueueState(XR_SESSION_STATE_SYNCHRONIZED);
 	QueueState(XR_SESSION_STATE_VISIBLE);
@@ -3963,7 +3974,9 @@ void BetterVR_PS5_Stop()
 	if (s.padTakenOver)
 	{
 		s.padTakenOver = false;
-		PS5Pad_ExternalRumble(0.0f);
+		PS5Pad_ExternalRumble(0.0f, 0.0f);
+		s_pad.sent = 0;
+		s_pad.sentSmall = 0;
 		PS5Pad_SetExternalRumble(false);
 	}
 	if (s.session && s.session->hmdUp)

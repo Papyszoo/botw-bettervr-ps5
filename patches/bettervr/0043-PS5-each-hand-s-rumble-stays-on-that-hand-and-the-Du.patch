@@ -1,0 +1,94 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ps5cemu <ps5cemu@localhost>
+Date: Sat, 21 Nov 2026 14:13:35 +0100
+Subject: [PATCH] PS5: each hand's rumble stays on that hand, and the
+ DualSense's two motors take separate levels from the mixer; built, untested
+ on console
+
+---
+ src/rendering/haptic_types.h |  9 +++++++++
+ src/rendering/rumble.h       | 29 ++++++++++++++++++++---------
+ 2 files changed, 29 insertions(+), 9 deletions(-)
+
+diff --git a/src/rendering/haptic_types.h b/src/rendering/haptic_types.h
+index f3141e0..23e9792 100644
+--- a/src/rendering/haptic_types.h
++++ b/src/rendering/haptic_types.h
+@@ -24,3 +24,12 @@ enum HapticDevice : uint32_t {
+     HapticDevicePad = 4,
+     HapticDeviceAll = HapticDeviceSense | HapticDeviceHeadset | HapticDevicePad,
+ };
++
++// The hand an event belongs to: an input rumble is one hand's, the game's pattern and the page's test are both.
++// The Sense controllers are one handle each, so a one-hand event is only felt there; the pad and the headset have
++// no side and take the louder hand's level.
++enum HapticHand : uint8_t {
++    HapticHandLeft = 1,
++    HapticHandRight = 2,
++    HapticHandBoth = HapticHandLeft | HapticHandRight,
++};
+diff --git a/src/rendering/rumble.h b/src/rendering/rumble.h
+index 28cfe8f..d61ca53 100644
+--- a/src/rendering/rumble.h
++++ b/src/rendering/rumble.h
+@@ -9,7 +9,9 @@
+ // headset: a 60 ms kick at 25 Hz, then the mapped level for the given time; it returns that level in Hz.
+ extern "C" void BetterVR_PS5_HeadsetVibration(float amplitude);
+ extern "C" int BetterVR_PS5_HeadsetPulse(float strength, int ms);
+-extern "C" void BetterVR_PS5_PadVibration(float amplitude);
++// the DualSense's two motors: the large one for weight, the small one for grain. A category that does not split
++// them sends the same level to both, as before.
++extern "C" void BetterVR_PS5_PadVibration(float large, float small);
+ #endif
+ 
+ // Every rumble BetterVR or the game's pattern asks for goes through one 60 Hz mixer: the game's pattern is a
+@@ -290,24 +292,33 @@ private:
+ 
+         float senseLevel[2] = {};
+         float headsetLevel = 0.0f;
+-        float padLevel = 0.0f;
+-        auto add = [&](float level, uint32_t devices) {
++        float padLargeLevel = 0.0f;
++        float padSmallLevel = 0.0f;
++        // hands: the Sense controller an event belongs to (both by default); the pad and the headset are one
++        // device each and take the louder of the hands. The pad's two motors take their own share of the level.
++        auto add = [&](float level, uint32_t devices, uint8_t hands = HapticHandBoth,
++                       float padLargeShare = 1.0f, float padSmallShare = 1.0f) {
+             if (level <= 0.0f)
+                 return;
+             if (devices & HapticDeviceSense) {
+-                senseLevel[0] = std::max(senseLevel[0], level);
+-                senseLevel[1] = std::max(senseLevel[1], level);
++                if (hands & HapticHandLeft)
++                    senseLevel[0] = std::max(senseLevel[0], level);
++                if (hands & HapticHandRight)
++                    senseLevel[1] = std::max(senseLevel[1], level);
+             }
+             if (devices & HapticDeviceHeadset)
+                 headsetLevel = std::max(headsetLevel, level);
+-            if (devices & HapticDevicePad)
+-                padLevel = std::max(padLevel, level);
++            if (devices & HapticDevicePad) {
++                padLargeLevel = std::max(padLargeLevel, level * padLargeShare);
++                padSmallLevel = std::max(padSmallLevel, level * padSmallShare);
++            }
+         };
+ 
+         if (m_gameLevel.load(std::memory_order_relaxed))
+             add(settings.GetHapticsGain(HapticCategory::Game), settings.GetHapticsDeviceMask(HapticCategory::Game));
+         for (int hand = 0; hand < 2; ++hand)
+-            add(inputLevel[hand], settings.GetHapticsDeviceMask(inputCategory[hand]));
++            add(inputLevel[hand], settings.GetHapticsDeviceMask(inputCategory[hand]),
++                hand == 0 ? HapticHandLeft : HapticHandRight);
+ 
+         if (nowNs < m_testUntilNs.load(std::memory_order_relaxed)) {
+             senseLevel[0] = std::max(senseLevel[0], kTestLevel);
+@@ -319,7 +330,7 @@ private:
+ 
+ #if defined(__PROSPERO__)
+         BetterVR_PS5_HeadsetVibration(std::min(1.0f, headsetLevel * settings.GetHapticsHeadsetLimit()));
+-        BetterVR_PS5_PadVibration(padLevel);
++        BetterVR_PS5_PadVibration(padLargeLevel, padSmallLevel);
+ #endif
+     }
+ 

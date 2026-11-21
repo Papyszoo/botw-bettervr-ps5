@@ -1,0 +1,88 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ps5cemu <ps5cemu@localhost>
+Date: Sat, 21 Nov 2026 14:14:10 +0100
+Subject: [PATCH] PS5: the PlayerNormal state and the guard are published for
+ the haptic director, and the mixer gives it one extra layer a tick; built,
+ untested on console
+
+---
+ src/game/botw/input/controls.cpp |  3 +++
+ src/game/botw/player/player.cpp  |  4 ++++
+ src/rendering/rumble.h           | 21 +++++++++++++++++++++
+ 3 files changed, 28 insertions(+)
+
+diff --git a/src/game/botw/input/controls.cpp b/src/game/botw/input/controls.cpp
+index e654a92..bfbd680 100644
+--- a/src/game/botw/input/controls.cpp
++++ b/src/game/botw/input/controls.cpp
+@@ -20,6 +20,8 @@
+ #if defined(__PROSPERO__)
+ // port/bettervr/xr/runtime.cpp: the bow's draw on R2 and the shield on L2, through libScePad's trigger effects
+ extern "C" void BetterVR_PS5_AdaptiveTriggers(float bowDraw, int shieldGuarding, int interactive, int enabled, float strength);
++// port/bettervr/haptics_ps5.cpp: the parry/flurry probe's guard window, a change only
++extern "C" void BetterVR_PS5_GuardState(int guarding);
+ #endif
+ 
+ static ButtonState s_inventoryMapButton;
+@@ -1691,6 +1693,7 @@ static void hook_InjectXRInput(PPCInterpreter_t* hCPU) {
+     BetterVR_PS5_AdaptiveTriggers(Bow::GetDrawAmount(), state.isShieldGuarding ? 1 : 0,
+         state.inGame && !isMenuOpen && !GameState::IsShowingMenu() ? 1 : 0,
+         GetSettings().adaptiveTriggers ? 1 : 0, GetSettings().adaptiveTriggerStrength);
++    BetterVR_PS5_GuardState(state.isShieldGuarding ? 1 : 0);
+ #endif
+ 
+     const bool thirdPersonSnapTurn = ShouldSnapTurnThirdPerson(state.inGame) && !ImGuiMenus::g_isOpen && Camera::AppliesFirstPersonTurning();
+diff --git a/src/game/botw/player/player.cpp b/src/game/botw/player/player.cpp
+index b50252b..0c869c7 100644
+--- a/src/game/botw/player/player.cpp
++++ b/src/game/botw/player/player.cpp
+@@ -533,6 +533,10 @@ static void hook_PlayerNormalChangeState(PPCInterpreter_t* hCPU) {
+     }
+ 
+     LogPlayerNormalStateOnce(stateNamePtr);
++#if defined(__PROSPERO__)
++    // port/bettervr/haptics_ps5.cpp: the haptic director's current state, and its capped parry/flurry probe
++    BetterVR_PS5_PlayerNormalState(stateNamePtr);
++#endif
+     if (ShouldBlockFirstPersonPlayerNormalState(stateNamePtr) && !s_lifeAdopted) {
+         PlayDamageRumble(stateNamePtr, "PlayerNormal");
+     }
+diff --git a/src/rendering/rumble.h b/src/rendering/rumble.h
+index d61ca53..38d330b 100644
+--- a/src/rendering/rumble.h
++++ b/src/rendering/rumble.h
+@@ -12,6 +12,13 @@ extern "C" int BetterVR_PS5_HeadsetPulse(float strength, int ms);
+ // the DualSense's two motors: the large one for weight, the small one for grain. A category that does not split
+ // them sends the same level to both, as before.
+ extern "C" void BetterVR_PS5_PadVibration(float large, float small);
++// port/bettervr/haptics_ps5.cpp: the haptic director. The game thread publishes the states it reads; the mixer
++// thread calls Environment once a tick for Shield Surf, Traversal and Low Health's levels, already scaled by each
++// row's strength and devices. Headset one-shots (gusts, landings) go through the pulse above.
++extern "C" void BetterVR_PS5_PlayerNormalState(uint32_t stateNamePtr);
++extern "C" void BetterVR_PS5_GuardState(int guarding);
++extern "C" void BetterVR_PS5_HapticsEnvironment(float* senseLeft, float* senseRight, float* padLarge, float* padSmall,
++                                                float* headset);
+ #endif
+ 
+ // Every rumble BetterVR or the game's pattern asks for goes through one 60 Hz mixer: the game's pattern is a
+@@ -320,6 +327,20 @@ private:
+             add(inputLevel[hand], settings.GetHapticsDeviceMask(inputCategory[hand]),
+                 hand == 0 ? HapticHandLeft : HapticHandRight);
+ 
++#if defined(__PROSPERO__)
++        // the haptic director's one extra layer: the new effects are synthesised on this thread, never queued
++        float envSense[2] = {};
++        float envPadLarge = 0.0f;
++        float envPadSmall = 0.0f;
++        float envHeadset = 0.0f;
++        BetterVR_PS5_HapticsEnvironment(&envSense[0], &envSense[1], &envPadLarge, &envPadSmall, &envHeadset);
++        add(envSense[0], HapticDeviceSense, HapticHandLeft);
++        add(envSense[1], HapticDeviceSense, HapticHandRight);
++        add(envPadLarge, HapticDevicePad, HapticHandBoth, 1.0f, 0.0f);
++        add(envPadSmall, HapticDevicePad, HapticHandBoth, 0.0f, 1.0f);
++        add(envHeadset, HapticDeviceHeadset);
++#endif
++
+         if (nowNs < m_testUntilNs.load(std::memory_order_relaxed)) {
+             senseLevel[0] = std::max(senseLevel[0], kTestLevel);
+             senseLevel[1] = std::max(senseLevel[1], kTestLevel);
