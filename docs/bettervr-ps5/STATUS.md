@@ -6,6 +6,61 @@ tested.
 Test request 77 (v0.8 haptics) is withdrawn with the haptics work; the requests after it move up one, so
 the console keyboard is 77, the tutorial shrine 78 and the cutscene height 79.
 
+## 2026-11-22: a rune's target name and beep hold still, its ID readback waiting for the GPU; built, untested on console
+
+At the Great Fairy Fountain the camera rune's target name blinked on and off frame to frame and jumped
+between two screen positions, and the detection beep repeated like a Geiger counter (about 6 of 16
+frames, from the recording). The flat-camera path was not switching: `compose mode mono` is one line
+for the whole 52 s session (23:55:24.9-23:56:16.8 in `boot.log`), so neither the head pose nor the
+photo camera was alternating. A photo still registered.
+
+**The cause.** FPS++'s deferred readbacks (BetterVR 1.0.0's
+`resources/graphicPacks/BreathOfTheWild/Mods/FPS++/patch_DeferredReadbacks.asm`, lines 6-8 and 14-37;
+`rules.txt:19` has `$deferGpuReadbacks = 1` by default) let the game's `GX2DrawDone` return once
+Cemu has processed the submitted commands, not once texture readbacks and occlusion queries have
+finished. That is safe for the results the game reads a frame later, which is why the pack does it.
+`gfx::IDAnalyzer`, the rune targeting (the same file's line 86, "used to target objects with runes",
+which the pack already special-cases), reads its ID readback and coverage query as it uses them. With
+the readback a frame behind it sees the target under the reticle from an older frame or nothing at
+all, so the name blinks and moves between two places, and the detector beeps each time it comes back.
+
+The boot log has that readback: at 23:52:38.322, 94 ms after `Flat camera mode started`, a
+`[copy] readback: VkFormat 109 aspect 0x1 mip 0 4x4, 16 bytes a texel (known), 256 bytes ...` (the
+analyzer's 4x4 RGBA32F ID buffer). A later session's 854x480 readback is the photo itself, which is
+why taking one still worked. The `[copy]` line is said once per kind (patch cemu 0064), so it names
+the readback, not each frame.
+
+**Not a port patch.** The FPS++ pack is BetterVR's own, bundled and required by it (`src/game/botw/
+game.cpp`'s `requiredPack`), and no patch in `patches/bettervr` touched it. Upstream fixed this in
+BetterVR 1.0.2 (commit `02bcbe6`, "Stop rune targets from flickering"): the ID analyzer's query asks
+for four full-sync draw-dones first, and every other readback stays deferred. The pin is 1.0.0
+(`db5495b`), which predates that fix.
+
+**The fix.** New patch bettervr 0049 carries upstream's 9-line asm change unchanged. No Cemu, runtime
+or C++ change; a photo takes the same readback path.
+
+`tools/bettervr-patches.sh apply` and `tools/cemu-patches.sh apply` (both with `PS5CEMU_RELEASE=1`,
+every patch ID matching), `python3 -B tools/lang.py check`, `tools/tests/test-bettervr-triggers.sh` and
+`tools/tests/test-bettervr-nids.py` pass; the patch also applies from the pin in a clean worktree and
+reproduces the branch's tree. No host test compiles a graphic pack, so the "BetterVR build" run is
+theirs. Built, untested on console.
+
+**Test request 84 (camera rune at a landmark, 13.60 console).** Install the `BotW-VR-v...zip` from the
+green "BetterVR build" run on this head; VR on, first person. Take the camera rune to a landmark (the
+Great Fairy Fountain or any named place) and hold it on the target:
+
+1. **Label steady.** The target's name stays in one place, frame after frame, with no blinking.
+2. **One beep.** The detection beep sounds when the target is acquired, not repeating like a Geiger
+   counter.
+3. **Photo registers.** Press the shutter: the photo registers in the compendium as before.
+
+**Send.** Whether the name stayed in one place, whether the beep repeated, and whether the photo
+registered. No log is needed unless it still flickers.
+
+**What it decides.** One steady name, one beep and a registered photo decide the fix; a name still
+jumping between two places means the ID readback was not the whole story, and the next build logs
+`gfx::IDAnalyzer` per frame.
+
 ## 2026-11-22: the aiming dot at the arrow's target has Size, Color and Opacity rows; built, untested on console
 
 When a bow is drawn in first person, the dot at the target is BetterVR's own drawing, not the game's HUD
