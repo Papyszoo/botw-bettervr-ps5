@@ -32,7 +32,7 @@ the sampling is reads only, from threads that already exist. Built, untested on 
 ---
  .../Interpreter/PPCInterpreterHLE.cpp         | 27 +++++++++
  src/Cafe/HW/Espresso/PPCState.h               |  3 +
- .../BackendAArch64/BackendAArch64.cpp         | 10 ++++
+ .../Recompiler/BackendX64/BackendX64.cpp      | 10 ++++
  .../HW/Latte/Core/LattePerformanceMonitor.h   |  7 +++
  src/Cafe/HW/Latte/Core/LatteRenderTarget.cpp  | 58 +++++++++++++++++++
  src/Cafe/OS/libs/TCL/TCL.cpp                  | 17 +++++-
@@ -122,34 +122,34 @@ index fd943d39..209e3b6e 100644
  
  // HLE scheduler
  
-diff --git a/src/Cafe/HW/Espresso/Recompiler/BackendAArch64/BackendAArch64.cpp b/src/Cafe/HW/Espresso/Recompiler/BackendAArch64/BackendAArch64.cpp
-index f1f77b31..f694c7c5 100644
---- a/src/Cafe/HW/Espresso/Recompiler/BackendAArch64/BackendAArch64.cpp
-+++ b/src/Cafe/HW/Espresso/Recompiler/BackendAArch64/BackendAArch64.cpp
-@@ -14,6 +14,10 @@
- #include "HW/Espresso/Interpreter/PPCInterpreterInternal.h"
- #include "HW/Espresso/Interpreter/PPCInterpreterHelper.h"
- #include "HW/Espresso/PPCState.h"
+diff --git a/src/Cafe/HW/Espresso/Recompiler/BackendX64/BackendX64.cpp b/src/Cafe/HW/Espresso/Recompiler/BackendX64/BackendX64.cpp
+index 53647af2..ca4a203c 100644
+--- a/src/Cafe/HW/Espresso/Recompiler/BackendX64/BackendX64.cpp
++++ b/src/Cafe/HW/Espresso/Recompiler/BackendX64/BackendX64.cpp
+@@ -7,6 +7,10 @@
+ #include "Cafe/OS/libs/coreinit/coreinit_Time.h"
+ #include "util/MemMapper/MemMapper.h"
+ #include "Common/cpu_features.h"
 +#if defined(CEMU_PS5)
 +#include "PS5CoreDiag.h" // ps5cemu/port/cemu: the export a core is inside, for the long-frame line
 +#include "PS5AxFeed.h"	 // ps5cemu/port/cemu: ps5ax::NowNs, the diagnostics' clock
 +#endif
+ #include <boost/container/static_vector.hpp>
  
- using namespace Xbyak_aarch64;
- 
-@@ -900,7 +904,13 @@ void* PPCRecompiler_virtualHLE(PPCInterpreter_t* ppcInterpreter, uint32 hleFuncI
+ static x86Assembler64::GPR32 _reg32(IMLReg physReg)
+@@ -167,7 +171,13 @@ void* ATTR_MS_ABI PPCRecompiler_virtualHLE(PPCInterpreter_t* hCPU, uint32 hleFun
  	{
  		auto hleCall = PPCInterpreter_getHLECall(hleFuncId);
  		cemu_assert(hleCall != nullptr);
 +#if defined(CEMU_PS5)
-+		ps5diag::HostEnter((int)ppcInterpreter->spr.UPIR, PPCInterpreter_getHLECallName(hleFuncId), ps5ax::NowNs());
++		ps5diag::HostEnter((int)hCPU->spr.UPIR, PPCInterpreter_getHLECallName(hleFuncId), ps5ax::NowNs());
 +#endif
- 		hleCall(ppcInterpreter);
+ 		hleCall(hCPU);
 +#if defined(CEMU_PS5)
-+		ps5diag::HostLeave((int)ppcInterpreter->spr.UPIR);
++		ps5diag::HostLeave((int)hCPU->spr.UPIR);
 +#endif
  	}
- 	ppcInterpreter->rspTemp = prevRSPTemp;
+ 	hCPU->rspTemp = prevRSPTemp;
  	return PPCInterpreter_getCurrentInstance();
 diff --git a/src/Cafe/HW/Latte/Core/LattePerformanceMonitor.h b/src/Cafe/HW/Latte/Core/LattePerformanceMonitor.h
 index bd841b9c..f49ea6e5 100644
