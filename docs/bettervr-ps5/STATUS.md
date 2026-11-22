@@ -54,7 +54,8 @@ absent from the rc5 log; `Demo049_0` "Controls guide demo" (`:120`), the plateau
 **Cause.** The camera is upstream's: in third person the event camera runs and upstream's skip is first-person-only.
 The hold that covers it is ours, and 0037/0043's list named only the pick-up and the respawn.
 
-New patch bettervr 0049 (`game_state.cpp/.h`, `camera.cpp`); no Cemu, runtime or asm change.
+New patch bettervr 0049 (`game_state.cpp/.h`, `camera.cpp`); no Cemu, runtime or asm change. BetterVR build run
+`44969067687` on `d932c39` succeeded.
 
 **Test request 79 (v0.8 tutorial-shrine camera, 13.60 console).** Install the `BotW-VR-v...zip` from the green
 "BetterVR build" run on this head. Before step 1, set Comfort > Advanced > **2D Cutscene Screen** to **Off** (the
