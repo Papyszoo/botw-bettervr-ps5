@@ -6,6 +6,48 @@ tested.
 Test request 77 (v0.8 haptics) is withdrawn with the haptics work; the requests after it move up one, so
 the console keyboard is 77, the tutorial shrine 78 and the cutscene height 79.
 
+## 2026-11-22: the aiming dot at the arrow's target has Size, Color and Opacity rows; built, untested on console
+
+When a bow is drawn in first person, the dot at the target is BetterVR's own drawing, not the game's HUD
+reticle. `DrawAimingArc` (`game/botw/player/bow.cpp`) reads the game's weapon target position
+(`weaponPtr + 0x77C`) and draws a world-space sphere there: radius 0.16 m, colour `(255, 214, 64)`, alpha
+100 scaled by the Bow Aiming Arc transparency (2.2x in the "Dot Only" step). The game's HUD reticle is
+only ever a texture on the floating HUD panel (`vulkan_imgui.cpp`), and the port has no reticle code.
+
+**The settings.** Three rows in Comfort > Advanced, right after Bow Aiming Arc, in the card that already
+holds it: **Aiming Dot Size** (50-300 %, the sphere's radius; saved as `AimingDotSize`, 1.0 = 100 %),
+**Aiming Dot Color** (White, Red, Green, Yellow, Cyan; `AimingDotColor`, Yellow) and **Aiming Dot
+Opacity** (0-100 %, a multiplier on the alpha the dot already had; `AimingDotOpacity`, 1.0). Yellow is
+exactly the old `(255, 214, 64)`, Size 100 % is exactly 0.16 m and Opacity 100 % is exactly the old alpha,
+so the defaults draw the dot as before in arc and Dot Only modes alike. The arc and its red fall marker are
+untouched. Each row keeps its own ID through `DrawSetting`'s label PushID and the setting-name PushID in
+the percent-slider/combo helpers, so focus frames and a confirm press reach one row, as 0046 did for the
+Vibration page.
+
+New patch bettervr 0048 (`mod_settings.h`, `bow.cpp`, `imgui_menus.cpp`); no Cemu, runtime or asm change.
+`tools/bettervr-patches.sh apply` and `tools/cemu-patches.sh apply` (every patch ID matching),
+`python3 -B tools/lang.py check`, `tools/tests/test-bettervr-triggers.sh` and
+`tools/tests/test-bettervr-nids.py` pass. No host test builds BetterVR's bow or menu, so the BetterVR
+build is theirs. Built, untested on console.
+
+**Test request 83 (v0.8 aiming dot, 13.60 console).** Install the `BotW-VR-v...zip` from the green
+"BetterVR build" run on this head; VR on, first person, any bow, in a shrine or the open field.
+
+1. **Default unchanged.** Draw the bow with Aiming Dot Size 100 %, Color Yellow and Opacity 100 %: the
+   dot must look as it does now (same spot, size and brightness), and the blue/red arc as before.
+2. **Size.** Set Size 50 % and then 300 %: only the dot's size changes, at the same spot; the arc does not.
+3. **Color.** Step through White, Red, Green, Yellow and Cyan: the dot takes each colour; the arc and the
+   red fall marker keep theirs.
+4. **Opacity.** Set Opacity 100 % and then 30 %: the dot fades; the arc does not change.
+5. **Dot Only and Off.** With Bow Aiming Arc at "Dot Only", the dot is still there and the three rows
+   still work; at "Off" there is no dot. The reset buttons put each row back to its default.
+
+**Send.** Which row changed what, which did not, and whether the default in step 1 looked as before. No log
+is needed.
+
+**What it decides.** Every row changing the dot alone, and step 1 matching the old look, decides the
+patch; a row that does nothing, changes the arc, or a default that looks different leaves it wrong.
+
 ## 2026-11-22: a long frame and a drained AX output now say what the emulated cores were doing; built, untested on console
 
 The 16:52 session's warp-in windows hold one 80.2 ms and one 70.4 ms frame (`snd-report.md` §1), and
