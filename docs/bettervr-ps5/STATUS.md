@@ -30,11 +30,11 @@ The boot log has that readback: at 23:52:38.322, 94 ms after `Flat camera mode s
 readback is the photo itself, which is why taking one still worked. The `[copy]` line is said once
 per kind (patch cemu 0064), so it names the readback, not each frame.
 
-**Not a port patch.** The FPS++ pack is BetterVR's own, bundled and required by it (`src/game/botw/
-game.cpp`'s `requiredPack`), and no patch in `patches/bettervr` touched it. Upstream fixed this in
-BetterVR 1.0.2 (commit `02bcbe6`, "Stop rune targets from flickering"): the ID analyzer's query asks
-for four full-sync draw-dones first, and every other readback stays deferred. The pin is 1.0.0
-(`db5495b`), which predates that fix.
+**Not a port patch.** The FPS++ pack is BetterVR's own, bundled and required by it
+(`src/game/botw/game.cpp`'s `requiredPack`), and no patch in `patches/bettervr` touched it. Upstream
+fixed this in BetterVR 1.0.2 (commit `02bcbe6`, "Stop rune targets from flickering"): the ID
+analyzer's query asks for four full-sync draw-dones first, and every other readback stays deferred.
+The pin is 1.0.0 (`db5495b`), which predates that fix.
 
 **The fix.** New patch bettervr 0049 carries upstream's 9-line asm change unchanged. No Cemu, runtime
 or C++ change; a photo takes the same readback path.
