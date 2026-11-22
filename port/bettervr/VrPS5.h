@@ -43,6 +43,9 @@ namespace ps5vr
 	// Whether the stereo path is the one running (not the flat screen): Hmd2's social screen is the
 	// TV then, so Cemu's own TV picture is not what the player sees.
 	bool Stereo();
+	// Whether that path has a live headset: Stereo() also stays true after Hmd2 failed to start, when
+	// Cemu's own TV picture is what the player sees and the port's keyboard sheet is visible there.
+	bool HeadsetUp();
 	// Whether Hmd2 took the TV mirror this session: without it the TV is dark unless Cemu draws it.
 	bool Mirroring();
 	// True: a headset frame was begun and its copy recorded into frame.commands; call Submit once those

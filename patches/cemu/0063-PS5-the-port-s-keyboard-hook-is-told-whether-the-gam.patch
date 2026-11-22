@@ -1,0 +1,36 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ps5cemu <ps5cemu@localhost>
+Date: Sat, 21 Nov 2026 21:14:37 +0100
+Subject: [PATCH] PS5: the port's keyboard hook is told whether the game asked
+ for the keyboard alone, for its request line; built, untested on console
+
+---
+ src/Cafe/OS/libs/swkbd/swkbd.cpp | 8 +++++---
+ 1 file changed, 5 insertions(+), 3 deletions(-)
+
+diff --git a/src/Cafe/OS/libs/swkbd/swkbd.cpp b/src/Cafe/OS/libs/swkbd/swkbd.cpp
+index 24d37d6e..56f3df06 100644
+--- a/src/Cafe/OS/libs/swkbd/swkbd.cpp
++++ b/src/Cafe/OS/libs/swkbd/swkbd.cpp
+@@ -411,8 +411,9 @@ void swkbd_finishInput();
+ // PS5Cemu (ps5cemu/port/app/ingame.cpp) draws the keyboard over the game as it draws its 3DS
+ // keyboard: in its menus' language, keys and typeface, read from the DualSense. It changes the form's
+ // text (UTF-16) to at most maxLength units (counted: a length the game set, which it shows), starts
+-// over when appearance changes, and returns true when the text is done.
+-bool PS5Cemu_DrawKeyboard(std::u16string& text, sint32 maxLength, bool counted, uint32 appearance);
++// over when appearance changes, and returns true when the text is done. keyboardOnly says the game
++// asked for the keyboard alone (SwkbdAppearKeyboard), not its form.
++bool PS5Cemu_DrawKeyboard(std::u16string& text, sint32 maxLength, bool counted, uint32 appearance, bool keyboardOnly);
+ #endif
+ void swkbd_render(bool mainWindow)
+ {
+@@ -434,7 +435,8 @@ void swkbd_render(bool mainWindow)
+ 	for (sint32 i = 0; i < swkbdInternalState->formStringLength; i++)
+ 		text.push_back((char16_t)swkbdInternalState->formStringBuffer[i]);
+ 	const std::u16string before = text;
+-	const bool done = PS5Cemu_DrawKeyboard(text, maxLength, maxLength < SWKBD_FORM_STRING_MAX_LENGTH - 1, s_ps5Appearances);
++	const bool done = PS5Cemu_DrawKeyboard(text, maxLength, maxLength < SWKBD_FORM_STRING_MAX_LENGTH - 1, s_ps5Appearances,
++		swkbdInternalState->keyboardOnlyMode);
+ 	if (text != before)
+ 	{
+ 		const sint32 length = std::min((sint32)text.size(), maxLength);

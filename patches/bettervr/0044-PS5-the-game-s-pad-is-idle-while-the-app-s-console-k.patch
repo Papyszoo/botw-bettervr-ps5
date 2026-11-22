@@ -1,0 +1,92 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ps5cemu <ps5cemu@localhost>
+Date: Sun, 22 Nov 2026 13:41:42 +0100
+Subject: [PATCH] PS5: the game's pad is idle while the app's console keyboard
+ is up, and an Options press that runs into or through it ends with it; built,
+ untested on console
+
+---
+ src/game/botw/input/controls.cpp | 42 ++++++++++++++++++++++++++++++--
+ 1 file changed, 40 insertions(+), 2 deletions(-)
+
+diff --git a/src/game/botw/input/controls.cpp b/src/game/botw/input/controls.cpp
+index e654a92..52872d7 100644
+--- a/src/game/botw/input/controls.cpp
++++ b/src/game/botw/input/controls.cpp
+@@ -20,6 +20,8 @@
+ #if defined(__PROSPERO__)
+ // port/bettervr/xr/runtime.cpp: the bow's draw on R2 and the shield on L2, through libScePad's trigger effects
+ extern "C" void BetterVR_PS5_AdaptiveTriggers(float bowDraw, int shieldGuarding, int interactive, int enabled, float strength);
++// port/bettervr/xr/runtime.cpp: the app's console keyboard has the pad while it is up (port/app/ime_dialog.cpp)
++extern "C" bool BetterVR_PS5_GameInputBlocked();
+ #endif
+ 
+ static ButtonState s_inventoryMapButton;
+@@ -1126,6 +1128,9 @@ extern "C" bool BetterVR_PS5_ToggleModMenu() {
+ struct OptionsButtonState {
+     bool wasDown = false;
+     bool recenterLogged = false;
++    // a press that ran into or through the app's console keyboard: it ends with it, and its release is
++    // not the game's pause
++    bool ignored = false;
+     std::chrono::steady_clock::time_point downAt;
+ };
+ 
+@@ -1134,6 +1139,13 @@ static OptionsButtonState s_padOptions;
+ 
+ static void ProcessOptionsButton(uint32_t& buttonHold, ControlState& state, bool down, bool pad, OptionsButtonState& s) {
+     const auto now = std::chrono::steady_clock::now();
++    if (s.ignored) {
++        // held through the dialog: followed until it is let go, so no press starts after it either
++        if (!down)
++            s.ignored = false;
++        s.wasDown = down;
++        return;
++    }
+     if (down && !s.wasDown) {
+         s.wasDown = true;
+         s.recenterLogged = false;
+@@ -1657,8 +1669,22 @@ static void hook_InjectXRInput(PPCInterpreter_t* hCPU) {
+     // the pad's + is the same Options press: the game never sees it while it is held, so a hold never pauses (the
+     // recenter is the runtime's) and the release sends the tap
+     vpadStatus.hold = vpadStatus.hold.getLE() & ~static_cast<uint32_t>(VPAD_BUTTON_PLUS);
+-    ProcessOptionsButton(newXRBtnHold, state, BetterVR_PS5_OptionsDown(), false, s_senseOptions);
+-    ProcessOptionsButton(newXRBtnHold, state, (physicalHold & VPAD_BUTTON_PLUS) != 0, true, s_padOptions);
++    // the app's console keyboard takes the pad while it is up: its Options is not the game's pause
++    if (!BetterVR_PS5_GameInputBlocked()) {
++        ProcessOptionsButton(newXRBtnHold, state, BetterVR_PS5_OptionsDown(), false, s_senseOptions);
++        ProcessOptionsButton(newXRBtnHold, state, (physicalHold & VPAD_BUTTON_PLUS) != 0, true, s_padOptions);
++    } else {
++        // A press held into or started in the dialog ends with it: the state follows the button, and
++        // ProcessOptionsButton drops its release, so the game is not paused after the keyboard closes.
++        const bool senseDown = BetterVR_PS5_OptionsDown();
++        const bool padDown = (physicalHold & VPAD_BUTTON_PLUS) != 0;
++        if (senseDown)
++            s_senseOptions.ignored = true;
++        if (padDown)
++            s_padOptions.ignored = true;
++        s_senseOptions.wasDown = senseDown;
++        s_padOptions.wasDown = padDown;
++    }
+ #endif
+     UpdateGuide(inputs, isMenuOpen);
+     HandGestureState leftGesture = {};
+@@ -1716,6 +1742,18 @@ static void hook_InjectXRInput(PPCInterpreter_t* hCPU) {
+ 
+     OpenXRMotionBridge::UpdateVPADStatus(inputs, vpadStatus);
+ 
++#if defined(__PROSPERO__)
++    // The console's keyboard is up in the app: the game sees an idle pad. The state above still runs, so a
++    // button held when it closes is not read as a fresh press.
++    if (BetterVR_PS5_GameInputBlocked()) {
++        VPADStatus idle = {};
++        idle.vpadErr = 0;
++        idle.batteryLevel = 0xC0;
++        idle.tpData.validity = 3;
++        vpadStatus = idle;
++    }
++#endif
++
+     Guest::Write(vpadStatusOffset, &vpadStatus);
+ 
+     hCPU->gpr[3] = 1;

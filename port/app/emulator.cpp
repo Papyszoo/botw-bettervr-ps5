@@ -8,6 +8,7 @@
 #include "emulator.h"
 #include "boxart.h"
 #include "game_archives.h"
+#include "ime_dialog.h"
 #include "ingame.h"
 #include "pack_updates.h"
 #include "lang.h"
@@ -521,6 +522,7 @@ namespace ps5emu
 		// which is not the system ending the process for the program that is to follow (#60)
 		void LeaveEndingToSystem()
 		{
+			ps5ime::Close(); // the console's keyboard, if a game asked for one and it is still up (app/ime_dialog.h)
 			PS5Cemu_VrStop(); // BotW-BetterVR: the PS VR2 headset off first (port/bettervr/VrPS5.h)
 			for (const int sig : {SIGTERM, SIGINT, SIGHUP, SIGQUIT})
 				std::signal(sig, SIG_DFL);
