@@ -24,11 +24,11 @@ A drain the producer recovers from was silent before.
 Built, untested on console.
 ---
  .../HW/Latte/Core/LattePerformanceMonitor.h   |  7 ++
- src/Cafe/HW/Latte/Core/LatteRenderTarget.cpp  | 44 ++++++++++
+ src/Cafe/HW/Latte/Core/LatteRenderTarget.cpp  | 45 ++++++++++
  src/Cafe/OS/libs/coreinit/coreinit_Thread.cpp | 28 ++++++-
  src/Cafe/OS/libs/snd_core/ax.h                |  2 +-
  src/Cafe/OS/libs/snd_core/ax_out.cpp          | 83 ++++++++++++++++++-
- 5 files changed, 161 insertions(+), 3 deletions(-)
+ 5 files changed, 162 insertions(+), 3 deletions(-)
 
 diff --git a/src/Cafe/HW/Latte/Core/LattePerformanceMonitor.h b/src/Cafe/HW/Latte/Core/LattePerformanceMonitor.h
 index bd841b9c..f49ea6e5 100644
@@ -49,7 +49,7 @@ index bd841b9c..f49ea6e5 100644
  	// ten-second windows rather than single frames
  	uint64 getTotal() const
 diff --git a/src/Cafe/HW/Latte/Core/LatteRenderTarget.cpp b/src/Cafe/HW/Latte/Core/LatteRenderTarget.cpp
-index b1a034db..79b4840e 100644
+index b1a034db..e12c221b 100644
 --- a/src/Cafe/HW/Latte/Core/LatteRenderTarget.cpp
 +++ b/src/Cafe/HW/Latte/Core/LatteRenderTarget.cpp
 @@ -25,6 +25,8 @@
@@ -76,18 +76,19 @@ index b1a034db..79b4840e 100644
 +void PS5Cemu_LogLine(std::string_view line);	 // the port's boot log, written at once
 +static uint64 s_ps5PrevRecordNs = 0, s_ps5PrevReplayNs = 0;
 +static uint64 s_ps5PrevGpuWait[6] = {};
-+static uint64 s_ps5LastStallNs = 0;
++static uint64 s_ps5LastStallTsc = 0;
  static uint64 TscToNs(uint64 ticks)
  {
  	return _rdtscFrequency ? ticks * 1000000000ull / _rdtscFrequency : 0;
-@@ -835,6 +849,36 @@ void LatteRenderTarget_itHLESwapScanBuffer()
+@@ -835,6 +849,37 @@ void LatteRenderTarget_itHLESwapScanBuffer()
  			while (us > longest && !g_ps5LongestFrameUs.compare_exchange_weak(longest, us, std::memory_order_relaxed))
  			{
  			}
-+			const uint64 nowNs = TscToNs(now);
-+			if (us > 34000 && nowNs - s_ps5LastStallNs >= 200000000ull)
++			// at most one line every 200 ms (a fifth of a second in TSC ticks): a run of long frames
++			// is on the [perf] line's counts
++			if (us > 34000 && (s_ps5LastStallTsc == 0 || now - s_ps5LastStallTsc >= _rdtscFrequency / 5))
 +			{
-+				s_ps5LastStallNs = nowNs;
++				s_ps5LastStallTsc = now;
 +				const uint64 recordNs = g_ps5RecordNs.load(std::memory_order_relaxed) - s_ps5PrevRecordNs;
 +				const uint64 replayNs = g_ps5ReplayNs.load(std::memory_order_relaxed) - s_ps5PrevReplayNs;
 +				uint64 waitNs[6]{};
