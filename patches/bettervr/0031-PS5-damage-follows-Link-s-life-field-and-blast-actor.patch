@@ -9,7 +9,7 @@ Subject: [PATCH] PS5: damage follows Link's life field and blast actors play
  1 file changed, 190 insertions(+), 153 deletions(-)
 
 diff --git a/src/game/botw/player/player.cpp b/src/game/botw/player/player.cpp
-index 9cb7b89..d3ac565 100644
+index ecf7dbb..b3ce294 100644
 --- a/src/game/botw/player/player.cpp
 +++ b/src/game/botw/player/player.cpp
 @@ -58,20 +58,22 @@ bool Player::IsClimbing() {
@@ -501,7 +501,7 @@ index 9cb7b89..d3ac565 100644
      };
  
      // 0x02CAB32C also runs once while a save loads, before the first in-game frame: that is not a hit and the motor
-@@ -520,13 +547,23 @@ static void PlayDamageRumble(uint32_t stateNamePtr, const char* path) {
+@@ -521,13 +548,23 @@ static void PlayDamageRumble(uint32_t stateNamePtr, const char* path) {
  #endif
          }
          say(fmt::format("hands {:.2f}, headset {}, Damage Taken {}% [{}]", handsLevel, headsetText,
@@ -526,7 +526,7 @@ index 9cb7b89..d3ac565 100644
      PlayDamageRumble(0, "PlayerLargeDamage");
  }
  
-@@ -540,7 +577,7 @@ static void hook_PlayerNormalChangeState(PPCInterpreter_t* hCPU) {
+@@ -541,7 +578,7 @@ static void hook_PlayerNormalChangeState(PPCInterpreter_t* hCPU) {
  
      LogPlayerNormalStateOnce(stateNamePtr);
      NoteLifeScanState(stateNamePtr);

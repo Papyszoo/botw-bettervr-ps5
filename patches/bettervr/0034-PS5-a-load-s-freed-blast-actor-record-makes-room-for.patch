@@ -9,7 +9,7 @@ Subject: [PATCH] PS5: a load's freed blast actor record makes room for the new
  1 file changed, 9 insertions(+), 1 deletion(-)
 
 diff --git a/src/game/botw/player/player.cpp b/src/game/botw/player/player.cpp
-index 8985974..14aa5e7 100644
+index 878ba08..854bc2f 100644
 --- a/src/game/botw/player/player.cpp
 +++ b/src/game/botw/player/player.cpp
 @@ -246,7 +246,7 @@ static void UpdateLifeScan() {

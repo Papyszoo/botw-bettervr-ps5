@@ -18,12 +18,12 @@ The report's life-value scan and explosive actor log are added as read-only, cap
 values, distances and times only, never game code or instruction words. The V208 store decode is not included.
 No Cemu change.
 ---
- src/game/botw/player/player.cpp | 346 +++++++++++++++++++++++++++++++-
+ src/game/botw/player/player.cpp | 349 +++++++++++++++++++++++++++++++-
  src/rendering/rumble.h          |   6 +-
- 2 files changed, 348 insertions(+), 4 deletions(-)
+ 2 files changed, 350 insertions(+), 5 deletions(-)
 
 diff --git a/src/game/botw/player/player.cpp b/src/game/botw/player/player.cpp
-index f99e3bb..9cb7b89 100644
+index f99e3bb..ecf7dbb 100644
 --- a/src/game/botw/player/player.cpp
 +++ b/src/game/botw/player/player.cpp
 @@ -5,6 +5,7 @@
@@ -383,13 +383,15 @@ index f99e3bb..9cb7b89 100644
      static clock::time_point s_lastPlayed{};
      static std::string_view s_lastPath{};
      const auto now = clock::now();
-@@ -172,15 +501,25 @@ static void PlayDamageRumble(uint32_t stateNamePtr, const char* path) {
+@@ -172,15 +501,26 @@ static void PlayDamageRumble(uint32_t stateNamePtr, const char* path) {
  
      const float hands = damageRumble.amplitude * gain;
      const uint32_t devices = settings.GetHapticsDeviceMask(HapticCategory::Damage);
-+    const bool headset = (devices & HapticDeviceHeadset) != 0;
-     const float headsetLevel = std::min(1.0f, hands * settings.GetHapticsHeadsetLimit());
+-    const float headsetLevel = std::min(1.0f, hands * settings.GetHapticsHeadsetLimit());
 -    const int headset = (devices & HapticDeviceHeadset) ? (int)std::lround(headsetLevel * 25.0f) : 0;
++    const bool headset = (devices & HapticDeviceHeadset) != 0;
++    // upstream's Controls-page Rumble row is the global strength, as it is for the mixer's other devices
++    const float headsetLevel = std::min(1.0f, hands * settings.GetHapticsHeadsetLimit() * settings.rumbleStrength);
      const bool queued = Haptics::Play(damageRumble, HapticCategory::Damage);
      RumbleParameters otherHand = damageRumble;
      otherHand.hand = 1;
@@ -411,7 +413,7 @@ index f99e3bb..9cb7b89 100644
              (unsigned)settings.HapticsStrength(HapticCategory::Damage).load(), DescribeDamageDevices(devices)));
      }
      else
-@@ -200,6 +539,7 @@ static void hook_PlayerNormalChangeState(PPCInterpreter_t* hCPU) {
+@@ -200,6 +540,7 @@ static void hook_PlayerNormalChangeState(PPCInterpreter_t* hCPU) {
      }
  
      LogPlayerNormalStateOnce(stateNamePtr);
@@ -419,7 +421,7 @@ index f99e3bb..9cb7b89 100644
      if (ShouldBlockFirstPersonPlayerNormalState(stateNamePtr)) {
          PlayDamageRumble(stateNamePtr, "PlayerNormal");
      }
-@@ -277,6 +617,8 @@ void Player::OnGameFrame() {
+@@ -277,6 +618,8 @@ void Player::OnGameFrame() {
      if (s_gameFramesSinceLadderClimb != UINT32_MAX) {
          s_gameFramesSinceLadderClimb++;
      }

@@ -9,7 +9,7 @@ Subject: [PATCH] PS5: damage reads Link's life field from the first frame, so
  1 file changed, 65 insertions(+), 151 deletions(-)
 
 diff --git a/src/game/botw/player/player.cpp b/src/game/botw/player/player.cpp
-index 14aa5e7..b50252b 100644
+index 854bc2f..0addd49 100644
 --- a/src/game/botw/player/player.cpp
 +++ b/src/game/botw/player/player.cpp
 @@ -59,191 +59,106 @@ bool Player::IsClimbing() {
@@ -275,7 +275,7 @@ index 14aa5e7..b50252b 100644
  // hands' amplitude (1 = small, 4 or more, or reaching 0 = the state hook's old level).
  // With HapticsLogPatterns on, like the game's pattern lines, one [vib] line per call says which path saw the hit,
  // which state (or life values), and what the Damage Taken row asked for, whatever the outcome: a console run can
-@@ -603,7 +518,7 @@ static void PlayLifeDamageRumble(int32_t life, int32_t lost) {
+@@ -604,7 +519,7 @@ static void PlayLifeDamageRumble(int32_t life, int32_t lost) {
  }
  
  void Player::OnLargeDamage() {
@@ -284,7 +284,7 @@ index 14aa5e7..b50252b 100644
          return; // the life field is the source: one event per drop
      }
      PlayDamageRumble(0, "PlayerLargeDamage");
-@@ -618,8 +533,7 @@ static void hook_PlayerNormalChangeState(PPCInterpreter_t* hCPU) {
+@@ -619,8 +534,7 @@ static void hook_PlayerNormalChangeState(PPCInterpreter_t* hCPU) {
      }
  
      LogPlayerNormalStateOnce(stateNamePtr);

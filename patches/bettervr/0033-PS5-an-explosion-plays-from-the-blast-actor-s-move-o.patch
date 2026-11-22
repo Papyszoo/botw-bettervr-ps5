@@ -9,7 +9,7 @@ Subject: [PATCH] PS5: an explosion plays from the blast actor's move, once per
  1 file changed, 108 insertions(+), 74 deletions(-)
 
 diff --git a/src/game/botw/player/player.cpp b/src/game/botw/player/player.cpp
-index d3ac565..8985974 100644
+index b3ce294..878ba08 100644
 --- a/src/game/botw/player/player.cpp
 +++ b/src/game/botw/player/player.cpp
 @@ -246,20 +246,32 @@ static void UpdateLifeScan() {
@@ -257,7 +257,7 @@ index d3ac565..8985974 100644
  
          if (strcmp(actorName, "GameROMPlayer") == 0) {
              s_playerAddress = actorPtr;
-@@ -655,7 +689,7 @@ void Player::OnGameFrame() {
+@@ -656,7 +690,7 @@ void Player::OnGameFrame() {
          s_gameFramesSinceLadderClimb++;
      }
      UpdateLifeScan();
