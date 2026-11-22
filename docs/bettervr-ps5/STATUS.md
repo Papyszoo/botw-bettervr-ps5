@@ -25,10 +25,10 @@ the readback a frame behind it sees the target under the reticle from an older f
 all, so the name blinks and moves between two places, and the detector beeps each time it comes back.
 
 The boot log has that readback: at 23:52:38.322, 94 ms after `Flat camera mode started`, a
-`[copy] readback: VkFormat 109 aspect 0x1 mip 0 4x4, 16 bytes a texel (known), 256 bytes ...` (the
-analyzer's 4x4 RGBA32F ID buffer). A later session's 854x480 readback is the photo itself, which is
-why taking one still worked. The `[copy]` line is said once per kind (patch cemu 0064), so it names
-the readback, not each frame.
+`[copy] readback: VkFormat 109 aspect 0x1 mip 0 4x4, 16 bytes a texel (known), 256 bytes ...` — a
+4x4 RGBA32F buffer, the shape and timing the analyzer's ID buffer has. A later session's 854x480
+readback is the photo itself, which is why taking one still worked. The `[copy]` line is said once
+per kind (patch cemu 0064), so it names the readback, not each frame.
 
 **Not a port patch.** The FPS++ pack is BetterVR's own, bundled and required by it (`src/game/botw/
 game.cpp`'s `requiredPack`), and no patch in `patches/bettervr` touched it. Upstream fixed this in
