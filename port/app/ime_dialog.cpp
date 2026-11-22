@@ -78,6 +78,13 @@ namespace
 	uint64_t s_openedAt; // sceKernelGetProcessTime, for the answer time
 	bool s_open;
 	bool s_terminated;
+#ifndef PS5IME_CHECK
+	// What this dialog says of itself, capped like the port's other diagnostics: the start with its
+	// parameters and return code, each status it reports, and the result. Never the text.
+	int s_logLines = 0;
+	constexpr int kLogLines = 24;
+	int32_t s_lastStatus = -1; // the status GetStatus last gave, so only a change is a line
+#endif
 
 	void CloseLocked()
 	{
@@ -121,7 +128,17 @@ bool ps5ime::Open(std::u16string_view text, int maxLength, int32_t& rc)
 	s_text[copy] = 0;
 	s_polls = 0;
 	s_terminated = false;
+#ifndef PS5IME_CHECK
+	s_lastStatus = -1;
+#endif
 	rc = sceImeDialogInit(&s_param, nullptr);
+#ifndef PS5IME_CHECK
+	if (s_logLines < kLogLines)
+	{
+		++s_logLines;
+		ps5log::Line("[ime] init: type {}, limit {}, user {}; rc {:#x}", s_param.type, limit, s_param.userId, (uint32_t)rc);
+	}
+#endif
 	if (rc < 0)
 		return false;
 	s_openedAt = sceKernelGetProcessTime();
@@ -139,6 +156,17 @@ int ps5ime::Poll(std::u16string& text, int32_t& rc)
 		return -1;
 	}
 	const int32_t status = sceImeDialogGetStatus();
+#ifndef PS5IME_CHECK
+	if (status != s_lastStatus)
+	{
+		s_lastStatus = status;
+		if (s_logLines < kLogLines)
+		{
+			++s_logLines;
+			ps5log::Line("[ime] status: {:#x}", (uint32_t)status);
+		}
+	}
+#endif
 	if (status == kStatusRunning)
 	{
 		s_polls = 0;
@@ -165,6 +193,16 @@ int ps5ime::Poll(std::u16string& text, int32_t& rc)
 	}
 	ImeResult result{};
 	rc = sceImeDialogGetResult(&result);
+#ifndef PS5IME_CHECK
+	if (s_logLines < kLogLines)
+	{
+		++s_logLines;
+		if (rc < 0)
+			ps5log::Line("[ime] result: rc {:#x}", (uint32_t)rc);
+		else
+			ps5log::Line("[ime] result: outcome {:#x}, rc {:#x}", (uint32_t)result.outcome, (uint32_t)rc);
+	}
+#endif
 	if (rc < 0)
 	{
 		CloseLocked();

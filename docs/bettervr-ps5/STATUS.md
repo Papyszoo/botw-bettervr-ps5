@@ -324,17 +324,25 @@ and the TV shows Hmd2's social screen, so the sheet is drawn where nobody sees i
 the TV only, never in the headset. Flat play was and is fine, and the game's own wait has no end: Cemu's swkbd has
 no cancel and no timeout.
 
+**The console run after this design.** At the same screen (13.60, VR) no keyboard appeared in the headset, and
+`boot.log` held no `[ime]` line at all. Every entry into the stereo branch logs, so the console's dialog was never
+attempted: the call into the port either was not reached - it ran inside Cemu's ImGui block, and `ImguiBegin` can
+decline to draw - or the game never called HLE swkbd there. The log could not tell those apart, which is what this
+build's lines answer.
+
 **The fix, on the PS5 side only.** While stereo runs with the headset up (`ps5vr::Stereo()` and `ps5vr::HeadsetUp()`),
-`PS5Cemu_DrawKeyboard` opens the console's own keyboard (libSceImeDialog, new `port/app/ime_dialog.cpp`) once per game
-appearance, with the form's text and the limit the game set (UTF-16 units, as swkbd counts them; a game's larger limit
-is clamped to the dialog's 2048). It polls the dialog once a frame on the thread `swkbd_render` runs on, and on OK
-writes the typed text into the form and returns done, exactly as its sheet did, so Cemu's `swkbd_finishInput` decides
-it to the game. A cancel, a dialog the system abandons, one it refuses, and one left up for 90 seconds without an
-answer all decide the text the game gave: swkbd has no cancel a game could take, and the game must never wait on a
-keyboard nobody can see. A game that dismisses its own swkbd while the dialog is up ends it from the next TV frame
-(`PS5Cemu_RenderOverlay`), so the pad is not left idle. If the headset failed to start, `ps5vr::Stereo()` stays true
-but Hmd2 is not up: the TV shows Cemu's own picture, where the sheet is visible, so that case keeps the sheet. Flat
-play and the M2 flat screen keep it too.
+the console's own keyboard (libSceImeDialog, new `port/app/ime_dialog.cpp`) opens once per game appearance, with the
+form's text and the limit the game set (UTF-16 units, as swkbd counts them; a game's larger limit is clamped to the
+dialog's 2048). It is opened and polled by `PS5Cemu_DrawKeyboardVR`, which Cemu calls from its own swkbd state in
+`swkbd_renderVR` (`LatteRenderTarget_copyToBackbuffer`, every TV frame, outside the `ImguiBegin` block): the dialog
+no longer depends on that block drawing. On OK the typed text goes into the form and the hook returns done, exactly
+as its sheet did, so Cemu's `swkbd_finishInput` decides it to the game. A cancel, a dialog the system abandons, one it
+refuses, and one left up for 90 seconds without an answer all decide the text the game gave: swkbd has no cancel a
+game could take, and the game must never wait on a keyboard nobody can see. A game that dismisses its own swkbd while
+the dialog is up ends it on the next TV frame, so the pad is not left idle. If the headset failed to start,
+`ps5vr::Stereo()` stays true but Hmd2 is not up: the TV shows Cemu's own picture, where the sheet is visible, so that
+case keeps the sheet. Flat play and the M2 flat screen keep it too, drawn by `PS5Cemu_DrawKeyboard` in Cemu's ImGui
+frame as before.
 
 **The game's input while it is up.** The console's keyboard is the system's, so the pad is its: patch bettervr 0044
 has `hook_InjectXRInput` write an idle VPAD status while `BetterVR_PS5_GameInputBlocked` is set
@@ -343,12 +351,19 @@ that runs into or through the dialog ends with it: its release is not a pause af
 above that write still runs, so a button held when the dialog closes is not read as a fresh press. The DualSense never
 reached the emulated GamePad while swkbd is active (`OverlayTakesInput`), as before.
 
-**Logs, capped at 24 lines each run, never the text.** `[ime] swkbd asked for a keyboard: N units, limit M
-(form|keyboard); the console's opened (0x0)`, or `... it did not open (0x..., N tries): the text it gave is decided`;
-`[ime] the console's keyboard: OK, N units`; `... cancelled; the text it gave is decided (swkbd has none to take)`;
-`... no answer in 90 s; ended, the text it gave is decided`; `... ended without an answer (...)`, with the close
-status and the length, never the text; and `[ime] the game dismissed its keyboard; ended, the text it gave is
-decided` when the game closes its own prompt.
+**Logs, capped, never the text.** Three prefixes, so one session says which link was missing.
+
+- `[swkbd]`, from Cemu's swkbd HLE (patch cemu 0066): the module mapped, create, each appear with its units, limit
+  and appearance, each disappear, and one line per per-frame export when what it reports changes (`calc`,
+  `state keyboard`, `state form`, `input form string`, `decide ok`, `needs calc font|predict`); the one-off
+  `set receiver`, `draw string info`, `learn dictionary` and calc subthreads a few times each.
+- `[kbd]`, from the port: `sheet: appearance N; stereo S, headset H, menu M` when Cemu's ImGui frame calls the
+  sheet's hook, and `frame: appearance N (form|keyboard), limit L; stereo 1, headset H, menu M` when the
+  out-of-frame hook runs. A `frame` line without a `sheet` line is Cemu's ImGui block declining to draw.
+- `[ime]`, from the port's dialog: `init: type T, limit L, user U; rc 0x...`; `status: 0x...` on each change
+  (0 none, 1 running, 2 finished); `result: outcome 0x..., rc 0x...`; and the lines of the old request (`swkbd
+  asked for a keyboard ... opened/did not open`, `OK`, `cancelled`, `no answer in 90 s`, `ended without an
+  answer`, `the game dismissed its keyboard`).
 
 **Where the layout comes from.** The SDK has no header for this dialog, and none is used: the 96-byte parameter
 block, its 16-byte result, the statuses (0 none, 1 running, 2 finished) and the outcomes (0 OK, 1 cancelled, 2
@@ -363,36 +378,36 @@ even unseen, and a dialog left unanswered ends itself after 90 seconds: either w
 instead of waiting forever.
 
 Patches: bettervr 0044 (the idle pad, and Options ending with it), cemu 0063 (the hook is told form or keyboard-only,
-for the request line); new files `port/app/ime_dialog.h/.cpp`; no GPU, frame-path or record change.
+for the request line), cemu 0066 (the swkbd exports' lines, and the stereo call in `swkbd_renderVR` outside Cemu's
+ImGui frame); new files `port/app/ime_dialog.h/.cpp`; no GPU, frame-path or record change.
 
 **Test request 77 (v0.8 console keyboard in VR, 13.60 console).** Install the `BotW-VR-v...zip` from this head's
 green "BetterVR build" run and start Breath of the Wild in VR with the headset, both Sense controllers and the
 DualSense on. Load a save that can reach a stable (or ride to one), register a horse and reach the naming screen.
 
-1. **Does the console's keyboard show?** Say whether the PS5 keyboard appears in the headset, only on the TV, or
-   nowhere. This is the question the design rests on.
-2. **Does the name reach the game?** Type a name and accept it: does the naming screen close, and does the name show
-   in the stable and the pause menu? If it does not, say whether the game went on with the name it gave (the
-   fallback) or stayed waiting.
-3. **Cancel.** Show the keyboard again (rename the horse, or any other text prompt) and press the dialog's Circle
-   cancel, whether or not you can see the dialog: the game should continue with the text it gave, not wait.
-4. **An unanswered dialog.** Show it once more and leave it alone, best done while it is not visible: after about 90
-   seconds the game should go on with the text it gave. Say whether it did, and send the `no answer in 90 s` line.
-5. **The game's own prompt dismissed.** With the console keyboard up, back out of the game's prompt instead of
-   answering it: the game should be playable again, and the log should hold `the game dismissed its keyboard`.
-6. **Options across the dialog.** Hold Options while the dialog is up, then release it after the dialog closes: the
-   game must not open its pause screen.
-7. **Flat, unchanged.** Play on TV and name a horse: the port's own sheet must still be the one that shows and types.
+1. **Name the horse in VR.** Is the PS5 keyboard in the headset? Type a name and accept it: does the naming screen
+   close, and does the name show in the stable and the pause menu? If nothing shows in the headset, look at the TV
+   and say what it shows (the game's picture, the keyboard, or black), and whether the headset still shows the game.
+2. **If no keyboard appears anywhere**, say whether the game stayed waiting, and press Circle once (in case the
+   dialog is up unseen): the game should continue with the text it gave.
+3. **Flat, unchanged.** Play on TV (VR off) and name a horse: the port's own sheet must still be the one that shows
+   and types.
 
 **Send**, from `/data/ps5cemu/logs/boot.log`:
 
+- `LC_ALL=C grep -a "\[swkbd\]" boot.log`
+- `LC_ALL=C grep -a "\[kbd\]" boot.log`
 - `LC_ALL=C grep -a "\[ime\]" boot.log`
-- which of steps 1-7 happened, where the keyboard was seen in each, and whether the pad moved Link while it was up.
 
-**What it decides.** Step 1 decides whether the console's dialog is visible in the headset; if it is TV-only, the
-next step is a keyboard drawn in BetterVR's own overlay. Step 2 decides that the typed text reaches swkbd. Steps 3-5
-decide the cancel, the time limit and a game that dismisses its own keyboard. Step 6 decides that the pad returns
-without a pause. Step 7 guards flat play and the M2 flat screen.
+and say in which step the keyboard was seen, in the headset or on the TV, and what the TV showed where the headset
+showed none.
+
+**What it decides.** `[swkbd] appear form` decides the game called HLE swkbd at that screen; with `[swkbd] HLE module
+mapped` and `[swkbd] create` it says the HLE is what loaded. `[kbd] frame` with `headset 1` decides the out-of-frame
+hook ran, and `[ime] init ... rc 0x0` that the system took the dialog; `[ime] status: 0x1` that it reports it
+running. Step 1 then decides the open question: whether that dialog is visible in the headset, on the TV only, or
+nowhere. If it is TV-only or invisible, the next step is a keyboard drawn in BetterVR's own overlay. `[ime] result`
+and step 1's name decide that the typed text reaches swkbd.
 
 ## 2026-11-21: the shrine respawn holds the third-person camera and its fade reaches the 3D picture without the 16:9 panel; built, untested on console
 

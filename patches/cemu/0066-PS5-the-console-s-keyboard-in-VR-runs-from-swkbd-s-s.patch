@@ -1,0 +1,438 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ps5cemu <ps5cemu@localhost>
+Date: Sun, 22 Nov 2026 20:52:10 +0100
+Subject: [PATCH] PS5: the console's keyboard in VR runs from swkbd's state
+ outside Cemu's ImGui frame, and every swkbd export reports its calls; built,
+ untested on console
+
+---
+ src/Cafe/HW/Latte/Core/LatteRenderTarget.cpp |   5 +
+ src/Cafe/OS/libs/swkbd/swkbd.cpp             | 229 ++++++++++++++++---
+ src/Cafe/OS/libs/swkbd/swkbd.h               |   5 +
+ 3 files changed, 213 insertions(+), 26 deletions(-)
+
+diff --git a/src/Cafe/HW/Latte/Core/LatteRenderTarget.cpp b/src/Cafe/HW/Latte/Core/LatteRenderTarget.cpp
+index 5374940c..65f777d3 100644
+--- a/src/Cafe/HW/Latte/Core/LatteRenderTarget.cpp
++++ b/src/Cafe/HW/Latte/Core/LatteRenderTarget.cpp
+@@ -1289,6 +1289,11 @@ void LatteRenderTarget_copyToBackbuffer(LatteTextureView* textureView, bool isPa
+ 		PS5Cemu_PostEffects();
+ 		LatteRenderTarget_ps5DrawSecondScreen(imageX, imageY, imageWidth, imageHeight);
+ 	}
++	// The console's keyboard in BetterVR's stereo frames is driven from swkbd's own state here, outside
++	// the ImGui frame below: ImguiBegin can decline to draw, and the dialog must still open and answer.
++	// Flat play's sheet is swkbd_render's, in that frame, where it is drawn.
++	if (!isPadView)
++		swkbd_renderVR();
+ #endif
+ 	g_renderer->HandleScreenshotRequest(textureView, isPadView);
+ 	if (!g_renderer->ImguiBegin(!isPadView))
+diff --git a/src/Cafe/OS/libs/swkbd/swkbd.cpp b/src/Cafe/OS/libs/swkbd/swkbd.cpp
+index 56f3df06..35fbc329 100644
+--- a/src/Cafe/OS/libs/swkbd/swkbd.cpp
++++ b/src/Cafe/OS/libs/swkbd/swkbd.cpp
+@@ -8,6 +8,8 @@
+ #include "util/helpers/helpers.h"
+ #include "resource/IconsFontAwesome5.h"
+ 
++#include <string_view>
++
+ constinit COSStaticData s_swkbdStaticData;
+ 
+ #define SWKBD_FORM_STRING_MAX_LENGTH	(4096) // counted in 16-bit characters
+@@ -88,8 +90,36 @@ typedef struct
+ }swkbdInternalState_t;
+ 
+ #if defined(CEMU_PS5)
++void PS5Cemu_LogLine(std::string_view line); // the port's boot log (port/ps5/log.cpp)
+ // how often the game has shown the keyboard, for PS5Cemu to start its keyboard over (swkbd_render)
+ std::atomic<uint32> s_ps5Appearances{0};
++
++namespace
++{
++	// The game calls swkbd's exports many times a frame (SwkbdCalc, the state it polls). A line here is
++	// written when what it says changes, and the one-off calls a few times, so one session's boot log
++	// says how far the game and the HLE got without saying it sixty times a second.
++	struct PS5SwkbdLog
++	{
++		uint32 create = 0;
++		uint32 appearForm = 0, appearKeyboard = 0;
++		uint32 disappearForm = 0, disappearKeyboard = 0;
++		uint32 subThreadFont = 0, subThreadPredict = 0;
++		uint32 receiver = 0, drawInfo = 0, learnDic = 0, mapped = 0;
++		uint32 inputFormLines = 0;
++		int calcActive = -1;
++		int keyboardState = -1, inputFormState = -1;
++		int inputFormLength = -1;
++		int decideOk = -1;
++		int needFont = -1, needPredict = -1;
++	};
++	PS5SwkbdLog s_ps5SwkbdLog;
++
++	void PS5SwkbdLogLine(std::string line)
++	{
++		PS5Cemu_LogLine(line);
++	}
++}
+ #endif
+ sint32 isNeedCalcSubThreadFont = 0;
+ sint32 isNeedCalcSubThreadPredict = 0;
+@@ -98,6 +128,10 @@ CafeStaticVar<swkbdInternalState_t> swkbdInternalState{s_swkbdStaticData};
+ 
+ void SwkbdCreate(uint8* workMemory, uint32 regionType, uint32 unk, coreinit::FSClient_t* fsClient)
+ {
++#if defined(CEMU_PS5)
++	if (s_ps5SwkbdLog.create++ < 4)
++		PS5SwkbdLogLine("[swkbd] create");
++#endif
+ 	memset(swkbdInternalState.GetPtr(), 0, sizeof(swkbdInternalState_t));
+ 	coreinit::OSSleepTicks(ESPRESSO_TIMER_CLOCK); // simulate this function taking a bit of time to run. MH3U/MH3G requires this to not softlock
+ 	// pretend that there is some work to do
+@@ -110,6 +144,13 @@ uint32 SwkbdGetStateKeyboard()
+ 	uint32 r = SWKBD_STATE_BLANK;
+ 	if( swkbdInternalState->isActive )
+ 		r = SWKBD_STATE_DISPLAYED;
++#if defined(CEMU_PS5)
++	if (s_ps5SwkbdLog.keyboardState != (int)r)
++	{
++		s_ps5SwkbdLog.keyboardState = (int)r;
++		PS5SwkbdLogLine(fmt::format("[swkbd] state keyboard: {:#x}", r));
++	}
++#endif
+ 	return r;
+ }
+ 
+@@ -118,6 +159,13 @@ uint32 SwkbdGetStateInputForm()
+ 	uint32 r = SWKBD_STATE_BLANK;
+ 	if( swkbdInternalState->isActive )
+ 		r = SWKBD_STATE_DISPLAYED;
++#if defined(CEMU_PS5)
++	if (s_ps5SwkbdLog.inputFormState != (int)r)
++	{
++		s_ps5SwkbdLog.inputFormState = (int)r;
++		PS5SwkbdLogLine(fmt::format("[swkbd] state form: {:#x}", r));
++	}
++#endif
+ 	return r;
+ }
+ 
+@@ -160,6 +208,10 @@ uint32 SwkbdSetReceiver(const swkbdReceiverArg_t* receiverArg)
+ 	if(swkbdInternalState == nullptr)
+ 		return 0;
+ 	swkbdInternalState->keyboardArg.receiverArg = *receiverArg;
++#if defined(CEMU_PS5)
++	if (s_ps5SwkbdLog.receiver++ < 2)
++		PS5SwkbdLogLine(fmt::format("[swkbd] set receiver: buffer {} units", (sint32)receiverArg->stringBufSize));
++#endif
+ 	return 0;
+ }
+ 
+@@ -227,6 +279,11 @@ uint32 SwkbdAppearInputForm(const swkbdAppearArg_t* appearArg)
+ 		swkbdInternalState->formStringBuffer[0] = '\0';
+ 		swkbdInternalState->formStringLength = 0;
+ 	}
++#if defined(CEMU_PS5)
++	if (s_ps5SwkbdLog.appearForm++ < 8)
++		PS5SwkbdLogLine(fmt::format("[swkbd] appear form: {} units, limit {}, appearance {}", swkbdInternalState->formStringLength,
++			swkbdInternalState->maxTextLength, (uint32)s_ps5Appearances));
++#endif
+ 	return 1;
+ }
+ 
+@@ -249,6 +306,11 @@ uint32 SwkbdAppearKeyboard(const SwkbdKeyboardArg_t* keyboardArg)
+ 	swkbdInternalState->formStringBuffer[0] = '\0';
+ 	swkbdInternalState->formStringLength = 0;
+ 	swkbdInternalState->keyboardArg = *keyboardArg;
++#if defined(CEMU_PS5)
++	if (s_ps5SwkbdLog.appearKeyboard++ < 8)
++		PS5SwkbdLogLine(fmt::format("[swkbd] appear keyboard: buffer {} units, appearance {}",
++			(sint32)swkbdInternalState->keyboardArg.receiverArg.stringBufSize, (uint32)s_ps5Appearances));
++#endif
+ 	return 1;
+ }
+ 
+@@ -256,6 +318,10 @@ uint32 SwkbdDisappearInputForm()
+ {
+ 	debug_printf("SwkbdDisappearInputForm__3RplFv\n");
+ 	swkbdInternalState->isActive = false;
++#if defined(CEMU_PS5)
++	if (s_ps5SwkbdLog.disappearForm++ < 8)
++		PS5SwkbdLogLine("[swkbd] disappear form");
++#endif
+ 	return 1;
+ }
+ 
+@@ -263,6 +329,10 @@ uint32 SwkbdDisappearKeyboard()
+ {
+ 	debug_printf("SwkbdDisappearKeyboard__3RplFv\n");
+ 	swkbdInternalState->isActive = false;
++#if defined(CEMU_PS5)
++	if (s_ps5SwkbdLog.disappearKeyboard++ < 8)
++		PS5SwkbdLogLine("[swkbd] disappear keyboard");
++#endif
+ 	return 1;
+ }
+ 
+@@ -272,14 +342,28 @@ uint16be* SwkbdGetInputFormString()
+ 		swkbdInternalState->formStringBufferBE[i] = swkbdInternalState->formStringBuffer[i];
+ 	cemu_assert(swkbdInternalState->formStringLength < SWKBD_FORM_STRING_MAX_LENGTH);
+ 	swkbdInternalState->formStringBufferBE[swkbdInternalState->formStringLength] = 0;
++#if defined(CEMU_PS5)
++	if (s_ps5SwkbdLog.inputFormLength != swkbdInternalState->formStringLength)
++	{
++		s_ps5SwkbdLog.inputFormLength = swkbdInternalState->formStringLength;
++		if (s_ps5SwkbdLog.inputFormLines++ < 16)
++			PS5SwkbdLogLine(fmt::format("[swkbd] input form string: {} units", swkbdInternalState->formStringLength));
++	}
++#endif
+ 	return swkbdInternalState->formStringBufferBE;
+ }
+ 
+ uint32 SwkbdIsDecideOkButton(uint8*)
+ {
+-	if (swkbdInternalState->decideButtonWasPressed)
+-		return 1;
+-	return 0;
++	const uint32 r = swkbdInternalState->decideButtonWasPressed ? 1 : 0;
++#if defined(CEMU_PS5)
++	if (s_ps5SwkbdLog.decideOk != (int)r)
++	{
++		s_ps5SwkbdLog.decideOk = (int)r;
++		PS5SwkbdLogLine(fmt::format("[swkbd] decide ok: {}", r));
++	}
++#endif
++	return r;
+ }
+ 
+ typedef struct  
+@@ -299,6 +383,10 @@ static_assert(sizeof(SwkbdDrawStringInfo_t) != 0x19, "SwkbdDrawStringInfo_t has
+ uint32 SwkbdGetDrawStringInfo(SwkbdDrawStringInfo_t* drawStringInfo)
+ {
+ 	cemuLog_logDebug(LogType::Force, "SwkbdGetDrawStringInfo(0x{:08x})", MEMPTR(drawStringInfo).GetMPTR());
++#if defined(CEMU_PS5)
++	if (s_ps5SwkbdLog.drawInfo++ < 2)
++		PS5SwkbdLogLine("[swkbd] draw string info");
++#endif
+ 
+ 	drawStringInfo->ukn00 = -1;
+ 	drawStringInfo->ukn04 = -1;
+@@ -345,6 +433,10 @@ static_assert(sizeof(SwkbdLearnDic) == SWKBD_LEARN_DIC_SIZE);
+ uint32 SwkbdInitLearnDic(SwkbdLearnDic* dictionary)
+ {
+ 	cemuLog_logDebug(LogType::Force, "SwkbdInitLearnDic(0x{:08x})", MEMPTR(dictionary).GetMPTR());
++#if defined(CEMU_PS5)
++	if (s_ps5SwkbdLog.learnDic++ < 2)
++		PS5SwkbdLogLine("[swkbd] learn dictionary");
++#endif
+ 	if (swkbdInternalState == nullptr || dictionary == nullptr)
+ 		return 0;
+ 
+@@ -375,18 +467,38 @@ uint32 SwkbdInitLearnDic(SwkbdLearnDic* dictionary)
+ 
+ bool SwkbdIsNeedCalcSubThreadFont()
+ {
+-	return isNeedCalcSubThreadFont > 0;
++	const bool r = isNeedCalcSubThreadFont > 0;
++#if defined(CEMU_PS5)
++	if (s_ps5SwkbdLog.needFont != (int)r)
++	{
++		s_ps5SwkbdLog.needFont = (int)r;
++		PS5SwkbdLogLine(fmt::format("[swkbd] needs calc font: {}", r ? 1 : 0));
++	}
++#endif
++	return r;
+ }
+ 
+ bool SwkbdIsNeedCalcSubThreadPredict()
+ {
+-	return isNeedCalcSubThreadPredict > 0;
++	const bool r = isNeedCalcSubThreadPredict > 0;
++#if defined(CEMU_PS5)
++	if (s_ps5SwkbdLog.needPredict != (int)r)
++	{
++		s_ps5SwkbdLog.needPredict = (int)r;
++		PS5SwkbdLogLine(fmt::format("[swkbd] needs calc predict: {}", r ? 1 : 0));
++	}
++#endif
++	return r;
+ }
+ 
+ void SwkbdCalcSubThreadFont()
+ {
+ 	if (isNeedCalcSubThreadFont == 0)
+ 		return;
++#if defined(CEMU_PS5)
++	if (s_ps5SwkbdLog.subThreadFont++ < 2)
++		PS5SwkbdLogLine("[swkbd] calc subthread font");
++#endif
+ 	isNeedCalcSubThreadFont--;
+ 	coreinit::OSSleepTicks(ESPRESSO_TIMER_CLOCK / 200); // simulate 5ms of working time
+ }
+@@ -395,6 +507,10 @@ void SwkbdCalcSubThreadPredict()
+ {
+ 	if (isNeedCalcSubThreadPredict == 0)
+ 		return;
++#if defined(CEMU_PS5)
++	if (s_ps5SwkbdLog.subThreadPredict++ < 2)
++		PS5SwkbdLogLine("[swkbd] calc subthread predict");
++#endif
+ 	isNeedCalcSubThreadPredict--;
+ 	coreinit::OSSleepTicks(ESPRESSO_TIMER_CLOCK / 200); // simulate 5ms of working time
+ }
+@@ -402,6 +518,14 @@ void SwkbdCalcSubThreadPredict()
+ void SwkbdCalc(void* controllerInfo)
+ {
+ 	// no op for now
++#if defined(CEMU_PS5)
++	const int active = swkbdInternalState != NULL && swkbdInternalState->isActive ? 1 : 0;
++	if (s_ps5SwkbdLog.calcActive != active)
++	{
++		s_ps5SwkbdLog.calcActive = active;
++		PS5SwkbdLogLine(fmt::format("[swkbd] calc: active {}", active));
++	}
++#endif
+ }
+ 
+ void swkbd_keyInput(uint32 keyCode);
+@@ -414,30 +538,41 @@ void swkbd_finishInput();
+ // over when appearance changes, and returns true when the text is done. keyboardOnly says the game
+ // asked for the keyboard alone (SwkbdAppearKeyboard), not its form.
+ bool PS5Cemu_DrawKeyboard(std::u16string& text, sint32 maxLength, bool counted, uint32 appearance, bool keyboardOnly);
+-#endif
+-void swkbd_render(bool mainWindow)
++// The same keyboard in BetterVR's stereo frames: the console's own dialog (port/app/ime_dialog.cpp).
++// text is the form's while the game has its keyboard up, nullptr once it has dismissed it, so the
++// dialog is ended even when nothing draws. Called every TV frame from LatteRenderTarget, outside Cemu's
++// ImGui frame, which ImguiBegin can decline.
++bool PS5Cemu_DrawKeyboardVR(std::u16string* text, sint32 maxLength, uint32 appearance, bool keyboardOnly);
++
++namespace
+ {
+-	// only render if active
+-	if( swkbdInternalState == NULL || swkbdInternalState->isActive == false)
+-		return;
+-#if defined(CEMU_PS5)
+-	if (!mainWindow)
+-		return;
+-	// the length swkbd_keyInput allows, within the form
+-	sint32 maxLength = swkbdInternalState->maxTextLength;
+-	if (swkbdInternalState->keyboardOnlyMode)
++	// The form as the port's keyboard takes it: its text in UTF-16, the length its key input allows,
++	// and whether that length is the game's (which it shows) rather than the form's maximum.
++	struct PS5SwkbdText
+ 	{
+-		const uint32 stringBufferSize = swkbdInternalState->keyboardArg.receiverArg.stringBufSize;
+-		maxLength = stringBufferSize > 1 ? (sint32)stringBufferSize - 1 : 0;
++		std::u16string text;
++		sint32 maxLength = 0;
++		bool counted = false;
++	};
++
++	PS5SwkbdText PS5SwkbdReadText()
++	{
++		PS5SwkbdText out;
++		sint32 maxLength = swkbdInternalState->maxTextLength;
++		if (swkbdInternalState->keyboardOnlyMode)
++		{
++			const uint32 stringBufferSize = swkbdInternalState->keyboardArg.receiverArg.stringBufSize;
++			maxLength = stringBufferSize > 1 ? (sint32)stringBufferSize - 1 : 0;
++		}
++		out.maxLength = std::clamp<sint32>(maxLength, 0, SWKBD_FORM_STRING_MAX_LENGTH - 1);
++		out.counted = out.maxLength < SWKBD_FORM_STRING_MAX_LENGTH - 1;
++		for (sint32 i = 0; i < swkbdInternalState->formStringLength; i++)
++			out.text.push_back((char16_t)swkbdInternalState->formStringBuffer[i]);
++		return out;
+ 	}
+-	maxLength = std::clamp<sint32>(maxLength, 0, SWKBD_FORM_STRING_MAX_LENGTH - 1);
+-	std::u16string text;
+-	for (sint32 i = 0; i < swkbdInternalState->formStringLength; i++)
+-		text.push_back((char16_t)swkbdInternalState->formStringBuffer[i]);
+-	const std::u16string before = text;
+-	const bool done = PS5Cemu_DrawKeyboard(text, maxLength, maxLength < SWKBD_FORM_STRING_MAX_LENGTH - 1, s_ps5Appearances,
+-		swkbdInternalState->keyboardOnlyMode);
+-	if (text != before)
++
++	// what the port typed, into the form: its length within maxLength, and the game told it changed
++	void PS5SwkbdWriteText(const std::u16string& text, sint32 maxLength)
+ 	{
+ 		const sint32 length = std::min((sint32)text.size(), maxLength);
+ 		for (sint32 i = 0; i < length; i++)
+@@ -446,6 +581,23 @@ void swkbd_render(bool mainWindow)
+ 		swkbdInternalState->formStringLength = length;
+ 		swkbd_inputStringChanged();
+ 	}
++}
++#endif
++void swkbd_render(bool mainWindow)
++{
++	// only render if active
++	if( swkbdInternalState == NULL || swkbdInternalState->isActive == false)
++		return;
++#if defined(CEMU_PS5)
++	if (!mainWindow)
++		return;
++	// flat play's sheet. In stereo with the headset up PS5Cemu_DrawKeyboard declines it and
++	// swkbd_renderVR drives the console's dialog instead.
++	PS5SwkbdText form = PS5SwkbdReadText();
++	const std::u16string before = form.text;
++	const bool done = PS5Cemu_DrawKeyboard(form.text, form.maxLength, form.counted, s_ps5Appearances, swkbdInternalState->keyboardOnlyMode);
++	if (form.text != before)
++		PS5SwkbdWriteText(form.text, form.maxLength);
+ 	if (done)
+ 		swkbd_finishInput();
+ 	return;
+@@ -606,6 +758,27 @@ void swkbd_render(bool mainWindow)
+ 	ImGui::PopStyleColor();
+ }
+ 
++#if defined(CEMU_PS5)
++// The console's keyboard in BetterVR's stereo frames, from swkbd's own state: LatteRenderTarget calls
++// this every TV frame, outside Cemu's ImGui frame, so the dialog opens, is polled and is ended
++// whether or not that frame draws (ImguiBegin can decline). Flat play's sheet stays in swkbd_render.
++void swkbd_renderVR()
++{
++	if (swkbdInternalState == NULL || swkbdInternalState->isActive == false)
++	{
++		PS5Cemu_DrawKeyboardVR(nullptr, 0, 0, false); // a dialog the game dismissed is ended here
++		return;
++	}
++	PS5SwkbdText form = PS5SwkbdReadText();
++	const std::u16string before = form.text;
++	const bool done = PS5Cemu_DrawKeyboardVR(&form.text, form.maxLength, s_ps5Appearances, swkbdInternalState->keyboardOnlyMode);
++	if (form.text != before)
++		PS5SwkbdWriteText(form.text, form.maxLength);
++	if (done)
++		swkbd_finishInput();
++}
++#endif
++
+ bool swkbd_hasKeyboardInputHook()
+ {
+ 	return swkbdInternalState != NULL && swkbdInternalState->isActive;
+@@ -737,6 +910,10 @@ namespace swkbd
+ 			s_swkbdStaticData.Allocate();
+ 			isNeedCalcSubThreadFont = 0;
+ 			isNeedCalcSubThreadPredict = 0;
++#if defined(CEMU_PS5)
++			if (s_ps5SwkbdLog.mapped++ < 2)
++				PS5SwkbdLogLine("[swkbd] HLE module mapped");
++#endif
+ 			cafeExportRegisterFunc(SwkbdCreate, "swkbd", "SwkbdCreate__3RplFPUcQ3_2nn5swkbd10RegionTypeUiP8FSClient", LogType::SWKBD);
+ 			cafeExportRegisterFunc(SwkbdCalc, "swkbd", "SwkbdCalc__3RplFRCQ3_2nn5swkbd14ControllerInfo", LogType::SWKBD);
+ 			cafeExportRegisterFunc(SwkbdGetStateKeyboard, "swkbd", "SwkbdGetStateKeyboard__3RplFv", LogType::SWKBD);
+diff --git a/src/Cafe/OS/libs/swkbd/swkbd.h b/src/Cafe/OS/libs/swkbd/swkbd.h
+index db466ea6..13f3cce2 100644
+--- a/src/Cafe/OS/libs/swkbd/swkbd.h
++++ b/src/Cafe/OS/libs/swkbd/swkbd.h
+@@ -1,6 +1,11 @@
+ #include "Cafe/OS/RPL/COSModule.h"
+ 
+ void swkbd_render(bool mainWindow);
++#if defined(CEMU_PS5)
++// BetterVR's stereo frames only: the console's keyboard, driven from swkbd's state every TV frame
++// outside Cemu's ImGui frame (LatteRenderTarget.cpp). Flat play's sheet is swkbd_render's.
++void swkbd_renderVR();
++#endif
+ bool swkbd_hasKeyboardInputHook();
+ void swkbd_keyInput(uint32 keyCode);
+ 
