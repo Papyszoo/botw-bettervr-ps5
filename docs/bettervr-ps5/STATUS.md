@@ -3,6 +3,54 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-22: a third-person cutscene camera starts at the game's height, not 1.65 m above it; built, untested on console
+
+The 13.60 report (seated, first person with third-person cutscenes, Height Adjustment +34 cm) says the view "often
+lands in the ceiling" in third-person cutscenes. The investigation found upstream 1.0.0 adds the whole stage-space
+head pose to the game's or the held event camera (`BuildMiddlePose`,
+`camera.cpp:438`; `hook_UpdateCameraForGameplay`, `camera.cpp:594`). Seated calibration puts that pose at 1.65 m,
+so every third-person event camera sits that far above the game's, and the game's collision check only sees the base
+camera.
+
+**The fix.** Patch bettervr 0051. `GetAppliedHeadsetOffset` (`camera.cpp:290-307`) subtracts the head's stage y
+latched on the event's first third-person frame. The event-start hook arms it with the event's name and the
+event-end hook clears it (`Camera::BeginThirdPersonEventLift`/`EndThirdPersonEventLift`, `camera.cpp:74-82`;
+`game_state.cpp:207` and `:242`). It applies only while an event is active with the cutscene camera in third person,
+and neither flat camera mode nor the black-bars/2D path is active. The camera therefore starts at the game's or the
+held camera's height and keeps the head's motion from there on every axis: head turn and lean still move the view.
+Held events (0037/0043/0049) and non-held events both take it; third-person gameplay, first person, the 2D path and
+every other mode keep upstream's code path and values. No new setting, no Cemu, runtime or asm change.
+
+One INFO line at the latch: `Event camera lift removed for '<event>': <y> m`.
+
+Checks: `tools/bettervr-patches.sh apply`, `tools/cemu-patches.sh apply`, `python3 -B tools/lang.py check`,
+`tools/tests/test-bettervr-haptics.sh` and `tools/tests/test-bettervr-triggers.sh` pass. No host test builds the
+BetterVR camera, so the camera change is checked by the BetterVR build. Built, untested on console.
+
+**Test request 80 (v0.8 third-person cutscene height, 13.60 console).** Install the `BotW-VR-v...zip` from the green
+"BetterVR build" run on this head. Seated if possible, with **Camera Mode First Person**, Comfort > Advanced >
+**Cutscene Camera Third**, **2D Cutscene Screen Off**, and **Height Adjustment +34 cm** (or the current value).
+
+1. **Pick-up in a low room.** In a shrine, take a chest item for the first time (`Demo002_0`). The cutscene camera
+   must start at the room's own height, not in or through the ceiling. Turn your head: the view turns. Lean or sit
+   up: the view moves by that small amount, not by 1.65 m.
+2. **Guardian appearance.** In a Test of Strength shrine, watch the guardian mini appear (`Demo026_0`). Same check.
+3. **Shrine entry.** Enter a shrine and watch the entry cutscene. Same check.
+4. **Height 0 vs +34.** Repeat one of the cutscenes at Height Adjustment 0 and +34 cm: the cutscene camera height
+   must be the same; only the first-person view before and after may step.
+5. **First person and third-person gameplay, unchanged.** Pick up an item in first person and walk in third person
+   with no event: they must look as v0.7.0.
+6. **Standing, if possible.** Repeat steps 1-3 standing: the cutscene height must be the same as seated.
+
+**Send**, from `/data/ps5cemu/logs/boot.log`:
+
+- `LC_ALL=C grep -a "Event camera lift removed\|Event '\|Camera hold\|Player Height\|Seated height calibrated" boot.log`
+- which events and Height Adjustment values were used, seated or standing, and whether any camera entered a ceiling.
+
+**What it decides.** One `Event camera lift removed for ...` line per event in third person decides the latch;
+steps 1-3 decide the height and the head motion; step 4 decides the height setting is not in the cutscene; step 5
+decides first person and third-person gameplay are unchanged; step 6 decides standing matches seated.
+
 ## 2026-11-22: the audio-driven haptic beds need game state, so menus, music and ordinary play are silent, and each Vibration row's On box has its own ID; built, untested on console
 
 The first console run of the v0.8 haptics build (`df71b8d`, 13.60) says the controllers are constantly vibrating,

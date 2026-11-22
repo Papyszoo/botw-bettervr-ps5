@@ -1,0 +1,104 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ps5cemu <ps5cemu@localhost>
+Date: Sun, 22 Nov 2026 13:20:32 +0100
+Subject: [PATCH] PS5: a third-person cutscene camera keeps the game's height,
+ not the head's 1.65 m; built, untested on console
+
+In third person upstream adds the whole stage-space head pose to the game's or the held event camera. Seated calibration puts that pose at 1.65 m, so every third-person event camera sat that far above the game's and entered ceilings in low rooms.
+
+GetAppliedHeadsetOffset now subtracts the head's stage y latched on the event's first third-person frame, so the camera starts at the game's (or held) height and keeps the head's motion from there on every axis. Events active with the cutscene camera in third person take it, held (0037/0043/0049) or not. Third-person gameplay, first person, the 2D/black-bars path and flat mode are unchanged.
+
+One INFO line says the latch: Event camera lift removed for '<event>': <y> m.
+---
+ src/game/botw/camera/camera.cpp | 25 +++++++++++++++++++++++++
+ src/game/botw/camera/camera.h   |  2 ++
+ src/game/botw/game_state.cpp    |  6 ++++++
+ 3 files changed, 33 insertions(+)
+
+diff --git a/src/game/botw/camera/camera.cpp b/src/game/botw/camera/camera.cpp
+index b9ce45c..03af4a7 100644
+--- a/src/game/botw/camera/camera.cpp
++++ b/src/game/botw/camera/camera.cpp
+@@ -26,6 +26,11 @@ static glm::fvec3 s_heldEventCameraPosition = glm::fvec3();
+ static glm::fquat s_heldEventCameraRotation = glm::identity<glm::fquat>();
+ static std::string s_heldEventName;
+ static bool s_isHoldingEventCamera = false;
++// Upstream adds the whole stage-space head pose to a third-person event camera, so a seated head puts the view
++// 1.65 m above the game's. Only the head's motion from the event's first third-person frame belongs on it.
++static float s_thirdPersonEventHeadY = 0.0f;
++static bool s_hasThirdPersonEventHeadY = false;
++static std::string s_thirdPersonEventName;
+ static glm::fvec3 s_lastGameplayCameraTarget = glm::fvec3();
+ static bool s_hasGameplayCameraTarget = false;
+ static bool s_isSwimming = false;
+@@ -66,6 +71,16 @@ void Camera::LatchEventCameraHold(std::string_view eventName) {
+     s_heldEventCameraRotation = s_wsCameraRotation;
+ }
+ 
++void Camera::BeginThirdPersonEventLift(std::string_view eventName) {
++    s_thirdPersonEventName.assign(eventName);
++    s_hasThirdPersonEventHeadY = false;
++}
++
++void Camera::EndThirdPersonEventLift() {
++    s_thirdPersonEventName.clear();
++    s_hasThirdPersonEventHeadY = false;
++}
++
+ static std::atomic_bool s_appliesFirstPersonTurning = false;
+ struct SnapTurnRequest {
+     int32_t direction = 0;
+@@ -278,6 +293,16 @@ static glm::fvec3 GetAppliedHeadsetOffset(glm::fvec3 eyePos) {
+         eyePos.x -= appliedHeadPos.x;
+         eyePos.z -= appliedHeadPos.z;
+     }
++    else if (Events::IsActive() && !GameState::IsFlatCameraModeActive() && !GameState::UseBlackBarsDuringEvents()) {
++        // the game or the held event camera already sits at the cutscene's height; the head adds only its motion
++        // from the event's first third-person frame, not the stage eye height upstream adds on top
++        if (!s_hasThirdPersonEventHeadY) {
++            s_thirdPersonEventHeadY = eyePos.y;
++            s_hasThirdPersonEventHeadY = true;
++            Log::print<INFO>("Event camera lift removed for '{}': {:.2f} m", s_thirdPersonEventName, s_thirdPersonEventHeadY);
++        }
++        eyePos.y -= s_thirdPersonEventHeadY;
++    }
+     return eyePos;
+ }
+ 
+diff --git a/src/game/botw/camera/camera.h b/src/game/botw/camera/camera.h
+index 2bdc183..f789d74 100644
+--- a/src/game/botw/camera/camera.h
++++ b/src/game/botw/camera/camera.h
+@@ -16,6 +16,8 @@ namespace Camera {
+     std::pair<glm::fvec3, glm::fquat> ResolveGameplayBasePose(const BESeadLookAtCamera& camera);
+     void UpdateReferenceMtx(const glm::fvec3& gameplayPos, const glm::fquat& gameplayRot);
+     void LatchEventCameraHold(std::string_view eventName);
++    void BeginThirdPersonEventLift(std::string_view eventName);
++    void EndThirdPersonEventLift();
+ 
+     // a hook should pass the same views to each call so everything comes from one XR frame
+     std::pair<glm::fvec3, glm::fquat> BuildMiddlePose(const std::optional<Tracking::HeadViews>& views, const glm::fvec3& gameplayPos, const glm::fquat& gameplayRot);
+diff --git a/src/game/botw/game_state.cpp b/src/game/botw/game_state.cpp
+index f2362fd..59415e3 100644
+--- a/src/game/botw/game_state.cpp
++++ b/src/game/botw/game_state.cpp
+@@ -204,6 +204,7 @@ static void hook_GetEventName(PPCInterpreter_t* hCPU) {
+             s_eventCameraHold = false;
+             s_respawnDemo = false;
+             s_tutorialDemo = false;
++            Camera::EndThirdPersonEventLift();
+             Log::print<INFO>("Event '{}' has now ended", s_currentEvent);
+             s_currentEvent.clear();
+             s_currentEntryPoint.clear();
+@@ -235,6 +236,11 @@ static void hook_GetEventName(PPCInterpreter_t* hCPU) {
+     if (eventCameraHold && s_currentEvent != eventName) {
+         Camera::LatchEventCameraHold(eventName);
+     }
++    // A third-person event camera starts at the game's or held pose; the head adds only its motion from the
++    // event's first third-person frame. Each event latches its own, first person and the 2D path never arm it.
++    if (s_currentEvent != eventName) {
++        Camera::BeginThirdPersonEventLift(eventName);
++    }
+     s_eventCameraHold = eventCameraHold;
+     s_respawnDemo = IsRespawnDemo(eventName);
+     s_tutorialDemo = IsTutorialDemo(eventName);
