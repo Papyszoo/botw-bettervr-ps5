@@ -24,7 +24,7 @@ checks that both programs choose the same folder, on the console and on a drive.
  2 files changed, 98 insertions(+), 2 deletions(-)
 
 diff --git a/headless/ecam_layout.h b/headless/ecam_layout.h
-index bbe88b2..f33ed48 100644
+index bbe88b2..2171cc5 100644
 --- a/headless/ecam_layout.h
 +++ b/headless/ecam_layout.h
 @@ -5,11 +5,23 @@
@@ -38,7 +38,7 @@ index bbe88b2..f33ed48 100644
 +// ShadowMountPlus's record of the folder the app is mounted from, and where the console mounts drives
 +// (tests give their own)
 +#ifndef ECAM_MOUNT_RECORD
-+#define ECAM_MOUNT_RECORD "/user/app/PPSA99360/mount.lnk"
++#define ECAM_MOUNT_RECORD "/user/app/PPSA98720/mount.lnk"
 +#endif
 +#ifndef ECAM_DRIVES
 +#define ECAM_DRIVES "/mnt"
@@ -47,7 +47,7 @@ index bbe88b2..f33ed48 100644
  {
 +    // The launcher's data folder at the top of the drive the app is installed on (its DecideRoot):
 +    // the app's name before 5.0.0
-+    inline constexpr const char* kDriveData = "PS5CEMU-HAR-data";
++    inline constexpr const char* kDriveData = "BotWVR/launcher"; // BotW VR: its own, beside BotWVR/cemu
      inline constexpr const char* kMarker = ".ecam-separated-v2";
      inline constexpr const char* kVersion = "ecam-system-layout-v2\n";
      inline std::string Parent(const std::string& path)
@@ -55,7 +55,7 @@ index bbe88b2..f33ed48 100644
          const std::string target = Sibling(shared, system), legacy = shared + "/" + system;
          return Activated(target) || !Present(legacy) ? target : legacy;
      }
-+    // The USB drive or extended storage a path is on ("/mnt/usb0" for "/mnt/usb0/homebrew/PPSA99360");
++    // The USB drive or extended storage a path is on ("/mnt/usb0" for "/mnt/usb0/homebrew/PPSA98720");
 +    // empty for any other place
 +    inline std::string DriveOf(const std::string& path)
 +    {

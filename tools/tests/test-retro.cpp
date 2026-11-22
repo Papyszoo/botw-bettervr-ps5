@@ -67,15 +67,17 @@ int main(int argc, char** argv)
 	Check(!ecam_bridge::Read((root / "linked-request").string()).valid && fs::exists(root / "linked-request-target"), "request symlink is refused and its target is preserved");
 	Put(root / "request", "--rom\nrelative.nes\n");
 	Check(!ecam_bridge::Read((root / "request").string()).valid, "incomplete request does not start another game");
+	// BotW VR is Cemu's alone: Load keeps the Wii U side alone shown, and the other sides' settings
+	// still persist
 	ps5settings::Launcher settings;
 	settings.ui.sides = 255; settings.ui.librarySort[7] = 3; settings.retro[3].gamesFolder = (root / "roms").string();
 	fs::create_directories(ps5paths::Root());
 	Check(ps5settings::Save(settings), "eight-side settings serialize");
 	const auto loaded = ps5settings::Load();
-	Check(loaded.ui.sides == 255 && loaded.ui.librarySort[7] == 3 && loaded.retro[3].gamesFolder == settings.retro[3].gamesFolder, "new side settings persist independently");
+	Check(loaded.ui.sides == 1 && loaded.ui.librarySort[7] == 3 && loaded.retro[3].gamesFolder == settings.retro[3].gamesFolder, "new side settings persist independently");
 	Put(ps5paths::LauncherSettings(), "{\"ui\":{\"sides\":15,\"librarySort\":[1,2,3,0]},\"n3ds\":{\"gamesFolder\":\"/legacy/3ds\"}}");
 	const auto legacy = ps5settings::Load();
-	Check(legacy.ui.sides == 15 && legacy.ui.librarySort[2] == 3 && legacy.ui.librarySort[7] == 0 && legacy.n3ds.gamesFolder == "/legacy/3ds", "old four-side settings retain original values and zero-fill new array slots");
+	Check(legacy.ui.sides == 1 && legacy.ui.librarySort[2] == 3 && legacy.ui.librarySort[7] == 0 && legacy.n3ds.gamesFolder == "/legacy/3ds", "old four-side settings retain original values and zero-fill new array slots");
 	ps5catalog::Replace(ps5catalog::System::Nes, nes); ps5catalog::SetFavourite(ps5catalog::System::Nes, nes[0].titleId, true);
 	Check(ps5catalog::Save() && ps5catalog::Games(ps5catalog::System::Nes).size() == 2 && ps5catalog::Games(ps5catalog::System::WiiU).empty(), "new catalogue is separate from Wii U saves/library");
 	Put(root / "roms/empty.nes", "");
@@ -137,10 +139,10 @@ int main(int argc, char** argv)
 	ps5retro::LaunchLibrary(10, error); Check(called == "retro/gba/eboot.bin" && handed[0] == "--ecam-library", "GBA native settings retain ECAM return handoff");
 	settings.ui.sides = 2047; settings.ui.librarySort[10] = 2; settings.retro[6].gamesFolder = "/games/gba"; settings.retro[4].gamesFolder = "/games/gb"; ps5settings::Save(settings);
 	const auto eleven = ps5settings::Load();
-	Check(eleven.ui.sides == 2047 && eleven.ui.librarySort[10] == 2 && eleven.retro[6].gamesFolder == "/games/gba" && eleven.retro[4].gamesFolder == "/games/gb", "eleven-side visibility and independent handheld settings persist");
+	Check(eleven.ui.sides == 1 && eleven.ui.librarySort[10] == 2 && eleven.retro[6].gamesFolder == "/games/gba" && eleven.retro[4].gamesFolder == "/games/gb", "handheld settings persist independently with one side shown");
 	Put(ps5paths::LauncherSettings(), "{\"ui\":{\"sides\":255,\"librarySort\":[1,2,3,0,1,2,3,1]},\"n64\":{\"retroBackend\":1}}");
 	const auto eight = ps5settings::Load();
-	Check(eight.ui.sides == 255 && eight.ui.librarySort[7] == 1 && eight.ui.librarySort[10] == 0 && eight.retro[2].retroBackend == 1, "eight-side PR87 settings retain values and leave new sides hidden");
+	Check(eight.ui.sides == 1 && eight.ui.librarySort[7] == 1 && eight.ui.librarySort[10] == 0 && eight.retro[2].retroBackend == 1, "eight-side PR87 settings retain values and leave new sides hidden");
 	ps5catalog::Replace(ps5catalog::System::Gb, gb); ps5catalog::Replace(ps5catalog::System::Gbc, gbc);
 	Check(ps5catalog::Save() && ps5catalog::Games(ps5catalog::System::Gb).size() == 1 && ps5catalog::Games(ps5catalog::System::Gbc).size() == 1, "GB and GBC catalogues persist separately");
 	Put(root / "mixed-discs/GameCube.ISO", DiscHeader(false));
@@ -193,7 +195,7 @@ int main(int argc, char** argv)
 	Check(!ps5retro::ValidateRom(nesSide, (root / "roms/fake.zip").string(), error) && error == "This ZIP archive is damaged or too large.", "a refused game's reason is the app's words");
 	Check(!ps5retro::Available(snes) && !ps5retro::Launch(snes, (root / "carts/Game.sfc").string(), error) && !ps5retro::LaunchLibrary(snes, error),
 		"a side with no program and no core linked is not offered, and nothing is started for it");
-	Check(ps5retro::Diagnostics(n64, 0).find("not in this copy of PS5-ECAM") != std::string::npos && ps5retro::Diagnostics(n64, 1).find("not in this copy") == std::string::npos,
+	Check(ps5retro::Diagnostics(n64, 0).find("not in this copy of BotW VR") != std::string::npos && ps5retro::Diagnostics(n64, 1).find("not in this copy") == std::string::npos,
 		"diagnostics say whether this copy has the emulator");
 	return failures ? 1 : 0;
 }

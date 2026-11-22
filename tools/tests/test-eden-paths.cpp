@@ -30,7 +30,9 @@ int main(int argc, char** argv) {
     if (mode.rfind("drive", 0) == 0 || mode == "image") {
         // the app on a USB drive: the Switch's folder beside the launcher's data there, unless the
         // console's has the Switch side's files already
-        const fs::path drive = InstallOnDrive(mode != "drive-no-data"), onDrive = drive / "eden";
+        const fs::path drive = InstallOnDrive(mode != "drive-no-data");
+        // beside the launcher's data: inside BotWVR when kDriveData is (BotW VR's launcher)
+        const fs::path onDrive = drive / fs::path(ecam_layout::kDriveData).parent_path() / "eden";
         if (mode == "image") fs::remove(ECAM_MOUNT_RECORD);
         if (mode == "drive-scaffold")
             for (const char* folder : {"roms", "updates", "keys", "firmware", "mods", "user", "config"})
