@@ -449,6 +449,11 @@ struct XrSession_T
 	// window had. Draw counts and the stereo/replay times come from Cemu's counters (patches/cemu 0057,
 	// 0058), taken and cleared at each line.
 	uint64_t drawLogAt = 0, drawLogFrames = 0, drawLogEndUs = 0, drawLogFenceUs = 0;
+	// When the last frame reached Hmd2, and when the last compose-mode edge was said: the mode line
+	// then carries how long the game took to give the new mode its first frame (the flat-camera
+	// screen change's cost, which the player feels as a hitch). One line per change; its cost is
+	// taken at most once every 250 ms, so a mode that flaps cannot flood the log with costs.
+	uint64_t lastSubmitAt = 0, lastEdgeAt = 0;
 };
 
 namespace
@@ -2913,6 +2918,8 @@ namespace
 		const uint32_t flags = session->composeFlags;
 		const uint64_t submitStarted = s.profile ? sceKernelGetProcessTime() : 0;
 		const bool submitted = hmd2::submit(ToHmd(renderHead));
+		if (submitted)
+			session->lastSubmitAt = sceKernelGetProcessTime(); // the mode line's edge cost counts from here
 		if (s.profile)
 		{
 			s.profileSubmitNs += (sceKernelGetProcessTime() - submitStarted) * 1000;
@@ -3359,6 +3366,23 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
 	if (compose != s.composeMode)
 	{
 		s.composeMode = compose;
+		// The cost of the change, which a player feels as a hitch: how long this mode's first frame took
+		// to be composed after the previous frame reached Hmd2. A flat-camera screen change (the game's
+		// 2D picture, one copy burst and this change) is the case it was added for. One line per change,
+		// and the cost is taken at most once every 250 ms, so a mode that flaps cannot flood the log.
+		const uint64_t now = sceKernelGetProcessTime();
+		char cost[128];
+		const bool counted = session->lastSubmitAt && now - session->lastEdgeAt >= 250'000;
+		if (!session->lastSubmitAt)
+			snprintf(cost, sizeof(cost), "the session's first frame");
+		else if (counted)
+		{
+			snprintf(cost, sizeof(cost), "%.1f ms after the previous frame reached Hmd2", (double)(now - session->lastSubmitAt) / 1000.0);
+			session->lastEdgeAt = now;
+		}
+		else
+			snprintf(cost, sizeof(cost), "%.1f ms after the previous frame (inside 250 ms of the edge before, not counted)",
+				(double)(now - session->lastSubmitAt) / 1000.0);
 		if (compose == ComposeMode::MonoQuad)
 		{
 			const char* why = "no projection layer or eye picture this frame";
@@ -3366,12 +3390,12 @@ XRAPI_ATTR XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInf
 				why = "one mono picture in both views, on the HUD quad";
 			else if (stalePair)
 				why = "a re-shown pair the located ring no longer holds";
-			Log("compose mode mono (frame %llu): %s; the 2D picture alone in front of the player, black outside it",
-				(unsigned long long)session->frames + 1, why);
+			Log("compose mode mono (frame %llu): %s; the 2D picture alone in front of the player, black outside it; %s",
+				(unsigned long long)session->frames + 1, why, cost);
 		}
 		else
-			Log("compose mode stereo (frame %llu): both eyes' pictures with the HUD quad over them",
-				(unsigned long long)session->frames + 1);
+			Log("compose mode stereo (frame %llu): both eyes' pictures with the HUD quad over them; %s",
+				(unsigned long long)session->frames + 1, cost);
 	}
 
 	// 1x: each eye's image is the eye's own pixels and rect, in the byte order Hmd2's buffer takes, so

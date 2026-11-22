@@ -1,0 +1,172 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Patryk Kowalczyk <papyszoo@gmail.com>
+Date: Sun, 22 Nov 2026 14:32:47 +0100
+Subject: [PATCH] PS5: a repeated copy or readback note costs one hash, not
+ four formatted lines
+
+The [copy] lines are said once for each kind of copy (patches 0014/0015). Their
+check ran on every image copy and readback, and built both formatted strings and
+inserted two std::strings into a std::set under a mutex before it could know the
+line had been said already. A screen change comes as a burst of copies: the flat
+camera's 2D picture, the camera and dialogue screens' textures, and the stereo view
+layer's right-view seeds, one image copy per slice and mip.
+
+The kind is now a 64-bit hash of the values the line names, and the caller builds
+its line only when the check answers yes; the two GetEffectiveSize calls of the
+image line move behind that answer too. A repeated copy costs one mix and one
+unordered_set lookup. A hash collision can only leave a line unsaid: no copy, no
+readback and no line's text changes.
+
+Built, untested on console.
+---
+ .../Renderer/Vulkan/TextureReadbackVk.cpp     | 52 ++++++++++++-------
+ .../Latte/Renderer/Vulkan/VulkanRenderer.cpp  | 29 ++++++-----
+ 2 files changed, 50 insertions(+), 31 deletions(-)
+
+diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/TextureReadbackVk.cpp b/src/Cafe/HW/Latte/Renderer/Vulkan/TextureReadbackVk.cpp
+index 95cfb7a5..66da0503 100644
+--- a/src/Cafe/HW/Latte/Renderer/Vulkan/TextureReadbackVk.cpp
++++ b/src/Cafe/HW/Latte/Renderer/Vulkan/TextureReadbackVk.cpp
+@@ -3,9 +3,10 @@
+ #include "Cafe/HW/Latte/Renderer/Vulkan/LatteTextureVk.h"
+ 
+ #if defined(CEMU_PS5)
++#include <initializer_list>
+ #include <mutex>
+-#include <set>
+ #include <string_view>
++#include <unordered_set>
+ void PS5Cemu_LogLine(std::string_view line); // the port's boot log, written at once
+ 
+ // Bytes a copy writes per texel of a VkFormat's aspect (0: not known here). The GPU writes what the
+@@ -44,19 +45,31 @@ uint32 PS5_TexelBytes(VkFormat format, VkImageAspectFlags aspect)
+ 	}
+ }
+ 
+-// Said once for each kind (format, aspect, size), or at once when it would run past its buffer.
+-void PS5_NoteCopy(const std::string& key, const std::string& line, bool overrun)
++// A 64-bit key for one kind of copy: which check it is and the values its line names. Hashed, so a
++// copy that has been said before costs a mix and a lookup; a collision can only leave a line unsaid
++// (none of this changes what is copied).
++uint64 PS5_CopyKey(std::initializer_list<uint32> values)
++{
++	uint64 hash = 1469598103934665603ull; // FNV-1a
++	for (uint32 value : values)
++		hash = (hash ^ value) * 1099511628211ull;
++	return hash;
++}
++
++// Whether this copy's line is to be said: once for each key, or at once when it would run past its
++// image or buffer. The check runs for every copy, and a screen change comes as a burst of them (the
++// flat camera's 2D picture and the stereo view layer's seeds, one image copy per slice and mip), so
++// the caller builds its line only when this answers yes.
++bool PS5_CopyNoteWanted(uint64 key, bool overrun)
+ {
+ 	static std::mutex s_mutex;
+-	static std::set<std::string> s_seen;
+-	{
+-		std::lock_guard lock(s_mutex);
+-		if (!s_seen.insert(key).second && !overrun)
+-			return;
+-		if (overrun && !s_seen.insert("!" + key).second)
+-			return;
+-	}
+-	PS5Cemu_LogLine(line);
++	static std::unordered_set<uint64> s_seen;
++	const uint64 overrunKey = key ^ 0x9E3779B97F4A7C15ull;
++	std::lock_guard lock(s_mutex);
++	const bool firstOfKind = s_seen.insert(key).second;
++	if (!overrun)
++		return firstOfKind;
++	return s_seen.insert(overrunKey).second;
+ }
+ #endif
+ 
+@@ -120,10 +133,11 @@ void LatteTextureReadbackInfoVk::StartTransfer()
+ 		const bool bothAspects = (aspect & VK_IMAGE_ASPECT_DEPTH_BIT) && (aspect & VK_IMAGE_ASPECT_STENCIL_BIT);
+ 		const uint64 writes = (uint64)region.bufferRowLength * region.bufferImageHeight * texel;
+ 		const bool overrun = bothAspects || (texel && writes > m_image_size);
+-		PS5_NoteCopy(fmt::format("rb {} {} {}x{} {}", (int)vkFormat, aspect, region.bufferRowLength, region.bufferImageHeight, m_image_size),
+-			fmt::format("[copy] readback{}: VkFormat {} aspect {:#x} mip {} {}x{}, {} bytes a texel ({}), {} bytes into a buffer of {} (Wii U format {:#x})",
++		if (PS5_CopyNoteWanted(PS5_CopyKey({3, (uint32)vkFormat, (uint32)aspect, (uint32)m_firstMip, region.bufferRowLength,
++				region.bufferImageHeight, m_image_size}), overrun))
++			PS5Cemu_LogLine(fmt::format("[copy] readback{}: VkFormat {} aspect {:#x} mip {} {}x{}, {} bytes a texel ({}), {} bytes into a buffer of {} (Wii U format {:#x})",
+ 				overrun ? " WOULD OVERRUN" : "", (int)vkFormat, aspect, m_firstMip, region.bufferRowLength, region.bufferImageHeight, texel,
+-				bothAspects ? "depth and stencil in one copy" : "known", writes, m_image_size, (uint32)m_textureView->format), overrun);
++				bothAspects ? "depth and stencil in one copy" : "known", writes, m_image_size, (uint32)m_textureView->format));
+ 	}
+ 	// kept inside its buffer: the rows that would run past it are left out, where the PS5's GPU
+ 	// would fault on them (the layout barriers keep the whole region)
+@@ -135,10 +149,10 @@ void LatteTextureReadbackInfoVk::StartTransfer()
+ 			const uint32 rows = (uint32)std::min<uint64>(m_image_size / rowBytes, region.imageExtent.height);
+ 			copy.imageExtent.height = rows;
+ 			copy.bufferImageHeight = rows;
+-			PS5_NoteCopy(fmt::format("rb clamp {} {}x{} {}", (int)baseTexture->GetFormat(), region.bufferRowLength, region.bufferImageHeight, m_image_size),
+-				fmt::format("[copy] readback clamped: VkFormat {} {}x{}, {} rows copied into a buffer of {} bytes{}", (int)baseTexture->GetFormat(),
+-					region.bufferRowLength, region.bufferImageHeight, rows, m_image_size, rows ? "" : " (nothing: skipped)"),
+-				false);
++			if (PS5_CopyNoteWanted(PS5_CopyKey({4, (uint32)baseTexture->GetFormat(), region.bufferRowLength, region.bufferImageHeight,
++					m_image_size, rows}), false))
++				PS5Cemu_LogLine(fmt::format("[copy] readback clamped: VkFormat {} {}x{}, {} rows copied into a buffer of {} bytes{}", (int)baseTexture->GetFormat(),
++					region.bufferRowLength, region.bufferImageHeight, rows, m_image_size, rows ? "" : " (nothing: skipped)"));
+ 		}
+ 	}
+ 	if (copy.imageExtent.height > 0)
+diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
+index cc1d9d24..bf962b02 100644
+--- a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
++++ b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
+@@ -2,8 +2,11 @@
+ #include "Cafe/HW/Latte/Core/LatteView.h"
+ 
+ #if defined(CEMU_PS5)
++#include <initializer_list>
+ #include <string_view>
+-void PS5_NoteCopy(const std::string& key, const std::string& line, bool overrun); // TextureReadbackVk.cpp
++// TextureReadbackVk.cpp: a [copy] line, said once for each kind of copy, its values hashed into a key
++uint64 PS5_CopyKey(std::initializer_list<uint32> values);
++bool PS5_CopyNoteWanted(uint64 key, bool overrun);
+ // The port's in-game menu (port/app/ingame.cpp): its pictures, made where the font's is, before
+ // ImGui's render pass begins (a copy may not run inside one)
+ void PS5Cemu_ImguiUploads();
+@@ -4215,12 +4218,11 @@ void VulkanRenderer::texture_copyImageSubData(LatteTexture* src, sint32 srcMip,
+ 		const sint32 layers = std::min({srcDepth, srcLayers, dstLayers});
+ 		if (width != effectiveCopyWidth || height != effectiveCopyHeight || layers != srcDepth)
+ 		{
+-			PS5_NoteCopy(fmt::format("clamp {} {} {} {} {}x{}x{}", (int)srcVk->GetFormat(), (int)dstVk->GetFormat(), srcMip, dstMip,
+-							 effectiveCopyWidth, effectiveCopyHeight, srcDepth),
+-				fmt::format("[copy] image clamped: VkFormat {} mip {} -> VkFormat {} mip {}, {}x{} x{} layers asked, {}x{} x{} copied{}",
++			if (PS5_CopyNoteWanted(PS5_CopyKey({2, (uint32)srcVk->GetFormat(), (uint32)dstVk->GetFormat(), (uint32)srcMip, (uint32)dstMip,
++					(uint32)effectiveCopyWidth, (uint32)effectiveCopyHeight, (uint32)srcDepth}), false))
++				PS5Cemu_LogLine(fmt::format("[copy] image clamped: VkFormat {} mip {} -> VkFormat {} mip {}, {}x{} x{} layers asked, {}x{} x{} copied{}",
+ 					(int)srcVk->GetFormat(), srcMip, (int)dstVk->GetFormat(), dstMip, effectiveCopyWidth, effectiveCopyHeight, srcDepth,
+-					std::max(width, 0), std::max(height, 0), std::max(layers, 0), width <= 0 || height <= 0 || layers <= 0 ? " (nothing: skipped)" : ""),
+-				false);
++					std::max(width, 0), std::max(height, 0), std::max(layers, 0), width <= 0 || height <= 0 || layers <= 0 ? " (nothing: skipped)" : ""));
+ 			if (width <= 0 || height <= 0 || layers <= 0)
+ 				return;
+ 			effectiveCopyWidth = width;
+@@ -4333,14 +4335,17 @@ void VulkanRenderer::texture_copyImageSubData(LatteTexture* src, sint32 srcMip,
+ 		const bool layersOk = (src->Is3DTexture() || srcSlice + srcDepth <= (sint32)src->depth) &&
+ 			(dst->Is3DTexture() || dstSlice + srcDepth <= (sint32)dst->depth);
+ 		const bool overrun = !srcOk || !dstOk || !layersOk;
+-		sint32 srcW, srcH, dstW, dstH; // the images' real (mip 0) sizes, for the line
+-		src->GetEffectiveSize(srcW, srcH, 0);
+-		dst->GetEffectiveSize(dstW, dstH, 0);
+-		PS5_NoteCopy(fmt::format("ci {} {} {} {} {}x{}", (int)srcVk->GetFormat(), (int)dstVk->GetFormat(), srcMip, dstMip, effectiveCopyWidth, effectiveCopyHeight),
+-			fmt::format("[copy] image{}: VkFormat {} {}x{} mip {} at {},{} slice {} -> VkFormat {} {}x{} mip {} at {},{} slice {}, {}x{} x{} layers",
++		if (PS5_CopyNoteWanted(PS5_CopyKey({1, (uint32)srcVk->GetFormat(), (uint32)dstVk->GetFormat(), (uint32)srcMip, (uint32)dstMip,
++				(uint32)effectiveCopyWidth, (uint32)effectiveCopyHeight, (uint32)srcDepth}), overrun))
++		{
++			sint32 srcW, srcH, dstW, dstH; // the images' real (mip 0) sizes, for the line
++			src->GetEffectiveSize(srcW, srcH, 0);
++			dst->GetEffectiveSize(dstW, dstH, 0);
++			PS5Cemu_LogLine(fmt::format("[copy] image{}: VkFormat {} {}x{} mip {} at {},{} slice {} -> VkFormat {} {}x{} mip {} at {},{} slice {}, {}x{} x{} layers",
+ 				overrun ? " WOULD OVERRUN" : "", (int)srcVk->GetFormat(), srcW, srcH, srcMip, effectiveSrcX, effectiveSrcY, srcSlice,
+ 				(int)dstVk->GetFormat(), dstW, dstH, dstMip, effectiveDstX, effectiveDstY, dstSlice, effectiveCopyWidth,
+-				effectiveCopyHeight, srcDepth), overrun);
++				effectiveCopyHeight, srcDepth));
++		}
+ 	}
+ #endif
+ 	vkCmdCopyImage(m_state.currentCommandBuffer, srcVkObj->m_image, VK_IMAGE_LAYOUT_GENERAL, dstVkObj->m_image, VK_IMAGE_LAYOUT_GENERAL, 1, &region);

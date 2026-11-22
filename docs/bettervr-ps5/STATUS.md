@@ -6,6 +6,67 @@ tested.
 Test request 77 (v0.8 haptics) is withdrawn with the haptics work; the requests after it move up one, so
 the console keyboard is 77, the tutorial shrine 78 and the cutscene height 79.
 
+## 2026-11-22: a repeated `[copy]` note is a hash, and every compose-mode edge says its cost; built, untested on console
+
+The 13.60 Hateno report (`fps-report.md` 2233 row) has one 416.6 ms frame at the first
+`Flat camera mode started` (2230.46) with 52 `[copy]` lines in 0.3 s and `compose mode mono`, then one
+frame of 21-55 ms at each later flat-mode start/end. The boot log's own wait counters read
+`waiting on the GPU 0% (the previous frame 0, an image 0, its fence 0, a present 0, presenting 0, other 0)`
+in every one of those windows and the GPU thread is 4-12 % idle, so none of it is a
+`vkDeviceWaitIdle`/`vkQueueWaitIdle`/fence wait.
+
+**Whose cost it is.** Ours creates nothing and waits for nothing at an edge: `xrEndFrame` only switches
+`ComposeMode` and logs (`port/bettervr/xr/runtime.cpp`), and the compose pipeline, descriptor set,
+samplers, HUD mip image and eye buffers are made once (`EnsureHudMips` reuses by size and format). Cemu
+pays the rest, because the edge is the game's own screen change: the camera/dialogue screen's images and
+pipelines are used for the first time (`[draws] ... pipelines made 0.08` against 0.00 in the windows
+before and after: ~21 pipelines, compiled on the asking thread), the game copies its screen (the 52
+copy kinds), and the stereo view layer re-seeds the right view's copies of every render target written in
+the mono section. The "zero copies" at the later edges is only the `[copy]` line's dedup: a kind is said
+once, so the same copies are there but not printed again.
+
+**What this branch changes, ours.** Patch cemu 0064 (amends 0014/0015): the `[copy]` check used to build
+two formatted strings and insert two `std::string`s into a `std::set` under a mutex for **every** copy and
+readback before it could know the line was said. The kind is now a 64-bit hash of the values the line
+names and the line is formatted only when it will be said; a repeated copy costs one mix and one
+`unordered_set` lookup, and a collision can only leave a line unsaid. No copy, readback or line text
+changes. The compose-mode line now carries the edge's cost:
+`compose mode mono (frame N): ...; 54.4 ms after the previous frame reached Hmd2` (one line per change, the
+cost at most once every 250 ms; a normal frame reads 16.7 ms).
+
+Expected: the 416.6 ms first entry stays (Cemu's first-use pipelines; precompiling them is a bigger
+change), and the later edges drop by the port's per-copy formatting, measured by the new line; if it still
+reads 40-55 ms, the rest is Cemu's own copies/seeds and is the next job, not this one.
+
+Checks: `tools/cemu-patches.sh apply` and `tools/bettervr-patches.sh apply` (both with `PS5CEMU_RELEASE=1`,
+every patch ID matching), `python3 -B tools/lang.py check`, `tools/tests/test-bettervr-triggers.sh`,
+`tools/tests/test-texunit-memo.sh` pass; no host test builds the runtime or Cemu's Vulkan path, so the
+"BetterVR build" run is theirs. Built, untested on console.
+
+**Test request 81 (v0.8 flat-camera edges, 13.60 console).** Install the `BotW-VR-v...zip` from the green
+"BetterVR build" run on this head, VR on, 1.25x as in the last run.
+
+1. **The lab.** Go to the Hateno Ancient Tech Lab and talk to the director so the dialogue camera switches
+   several times; also walk out and in again, and open the Sheikah camera rune (`CameraFinder`) and put it
+   away a few times — it is the same flat-camera path. Say for each hitch whether it was the first camera
+   opening of the session or a later one, and whether the picture came back in stereo after each exit.
+2. **Another flat-camera dialogue**, if one comes up (the director's own talk, or any NPC where the
+   picture goes flat), same check.
+3. **No change elsewhere.** Normal play, a pause menu and a shrine cutscene look as before, and the first
+   frame of a flat picture is never the previous 3D frame left over.
+
+**Send**, from `/data/ps5cemu/logs/boot.log`:
+
+- `LC_ALL=C grep -a "compose mode\|Flat camera mode" boot.log`
+- `LC_ALL=C grep -a "\[perf\].*the longest" boot.log`
+
+and which of the two steps each hitch came from.
+
+**What it decides.** A `compose mode` line of 16-25 ms at a later camera opening means the port's share is
+gone and the edge is what Cemu's own screen work leaves; 40-55 ms means our per-copy cost was not the cost
+and the next job is Cemu's copies/seeds (the line's number decides which). A first entry of ~400 ms is the
+first-use pipeline compilation, expected, and is not what this request asks to fix.
+
 ## 2026-11-22: v0.8 keeps v0.7.0's vibration, and each Vibration row's On box has its own ID; built, untested on console
 
 The v0.8 haptics work is dropped: the director, the audio bands, the two-motor split, the new Vibration rows and their
