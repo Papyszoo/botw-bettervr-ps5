@@ -113,7 +113,7 @@ index 95cfb7a5..66da0503 100644
  	}
  	if (copy.imageExtent.height > 0)
 diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
-index cc1d9d24..bf962b02 100644
+index 8f5a50e9..622efe9f 100644
 --- a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
 +++ b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
 @@ -2,8 +2,11 @@
@@ -129,7 +129,7 @@ index cc1d9d24..bf962b02 100644
  // The port's in-game menu (port/app/ingame.cpp): its pictures, made where the font's is, before
  // ImGui's render pass begins (a copy may not run inside one)
  void PS5Cemu_ImguiUploads();
-@@ -4215,12 +4218,11 @@ void VulkanRenderer::texture_copyImageSubData(LatteTexture* src, sint32 srcMip,
+@@ -4222,12 +4225,11 @@ void VulkanRenderer::texture_copyImageSubData(LatteTexture* src, sint32 srcMip,
  		const sint32 layers = std::min({srcDepth, srcLayers, dstLayers});
  		if (width != effectiveCopyWidth || height != effectiveCopyHeight || layers != srcDepth)
  		{
@@ -146,7 +146,7 @@ index cc1d9d24..bf962b02 100644
  			if (width <= 0 || height <= 0 || layers <= 0)
  				return;
  			effectiveCopyWidth = width;
-@@ -4333,14 +4335,17 @@ void VulkanRenderer::texture_copyImageSubData(LatteTexture* src, sint32 srcMip,
+@@ -4340,14 +4342,17 @@ void VulkanRenderer::texture_copyImageSubData(LatteTexture* src, sint32 srcMip,
  		const bool layersOk = (src->Is3DTexture() || srcSlice + srcDepth <= (sint32)src->depth) &&
  			(dst->Is3DTexture() || dstSlice + srcDepth <= (sint32)dst->depth);
  		const bool overrun = !srcOk || !dstOk || !layersOk;

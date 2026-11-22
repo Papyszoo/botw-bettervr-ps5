@@ -12,13 +12,13 @@ and fragment shading rate (supported, layered, 2x2, 4x4).
  1 file changed, 11 insertions(+)
 
 diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
-index b38382ab..d066e86a 100644
+index f846fef6..1aac40f2 100644
 --- a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
 +++ b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
-@@ -384,6 +384,11 @@ void VulkanRenderer::GetDeviceFeatures()
- 	m_featureControl.multiview.maxViewCount = multiviewProperties.maxMultiviewViewCount;
- 	m_featureControl.multiview.supported = m_featureControl.multiview.supported && multiviewProperties.maxMultiviewViewCount >= 2;
- 	m_featureControl.multiview.geometryShader = m_featureControl.multiview.geometryShader && m_featureControl.multiview.supported;
+@@ -391,6 +391,11 @@ void VulkanRenderer::GetDeviceFeatures()
+ 		m_featureControl.multiview.supported = false;
+ 		m_featureControl.multiview.geometryShader = false;
+ 	}
 +#if defined(CEMU_PS5)
 +	// PS5: the console's driver reports what the BetterVR fork's two-view rendering and foveation need
 +	cemuLog_log(LogType::Force, "Vulkan: multiview: {}, max views: {}, geometry shader: {}", m_featureControl.multiview.supported ? "supported" : "unsupported", m_featureControl.multiview.maxViewCount, m_featureControl.multiview.geometryShader);
@@ -27,7 +27,7 @@ index b38382ab..d066e86a 100644
  	if (m_featureControl.deviceExtensions.fragment_shading_rate && fragmentShadingRateFeature.attachmentFragmentShadingRate && fragmentShadingRateFeature.pipelineFragmentShadingRate && vkGetPhysicalDeviceFragmentShadingRatesKHR)
  	{
  		auto& rate = m_featureControl.fragmentShadingRate;
-@@ -396,9 +401,15 @@ void VulkanRenderer::GetDeviceFeatures()
+@@ -403,9 +408,15 @@ void VulkanRenderer::GetDeviceFeatures()
  		vkGetPhysicalDeviceFragmentShadingRatesKHR(m_physicalDevice, &rateCount, nullptr);
  		std::vector<VkPhysicalDeviceFragmentShadingRateKHR> rates(rateCount, { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADING_RATE_KHR });
  		vkGetPhysicalDeviceFragmentShadingRatesKHR(m_physicalDevice, &rateCount, rates.data());

@@ -25,10 +25,10 @@ hits.
  6 files changed, 86 insertions(+), 28 deletions(-)
 
 diff --git a/src/game/botw/camera/camera.cpp b/src/game/botw/camera/camera.cpp
-index 89e0821..4e58816 100644
+index 47fc218..9eee503 100644
 --- a/src/game/botw/camera/camera.cpp
 +++ b/src/game/botw/camera/camera.cpp
-@@ -796,7 +796,8 @@ static void hook_OverwriteFloatParam(PPCInterpreter_t* hCPU) {
+@@ -808,7 +808,8 @@ static void hook_OverwriteFloatParam(PPCInterpreter_t* hCPU) {
  
  // 0x02CAB32C is the first getStaticParam call in PlayerLargeDamage's own setup, the same site the pack
  // patches to neutralize its movement. It runs when the large-damage action starts, which is the hit path
@@ -196,7 +196,7 @@ index ae71dc1..c2a8df3 100644
      void Update();
  
 diff --git a/src/rendering/rumble.h b/src/rendering/rumble.h
-index d25e599..b0f1dba 100644
+index 8749098..d636154 100644
 --- a/src/rendering/rumble.h
 +++ b/src/rendering/rumble.h
 @@ -68,15 +68,18 @@ public:

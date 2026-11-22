@@ -429,7 +429,7 @@ index f99e3bb..9cb7b89 100644
  }
  
 diff --git a/src/rendering/rumble.h b/src/rendering/rumble.h
-index b0f1dba..28cfe8f 100644
+index d636154..3b39d13 100644
 --- a/src/rendering/rumble.h
 +++ b/src/rendering/rumble.h
 @@ -4,9 +4,11 @@

@@ -67,10 +67,10 @@ index 8df50c1..cfbadf3 100644
  }
  
 diff --git a/src/rendering/imgui_menus.cpp b/src/rendering/imgui_menus.cpp
-index 363ff56..08fb8bf 100644
+index 42da771..64deb5a 100644
 --- a/src/rendering/imgui_menus.cpp
 +++ b/src/rendering/imgui_menus.cpp
-@@ -1169,6 +1169,22 @@ void RND_Renderer::ImGuiOverlay::DrawComfortPage(bool* changed) {
+@@ -1186,6 +1186,22 @@ void RND_Renderer::ImGuiOverlay::DrawComfortPage(bool* changed) {
              DrawSetting(nullptr, "Bow Aiming Arc", [&]() {
                  DrawBowArcSlider(settings.bowArcOpacity, changed);
              });
@@ -82,19 +82,19 @@ index 363ff56..08fb8bf 100644
 +                { AimingDotColor::CYAN, "Cyan" },
 +            };
 +            DrawSetting(nullptr, "Aiming Dot Size", [&]() {
-+                DrawPercentSlider(settings.aimingDotSize, 50.0f, 300.0f, changed);
++                DrawPercentSlider(settings.aimingDotSize, 50.0f, 300.0f, 5.0f, changed);
 +            });
 +            DrawSetting(nullptr, "Aiming Dot Color", [&]() {
 +                DrawEnumCombo(settings.aimingDotColor, aimingDotColorChoices, changed);
 +            });
 +            DrawSetting(nullptr, "Aiming Dot Opacity", [&]() {
-+                DrawPercentSlider(settings.aimingDotOpacity, 0.0f, 100.0f, changed);
++                DrawPercentSlider(settings.aimingDotOpacity, 0.0f, 100.0f, 5.0f, changed);
 +            });
              EndCard();
          }
      }
 diff --git a/src/utils/mod_settings.h b/src/utils/mod_settings.h
-index dbbea25..096aa49 100644
+index 8c77bdb..71fea16 100644
 --- a/src/utils/mod_settings.h
 +++ b/src/utils/mod_settings.h
 @@ -567,6 +567,27 @@ struct EnumTable<SwingSensitivity> {

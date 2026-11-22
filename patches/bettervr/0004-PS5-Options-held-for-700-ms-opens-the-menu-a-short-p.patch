@@ -29,7 +29,7 @@ Subject: [PATCH] PS5: Options held for 700 ms opens the menu, a short press is
  5 files changed, 124 insertions(+), 1 deletion(-)
 
 diff --git a/src/game/botw/input/controls.cpp b/src/game/botw/input/controls.cpp
-index 195735a..01766bb 100644
+index 655d143..dafc1de 100644
 --- a/src/game/botw/input/controls.cpp
 +++ b/src/game/botw/input/controls.cpp
 @@ -8,6 +8,8 @@
@@ -41,7 +41,7 @@ index 195735a..01766bb 100644
  #include "rendering/haptics.h"
  #include "rendering/imgui_menus.h"
  #include "rendering/tracking.h"
-@@ -964,6 +966,75 @@ static void ProcessInputPrevention(ControlState& state, std::chrono::steady_cloc
+@@ -1027,6 +1029,75 @@ static void ProcessInputPrevention(ControlState& state, std::chrono::steady_cloc
          state.preventGrabInputs = false;
  }
  
@@ -117,7 +117,7 @@ index 195735a..01766bb 100644
  static void ProcessModMenuInput(std::atomic_bool& isMenuOpen, OpenXR::InputState& inputs, VPADStatus& vpadInputs, XrActionStateVector2f& leftStickSource, XrActionStateVector2f& rightStickSource)
  {
      if (s_modMenuButton.lastEvent == ButtonState::Event::LongPress) {
-@@ -1203,7 +1274,8 @@ static void TraceControlChanges(const ControlState& state, uint32_t buttonHold)
+@@ -1267,7 +1338,8 @@ static void TraceControlChanges(const ControlState& state, uint32_t buttonHold)
      }
  }
  
@@ -127,7 +127,7 @@ index 195735a..01766bb 100644
  static void ToggleModMenuOnLongStartPress(uint32_t physicalHold) {
      static auto startBtnLastTime = std::chrono::steady_clock::now();
      static bool startBtnWasDown = false;
-@@ -1224,6 +1296,7 @@ static void ToggleModMenuOnLongStartPress(uint32_t physicalHold) {
+@@ -1288,6 +1360,7 @@ static void ToggleModMenuOnLongStartPress(uint32_t physicalHold) {
          startBtnWasDown = false;
      }
  }
@@ -135,7 +135,7 @@ index 195735a..01766bb 100644
  
  static float ControllerWalkYaw(const glm::fquat& controllerQuat) {
      static float s_lastYaw = 0.0f;
-@@ -1375,7 +1448,12 @@ static void hook_InjectXRInput(PPCInterpreter_t* hCPU) {
+@@ -1439,7 +1512,12 @@ static void hook_InjectXRInput(PPCInterpreter_t* hCPU) {
      if (physicalSampleCount > 0)
          Guest::Read(vpadStatusOffset, &vpadStatus);
  
@@ -148,7 +148,7 @@ index 195735a..01766bb 100644
  
      // take the hands and head once so the gestures below all use the same sample
      OpenXR::InputState inputs = Tracking::SampleHands(GameState::IsShowingMenu());
-@@ -1414,6 +1492,12 @@ static void hook_InjectXRInput(PPCInterpreter_t* hCPU) {
+@@ -1478,6 +1556,12 @@ static void hook_InjectXRInput(PPCInterpreter_t* hCPU) {
  
      auto& isMenuOpen = ImGuiMenus::g_isOpen;
      ProcessModMenuInput(isMenuOpen, inputs, vpadStatus, leftStickSource, rightStickSource);
@@ -162,10 +162,10 @@ index 195735a..01766bb 100644
      HandGestureState leftGesture = {};
      HandGestureState rightGesture = {};
 diff --git a/src/rendering/imgui_menus.cpp b/src/rendering/imgui_menus.cpp
-index 1b2a6c2..3fc94d9 100644
+index 5ee2951..c659fc3 100644
 --- a/src/rendering/imgui_menus.cpp
 +++ b/src/rendering/imgui_menus.cpp
-@@ -1551,6 +1551,11 @@ static bool FooterItem(const std::string& label, bool clickable) {
+@@ -1573,6 +1573,11 @@ static bool FooterItem(const std::string& label, bool clickable) {
  }
  
  static void DrawTutorialPromptAndControllerVerification(bool isMenuOpen) {
@@ -177,7 +177,7 @@ index 1b2a6c2..3fc94d9 100644
      auto& settings = GetSettings();
  
      float alphaForNotify = settings.tutorialPromptShown ? 0.9f : 0.98f;
-@@ -1586,6 +1591,7 @@ static void DrawTutorialPromptAndControllerVerification(bool isMenuOpen) {
+@@ -1608,6 +1613,7 @@ static void DrawTutorialPromptAndControllerVerification(bool isMenuOpen) {
          }
      }
      ImGui::End();
@@ -186,7 +186,7 @@ index 1b2a6c2..3fc94d9 100644
  
  static void DrawUpdateBanner(bool isMenuOpen) {
 diff --git a/src/rendering/openxr.cpp b/src/rendering/openxr.cpp
-index 433b28a..c5a8b4b 100644
+index 6be3256..e51530f 100644
 --- a/src/rendering/openxr.cpp
 +++ b/src/rendering/openxr.cpp
 @@ -3,6 +3,7 @@
@@ -215,7 +215,7 @@ index 433b28a..c5a8b4b 100644
          m_seatedHeightCalibrationRequested.store(false, std::memory_order_relaxed);
          if (m_stageFloorOffset != 0.0f) {
 diff --git a/src/rendering/vulkan_imgui.cpp b/src/rendering/vulkan_imgui.cpp
-index 6908e66..73d0e20 100644
+index 999e947..a227d25 100644
 --- a/src/rendering/vulkan_imgui.cpp
 +++ b/src/rendering/vulkan_imgui.cpp
 @@ -20,6 +20,11 @@
@@ -230,7 +230,7 @@ index 6908e66..73d0e20 100644
  // Cemu sets its own ImGui context before drawing its overlays, so ours has to be set every time
  class ScopedImGuiContext {
  public:
-@@ -611,6 +616,19 @@ void RND_Renderer::ImGuiOverlay::ProcessInputs(OpenXR::InputState& inputs, const
+@@ -616,6 +621,19 @@ void RND_Renderer::ImGuiOverlay::ProcessInputs(OpenXR::InputState& inputs, const
          pageRight = inputs.inMenu.rightTrigger.currentState && inputs.inMenu.rightTrigger.changedSinceLastSync;
      }
  
@@ -251,7 +251,7 @@ index 6908e66..73d0e20 100644
      backDown |= (hold & VPAD_BUTTON_B) != 0;
      confirmDown |= (hold & VPAD_BUTTON_A) != 0;
 diff --git a/src/utils/mod_settings.h b/src/utils/mod_settings.h
-index a0017ac..50684ec 100644
+index f73586a..ceaa06a 100644
 --- a/src/utils/mod_settings.h
 +++ b/src/utils/mod_settings.h
 @@ -565,7 +565,11 @@ struct ModSettings {

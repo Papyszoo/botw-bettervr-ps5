@@ -9,7 +9,7 @@ Subject: [PATCH] PS5: the Sheikah Slate download panel presents the 2D layer
  1 file changed, 20 insertions(+)
 
 diff --git a/src/game/botw/game_state.cpp b/src/game/botw/game_state.cpp
-index 4199ccd..91b492c 100644
+index 81b74ea..2a479d0 100644
 --- a/src/game/botw/game_state.cpp
 +++ b/src/game/botw/game_state.cpp
 @@ -9,6 +9,10 @@

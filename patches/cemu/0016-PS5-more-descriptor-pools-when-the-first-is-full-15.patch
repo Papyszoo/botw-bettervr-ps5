@@ -26,10 +26,10 @@ index 280211b7..0ca958aa 100644
  };
 \ No newline at end of file
 diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
-index 683a36c8..90367798 100644
+index ab1fc059..864448c2 100644
 --- a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
 +++ b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
-@@ -989,6 +989,11 @@ VulkanRenderer::~VulkanRenderer()
+@@ -996,6 +996,11 @@ VulkanRenderer::~VulkanRenderer()
  	}
  
  	vkDestroyDescriptorPool(m_logicalDevice, m_descriptorPool, nullptr);
@@ -41,7 +41,7 @@ index 683a36c8..90367798 100644
  
  	for(auto& i : m_backbufferBlitPipelineCache)
  	{
-@@ -3409,27 +3414,82 @@ void VulkanRenderer::DrawBackbufferQuad(LatteTextureView* texView, RendererOutpu
+@@ -3416,27 +3421,82 @@ void VulkanRenderer::DrawBackbufferQuad(LatteTextureView* texView, RendererOutpu
  	chainInfo.hasDefinedSwapchainImage = true;
  }
  
@@ -129,7 +129,7 @@ index 683a36c8..90367798 100644
  }
  
  VkDescriptorSet VulkanRenderer::backbufferBlit_createDescriptorSet(VkDescriptorSetLayout descriptor_set_layout, LatteTextureViewVk* texViewVk, bool useLinearTexFilter)
-@@ -4822,6 +4882,10 @@ VKRObjectDescriptorSet::VKRObjectDescriptorSet()
+@@ -4829,6 +4889,10 @@ VKRObjectDescriptorSet::VKRObjectDescriptorSet()
  VKRObjectDescriptorSet::~VKRObjectDescriptorSet()
  {
  	auto vkr = VulkanRenderer::GetInstance();
@@ -141,7 +141,7 @@ index 683a36c8..90367798 100644
  	performanceMonitor.vk.numDescriptorSets.decrement();
  }
 diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.h b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.h
-index 4b7ca629..d583dd7a 100644
+index 1ecfabc4..319f48db 100644
 --- a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.h
 +++ b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.h
 @@ -232,6 +232,12 @@ public:

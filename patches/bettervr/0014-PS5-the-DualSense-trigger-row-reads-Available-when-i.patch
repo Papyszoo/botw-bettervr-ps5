@@ -13,10 +13,10 @@ console.
  1 file changed, 6 insertions(+), 6 deletions(-)
 
 diff --git a/src/rendering/imgui_menus.cpp b/src/rendering/imgui_menus.cpp
-index e384697..fa1fa52 100644
+index 9c48157..6cecb1f 100644
 --- a/src/rendering/imgui_menus.cpp
 +++ b/src/rendering/imgui_menus.cpp
-@@ -1501,16 +1501,16 @@ void RND_Renderer::ImGuiOverlay::DrawSystemPage(bool* changed) {
+@@ -1520,16 +1520,16 @@ void RND_Renderer::ImGuiOverlay::DrawSystemPage(bool* changed) {
      if (BeginCard("##AdaptiveTriggers", "Adaptive Triggers")) {
          const bool padTriggers = BetterVR_PS5_PadTriggersAvailable() != 0;
          DrawSetting(ICON_MS_STADIA_CONTROLLER, "Adaptive Triggers",
@@ -38,4 +38,4 @@ index e384697..fa1fa52 100644
 -        }
          if (settings.adaptiveTriggers) {
              DrawSetting(ICON_MS_SPORTS, "Strength", [&]() {
-                 DrawFloatSlider(settings.adaptiveTriggerStrength, 0.0f, 1.0f, [](float value) { return fmt::format("{:.0f}%", value * 100.0f); }, changed);
+                 DrawFloatSlider(settings.adaptiveTriggerStrength, 0.0f, 1.0f, 0.05f, [](float value) { return fmt::format("{:.0f}%", value * 100.0f); }, changed);

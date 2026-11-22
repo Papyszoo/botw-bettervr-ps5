@@ -5,11 +5,11 @@ Subject: [PATCH] PS5: the in-game menu's pages scroll to their last row and
  the note under it; built, untested on console
 
 ---
- src/rendering/imgui_menus.cpp | 17 ++++++++++++++---
- 1 file changed, 14 insertions(+), 3 deletions(-)
+ src/rendering/imgui_menus.cpp | 16 ++++++++++++++--
+ 1 file changed, 14 insertions(+), 2 deletions(-)
 
 diff --git a/src/rendering/imgui_menus.cpp b/src/rendering/imgui_menus.cpp
-index fa1fa52..ee0f038 100644
+index 6cecb1f..0465ab0 100644
 --- a/src/rendering/imgui_menus.cpp
 +++ b/src/rendering/imgui_menus.cpp
 @@ -53,6 +53,19 @@ static void DrawNavScrollStop(const char* id) {
@@ -32,7 +32,7 @@ index fa1fa52..ee0f038 100644
  static void DrawPageHeader(const char* icon, const char* title) {
      DrawNavScrollStop("##PageTop");
      ImGui::Spacing();
-@@ -1579,7 +1592,6 @@ void RND_Renderer::ImGuiOverlay::DrawSystemPage(bool* changed) {
+@@ -1598,7 +1611,6 @@ void RND_Renderer::ImGuiOverlay::DrawSystemPage(bool* changed) {
      ImGui::Dummy(ImVec2(0.0f, 10.0f));
      DrawBetterVRProfiler(true);
  #endif
@@ -40,15 +40,7 @@ index fa1fa52..ee0f038 100644
  }
  
  static void DrawLogToggle(const char* label, BoolSetting& setting, bool* changed) {
-@@ -1677,7 +1689,6 @@ static void DrawSteamFrameControlsPage() {
-     }
- 
-     DrawPageNote("Swing to attack and raise your shield to guard. The next pages show where your gear sits on your body.");
--    DrawNavScrollStop("##FrameControlsBottom");
- }
- 
- void RND_Renderer::ImGuiOverlay::DrawGuidePage(size_t helpImageIndex) {
-@@ -1729,7 +1740,6 @@ void RND_Renderer::ImGuiOverlay::DrawCreditsPage() {
+@@ -1751,7 +1763,6 @@ void RND_Renderer::ImGuiOverlay::DrawCreditsPage() {
      ImGui::Text("");
  
      ImGui::Dummy(ImVec2(0.0f, 10.0f));
@@ -56,7 +48,7 @@ index fa1fa52..ee0f038 100644
  }
  
  static const char* GetControllerModMenuPrompt() {
-@@ -2081,6 +2091,7 @@ bool RND_Renderer::ImGuiOverlay::DrawHelpMenu() {
+@@ -2103,6 +2114,7 @@ bool RND_Renderer::ImGuiOverlay::DrawHelpMenu() {
                  case ImGuiMenus::DEBUG_PAGE: DrawDebugPage(&changed); break;
                  default: break;
              }

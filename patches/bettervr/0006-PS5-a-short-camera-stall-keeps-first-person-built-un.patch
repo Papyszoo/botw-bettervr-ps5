@@ -1,0 +1,103 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Patryk Kowalczyk <papyszoo@gmail.com>
+Date: Wed, 18 Nov 2026 16:19:52 +0100
+Subject: [PATCH] PS5: a short camera stall keeps first person; built, untested
+ on console
+
+IsThirdPersonForPose tolerates a gameplay camera stall shorter than 250 ms (IsInGame() is false for
+five presented frames) and keeps the first-person pose; the pause menu, a cutscene's event setting
+and the third-person camera setting still switch at once. A rate-limited [pose] line counts the
+frames kept since the run started.
+
+1.0.2 applies the head materials once a frame on Skl_Root (HeadVisibility::Apply) and hides them from
+the main pass instead, so old 0006's kept material list has no job left: a frame the actor list
+misses no longer rebuilds or drops it.
+---
+ src/game/botw/player/skeleton.cpp | 51 +++++++++++++++++++++++++++++--
+ 1 file changed, 48 insertions(+), 3 deletions(-)
+
+diff --git a/src/game/botw/player/skeleton.cpp b/src/game/botw/player/skeleton.cpp
+index aa45c81..212c141 100644
+--- a/src/game/botw/player/skeleton.cpp
++++ b/src/game/botw/player/skeleton.cpp
+@@ -443,6 +443,49 @@ static void hook_ShouldReposePlayer(PPCInterpreter_t* hCPU) {
+         hCPU->gpr[3] = 1;
+ }
+ 
++// A texture-streaming hitch can leave the gameplay camera without an update for five presented frames, which
++// IsInGame() reports as "not in game" for one frame; the body then flashes in first person. Tolerate a stall
++// shorter than this, while the pause menu and the third-person setting still switch at once.
++static constexpr auto kCameraStallTolerance = std::chrono::milliseconds(250);
++static std::chrono::steady_clock::time_point s_cameraStallSince{};
++static bool s_cameraStallActive = false;
++static bool s_isThirdPersonForPose = false;
++static bool s_hasPoseDecision = false;
++static uint64_t s_cameraStallKeptFrames = 0;
++static std::chrono::steady_clock::time_point s_cameraStallLastLog{};
++
++// one decision a frame, taken on Skl_Root, which comes first
++static bool IsThirdPersonForPose(bool rootBone) {
++    if (!rootBone && s_hasPoseDecision)
++        return s_isThirdPersonForPose;
++
++    const bool inPauseMenu = Screens::HasInstance(ScreenId::PauseMenuInfo_00);
++    bool thirdPerson = GameState::IsThirdPerson() || inPauseMenu;
++    if (thirdPerson || GameState::IsInGame()) {
++        s_cameraStallActive = false;
++    }
++    else {
++        const auto now = std::chrono::steady_clock::now();
++        if (!s_cameraStallActive) {
++            s_cameraStallActive = true;
++            s_cameraStallSince = now;
++        }
++        if (now - s_cameraStallSince < kCameraStallTolerance) {
++            ++s_cameraStallKeptFrames;
++            if (now - s_cameraStallLastLog >= std::chrono::seconds(1)) {
++                s_cameraStallLastLog = now;
++                Log::print<INFO>("[pose] a short camera stall kept first person ({} frames)", (unsigned long long)s_cameraStallKeptFrames);
++            }
++        }
++        else {
++            thirdPerson = true;
++        }
++    }
++    s_isThirdPersonForPose = thirdPerson;
++    s_hasPoseDecision = true;
++    return thirdPerson;
++}
++
+ static void hook_ModifyBoneMatrix(PPCInterpreter_t* hCPU) {
+     hCPU->instructionPointer = hCPU->sprNew.LR;
+     const uint32_t modelUnitPtr = hCPU->gpr[7];
+@@ -457,9 +500,11 @@ static void hook_ModifyBoneMatrix(PPCInterpreter_t* hCPU) {
+ 
+     std::string boneName(Guest::CString(boneNamePtr));
+     const auto modelName = Guest::Get<sead::FixedSafeString100>(gsysModelPtr + 0x128);
++    if (modelName.getLE() != "GameROMPlayer")
++        return;
+     EnsureSkeletonInitialized();
+     const uint32_t playerActor = Player::GetAddress();
+-    if (modelName.getLE() != "GameROMPlayer" || playerActor == 0 || Guest::Get<uint32_t>(playerActor + 0x330).getLE() != gsysModelPtr)
++    if (playerActor == 0 || Guest::Get<uint32_t>(playerActor + 0x330).getLE() != gsysModelPtr)
+         return;
+ 
+     if (boneName == "Skl_Root")
+@@ -484,7 +529,7 @@ static void hook_ModifyBoneMatrix(PPCInterpreter_t* hCPU) {
+         s_twoHandGrip = {};
+         s_armPoseFrame = {};
+         s_twoHandGripActive = false;
+-        HeadVisibility::Apply(!GameState::IsThirdPerson() && GameState::IsInGame());
++        HeadVisibility::Apply(!IsThirdPersonForPose(boneName == "Skl_Root"));
+     }
+ 
+     auto writeBoneMatrix = [&](const glm::mat4x3& mtx, const glm::fvec3& scale) {
+@@ -498,7 +543,7 @@ static void hook_ModifyBoneMatrix(PPCInterpreter_t* hCPU) {
+         Guest::Set(scalePtr, scale);
+     };
+ 
+-    const bool isThirdPerson = GameState::IsThirdPerson() || !GameState::IsInGame();
++    const bool isThirdPerson = IsThirdPersonForPose(boneName == "Skl_Root");
+ 
+     if (isThirdPerson) {
+         // wrist is game-animated in third person

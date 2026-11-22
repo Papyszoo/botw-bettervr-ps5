@@ -109,7 +109,7 @@ index 4e780a8b..94104f1c 100644
  
  	renderer->barrier_sequentializeTransfer();
 diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
-index 9c6e839a..37e4b8ce 100644
+index d521d6d2..f4aa088e 100644
 --- a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
 +++ b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
 @@ -1,5 +1,10 @@
@@ -123,7 +123,7 @@ index 9c6e839a..37e4b8ce 100644
  #include "Cafe/HW/Latte/Renderer/Vulkan/VulkanAPI.h"
  #include "Cafe/HW/Latte/Renderer/Vulkan/LatteTextureVk.h"
  #include "Cafe/HW/Latte/Renderer/Vulkan/RendererShaderVk.h"
-@@ -3891,6 +3896,37 @@ void VulkanRenderer::texture_copyImageSubData(LatteTexture* src, sint32 srcMip,
+@@ -3898,6 +3903,37 @@ void VulkanRenderer::texture_copyImageSubData(LatteTexture* src, sint32 srcMip,
  	// make sure all read and write operations to the dst image have finished
  	barrier_image<SYNC_OP::IMAGE_READ | SYNC_OP::IMAGE_WRITE | SYNC_OP::ANY_TRANSFER, SYNC_OP::ANY_TRANSFER>(dstVk, region.dstSubresource, VK_IMAGE_LAYOUT_GENERAL);
  

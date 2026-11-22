@@ -16,7 +16,7 @@ GPU, to tell whether this is why.
  1 file changed, 13 insertions(+)
 
 diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
-index 86f661a1..03844b64 100644
+index 962ea4a7..60043a43 100644
 --- a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
 +++ b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
 @@ -11,6 +11,7 @@ void PS5Cemu_ImguiUploads();
@@ -27,7 +27,7 @@ index 86f661a1..03844b64 100644
  #endif
  #include "Cafe/HW/Latte/Renderer/Vulkan/VulkanAPI.h"
  #include "Cafe/HW/Latte/Renderer/Vulkan/LatteTextureVk.h"
-@@ -1561,6 +1562,14 @@ bool VulkanRenderer::CheckDeviceExtensionSupport(const VkPhysicalDevice device,
+@@ -1568,6 +1569,14 @@ bool VulkanRenderer::CheckDeviceExtensionSupport(const VkPhysicalDevice device,
  	info.deviceExtensions.pipeline_feedback = isExtensionAvailable(VK_EXT_PIPELINE_CREATION_FEEDBACK_EXTENSION_NAME);
  	info.deviceExtensions.cubic_filter = isExtensionAvailable(VK_EXT_FILTER_CUBIC_EXTENSION_NAME);
  	info.deviceExtensions.custom_border_color = isExtensionAvailable(VK_EXT_CUSTOM_BORDER_COLOR_EXTENSION_NAME);
@@ -42,7 +42,7 @@ index 86f661a1..03844b64 100644
  	info.deviceExtensions.driver_properties = isExtensionAvailable(VK_KHR_DRIVER_PROPERTIES_EXTENSION_NAME);
  	info.deviceExtensions.external_memory_host = isExtensionAvailable(VK_EXT_EXTERNAL_MEMORY_HOST_EXTENSION_NAME);
  	info.deviceExtensions.synchronization2 = isExtensionAvailable(VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME);
-@@ -1812,6 +1821,10 @@ void VulkanRenderer::CreateCommandPool()
+@@ -1819,6 +1828,10 @@ void VulkanRenderer::CreateCommandPool()
  }
  
  #if defined(CEMU_PS5)

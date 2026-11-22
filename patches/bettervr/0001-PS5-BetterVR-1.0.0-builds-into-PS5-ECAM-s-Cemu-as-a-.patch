@@ -121,7 +121,7 @@ index 26f58ee..ee8d53e 100644
  endif ()
  
 diff --git a/src/cemu/host_module.cpp b/src/cemu/host_module.cpp
-index 85f7e35..46a30ef 100644
+index 808239b..4d72ac6 100644
 --- a/src/cemu/host_module.cpp
 +++ b/src/cemu/host_module.cpp
 @@ -17,6 +17,10 @@
@@ -135,20 +135,19 @@ index 85f7e35..46a30ef 100644
  PFN_vkGetInstanceProcAddr VulkanLoader::GetInstanceProcAddr() {
      return HostModule::GetVkInstanceProcAddr();
  }
-@@ -242,10 +246,12 @@ public:
+@@ -242,9 +246,11 @@ public:
          SetEnvironmentVariableW(L"DISABLE_VULKAN_OBS_CAPTURE", L"1");
          SetEnvironmentVariableW(L"DISABLE_LAYER_NV_PRESENT_1", L"1");
  #endif
 +#if !defined(__PROSPERO__) // the PS5 app keeps Cemu's settings itself, and has no second settings file for the mod to share
          CemuSettings::Sync(settingsFile.parent_path() / "settings.xml", settingsFile);
-         static std::filesystem::path s_settingsFile = settingsFile;
-         std::atexit([] { CemuSettings::ShareBack(s_settingsFile, s_settingsFile.parent_path() / "settings.xml"); });
+         m_settingsFile = settingsFile;
          CemuSettings::Enforce(settingsFile);
 +#endif
      }
  
-     // the OpenXR instance has to exist before Cemu loads the graphic packs, since the presets need the headset's resolution
-@@ -294,6 +300,13 @@ public:
+     void OnExit() override {
+@@ -297,6 +303,13 @@ public:
      }
  
      bool CreateVkInstance(const VkInstanceCreateInfo& createInfo, VkInstance& instance, VkResult& result) override {
@@ -253,7 +252,7 @@ index b7809db..6f05918 100644
          WriteToLogFile(batch.data(), batch.size());
      }
 diff --git a/src/utils/mod_settings.h b/src/utils/mod_settings.h
-index 700669c..d75c505 100644
+index b592cce..3c42552 100644
 --- a/src/utils/mod_settings.h
 +++ b/src/utils/mod_settings.h
 @@ -1,4 +1,6 @@

@@ -10,7 +10,7 @@ Subject: [PATCH] PS5: the game's pad is idle while the app's console keyboard
  1 file changed, 40 insertions(+), 2 deletions(-)
 
 diff --git a/src/game/botw/input/controls.cpp b/src/game/botw/input/controls.cpp
-index e654a92..52872d7 100644
+index 40bc96f..2997ae5 100644
 --- a/src/game/botw/input/controls.cpp
 +++ b/src/game/botw/input/controls.cpp
 @@ -20,6 +20,8 @@
@@ -22,7 +22,7 @@ index e654a92..52872d7 100644
  #endif
  
  static ButtonState s_inventoryMapButton;
-@@ -1126,6 +1128,9 @@ extern "C" bool BetterVR_PS5_ToggleModMenu() {
+@@ -1189,6 +1191,9 @@ extern "C" bool BetterVR_PS5_ToggleModMenu() {
  struct OptionsButtonState {
      bool wasDown = false;
      bool recenterLogged = false;
@@ -32,7 +32,7 @@ index e654a92..52872d7 100644
      std::chrono::steady_clock::time_point downAt;
  };
  
-@@ -1134,6 +1139,13 @@ static OptionsButtonState s_padOptions;
+@@ -1197,6 +1202,13 @@ static OptionsButtonState s_padOptions;
  
  static void ProcessOptionsButton(uint32_t& buttonHold, ControlState& state, bool down, bool pad, OptionsButtonState& s) {
      const auto now = std::chrono::steady_clock::now();
@@ -46,7 +46,7 @@ index e654a92..52872d7 100644
      if (down && !s.wasDown) {
          s.wasDown = true;
          s.recenterLogged = false;
-@@ -1657,8 +1669,22 @@ static void hook_InjectXRInput(PPCInterpreter_t* hCPU) {
+@@ -1721,8 +1733,22 @@ static void hook_InjectXRInput(PPCInterpreter_t* hCPU) {
      // the pad's + is the same Options press: the game never sees it while it is held, so a hold never pauses (the
      // recenter is the runtime's) and the release sends the tap
      vpadStatus.hold = vpadStatus.hold.getLE() & ~static_cast<uint32_t>(VPAD_BUTTON_PLUS);
@@ -71,7 +71,7 @@ index e654a92..52872d7 100644
  #endif
      UpdateGuide(inputs, isMenuOpen);
      HandGestureState leftGesture = {};
-@@ -1716,6 +1742,18 @@ static void hook_InjectXRInput(PPCInterpreter_t* hCPU) {
+@@ -1786,6 +1812,18 @@ static void hook_InjectXRInput(PPCInterpreter_t* hCPU) {
  
      OpenXRMotionBridge::UpdateVPADStatus(inputs, vpadStatus);
  

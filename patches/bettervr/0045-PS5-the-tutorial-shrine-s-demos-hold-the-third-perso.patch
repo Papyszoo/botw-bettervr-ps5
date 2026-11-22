@@ -19,10 +19,10 @@ during them, so a console report can tell whether the haze there was a fade at a
  3 files changed, 33 insertions(+), 5 deletions(-)
 
 diff --git a/src/game/botw/camera/camera.cpp b/src/game/botw/camera/camera.cpp
-index 3f91087..b9ce45c 100644
+index 0cfc33e..b62903c 100644
 --- a/src/game/botw/camera/camera.cpp
 +++ b/src/game/botw/camera/camera.cpp
-@@ -450,8 +450,9 @@ glm::mat4 Camera::GetFreshReferenceMtx() {
+@@ -453,8 +453,9 @@ glm::mat4 Camera::GetFreshReferenceMtx() {
  }
  
  std::pair<glm::fvec3, glm::fquat> Camera::ResolveGameplayBasePose(const BESeadLookAtCamera& camera) {
@@ -35,7 +35,7 @@ index 3f91087..b9ce45c 100644
      if (holdEventCamera != s_isHoldingEventCamera) {
          s_isHoldingEventCamera = holdEventCamera;
 diff --git a/src/game/botw/game_state.cpp b/src/game/botw/game_state.cpp
-index 93a7a4c..f2362fd 100644
+index edeeaf3..f45a554 100644
 --- a/src/game/botw/game_state.cpp
 +++ b/src/game/botw/game_state.cpp
 @@ -13,13 +13,17 @@ static std::atomic_bool s_eventActive = false;
@@ -117,8 +117,8 @@ index 93a7a4c..f2362fd 100644
 +    }
 +    s_keepTutorialQuadLogged = keepTutorialQuad;
      presentation.loadingScreenVisible = Screens::IsLoadingVisible();
+     presentation.loadingBackdropVisible = Screens::IsLoadingVisible() || Screens::IsVisible(ScreenId::FadeStatus_00);
      presentation.aimingItemHeld = Weapons::IsAimingItemHeld();
-     presentation.cutsceneActive = Events::IsActive();
 diff --git a/src/game/botw/game_state.h b/src/game/botw/game_state.h
 index 9ff6ff8..ea7f404 100644
 --- a/src/game/botw/game_state.h

@@ -48,7 +48,7 @@ index bf41cca..73f0fe4 100644
  
  0x02BEEBCC = bla captureCameraTailStickYaw
 diff --git a/src/game/botw/camera/camera.cpp b/src/game/botw/camera/camera.cpp
-index 3c83cd9..875555d 100644
+index 5b170c6..51561b3 100644
 --- a/src/game/botw/camera/camera.cpp
 +++ b/src/game/botw/camera/camera.cpp
 @@ -117,6 +117,26 @@ static int TryConsumePendingSnapTurnDirection() {
@@ -78,7 +78,7 @@ index 3c83cd9..875555d 100644
  static float TryConsumePendingSmoothTurnDelta() {
      static uint64_t s_lastTimeNs = 0;
      const uint64_t nowNs = GetTimeStamp();
-@@ -566,6 +586,29 @@ static void hook_AddGameCameraStickYaw(PPCInterpreter_t* hCPU) {
+@@ -578,6 +598,29 @@ static void hook_AddGameCameraStickYaw(PPCInterpreter_t* hCPU) {
      s_pendingGameStickYawDelta = NormalizeDegrees(s_pendingGameStickYawDelta + yawDelta);
  }
  
@@ -108,7 +108,7 @@ index 3c83cd9..875555d 100644
  static void hook_CaptureClimbWallSurface(PPCInterpreter_t* hCPU) {
      hCPU->instructionPointer = hCPU->sprNew.LR;
  
-@@ -800,6 +843,8 @@ void Camera::RegisterHooks() {
+@@ -812,6 +855,8 @@ void Camera::RegisterHooks() {
      CemuHost::RegisterHook("hook_UpdateCameraForGameplay", &hook_UpdateCameraForGameplay);
      CemuHost::RegisterHook("hook_AdjustGameplayCameraPivot", &hook_AdjustGameplayCameraPivot);
      CemuHost::RegisterHook("hook_AddGameCameraStickYaw", &hook_AddGameCameraStickYaw);
@@ -118,10 +118,10 @@ index 3c83cd9..875555d 100644
      CemuHost::RegisterHook("hook_SnapTurnCameraPivot", &hook_SnapTurnCameraPivot);
      CemuHost::RegisterHook("hook_SnapTurnCameraTailPivot", &hook_SnapTurnCameraTailPivot);
 diff --git a/src/game/botw/input/controls.cpp b/src/game/botw/input/controls.cpp
-index e9d41df..0a2165c 100644
+index 362df2e..a16dd3c 100644
 --- a/src/game/botw/input/controls.cpp
 +++ b/src/game/botw/input/controls.cpp
-@@ -166,30 +166,50 @@ static bool ShouldOverrideFirstPersonTurning(bool inGame) {
+@@ -167,30 +167,50 @@ static bool ShouldOverrideFirstPersonTurning(bool inGame) {
      return inGame && GameState::IsFirstPerson() && !Events::IsActive() && !Screens::IsVisible(ScreenId::AppCamera_00);
  }
  
@@ -186,7 +186,7 @@ index e9d41df..0a2165c 100644
          Camera::SetSmoothTurnInput(std::fabs(stickX) > (float)GetSettings().stickDeadzone ? stickX : 0.0f);
      }
  }
-@@ -1589,7 +1609,8 @@ static void hook_InjectXRInput(PPCInterpreter_t* hCPU) {
+@@ -1659,7 +1679,8 @@ static void hook_InjectXRInput(PPCInterpreter_t* hCPU) {
          ProcessMenuInput(newXRBtnHold, inputs, state);
      }
  
@@ -196,7 +196,7 @@ index e9d41df..0a2165c 100644
  
      Haptics::Update();
  
-@@ -1601,7 +1622,10 @@ static void hook_InjectXRInput(PPCInterpreter_t* hCPU) {
+@@ -1671,7 +1692,10 @@ static void hook_InjectXRInput(PPCInterpreter_t* hCPU) {
          GetSettings().adaptiveTriggers ? 1 : 0, GetSettings().adaptiveTriggerStrength);
  #endif
  
@@ -209,12 +209,12 @@ index e9d41df..0a2165c 100644
      ProcessJoystickInput(state.previousStickHold, newXRStickHold, vpadStatus, leftStickSource, rightStickSource, disableRightStickHorizontalRotation);
  
 diff --git a/src/rendering/imgui_menus.cpp b/src/rendering/imgui_menus.cpp
-index fccca47..e384697 100644
+index 8f152ec..9c48157 100644
 --- a/src/rendering/imgui_menus.cpp
 +++ b/src/rendering/imgui_menus.cpp
-@@ -958,6 +958,9 @@ void RND_Renderer::ImGuiOverlay::DrawPlaystylePage(bool* changed) {
+@@ -969,6 +969,9 @@ void RND_Renderer::ImGuiOverlay::DrawPlaystylePage(bool* changed) {
              DrawSetting(ICON_MS_ZOOM_OUT_MAP, "Camera Distance", [&]() {
-                 DrawFloatSlider(settings.thirdPlayerDistance, 0.5f, 0.65f, [](float value) { return fmt::format("{:.2f}", value); }, changed);
+                 DrawFloatSlider(settings.thirdPlayerDistance, 0.5f, 0.65f, 0.0f, [](float value) { return fmt::format("{:.2f}", value); }, changed);
              });
 +            DrawSetting(ICON_MS_ROTATE_RIGHT, "Snap Turn (third person)", "Uses the Turning snap angle. Off: the right stick turns smoothly.", [&]() {
 +                DrawToggle(settings.thirdPersonSnapTurn, changed);
@@ -223,7 +223,7 @@ index fccca47..e384697 100644
          }
          DrawPageNote("Set up your controller in Cemu's toolbar under Options > Input Settings.");
 diff --git a/src/utils/mod_settings.h b/src/utils/mod_settings.h
-index 9b3877b..a39332a 100644
+index e482f86..6076ac3 100644
 --- a/src/utils/mod_settings.h
 +++ b/src/utils/mod_settings.h
 @@ -574,6 +574,7 @@ struct ModSettings {
@@ -234,7 +234,7 @@ index 9b3877b..a39332a 100644
      EnumSetting<EventMode> cutsceneCameraMode{ "CutsceneCameraMode", EventMode::FOLLOW_DEFAULT_EVENT_SETTINGS };
      BoolSetting useBlackBarsForCutscenes{ "UseBlackBarsForCutscenes", false };
  
-@@ -693,6 +694,7 @@ struct ModSettings {
+@@ -694,6 +695,7 @@ struct ModSettings {
      float GetBowArcOpacity() const { return bowArcOpacity; }
      bool IsBowArcDotOnly() const { return bowArcOpacity > 0.0f && bowArcOpacity < 0.05f; }
      bool ShouldAimThirdPersonBowFromCamera() const { return thirdPersonBowCameraAim; }

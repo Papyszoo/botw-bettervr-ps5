@@ -15,7 +15,7 @@ Subject: [PATCH] PS5: the respawn demos hold the third-person camera and their
  6 files changed, 62 insertions(+), 23 deletions(-)
 
 diff --git a/src/game/botw/camera/camera.cpp b/src/game/botw/camera/camera.cpp
-index 6d86ac9..3f91087 100644
+index 08f35cb..0cfc33e 100644
 --- a/src/game/botw/camera/camera.cpp
 +++ b/src/game/botw/camera/camera.cpp
 @@ -24,6 +24,7 @@ static glm::fquat s_wsCameraRotation = glm::identity<glm::fquat>();
@@ -36,7 +36,7 @@ index 6d86ac9..3f91087 100644
      s_heldEventCameraPosition = s_wsCameraPosition;
      s_heldEventCameraRotation = s_wsCameraRotation;
  }
-@@ -448,18 +450,18 @@ glm::mat4 Camera::GetFreshReferenceMtx() {
+@@ -451,18 +453,18 @@ glm::mat4 Camera::GetFreshReferenceMtx() {
  }
  
  std::pair<glm::fvec3, glm::fquat> Camera::ResolveGameplayBasePose(const BESeadLookAtCamera& camera) {
@@ -76,7 +76,7 @@ index f6ccf43..2bdc183 100644
      // a hook should pass the same views to each call so everything comes from one XR frame
      std::pair<glm::fvec3, glm::fquat> BuildMiddlePose(const std::optional<Tracking::HeadViews>& views, const glm::fvec3& gameplayPos, const glm::fquat& gameplayRot);
 diff --git a/src/game/botw/game_state.cpp b/src/game/botw/game_state.cpp
-index b67768b..93a7a4c 100644
+index a1c39bf..edeeaf3 100644
 --- a/src/game/botw/game_state.cpp
 +++ b/src/game/botw/game_state.cpp
 @@ -13,9 +13,14 @@ static std::atomic_bool s_eventActive = false;
@@ -180,8 +180,8 @@ index b67768b..93a7a4c 100644
 +    s_suppressFadeQuadLogged = suppressFadeQuad;
 +    presentation.suppressFadeQuad = suppressFadeQuad;
      presentation.loadingScreenVisible = Screens::IsLoadingVisible();
+     presentation.loadingBackdropVisible = Screens::IsLoadingVisible() || Screens::IsVisible(ScreenId::FadeStatus_00);
      presentation.aimingItemHeld = Weapons::IsAimingItemHeld();
-     presentation.cutsceneActive = Events::IsActive();
 diff --git a/src/game/botw/game_state.h b/src/game/botw/game_state.h
 index dd78c54..9ff6ff8 100644
 --- a/src/game/botw/game_state.h
@@ -197,7 +197,7 @@ index dd78c54..9ff6ff8 100644
      std::optional<Settings> GetFirstPersonSettings();
      bool UsesAnimatedHands();
 diff --git a/src/game/game.h b/src/game/game.h
-index c6f6db3..9089773 100644
+index 386a2ed..8ea4fd4 100644
 --- a/src/game/game.h
 +++ b/src/game/game.h
 @@ -27,6 +27,7 @@ namespace Game {
@@ -206,8 +206,8 @@ index c6f6db3..9089773 100644
          bool blackBars;
 +        bool suppressFadeQuad;
          bool loadingScreenVisible;
-         bool aimingItemHeld;
-         bool cutsceneActive;
+         // the loading screens with a full-view white backdrop, FadeStatus_00 is the one shown while a save loads
+         bool loadingBackdropVisible;
 diff --git a/src/rendering/renderer.cpp b/src/rendering/renderer.cpp
 index 65cfedb..b80da86 100644
 --- a/src/rendering/renderer.cpp

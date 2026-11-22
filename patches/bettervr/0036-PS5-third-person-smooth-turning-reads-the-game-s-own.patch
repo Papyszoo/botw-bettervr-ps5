@@ -35,7 +35,7 @@ index 73f0fe4..629df9d 100644
  
  lwz r0, 0x24(r1)
 diff --git a/src/game/botw/camera/camera.cpp b/src/game/botw/camera/camera.cpp
-index 4e58816..3e1699b 100644
+index 9eee503..b436efa 100644
 --- a/src/game/botw/camera/camera.cpp
 +++ b/src/game/botw/camera/camera.cpp
 @@ -61,6 +61,8 @@ struct SnapTurnRequest {
@@ -64,7 +64,7 @@ index 4e58816..3e1699b 100644
  float Camera::GetSnapTurnFadeAmount() {
      const uint64_t startNs = s_snapTurnFadeStartNs;
      const uint64_t endNs = s_snapTurnFadeUntilNs;
-@@ -193,6 +205,35 @@ static float ConsumeGameStickYawDelta() {
+@@ -196,6 +208,35 @@ static float ConsumeGameStickYawDelta() {
      return std::exchange(s_pendingGameStickYawDelta, 0.0f);
  }
  
@@ -100,13 +100,15 @@ index 4e58816..3e1699b 100644
  static bool ApplyYawDeltaToComputedCameraPivot(PPCInterpreter_t* hCPU, float yawDeltaDegrees) {
      if (yawDeltaDegrees == 0.0f || hCPU->gpr[4] == 0 || hCPU->gpr[5] == 0) {
          return false;
-@@ -453,13 +494,19 @@ static void hook_UpdateCameraForGameplay(PPCInterpreter_t* hCPU) {
- 
-     const float gameYawDegrees = YawDegreesFromRotation(gameplayRotation);
-     const float gameStickYawDelta = ConsumeGameStickYawDelta();
+@@ -462,6 +503,7 @@ static void hook_UpdateCameraForGameplay(PPCInterpreter_t* hCPU) {
+     else if (!s_eventHeadYawDegrees.has_value() && views.has_value()) {
+         s_eventHeadYawDegrees = YawDegreesFromRotation(glm::quat_cast(glm::fmat3(views->MiddlePose())));
+     }
 +    LogYawWithoutStickInput("the game's camera", gameStickYawDelta);
      if (ShouldAdoptGameCameraYaw()) {
-         s_baseYawDegrees = gameYawDegrees;
+         const glm::fquat eventFacing = glm::angleAxis(glm::radians(-s_eventHeadYawDegrees.value_or(0.0f)), glm::fvec3(0.0f, 1.0f, 0.0f));
+         gameplayRotation = gameplayRotation * eventFacing;
+@@ -470,8 +512,13 @@ static void hook_UpdateCameraForGameplay(PPCInterpreter_t* hCPU) {
          s_hasBaseYaw = true;
      }
      else {
@@ -121,7 +123,7 @@ index 4e58816..3e1699b 100644
          gameplayRotation = glm::angleAxis(glm::radians(s_baseYawDegrees), glm::fvec3(0.0f, 1.0f, 0.0f));
      }
      s_pendingGameYawCorrection = NormalizeDegrees(gameYawDegrees - s_baseYawDegrees);
-@@ -555,6 +602,9 @@ static void hook_OverrideThirdPersonChaseStickYaw(PPCInterpreter_t* hCPU) {
+@@ -567,6 +614,9 @@ static void hook_OverrideThirdPersonChaseStickYaw(PPCInterpreter_t* hCPU) {
      hCPU->instructionPointer = hCPU->sprNew.LR;
  
      if (!ShouldSnapTurnThirdPersonCamera()) {
@@ -131,7 +133,7 @@ index 4e58816..3e1699b 100644
          return;
      }
      hCPU->fpr[12].fp0 = ConsumeThirdPersonSnapTurnDelta();
-@@ -564,6 +614,9 @@ static void hook_OverrideThirdPersonTailStickYaw(PPCInterpreter_t* hCPU) {
+@@ -576,6 +626,9 @@ static void hook_OverrideThirdPersonTailStickYaw(PPCInterpreter_t* hCPU) {
      hCPU->instructionPointer = hCPU->sprNew.LR;
  
      if (!ShouldSnapTurnThirdPersonCamera()) {
@@ -153,10 +155,10 @@ index c434c3d..51ea244 100644
      float GetSnapTurnFadeAmount();
  }
 diff --git a/src/game/botw/input/controls.cpp b/src/game/botw/input/controls.cpp
-index fda8fe6..0a091ea 100644
+index 84c87f1..acb1918 100644
 --- a/src/game/botw/input/controls.cpp
 +++ b/src/game/botw/input/controls.cpp
-@@ -185,11 +185,58 @@ static void UpdateSnapTurnStick(float stickX, bool& latched) {
+@@ -186,11 +186,58 @@ static void UpdateSnapTurnStick(float stickX, bool& latched) {
      }
  }
  

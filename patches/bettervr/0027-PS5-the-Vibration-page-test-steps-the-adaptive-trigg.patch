@@ -12,7 +12,7 @@ A Triggers button on the Vibration page steps through eleven fixed payloads, one
  1 file changed, 14 insertions(+), 15 deletions(-)
 
 diff --git a/src/rendering/imgui_menus.cpp b/src/rendering/imgui_menus.cpp
-index 2a78e05..c1e6f87 100644
+index 4025139..7deb5ab 100644
 --- a/src/rendering/imgui_menus.cpp
 +++ b/src/rendering/imgui_menus.cpp
 @@ -18,11 +18,11 @@
@@ -30,7 +30,7 @@ index 2a78e05..c1e6f87 100644
  extern "C" int BetterVR_PS5_EyeGazeAvailable();
  extern "C" int BetterVR_PS5_PadTriggersAvailable();
  #endif
-@@ -1364,7 +1364,17 @@ void RND_Renderer::ImGuiOverlay::DrawVibrationPage(bool* changed) {
+@@ -1383,7 +1383,17 @@ void RND_Renderer::ImGuiOverlay::DrawVibrationPage(bool* changed) {
      ImGui::SameLine(0.0f, testSpacing);
      if (ImGui::Button("DualSense", ImVec2(testWidth, 0.0f)))
          Haptics::TestPad();
@@ -49,7 +49,7 @@ index 2a78e05..c1e6f87 100644
  
      DrawSectionCaption("Categories");
      ImGuiWindow* window = ImGui::GetCurrentWindow();
-@@ -1536,17 +1546,6 @@ void RND_Renderer::ImGuiOverlay::DrawSystemPage(bool* changed) {
+@@ -1555,17 +1565,6 @@ void RND_Renderer::ImGuiOverlay::DrawSystemPage(bool* changed) {
                  *changed = true;
              }
          });

@@ -12,10 +12,10 @@ Subject: [PATCH] PS5: the Eye Aim Assist switch bends a throw and a bow shot
  4 files changed, 111 insertions(+), 15 deletions(-)
 
 diff --git a/src/game/botw/input/controls.cpp b/src/game/botw/input/controls.cpp
-index 98ab03a..3154ee7 100644
+index 875ca12..27f0df6 100644
 --- a/src/game/botw/input/controls.cpp
 +++ b/src/game/botw/input/controls.cpp
-@@ -865,10 +865,11 @@ static void ProcessLeftTriggerBindings(
+@@ -878,10 +878,11 @@ static void ProcessLeftTriggerBindings(
      }    
  }
  
@@ -31,7 +31,7 @@ index 98ab03a..3154ee7 100644
  static bool NormalizeDirection(const glm::fvec3& direction, glm::fvec3& outDirection) {
      if (!glm::all(glm::isfinite(direction)) || glm::dot(direction, direction) <= 1.0e-6f)
          return false;
-@@ -876,11 +877,11 @@ static bool NormalizeDirection(const glm::fvec3& direction, glm::fvec3& outDirec
+@@ -889,11 +890,11 @@ static bool NormalizeDirection(const glm::fvec3& direction, glm::fvec3& outDirec
      return true;
  }
  
@@ -46,7 +46,7 @@ index 98ab03a..3154ee7 100644
          return velocity;
      const std::optional<glm::fmat4> head = Tracking::HeadPose();
      if (!head.has_value())
-@@ -903,10 +904,12 @@ static glm::fvec3 ApplyGazeThrowAssist(const glm::fvec3& velocity, const OpenXR:
+@@ -916,10 +917,12 @@ static glm::fvec3 ApplyGazeThrowAssist(const glm::fvec3& velocity, const OpenXR:
      const float angle = std::acos(std::clamp(glm::dot(current, wanted), -1.0f, 1.0f));
      if (angle < glm::radians(0.5f))
          return velocity;
@@ -61,7 +61,7 @@ index 98ab03a..3154ee7 100644
      return assisted * glm::length(velocity);
  }
  
-@@ -967,10 +970,10 @@ static void ProcessHandThrow(uint32_t& buttonHold, const OpenXR::InputState& inp
+@@ -980,10 +983,10 @@ static void ProcessHandThrow(uint32_t& buttonHold, const OpenXR::InputState& inp
          const float handSpeed = glm::length(releaseVelocity.value());
          const float boost = glm::mix(1.0f, maxThrowBoost, glm::smoothstep(boostStartSpeed, boostFullSpeed, handSpeed));
          glm::fvec3 throwVelocity = glm::mat3(Camera::GetReferenceMtx()) * releaseVelocity.value() * boost;
@@ -169,10 +169,10 @@ index 0279ff2..54a3ca2 100644
                  "[BowShot] Override transform origin={} direction={} previewAi=0x{:08X}",
                  launchState.launchOrigin,
 diff --git a/src/rendering/imgui_menus.cpp b/src/rendering/imgui_menus.cpp
-index 7b032b8..e76dd37 100644
+index 3b4eea9..8c078ac 100644
 --- a/src/rendering/imgui_menus.cpp
 +++ b/src/rendering/imgui_menus.cpp
-@@ -1188,8 +1188,14 @@ void RND_Renderer::ImGuiOverlay::DrawControlsPage(bool* changed) {
+@@ -1204,8 +1204,14 @@ void RND_Renderer::ImGuiOverlay::DrawControlsPage(bool* changed) {
                  DrawEnumSegments(settings.swingSensitivity, swingChoices, changed);
              });
              if (VRManager::instance().XR->m_capabilities.supportsEyeGaze && BetterVR_PS5_EyeGazeAvailable() != 0) {
@@ -190,7 +190,7 @@ index 7b032b8..e76dd37 100644
              }
              EndCard();
 diff --git a/src/utils/mod_settings.h b/src/utils/mod_settings.h
-index a39332a..f0c666f 100644
+index 6076ac3..bd6d203 100644
 --- a/src/utils/mod_settings.h
 +++ b/src/utils/mod_settings.h
 @@ -249,6 +249,26 @@ public:
@@ -220,7 +220,7 @@ index a39332a..f0c666f 100644
  class BoolSetting : public ModSetting<bool> {
  private:
      void (*m_onChange)(bool);
-@@ -626,8 +646,13 @@ struct ModSettings {
+@@ -627,8 +647,13 @@ struct ModSettings {
      FloatSetting adaptiveTriggerStrength{ "AdaptiveTriggerStrength", 1.0f, 0.0f, 1.0f };
  #endif
  

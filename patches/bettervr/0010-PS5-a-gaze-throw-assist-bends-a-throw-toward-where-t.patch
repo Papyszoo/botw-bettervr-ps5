@@ -11,10 +11,10 @@ Subject: [PATCH] PS5: a gaze throw assist bends a throw toward where the
  3 files changed, 61 insertions(+), 1 deletion(-)
 
 diff --git a/src/game/botw/input/controls.cpp b/src/game/botw/input/controls.cpp
-index 052180c..5d830b1 100644
+index 5ee691d..e015677 100644
 --- a/src/game/botw/input/controls.cpp
 +++ b/src/game/botw/input/controls.cpp
-@@ -797,6 +797,54 @@ static void ProcessLeftTriggerBindings(
+@@ -810,6 +810,54 @@ static void ProcessLeftTriggerBindings(
      }    
  }
  
@@ -69,7 +69,7 @@ index 052180c..5d830b1 100644
  // the trigger or grip throws, but one that was already held when picking something up (like a bomb) has to be pressed again
  static void ProcessHandThrow(uint32_t& buttonHold, const OpenXR::InputState& inputs, ControlState& state) {
      constexpr XrDuration releaseVelocityWindowNs = 100'000'000;
-@@ -853,7 +901,10 @@ static void ProcessHandThrow(uint32_t& buttonHold, const OpenXR::InputState& inp
+@@ -866,7 +914,10 @@ static void ProcessHandThrow(uint32_t& buttonHold, const OpenXR::InputState& inp
      if (releaseVelocity.has_value()) {
          const float handSpeed = glm::length(releaseVelocity.value());
          const float boost = glm::mix(1.0f, maxThrowBoost, glm::smoothstep(boostStartSpeed, boostFullSpeed, handSpeed));
@@ -82,7 +82,7 @@ index 052180c..5d830b1 100644
      }
      else {
 diff --git a/src/rendering/imgui_menus.cpp b/src/rendering/imgui_menus.cpp
-index c75f607..fccca47 100644
+index 22cde79..8f152ec 100644
 --- a/src/rendering/imgui_menus.cpp
 +++ b/src/rendering/imgui_menus.cpp
 @@ -23,6 +23,7 @@ extern "C" int BetterVR_PS5_SenseTriggersEnabled();
@@ -93,7 +93,7 @@ index c75f607..fccca47 100644
  extern "C" int BetterVR_PS5_PadTriggersAvailable();
  #endif
  
-@@ -1170,6 +1171,11 @@ void RND_Renderer::ImGuiOverlay::DrawControlsPage(bool* changed) {
+@@ -1186,6 +1187,11 @@ void RND_Renderer::ImGuiOverlay::DrawControlsPage(bool* changed) {
              DrawSetting(ICON_MS_SWORDS, "Sword Swings", [&]() {
                  DrawEnumSegments(settings.swingSensitivity, swingChoices, changed);
              });
@@ -106,10 +106,10 @@ index c75f607..fccca47 100644
          }
      }
 diff --git a/src/utils/mod_settings.h b/src/utils/mod_settings.h
-index cf553da..9b3877b 100644
+index dbf6434..e482f86 100644
 --- a/src/utils/mod_settings.h
 +++ b/src/utils/mod_settings.h
-@@ -625,6 +625,9 @@ struct ModSettings {
+@@ -626,6 +626,9 @@ struct ModSettings {
      FloatSetting adaptiveTriggerStrength{ "AdaptiveTriggerStrength", 1.0f, 0.0f, 1.0f };
  #endif
  

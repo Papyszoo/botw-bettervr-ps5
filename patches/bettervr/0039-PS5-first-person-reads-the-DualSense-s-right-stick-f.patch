@@ -16,10 +16,10 @@ before. The first-person snap line is INFO, as the third-person one already is.
  2 files changed, 6 insertions(+), 3 deletions(-)
 
 diff --git a/src/game/botw/camera/camera.cpp b/src/game/botw/camera/camera.cpp
-index 180fa83..6d86ac9 100644
+index 4c6945f..08f35cb 100644
 --- a/src/game/botw/camera/camera.cpp
 +++ b/src/game/botw/camera/camera.cpp
-@@ -203,7 +203,7 @@ static float ConsumePendingCameraYawDelta() {
+@@ -206,7 +206,7 @@ static float ConsumePendingCameraYawDelta() {
      }
  
      SignalSnapTurnFade();
@@ -29,10 +29,10 @@ index 180fa83..6d86ac9 100644
  }
  
 diff --git a/src/game/botw/input/controls.cpp b/src/game/botw/input/controls.cpp
-index 0a091ea..98ab03a 100644
+index acb1918..875ca12 100644
 --- a/src/game/botw/input/controls.cpp
 +++ b/src/game/botw/input/controls.cpp
-@@ -253,7 +253,8 @@ static void UpdateTurning(const XrActionStateVector2f& rightStickSource, float p
+@@ -254,7 +254,8 @@ static void UpdateTurning(const XrActionStateVector2f& rightStickSource, float p
      }
      else if (GetSettings().GetSnapTurnAngle() > 0) {
          Camera::SetSmoothTurnInput(0.0f);
@@ -42,7 +42,7 @@ index 0a091ea..98ab03a 100644
      }
      else {
          s_firstPersonSnapTurnStickLatched = false;
-@@ -1677,7 +1678,9 @@ static void hook_InjectXRInput(PPCInterpreter_t* hCPU) {
+@@ -1747,7 +1748,9 @@ static void hook_InjectXRInput(PPCInterpreter_t* hCPU) {
  #endif
  
      const bool thirdPersonSnapTurn = ShouldSnapTurnThirdPerson(state.inGame) && !ImGuiMenus::g_isOpen && Camera::AppliesFirstPersonTurning();

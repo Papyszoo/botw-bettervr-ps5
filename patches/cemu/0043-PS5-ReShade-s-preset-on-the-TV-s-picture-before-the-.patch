@@ -64,10 +64,10 @@ index bc6853fa..40fb5a7a 100644
  	g_renderer->HandleScreenshotRequest(textureView, isPadView);
  	if (!g_renderer->ImguiBegin(!isPadView))
 diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
-index 5a934088..d042c0c6 100644
+index 465fc5a5..2a20db9a 100644
 --- a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
 +++ b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
-@@ -2452,6 +2452,7 @@ static bool s_ps5WaitingForPreviousFrame = false;
+@@ -2459,6 +2459,7 @@ static bool s_ps5WaitingForPreviousFrame = false;
  // the port's: frames the GPU may still be drawing when the next is presented (1: Cemu's own)
  uint32 PS5Cemu_FramesInFlight();
  #include "FrameGenPS5.h"
@@ -75,7 +75,7 @@ index 5a934088..d042c0c6 100644
  #define PS5_WAIT_BEGIN() const uint64 ps5WaitStart = __rdtsc()
  #define PS5_WAIT_END(kind) g_ps5GpuWaitTicks[kind].fetch_add(__rdtsc() - ps5WaitStart, std::memory_order_relaxed)
  #else
-@@ -3460,6 +3461,29 @@ void VulkanRenderer::SwapBuffer(bool mainWindow)
+@@ -3467,6 +3468,29 @@ void VulkanRenderer::SwapBuffer(bool mainWindow)
  	presentAcquired(true);
  }
  
@@ -106,7 +106,7 @@ index 5a934088..d042c0c6 100644
  {
  	if (m_recordedDrawcalls > 0 || m_submitOnIdle)
 diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.h b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.h
-index 0ee0a556..cec97179 100644
+index 9488627f..92c454de 100644
 --- a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.h
 +++ b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.h
 @@ -237,6 +237,8 @@ public:

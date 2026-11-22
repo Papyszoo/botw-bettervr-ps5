@@ -11,16 +11,16 @@ The hand path's push and pull offset is clamped against the hand's own distance 
  src/game/botw/player/bow.cpp      | 26 ++++++---
  src/game/botw/player/magnesis.cpp | 94 ++++++++++++++++++++++++-------
  src/game/botw/player/magnesis.h   |  3 +-
- src/rendering/imgui_menus.cpp     | 28 ++++++---
+ src/rendering/imgui_menus.cpp     | 34 ++++++++---
  src/utils/mod_settings.cpp        | 12 ++++
  src/utils/mod_settings.h          |  9 ++-
- 7 files changed, 138 insertions(+), 40 deletions(-)
+ 7 files changed, 144 insertions(+), 40 deletions(-)
 
 diff --git a/src/game/botw/input/controls.cpp b/src/game/botw/input/controls.cpp
-index 1ce03e7..e654a92 100644
+index 0161c6e..40bc96f 100644
 --- a/src/game/botw/input/controls.cpp
 +++ b/src/game/botw/input/controls.cpp
-@@ -1340,10 +1340,10 @@ static void RemapRightStickToCameraZoom(uint32_t& buttonHold, XrActionStateVecto
+@@ -1404,10 +1404,10 @@ static void RemapRightStickToCameraZoom(uint32_t& buttonHold, XrActionStateVecto
      rightStickSource.currentState = { 0.0f, 0.0f };
  }
  
@@ -279,30 +279,36 @@ index 895ed4f..ef5d488 100644
      void SetPushPullStick(float stickY);
  }
 diff --git a/src/rendering/imgui_menus.cpp b/src/rendering/imgui_menus.cpp
-index 6c78ff7..4f884c4 100644
+index f7299cb..6232198 100644
 --- a/src/rendering/imgui_menus.cpp
 +++ b/src/rendering/imgui_menus.cpp
-@@ -410,7 +410,18 @@ static void DrawFloatSlider(FloatSetting& setting, float minValue, float maxValu
+@@ -420,7 +420,24 @@ static void DrawFloatSlider(FloatSetting& setting, float minValue, float maxValu
      ImGui::PushID(setting.name);
      ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - ResetButtonReserve());
      float value = setting;
--    if (ImGui::SliderFloat("##value", &value, minValue, maxValue, format(value).c_str())) {
-+    // the label arrives finished ("97%"), while ImGui takes a printf format: a percent is doubled so it shows as
-+    // written and ImGui still reads the value back instead of rounding every step to the label's leading text
+-    const bool moved = step > 0.0f ? DrawSteppedSlider(value, minValue, maxValue, step, format(value)) : ImGui::SliderFloat("##value", &value, minValue, maxValue, format(value).c_str());
 +    const std::string label = format(value);
-+    std::string escaped;
-+    escaped.reserve(label.size() + 4);
-+    for (char c : label) {
-+        if (c == '%') {
-+            escaped += '%';
-+        }
-+        escaped += c;
++    bool moved;
++    if (step > 0.0f) {
++        moved = DrawSteppedSlider(value, minValue, maxValue, step, label);
 +    }
-+    if (ImGui::SliderFloat("##value", &value, minValue, maxValue, escaped.c_str())) {
++    else {
++        // the label arrives finished ("97%"), while ImGui takes a printf format: a percent is doubled so it shows as
++        // written and ImGui still reads the value back instead of rounding every step to the label's leading text
++        std::string escaped;
++        escaped.reserve(label.size() + 4);
++        for (char c : label) {
++            if (c == '%') {
++                escaped += '%';
++            }
++            escaped += c;
++        }
++        moved = ImGui::SliderFloat("##value", &value, minValue, maxValue, escaped.c_str());
++    }
+     if (moved) {
          setting = std::clamp(value, minValue, maxValue);
          *changed = true;
-     }
-@@ -1188,14 +1199,13 @@ void RND_Renderer::ImGuiOverlay::DrawControlsPage(bool* changed) {
+@@ -1204,14 +1221,13 @@ void RND_Renderer::ImGuiOverlay::DrawControlsPage(bool* changed) {
                  DrawEnumSegments(settings.swingSensitivity, swingChoices, changed);
              });
              if (VRManager::instance().XR->m_capabilities.supportsEyeGaze && BetterVR_PS5_EyeGazeAvailable() != 0) {
@@ -348,7 +354,7 @@ index 87fd34d..07d0b23 100644
      for (ModSettingBase* option : options) {
          if (IEquals(option->name, nameView)) {
 diff --git a/src/utils/mod_settings.h b/src/utils/mod_settings.h
-index e693995..dbbea25 100644
+index 61a02ca..8c77bdb 100644
 --- a/src/utils/mod_settings.h
 +++ b/src/utils/mod_settings.h
 @@ -1,5 +1,6 @@

@@ -10,10 +10,10 @@ The stereo view layer puts the right view's slices after the guest's (LatteView_
  1 file changed, 3 insertions(+), 2 deletions(-)
 
 diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
-index c738a37b..5263f60c 100644
+index 06781b13..028488cc 100644
 --- a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
 +++ b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
-@@ -4200,8 +4200,9 @@ void VulkanRenderer::texture_copyImageSubData(LatteTexture* src, sint32 srcMip,
+@@ -4207,8 +4207,9 @@ void VulkanRenderer::texture_copyImageSubData(LatteTexture* src, sint32 srcMip,
  		sint32 srcRoomW, srcRoomH, dstRoomW, dstRoomH;
  		room(src, srcMip, effectiveSrcX, effectiveSrcY, srcRoomW, srcRoomH);
  		room(dst, dstMip, effectiveDstX, effectiveDstY, dstRoomW, dstRoomH);

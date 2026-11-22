@@ -72,10 +72,10 @@ index 418e6798..4e39d206 100644
  VKFUNC_DEVICE(vkCmdSetBlendConstants);
  VKFUNC_DEVICE(vkCmdSetDepthBias);
 diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
-index d48fde6e..5a934088 100644
+index d8f489bf..465fc5a5 100644
 --- a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
 +++ b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
-@@ -2451,6 +2451,7 @@ std::atomic<uint64> g_ps5GpuWaitTicks[6]{};
+@@ -2458,6 +2458,7 @@ std::atomic<uint64> g_ps5GpuWaitTicks[6]{};
  static bool s_ps5WaitingForPreviousFrame = false;
  // the port's: frames the GPU may still be drawing when the next is presented (1: Cemu's own)
  uint32 PS5Cemu_FramesInFlight();
@@ -83,7 +83,7 @@ index d48fde6e..5a934088 100644
  #define PS5_WAIT_BEGIN() const uint64 ps5WaitStart = __rdtsc()
  #define PS5_WAIT_END(kind) g_ps5GpuWaitTicks[kind].fetch_add(__rdtsc() - ps5WaitStart, std::memory_order_relaxed)
  #else
-@@ -3338,6 +3339,9 @@ void VulkanRenderer::SwapBuffer(bool mainWindow)
+@@ -3345,6 +3346,9 @@ void VulkanRenderer::SwapBuffer(bool mainWindow)
  		ClearColorImageRaw(chainInfo.m_swapchainImages[chainInfo.swapchainImageIndex], 0, 0, clearColor, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
  	}
  
@@ -93,7 +93,7 @@ index d48fde6e..5a934088 100644
  	const size_t currentFrameCmdBufferID = GetCurrentCommandBufferId();
  
  	VkSemaphore presentSemaphore = chainInfo.m_presentSemaphores[chainInfo.swapchainImageIndex];
-@@ -3349,15 +3353,20 @@ void VulkanRenderer::SwapBuffer(bool mainWindow)
+@@ -3356,15 +3360,20 @@ void VulkanRenderer::SwapBuffer(bool mainWindow)
  #if defined(CEMU_PS5)
  	// PS5: or, when the port asks for two frames in flight (framesInFlight), for the one before it:
  	// at 4K the GPU thread waited here while the GPU, still on the previous frame's last passes, had
@@ -122,7 +122,7 @@ index d48fde6e..5a934088 100644
  #else
  	WaitCommandBufferFinished(m_commandBufferIDOfPrevFrame);
  #endif
-@@ -3425,6 +3434,30 @@ void VulkanRenderer::SwapBuffer(bool mainWindow)
+@@ -3432,6 +3441,30 @@ void VulkanRenderer::SwapBuffer(bool mainWindow)
  	chainInfo.hasDefinedSwapchainImage = false;
  
  	chainInfo.swapchainImageIndex = -1;

@@ -9,7 +9,7 @@ Subject: [PATCH] PS5: Breath of the Wild's downloaded community packs load
  1 file changed, 3 insertions(+), 2 deletions(-)
 
 diff --git a/src/Cafe/GraphicPack/GraphicPack2.cpp b/src/Cafe/GraphicPack/GraphicPack2.cpp
-index 2b35f61c..8cb2e454 100644
+index bda3a48a..35878a66 100644
 --- a/src/Cafe/GraphicPack/GraphicPack2.cpp
 +++ b/src/Cafe/GraphicPack/GraphicPack2.cpp
 @@ -105,8 +105,9 @@ void GraphicPack2::LoadAll()

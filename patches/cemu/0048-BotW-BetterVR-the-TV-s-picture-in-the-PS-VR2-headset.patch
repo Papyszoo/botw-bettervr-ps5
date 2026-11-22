@@ -32,7 +32,7 @@ index a59a038c..6988386b 100644
  
  if(APPLE)
 diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
-index b993f401..b38382ab 100644
+index f50e6733..f846fef6 100644
 --- a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
 +++ b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
 @@ -14,6 +14,8 @@ uint32 PS5Cemu_SubmitDraws();
@@ -44,7 +44,7 @@ index b993f401..b38382ab 100644
  #endif
  #include "Cafe/HW/Latte/Renderer/Vulkan/VulkanAPI.h"
  #include "Cafe/HW/Latte/Renderer/Vulkan/LatteTextureVk.h"
-@@ -980,6 +982,9 @@ VulkanRenderer::~VulkanRenderer()
+@@ -987,6 +989,9 @@ VulkanRenderer::~VulkanRenderer()
  	SubmitCommandBuffer();
  	WaitDeviceIdle();
  	WaitCommandBufferFinished(GetCurrentCommandBufferId());
@@ -54,7 +54,7 @@ index b993f401..b38382ab 100644
  	HostModule_NotifyDeviceDestroying();
  	// shut down pipeline save thread
  	m_destructionRequested = true;
-@@ -3440,7 +3445,7 @@ void VulkanRenderer::SwapBuffer(bool mainWindow)
+@@ -3447,7 +3452,7 @@ void VulkanRenderer::SwapBuffer(bool mainWindow)
  #if defined(CEMU_PS5)
  	// PS5: frame generation (port/cemu/FrameGenPS5.h, #66): the picture between the last frame and this
  	// one is presented first, from this image; this one then goes into the next image
@@ -63,7 +63,7 @@ index b993f401..b38382ab 100644
  	{
  		draw_endRenderPass();
  		const ps5framegen::Swap swap{m_logicalDevice, m_physicalDevice, getCurrentCommandBuffer(),
-@@ -3457,6 +3462,21 @@ void VulkanRenderer::SwapBuffer(bool mainWindow)
+@@ -3464,6 +3469,21 @@ void VulkanRenderer::SwapBuffer(bool mainWindow)
  			return;
  		}
  	}
@@ -85,7 +85,7 @@ index b993f401..b38382ab 100644
  #endif
  	presentAcquired(true);
  }
-@@ -3468,7 +3488,7 @@ void VulkanRenderer::SwapBuffer(bool mainWindow)
+@@ -3475,7 +3495,7 @@ void VulkanRenderer::SwapBuffer(bool mainWindow)
  // the TV's pictures alone (port/cemu/FrameGenPS5.h, #94)
  void VulkanRenderer::PS5_PostEffects()
  {

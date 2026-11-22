@@ -14,7 +14,7 @@ the draw pass has ended and before ImGui's begins.
  1 file changed, 7 insertions(+)
 
 diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
-index 90367798..5f40c1df 100644
+index 864448c2..5b09a3a7 100644
 --- a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
 +++ b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
 @@ -4,6 +4,9 @@
@@ -27,7 +27,7 @@ index 90367798..5f40c1df 100644
  #endif
  #include "Cafe/HW/Latte/Renderer/Vulkan/VulkanAPI.h"
  #include "Cafe/HW/Latte/Renderer/Vulkan/LatteTextureVk.h"
-@@ -2191,6 +2194,10 @@ bool VulkanRenderer::ImguiBegin(bool mainWindow)
+@@ -2198,6 +2201,10 @@ bool VulkanRenderer::ImguiBegin(bool mainWindow)
  	m_state.currentPipeline = VK_NULL_HANDLE;
  
  	ImGui_ImplVulkan_CreateFontsTexture(m_state.currentCommandBuffer);

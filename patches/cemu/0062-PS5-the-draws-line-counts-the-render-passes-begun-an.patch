@@ -27,7 +27,7 @@ second patch.
  2 files changed, 18 insertions(+)
 
 diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
-index 5263f60c..cc1d9d24 100644
+index 028488cc..8f5a50e9 100644
 --- a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
 +++ b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
 @@ -20,6 +20,9 @@ void PS5Cemu_StreamFrame(const uint8* rgb, int width, int height);
@@ -40,7 +40,7 @@ index 5263f60c..cc1d9d24 100644
  #endif
  #include "Cafe/HW/Latte/Renderer/Vulkan/VulkanAPI.h"
  #include "Cafe/HW/Latte/Renderer/Vulkan/LatteTextureVk.h"
-@@ -2556,6 +2559,10 @@ void VulkanRenderer::SubmitCommandBuffer(VkSemaphore signalSemaphore, VkSemaphor
+@@ -2563,6 +2566,10 @@ void VulkanRenderer::SubmitCommandBuffer(VkSemaphore signalSemaphore, VkSemaphor
  	if (result != VK_SUCCESS)
  		UnrecoverableError(fmt::format("failed to submit command buffer. Error {}", result).c_str());
  	m_numSubmittedCmdBuffers++;

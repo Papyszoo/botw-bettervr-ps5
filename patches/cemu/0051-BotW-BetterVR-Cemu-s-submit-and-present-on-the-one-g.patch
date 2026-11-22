@@ -11,7 +11,7 @@ The queue is shared with BetterVR's host module (its own submit) and the OpenXR 
  1 file changed, 14 insertions(+), 2 deletions(-)
 
 diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
-index d066e86a..c738a37b 100644
+index 1aac40f2..06781b13 100644
 --- a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
 +++ b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
 @@ -16,6 +16,10 @@ extern bool g_ps5StandardBorderColors; // below
@@ -25,7 +25,7 @@ index d066e86a..c738a37b 100644
  #endif
  #include "Cafe/HW/Latte/Renderer/Vulkan/VulkanAPI.h"
  #include "Cafe/HW/Latte/Renderer/Vulkan/LatteTextureVk.h"
-@@ -2544,7 +2548,11 @@ void VulkanRenderer::SubmitCommandBuffer(VkSemaphore signalSemaphore, VkSemaphor
+@@ -2551,7 +2555,11 @@ void VulkanRenderer::SubmitCommandBuffer(VkSemaphore signalSemaphore, VkSemaphor
  	VkTimelineSemaphoreSubmitInfo hostModuleTimelineInfo{};
  	HostModule_AttachSubmitSemaphores(submitInfo, hostModuleTimelineInfo);
  
@@ -38,7 +38,7 @@ index d066e86a..c738a37b 100644
  	if (result != VK_SUCCESS)
  		UnrecoverableError(fmt::format("failed to submit command buffer. Error {}", result).c_str());
  	m_numSubmittedCmdBuffers++;
-@@ -3432,7 +3440,11 @@ void VulkanRenderer::SwapBuffer(bool mainWindow)
+@@ -3439,7 +3447,11 @@ void VulkanRenderer::SwapBuffer(bool mainWindow)
  
  	performanceMonitor.gpuTime_waitForHostGPU.beginMeasuring();
  	PS5_WAIT_BEGIN();

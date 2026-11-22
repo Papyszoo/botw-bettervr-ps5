@@ -16,7 +16,7 @@ One INFO line says the latch: Event camera lift removed for '<event>': <y> m.
  3 files changed, 33 insertions(+)
 
 diff --git a/src/game/botw/camera/camera.cpp b/src/game/botw/camera/camera.cpp
-index b9ce45c..03af4a7 100644
+index b62903c..a6de3e3 100644
 --- a/src/game/botw/camera/camera.cpp
 +++ b/src/game/botw/camera/camera.cpp
 @@ -26,6 +26,11 @@ static glm::fvec3 s_heldEventCameraPosition = glm::fvec3();
@@ -48,7 +48,7 @@ index b9ce45c..03af4a7 100644
  static std::atomic_bool s_appliesFirstPersonTurning = false;
  struct SnapTurnRequest {
      int32_t direction = 0;
-@@ -278,6 +293,16 @@ static glm::fvec3 GetAppliedHeadsetOffset(glm::fvec3 eyePos) {
+@@ -281,6 +296,16 @@ static glm::fvec3 GetAppliedHeadsetOffset(glm::fvec3 eyePos) {
          eyePos.x -= appliedHeadPos.x;
          eyePos.z -= appliedHeadPos.z;
      }
@@ -79,7 +79,7 @@ index 2bdc183..f789d74 100644
      // a hook should pass the same views to each call so everything comes from one XR frame
      std::pair<glm::fvec3, glm::fquat> BuildMiddlePose(const std::optional<Tracking::HeadViews>& views, const glm::fvec3& gameplayPos, const glm::fquat& gameplayRot);
 diff --git a/src/game/botw/game_state.cpp b/src/game/botw/game_state.cpp
-index f2362fd..59415e3 100644
+index f45a554..36f8a39 100644
 --- a/src/game/botw/game_state.cpp
 +++ b/src/game/botw/game_state.cpp
 @@ -204,6 +204,7 @@ static void hook_GetEventName(PPCInterpreter_t* hCPU) {

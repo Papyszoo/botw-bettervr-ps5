@@ -10,7 +10,7 @@ Cemu submits its command buffer every 300 draws, and sooner around occlusion que
  1 file changed, 8 insertions(+)
 
 diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
-index 5f40c1df..5958937d 100644
+index 5b09a3a7..c713df2f 100644
 --- a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
 +++ b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
 @@ -7,6 +7,10 @@ void PS5_NoteCopy(const std::string& key, const std::string& line, bool overrun)
@@ -24,7 +24,7 @@ index 5f40c1df..5958937d 100644
  #endif
  #include "Cafe/HW/Latte/Renderer/Vulkan/VulkanAPI.h"
  #include "Cafe/HW/Latte/Renderer/Vulkan/LatteTextureVk.h"
-@@ -2420,7 +2424,11 @@ void VulkanRenderer::SubmitCommandBuffer(VkSemaphore signalSemaphore, VkSemaphor
+@@ -2427,7 +2431,11 @@ void VulkanRenderer::SubmitCommandBuffer(VkSemaphore signalSemaphore, VkSemaphor
  	m_state.resetCommandBufferState();
  
  	m_recordedDrawcalls = 0;

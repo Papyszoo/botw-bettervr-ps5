@@ -10,10 +10,10 @@ Subject: [PATCH] PS5: a gaze throw assist acts only on a real gaze sample and
  2 files changed, 15 insertions(+), 15 deletions(-)
 
 diff --git a/src/game/botw/input/controls.cpp b/src/game/botw/input/controls.cpp
-index a5d2fd9..fda8fe6 100644
+index 9fc82dc..84c87f1 100644
 --- a/src/game/botw/input/controls.cpp
 +++ b/src/game/botw/input/controls.cpp
-@@ -818,9 +818,9 @@ static void ProcessLeftTriggerBindings(
+@@ -831,9 +831,9 @@ static void ProcessLeftTriggerBindings(
  }
  
  // A throw is bent toward where the player looks, by at most kGazeThrowMaxBend degrees, keeping the
@@ -26,7 +26,7 @@ index a5d2fd9..fda8fe6 100644
  static bool NormalizeDirection(const glm::fvec3& direction, glm::fvec3& outDirection) {
      if (!glm::all(glm::isfinite(direction)) || glm::dot(direction, direction) <= 1.0e-6f)
          return false;
-@@ -828,7 +828,7 @@ static bool NormalizeDirection(const glm::fvec3& direction, glm::fvec3& outDirec
+@@ -841,7 +841,7 @@ static bool NormalizeDirection(const glm::fvec3& direction, glm::fvec3& outDirec
      return true;
  }
  
@@ -35,7 +35,7 @@ index a5d2fd9..fda8fe6 100644
      constexpr float targetDistance = 10.0f;
      constexpr float maxBendDegrees = 15.0f;
  
-@@ -838,18 +838,15 @@ static glm::fvec3 ApplyGazeThrowAssist(const glm::fvec3& velocity, const OpenXR:
+@@ -851,18 +851,15 @@ static glm::fvec3 ApplyGazeThrowAssist(const glm::fvec3& velocity, const OpenXR:
      if (!head.has_value())
          return velocity;
  
@@ -58,7 +58,7 @@ index a5d2fd9..fda8fe6 100644
      glm::fvec3 wanted;
      if (!NormalizeDirection(target - handWorld, wanted))
          return velocity;
-@@ -861,7 +858,7 @@ static glm::fvec3 ApplyGazeThrowAssist(const glm::fvec3& velocity, const OpenXR:
+@@ -874,7 +871,7 @@ static glm::fvec3 ApplyGazeThrowAssist(const glm::fvec3& velocity, const OpenXR:
      const float bend = std::min(angle, glm::radians(maxBendDegrees));
      const glm::fvec3 axis = glm::cross(current, wanted);
      const glm::fvec3 assisted = glm::dot(axis, axis) > 1.0e-8f ? glm::angleAxis(bend, glm::normalize(axis)) * current : current;
@@ -67,7 +67,7 @@ index a5d2fd9..fda8fe6 100644
      return assisted * glm::length(velocity);
  }
  
-@@ -922,8 +919,11 @@ static void ProcessHandThrow(uint32_t& buttonHold, const OpenXR::InputState& inp
+@@ -935,8 +932,11 @@ static void ProcessHandThrow(uint32_t& buttonHold, const OpenXR::InputState& inp
          const float handSpeed = glm::length(releaseVelocity.value());
          const float boost = glm::mix(1.0f, maxThrowBoost, glm::smoothstep(boostStartSpeed, boostFullSpeed, handSpeed));
          glm::fvec3 throwVelocity = glm::mat3(Camera::GetReferenceMtx()) * releaseVelocity.value() * boost;
@@ -82,10 +82,10 @@ index a5d2fd9..fda8fe6 100644
          Log::print<CONTROLS>("[Throw] released with hand speed {:.2f}, boosted {:.2f}x", handSpeed, boost);
      }
 diff --git a/src/rendering/imgui_menus.cpp b/src/rendering/imgui_menus.cpp
-index c1e6f87..7b032b8 100644
+index 7deb5ab..3b4eea9 100644
 --- a/src/rendering/imgui_menus.cpp
 +++ b/src/rendering/imgui_menus.cpp
-@@ -1188,7 +1188,7 @@ void RND_Renderer::ImGuiOverlay::DrawControlsPage(bool* changed) {
+@@ -1204,7 +1204,7 @@ void RND_Renderer::ImGuiOverlay::DrawControlsPage(bool* changed) {
                  DrawEnumSegments(settings.swingSensitivity, swingChoices, changed);
              });
              if (VRManager::instance().XR->m_capabilities.supportsEyeGaze && BetterVR_PS5_EyeGazeAvailable() != 0) {

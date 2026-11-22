@@ -64,7 +64,7 @@ index 59ab0b3..ff781cc 100644
  }
  
 diff --git a/src/game/botw/game_state.cpp b/src/game/botw/game_state.cpp
-index a1022b7..b67768b 100644
+index d83d92e..a1c39bf 100644
 --- a/src/game/botw/game_state.cpp
 +++ b/src/game/botw/game_state.cpp
 @@ -276,6 +276,16 @@ bool GameState::IsCameraFinderModeActive() {
@@ -98,7 +98,7 @@ index 6ae6429..dd78c54 100644
      bool UseFlatCameraPresentation();
      bool UseMonoFrameBufferTemporarilyDuringMenusOrPictures();
 diff --git a/src/game/botw/input/controls.cpp b/src/game/botw/input/controls.cpp
-index 3154ee7..1ce03e7 100644
+index 27f0df6..0161c6e 100644
 --- a/src/game/botw/input/controls.cpp
 +++ b/src/game/botw/input/controls.cpp
 @@ -9,6 +9,7 @@
@@ -109,7 +109,7 @@ index 3154ee7..1ce03e7 100644
  #include "instance.h"
  #include "rendering/renderer.h"
  #include "rendering/haptics.h"
-@@ -1339,6 +1340,17 @@ static void RemapRightStickToCameraZoom(uint32_t& buttonHold, XrActionStateVecto
+@@ -1403,6 +1404,17 @@ static void RemapRightStickToCameraZoom(uint32_t& buttonHold, XrActionStateVecto
      rightStickSource.currentState = { 0.0f, 0.0f };
  }
  
@@ -127,7 +127,7 @@ index 3154ee7..1ce03e7 100644
  static void ReadHandObservations(ControlState& state) {
      const Weapons::HandObservations hands = Weapons::ReadHandObservations();
      state.leftHandEquipType = hands.equipTypes[OpenXR::EyeSide::LEFT];
-@@ -1573,6 +1585,7 @@ static void ProcessGameplayInput(uint32_t& buttonHold, OpenXR::InputState& input
+@@ -1637,6 +1649,7 @@ static void ProcessGameplayInput(uint32_t& buttonHold, OpenXR::InputState& input
      ProcessRightTriggerBindings(buttonHold, inputs, state, rightGesture);
  
      RemapRightStickToCameraZoom(buttonHold, rightStickSource);
@@ -528,10 +528,10 @@ index 334a0ed..895ed4f 100644
 +    void SetPushPullStick(float stickY);
  }
 diff --git a/src/rendering/imgui_menus.cpp b/src/rendering/imgui_menus.cpp
-index e76dd37..6c78ff7 100644
+index 8c078ac..f7299cb 100644
 --- a/src/rendering/imgui_menus.cpp
 +++ b/src/rendering/imgui_menus.cpp
-@@ -1197,6 +1197,12 @@ void RND_Renderer::ImGuiOverlay::DrawControlsPage(bool* changed) {
+@@ -1213,6 +1213,12 @@ void RND_Renderer::ImGuiOverlay::DrawControlsPage(bool* changed) {
                          return fmt::format("{:.0f}%", value * 100.0f);
                      }, changed);
                  });
@@ -545,10 +545,10 @@ index e76dd37..6c78ff7 100644
              EndCard();
          }
 diff --git a/src/utils/mod_settings.h b/src/utils/mod_settings.h
-index f0c666f..e693995 100644
+index bd6d203..61a02ca 100644
 --- a/src/utils/mod_settings.h
 +++ b/src/utils/mod_settings.h
-@@ -650,7 +650,7 @@ struct ModSettings {
+@@ -651,7 +651,7 @@ struct ModSettings {
      // toward the gaze (XR eye gaze), from off to the whole angle; an old saved "true" is 25 %
      EyeAimAssistSetting eyeAimAssist;
      // Eye Magnesis (game/botw/player/magnesis.cpp): Magnesis picks and steers by the gaze, the right stick's

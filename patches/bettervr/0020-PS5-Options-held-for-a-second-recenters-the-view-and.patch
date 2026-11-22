@@ -18,10 +18,10 @@ Subject: [PATCH] PS5: Options held for a second recenters the view, and the
  2 files changed, 32 insertions(+), 21 deletions(-)
 
 diff --git a/src/game/botw/input/controls.cpp b/src/game/botw/input/controls.cpp
-index 0a2165c..93566bd 100644
+index a16dd3c..af37baa 100644
 --- a/src/game/botw/input/controls.cpp
 +++ b/src/game/botw/input/controls.cpp
-@@ -1047,20 +1047,25 @@ static void ProcessInputPrevention(ControlState& state, std::chrono::steady_cloc
+@@ -1110,20 +1110,25 @@ static void ProcessInputPrevention(ControlState& state, std::chrono::steady_cloc
  // the runtime's: whether Options on the right Sense controller is down (port/bettervr/xr/runtime.cpp)
  extern "C" bool BetterVR_PS5_OptionsDown();
  
@@ -57,7 +57,7 @@ index 0a2165c..93566bd 100644
  // one input's Options state: the Sense's and the pad's are independent, so one cannot swallow the other's press
  struct OptionsButtonState {
      bool wasDown = false;
-@@ -1071,8 +1076,8 @@ struct OptionsButtonState {
+@@ -1134,8 +1139,8 @@ struct OptionsButtonState {
  static OptionsButtonState s_senseOptions;
  static OptionsButtonState s_padOptions;
  
@@ -68,7 +68,7 @@ index 0a2165c..93566bd 100644
      const auto now = std::chrono::steady_clock::now();
      if (down && !s.wasDown) {
          s.wasDown = true;
-@@ -1083,7 +1088,7 @@ static void ProcessOptionsButton(std::atomic_bool& isMenuOpen, uint32_t& buttonH
+@@ -1146,7 +1151,7 @@ static void ProcessOptionsButton(std::atomic_bool& isMenuOpen, uint32_t& buttonH
      }
      if (down && !s.longPressDone && now - s.downAt >= kLongPress) {
          s.longPressDone = true;
@@ -77,7 +77,7 @@ index 0a2165c..93566bd 100644
          return;
      }
      if (down || !s.wasDown)
-@@ -1093,15 +1098,14 @@ static void ProcessOptionsButton(std::atomic_bool& isMenuOpen, uint32_t& buttonH
+@@ -1156,15 +1161,14 @@ static void ProcessOptionsButton(std::atomic_bool& isMenuOpen, uint32_t& buttonH
      Log::print<INFO>("[menu] Options up after {} ms", (long long)heldMs);
      if (s.longPressDone)
          return;
@@ -96,7 +96,7 @@ index 0a2165c..93566bd 100644
          Log::print<INFO>("[menu] short press ignored, game input is blocked");
          return;
      }
-@@ -1199,7 +1203,7 @@ static void UpdateGuide(const OpenXR::InputState& inputs, bool menuOpen) {
+@@ -1262,7 +1266,7 @@ static void UpdateGuide(const OpenXR::InputState& inputs, bool menuOpen) {
          return;
  #if defined(__PROSPERO__)
      // a short press is the game's pause on the PS5 (ProcessOptionsButton); it opens no help card over the
@@ -105,7 +105,7 @@ index 0a2165c..93566bd 100644
      if (s_modMenuButton.lastEvent == ButtonState::Event::ShortPress)
          Log::print<INFO>("[guide] short press ignored on the PS5, no help popup");
      return;
-@@ -1584,10 +1588,11 @@ static void hook_InjectXRInput(PPCInterpreter_t* hCPU) {
+@@ -1648,10 +1652,11 @@ static void hook_InjectXRInput(PPCInterpreter_t* hCPU) {
      auto& isMenuOpen = ImGuiMenus::g_isOpen;
      ProcessModMenuInput(isMenuOpen, inputs, vpadStatus, leftStickSource, rightStickSource);
  #if defined(__PROSPERO__)
@@ -121,10 +121,10 @@ index 0a2165c..93566bd 100644
      UpdateGuide(inputs, isMenuOpen);
      HandGestureState leftGesture = {};
 diff --git a/src/rendering/imgui_menus.cpp b/src/rendering/imgui_menus.cpp
-index ee0f038..2a78e05 100644
+index 0465ab0..4025139 100644
 --- a/src/rendering/imgui_menus.cpp
 +++ b/src/rendering/imgui_menus.cpp
-@@ -1743,6 +1743,11 @@ void RND_Renderer::ImGuiOverlay::DrawCreditsPage() {
+@@ -1766,6 +1766,11 @@ void RND_Renderer::ImGuiOverlay::DrawCreditsPage() {
  }
  
  static const char* GetControllerModMenuPrompt() {
@@ -136,7 +136,7 @@ index ee0f038..2a78e05 100644
      auto& caps = VRManager::instance().XR->m_capabilities;
      switch (caps.activeControllerType) {
          case ControllerType::OculusTouch:
-@@ -1757,6 +1762,7 @@ static const char* GetControllerModMenuPrompt() {
+@@ -1780,6 +1785,7 @@ static const char* GetControllerModMenuPrompt() {
          default:
              return "Hold the " ICON_KI_BUTTON_START " button on your gamepad from Cemu's input settings for 1 second to open the mod menu.";
      }

@@ -13,7 +13,7 @@ Subject: [PATCH] PS5: foveation off, and a headset that does not start ends
  2 files changed, 26 insertions(+)
 
 diff --git a/src/cemu/host_module.cpp b/src/cemu/host_module.cpp
-index 46a30ef..5da357e 100644
+index 4d72ac6..e34368a 100644
 --- a/src/cemu/host_module.cpp
 +++ b/src/cemu/host_module.cpp
 @@ -19,6 +19,7 @@
@@ -24,7 +24,7 @@ index 46a30ef..5da357e 100644
  #endif
  
  PFN_vkGetInstanceProcAddr VulkanLoader::GetInstanceProcAddr() {
-@@ -312,7 +313,12 @@ public:
+@@ -315,7 +316,12 @@ public:
          if (!m_active) {
              return false;
          }
@@ -37,7 +37,7 @@ index 46a30ef..5da357e 100644
          const auto createInstance = (PFN_vkCreateInstance)VulkanLoader::GetInstanceProcAddr()(VK_NULL_HANDLE, "vkCreateInstance");
          result = VulkanDevice::CreateInstance(createInstance, &createInfo, nullptr, &instance);
          return true;
-@@ -348,8 +354,24 @@ public:
+@@ -351,8 +357,24 @@ public:
          if (!m_active) {
              return;
          }
@@ -63,7 +63,7 @@ index 46a30ef..5da357e 100644
  
      void OnHostEvent(const HostModule::HostEvent& event, VkCommandBuffer commandBuffer) override {
 diff --git a/src/utils/mod_settings.h b/src/utils/mod_settings.h
-index d75c505..a0017ac 100644
+index 3c42552..f73586a 100644
 --- a/src/utils/mod_settings.h
 +++ b/src/utils/mod_settings.h
 @@ -588,7 +588,11 @@ struct ModSettings {

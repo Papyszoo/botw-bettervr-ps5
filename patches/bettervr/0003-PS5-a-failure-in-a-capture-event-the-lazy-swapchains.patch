@@ -10,10 +10,10 @@ Subject: [PATCH] PS5: a failure in a capture event (the lazy swapchains) ends
  1 file changed, 27 insertions(+)
 
 diff --git a/src/cemu/host_module.cpp b/src/cemu/host_module.cpp
-index 5da357e..5d6b807 100644
+index e34368a..d315e28 100644
 --- a/src/cemu/host_module.cpp
 +++ b/src/cemu/host_module.cpp
-@@ -375,6 +375,25 @@ public:
+@@ -378,6 +378,25 @@ public:
      }
  
      void OnHostEvent(const HostModule::HostEvent& event, VkCommandBuffer commandBuffer) override {
@@ -39,7 +39,7 @@ index 5da357e..5d6b807 100644
          if (!m_active || event.surface == nullptr) {
              return;
          }
-@@ -416,6 +435,11 @@ public:
+@@ -419,6 +438,11 @@ public:
      }
  
      void OnFrameSubmitted(HostModule::FrameKind kind) override {
@@ -51,8 +51,8 @@ index 5da357e..5d6b807 100644
          if (m_active) {
              Capture::OnFrameSubmitted();
          }
-@@ -424,6 +448,9 @@ public:
- private:
+@@ -428,6 +452,9 @@ private:
+     std::filesystem::path m_settingsFile;
      bool m_available = false;
      bool m_active = false;
 +#if defined(__PROSPERO__)

@@ -52,10 +52,10 @@ index 94104f1c..95cfb7a5 100644
  	renderer->barrier_sequentializeTransfer();
  
 diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
-index 37e4b8ce..683a36c8 100644
+index f4aa088e..ab1fc059 100644
 --- a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
 +++ b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
-@@ -3814,6 +3814,52 @@ void VulkanRenderer::texture_copyImageSubData(LatteTexture* src, sint32 srcMip,
+@@ -3821,6 +3821,52 @@ void VulkanRenderer::texture_copyImageSubData(LatteTexture* src, sint32 srcMip,
  	srcVkObj->flagForCurrentCommandBuffer();
  	dstVkObj->flagForCurrentCommandBuffer();
  

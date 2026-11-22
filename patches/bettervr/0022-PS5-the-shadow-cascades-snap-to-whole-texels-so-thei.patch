@@ -70,7 +70,7 @@ index c129cc5..386122e 100644
      static void OpenGraphicPacksWindow();
      static std::filesystem::path GetUserDataPath();
 diff --git a/src/cemu/host_module.cpp b/src/cemu/host_module.cpp
-index 42cde58..cf1a281 100644
+index 2a6787c..79c039a 100644
 --- a/src/cemu/host_module.cpp
 +++ b/src/cemu/host_module.cpp
 @@ -58,6 +58,29 @@ std::string CemuHost::GetGraphicsPreset(std::string_view category) {

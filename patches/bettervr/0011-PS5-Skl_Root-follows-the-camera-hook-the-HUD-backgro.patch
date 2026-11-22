@@ -13,10 +13,10 @@ The first-person body root is latched from the player and head pose hook_UpdateC
  src/game/botw/camera/camera.h      |  10 +++
  src/game/botw/input/controls.cpp   |  14 +++-
  src/game/botw/player/bow.cpp       |  16 ++++
- src/game/botw/player/skeleton.cpp  | 121 +++++++++++++++++++++++++++--
+ src/game/botw/player/skeleton.cpp  | 121 ++++++++++++++++++++++++++---
  src/rendering/vulkan_imgui.cpp     |   3 +
  src/rendering/world_guide.cpp      |   9 +++
- 10 files changed, 262 insertions(+), 16 deletions(-)
+ 10 files changed, 260 insertions(+), 18 deletions(-)
 
 diff --git a/dependencies/imgui_impl_vulkan.cpp b/dependencies/imgui_impl_vulkan.cpp
 index e88820f..f2c5498 100644
@@ -160,7 +160,7 @@ index 84e7ad3..dcb783e 100644
  
  #if !defined(__PROSPERO__)
 diff --git a/src/game/botw/camera/camera.cpp b/src/game/botw/camera/camera.cpp
-index ba3dddc..3c83cd9 100644
+index 0c91856..5b170c6 100644
 --- a/src/game/botw/camera/camera.cpp
 +++ b/src/game/botw/camera/camera.cpp
 @@ -2,6 +2,7 @@
@@ -195,7 +195,7 @@ index ba3dddc..3c83cd9 100644
  static glm::fvec3 s_wsCameraPosition = glm::fvec3();
  static glm::fquat s_wsCameraRotation = glm::identity<glm::fquat>();
  static glm::fvec3 s_lastGameplayCameraTarget = glm::fvec3();
-@@ -376,7 +394,25 @@ glm::mat4 Camera::GetFreshReferenceMtx() {
+@@ -379,7 +397,25 @@ glm::mat4 Camera::GetFreshReferenceMtx() {
  }
  
  std::pair<glm::fvec3, glm::fquat> Camera::ResolveGameplayBasePose(const BESeadLookAtCamera& camera) {
@@ -222,7 +222,7 @@ index ba3dddc..3c83cd9 100644
          return { s_wsCameraPosition, s_wsCameraRotation };
      }
  
-@@ -428,6 +464,9 @@ static void hook_UpdateCameraForGameplay(PPCInterpreter_t* hCPU) {
+@@ -440,6 +476,9 @@ static void hook_UpdateCameraForGameplay(PPCInterpreter_t* hCPU) {
      s_wsCameraPosition = oldCameraPosition;
      s_wsCameraRotation = gameplayRotation;
  
@@ -232,7 +232,7 @@ index ba3dddc..3c83cd9 100644
      // rebase the rotation to the player position
      if (firstPerson && Player::GetAddress() != 0) {
          const PlayerMoveBitFlags moveBits = Player::GetMoveFlags();
-@@ -440,16 +479,21 @@ static void hook_UpdateCameraForGameplay(PPCInterpreter_t* hCPU) {
+@@ -452,16 +491,21 @@ static void hook_UpdateCameraForGameplay(PPCInterpreter_t* hCPU) {
          UpdateClimbWallCameraOffset(views, playerPos, gameplayRotation);
          playerPos += s_climbWallCameraOffset;
  
@@ -256,7 +256,7 @@ index ba3dddc..3c83cd9 100644
  
      glm::fvec3 camPos = glm::fvec3(finalPose[3]);
      glm::fvec3 forward = -glm::normalize(glm::fvec3(finalPose[2]));
-@@ -457,11 +501,23 @@ static void hook_UpdateCameraForGameplay(PPCInterpreter_t* hCPU) {
+@@ -469,11 +513,23 @@ static void hook_UpdateCameraForGameplay(PPCInterpreter_t* hCPU) {
      glm::fvec3 target = camPos + forward * oldCameraDistance;
  
      if (!TryUpdateGameplayCameraTarget(camPos, target, up)) {
@@ -302,10 +302,10 @@ index f080d84..599e344 100644
      // that also reads the live player matrix has to re-resolve it or it mixes two simulation steps
      glm::mat4 GetFreshReferenceMtx();
 diff --git a/src/game/botw/input/controls.cpp b/src/game/botw/input/controls.cpp
-index 5d830b1..e9d41df 100644
+index e015677..362df2e 100644
 --- a/src/game/botw/input/controls.cpp
 +++ b/src/game/botw/input/controls.cpp
-@@ -1134,7 +1134,7 @@ static void SetGuide(const Game::Guide& guide, GuideContext context, XrTime show
+@@ -1197,7 +1197,7 @@ static void SetGuide(const Game::Guide& guide, GuideContext context, XrTime show
      s_guide.shownAt = shownAt;
  }
  
@@ -314,7 +314,7 @@ index 5d830b1..e9d41df 100644
      const float leftSide = -1.0f;
  
      auto place = [&](float sideways, float up, float ahead) {
-@@ -1175,12 +1175,22 @@ static void UpdateGuide(const OpenXR::InputState& inputs, bool menuOpen) {
+@@ -1238,12 +1238,22 @@ static void UpdateGuide(const OpenXR::InputState& inputs, bool menuOpen) {
          SetGuide({}, GuideContext::None, 0);
          visible = false;
      }
@@ -380,10 +380,10 @@ index ec690b5..0279ff2 100644
      }
  }
 diff --git a/src/game/botw/player/skeleton.cpp b/src/game/botw/player/skeleton.cpp
-index 248a0c0..eeb8da5 100644
+index 212c141..3c2a61c 100644
 --- a/src/game/botw/player/skeleton.cpp
 +++ b/src/game/botw/player/skeleton.cpp
-@@ -470,6 +470,82 @@ static bool IsThirdPersonForPose(bool rootBone) {
+@@ -486,6 +486,82 @@ static bool IsThirdPersonForPose(bool rootBone) {
      return thirdPerson;
  }
  
@@ -466,41 +466,40 @@ index 248a0c0..eeb8da5 100644
  static void hook_ModifyBoneMatrix(PPCInterpreter_t* hCPU) {
      hCPU->instructionPointer = hCPU->sprNew.LR;
      const uint32_t modelUnitPtr = hCPU->gpr[7];
-@@ -496,10 +572,13 @@ static void hook_ModifyBoneMatrix(PPCInterpreter_t* hCPU) {
-         if (boneName == "Skl_Root")
-             HeadVisibility::OnSkeletonRoot();
-         HeadVisibility::SubmitNextMaterial(hCPU, !IsThirdPersonForPose(boneName == "Skl_Root"), gsysModelPtr);
-+        WriteLatchedBodyRoot(boneName, matrixPtr, scalePtr, "actor missing");
+@@ -504,8 +580,16 @@ static void hook_ModifyBoneMatrix(PPCInterpreter_t* hCPU) {
          return;
-     }
--    if (Guest::Get<uint32_t>(playerActor + 0x330).getLE() != gsysModelPtr)
+     EnsureSkeletonInitialized();
+     const uint32_t playerActor = Player::GetAddress();
+-    if (playerActor == 0 || Guest::Get<uint32_t>(playerActor + 0x330).getLE() != gsysModelPtr)
++    if (playerActor == 0) {
++        // the actor list can miss the player for a frame while it rebuilds: the head materials stay as the last
++        // Apply left them, and the root keeps the last good first-person matrix
++        WriteLatchedBodyRoot(boneName, matrixPtr, scalePtr, "actor missing");
++        return;
++    }
 +    if (Guest::Get<uint32_t>(playerActor + 0x330).getLE() != gsysModelPtr) {
 +        WriteLatchedBodyRoot(boneName, matrixPtr, scalePtr, "model mismatch");
          return;
 +    }
  
-     const bool isLeft = boneName.ends_with("_L");
-     const OpenXR::EyeSide side = isLeft ? OpenXR::EyeSide::LEFT : OpenXR::EyeSide::RIGHT;
-@@ -553,29 +632,48 @@ static void hook_ModifyBoneMatrix(PPCInterpreter_t* hCPU) {
+     if (boneName == "Skl_Root")
+         s_posedPlayerMtx.reset();
+@@ -559,32 +643,42 @@ static void hook_ModifyBoneMatrix(PPCInterpreter_t* hCPU) {
      }
  
      glm::fvec3 boneScale = Guest::Get<BEVec3>(scalePtr).getLE();
--    const glm::fmat4 playerMtx4 = glm::fmat4(Guest::Get<BEMatrix34>(Player::GetMtxAddress()).getLEMatrix());
--    const glm::mat4 cameraMtx = Camera::GetFreshReferenceMtx();
-+
+-    const BEMatrix34 playerMtx = Guest::Get<BEMatrix34>(Player::GetMtxAddress());
 +    // the camera hook's own head and player sample, so Skl_Root and the view turn together this frame
 +    Camera::FirstPersonBodyPose bodyPose;
 +    const bool hasBodyPose = Camera::GetFirstPersonBodyPose(bodyPose);
-+    glm::fmat4 playerMtx4;
-+    glm::mat4 cameraMtx;
-+    if (hasBodyPose) {
-+        playerMtx4 = glm::fmat4(bodyPose.playerMtx);
-+        cameraMtx = bodyPose.cameraMtx;
-+    }
-+    else {
-+        playerMtx4 = glm::fmat4(Guest::Get<BEMatrix34>(Player::GetMtxAddress()).getLEMatrix());
-+        cameraMtx = Camera::GetFreshReferenceMtx();
-+    }
++    const BEMatrix34 posedPlayerMtx = hasBodyPose ? BEMatrix34(glm::mat4x3(bodyPose.playerMtx)) : Guest::Get<BEMatrix34>(Player::GetMtxAddress());
+     if (boneName == "Skl_Root")
+-        s_posedPlayerMtx = playerMtx;
+-    const glm::fmat4 playerMtx4 = glm::fmat4(playerMtx.getLEMatrix());
+-    const glm::mat4 cameraMtx = Camera::GetFreshReferenceMtx();
++        s_posedPlayerMtx = posedPlayerMtx;
++    const glm::fmat4 playerMtx4 = glm::fmat4(posedPlayerMtx.getLEMatrix());
++    const glm::mat4 cameraMtx = hasBodyPose ? bodyPose.cameraMtx : Camera::GetFreshReferenceMtx();
  
      const OpenXR::InputState& inputs = s_skeletonPassInputs;
      if (!inputs.shared.pose[side].isActive) {
@@ -536,7 +535,7 @@ index 248a0c0..eeb8da5 100644
  
          // headset in model space
          glm::mat4 headsetModel = glm::inverse(playerMtx4) * cameraMtx * headsetMtx;
-@@ -752,6 +850,15 @@ static void hook_ModifyBoneMatrix(PPCInterpreter_t* hCPU) {
+@@ -761,6 +855,15 @@ static void hook_ModifyBoneMatrix(PPCInterpreter_t* hCPU) {
          s_lastAppliedRightWristRot = s_twoHandGrip.engaged ? s_twoHandGrip.rightGripRotWorld : rightHandRotWorld;
          s_lastAppliedRightWristRotValid = !s_passAnimatedHands;
  
@@ -553,7 +552,7 @@ index 248a0c0..eeb8da5 100644
          return;
      }
 diff --git a/src/rendering/vulkan_imgui.cpp b/src/rendering/vulkan_imgui.cpp
-index 0e1cd27..b158d40 100644
+index 9700647..de4ccb6 100644
 --- a/src/rendering/vulkan_imgui.cpp
 +++ b/src/rendering/vulkan_imgui.cpp
 @@ -544,7 +544,10 @@ void RND_Renderer::ImGuiOverlay::Render(long frameIdx, bool renderBackground, bo

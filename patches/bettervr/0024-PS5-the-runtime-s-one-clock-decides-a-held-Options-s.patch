@@ -10,10 +10,10 @@ The runtime's 1 s hold and BetterVR's own 1 s timer ran on different clocks, so 
  1 file changed, 15 insertions(+), 13 deletions(-)
 
 diff --git a/src/game/botw/input/controls.cpp b/src/game/botw/input/controls.cpp
-index 93566bd..a5d2fd9 100644
+index af37baa..9fc82dc 100644
 --- a/src/game/botw/input/controls.cpp
 +++ b/src/game/botw/input/controls.cpp
-@@ -1046,6 +1046,9 @@ static void ProcessInputPrevention(ControlState& state, std::chrono::steady_cloc
+@@ -1109,6 +1109,9 @@ static void ProcessInputPrevention(ControlState& state, std::chrono::steady_cloc
  #if defined(__PROSPERO__)
  // the runtime's: whether Options on the right Sense controller is down (port/bettervr/xr/runtime.cpp)
  extern "C" bool BetterVR_PS5_OptionsDown();
@@ -23,7 +23,7 @@ index 93566bd..a5d2fd9 100644
  
  // The DualSense's touchpad + Options tap (port/ps5/pad.cpp): BetterVR's menu, as the left Square's long press opens
  // it. The port calls this, so it can run with no VR session: what it returns is whether there was a menu to toggle.
-@@ -1066,28 +1069,29 @@ extern "C" bool BetterVR_PS5_ToggleModMenu() {
+@@ -1129,28 +1132,29 @@ extern "C" bool BetterVR_PS5_ToggleModMenu() {
  // sends it. The Touch profile gives the Sense's button no action, so that one is read from the runtime. The left X
  // (Square) long press below still opens BetterVR's menu, and on the DualSense the touchpad's click with it does.
  
@@ -60,7 +60,7 @@ index 93566bd..a5d2fd9 100644
          Log::print<INFO>("[menu] Options held for 1 s: the view recenters, no pause");
          return;
      }
-@@ -1096,10 +1100,8 @@ static void ProcessOptionsButton(uint32_t& buttonHold, ControlState& state, bool
+@@ -1159,10 +1163,8 @@ static void ProcessOptionsButton(uint32_t& buttonHold, ControlState& state, bool
      s.wasDown = false;
      const auto heldMs = std::chrono::duration_cast<std::chrono::milliseconds>(now - s.downAt).count();
      Log::print<INFO>("[menu] Options up after {} ms", (long long)heldMs);
@@ -73,7 +73,7 @@ index 93566bd..a5d2fd9 100644
          Log::print<INFO>("[menu] release after the second: no pause");
          return;
      }
-@@ -1591,8 +1593,8 @@ static void hook_InjectXRInput(PPCInterpreter_t* hCPU) {
+@@ -1655,8 +1657,8 @@ static void hook_InjectXRInput(PPCInterpreter_t* hCPU) {
      // the pad's + is the same Options press: the game never sees it while it is held, so a hold never pauses (the
      // recenter is the runtime's) and the release sends the tap
      vpadStatus.hold = vpadStatus.hold.getLE() & ~static_cast<uint32_t>(VPAD_BUTTON_PLUS);

@@ -40,6 +40,3 @@ index 942b3e2a..aa0d4dfc 100644
  		entry->funcPtr = funcPtr;
  		entry->userParam = userParam;
  		entry->tickDelay = tickDelay;
--- 
-2.50.1 (Apple Git-155)
-
