@@ -1,0 +1,28 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ps5cemu <ps5cemu@localhost>
+Date: Sun, 22 Nov 2026 13:41:53 +0100
+Subject: [PATCH] PS5: each Vibration row's On box has its own ID, so focus
+ frames and a confirm press reach one row; built, untested on console
+
+---
+ src/rendering/imgui_menus.cpp | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/src/rendering/imgui_menus.cpp b/src/rendering/imgui_menus.cpp
+index 4f884c4..363ff56 100644
+--- a/src/rendering/imgui_menus.cpp
++++ b/src/rendering/imgui_menus.cpp
+@@ -1430,10 +1430,13 @@ void RND_Renderer::ImGuiOverlay::DrawVibrationPage(bool* changed) {
+ 
+             ImGui::TableSetColumnIndex(1);
+             bool on = enabled.load();
++            // every row's box needs its own ID: with one "##on" for the whole table, nav focus draws on all of them
++            ImGui::PushID(row.label);
+             if (ImGui::Checkbox("##on", &on)) {
+                 enabled = on;
+                 *changed = true;
+             }
++            ImGui::PopID();
+ 
+             ImGui::TableSetColumnIndex(2);
+             ImGui::BeginDisabled(!enabled.load());
