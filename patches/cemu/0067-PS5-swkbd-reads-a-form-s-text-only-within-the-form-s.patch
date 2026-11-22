@@ -1,0 +1,34 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ps5cemu <ps5cemu@localhost>
+Date: Sun, 22 Nov 2026 23:51:46 +0100
+Subject: [PATCH] PS5: swkbd reads a form's text only within the form's own
+ buffer
+
+PS5SwkbdReadText pushed swkbdInternalState->formStringLength units from
+formStringBuffer, and the game writes that length. A malformed or racing write
+larger than SWKBD_FORM_STRING_MAX_LENGTH walked the read past the 4096-unit
+buffer. The length is clamped to the buffer's last unit, as maxTextLength
+already was. The keyboard's own paths are unchanged: the text pushed is what
+the form holds up to that bound. Patch cemu 0066 made this read run every TV
+frame in stereo, outside Cemu's ImGui frame.
+
+Built, untested on console.
+---
+ src/Cafe/OS/libs/swkbd/swkbd.cpp | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/src/Cafe/OS/libs/swkbd/swkbd.cpp b/src/Cafe/OS/libs/swkbd/swkbd.cpp
+index 1c0a68bd..6e294357 100644
+--- a/src/Cafe/OS/libs/swkbd/swkbd.cpp
++++ b/src/Cafe/OS/libs/swkbd/swkbd.cpp
+@@ -568,7 +568,9 @@ namespace
+ 		}
+ 		out.maxLength = std::clamp<sint32>(maxLength, 0, SWKBD_FORM_STRING_MAX_LENGTH - 1);
+ 		out.counted = out.maxLength < SWKBD_FORM_STRING_MAX_LENGTH - 1;
+-		for (sint32 i = 0; i < swkbdInternalState->formStringLength; i++)
++		// the game writes this length: a malformed or racing one cannot read past the form's buffer
++		const sint32 length = std::clamp<sint32>(swkbdInternalState->formStringLength, 0, SWKBD_FORM_STRING_MAX_LENGTH - 1);
++		for (sint32 i = 0; i < length; i++)
+ 			out.text.push_back((char16_t)swkbdInternalState->formStringBuffer[i]);
+ 		return out;
+ 	}

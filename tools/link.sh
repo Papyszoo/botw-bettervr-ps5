@@ -160,6 +160,18 @@ if [[ ! -f $scepad_stub || $sdk/target/lib/libScePad.so -nt $scepad_stub ||
 fi
 stubs=("$scepad_stub" "${stubs[@]}")
 
+# libSceCommonDialog is the module the dialogs' start belongs to (port/app/ime_dialog.cpp), and the SDK
+# has no stub for it: the same kind of list, one name, so its import binds when the keyboard's sysmodule
+# 0x0096 loads (tools/package.sh names this stub to the converter too).
+common_dialog_stub=$work/libSceCommonDialog.so
+if [[ ! -f $common_dialog_stub || $PS5CEMU_ROOT/tools/sce-common-dialog-stub.c -nt $common_dialog_stub ||
+    ${BASH_SOURCE[0]} -nt $common_dialog_stub ]]; then
+    clang-18 -target x86_64-sie-ps5 -isysroot "$sdk" -isystem "$sdk/target/include" -std=gnu11 -O2 -fPIC \
+        -fvisibility-nodllstorageclass=default -c "$PS5CEMU_ROOT/tools/sce-common-dialog-stub.c" -o "$work/libSceCommonDialog.o"
+    "$sdk/bin/prospero-lld" --shared -soname libSceCommonDialog.sprx -o "$common_dialog_stub" "$work/libSceCommonDialog.o"
+fi
+stubs=("$common_dialog_stub" "${stubs[@]}")
+
 # Optional hooks, weak and checked before use, that nothing on the console provides: as null they
 # stay out of the imports, which must all name a system module. The SDK libc's dlfcn wrappers report
 # no dynamic loader without theirs (as ProsperoEden links); zstd's are its tracing.
@@ -191,11 +203,11 @@ netfs_wraps+=(--wrap=fcntl)
 
 # The system modules a title imports from: all the SDK names, but the web process's (WebKit's POSIX
 # layer and its libkernel, which a title does not load; the SDK's libc.a below has what they would
-# have supplied, fnmatch), the Mono runtime's, and libScePad's (the stub above replaces it, with the
-# same SONAME and its two extra exports).
+# have supplied, fnmatch), the Mono runtime's, and libScePad's and libSceCommonDialog's (the stubs
+# above replace them, with the same SONAMEs).
 modules=()
 for module in "$sdk"/target/lib/*.so; do
-    case ${module##*/} in libScePosixForWebKit.so | libkernel_web.so | libmonosgen-2.0.so | libScePad.so) ;; *) modules+=("$module") ;; esac
+    case ${module##*/} in libScePosixForWebKit.so | libkernel_web.so | libmonosgen-2.0.so | libScePad.so | libSceCommonDialog.so) ;; *) modules+=("$module") ;; esac
 done
 
 # Mesa's dispatch tables name every entry point weakly, and those nothing defines must read as null

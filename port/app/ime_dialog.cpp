@@ -14,11 +14,17 @@ extern "C"
 	// The console's user service (port/ps5/pad.cpp reads the same): the dialog belongs to a user.
 	int32_t sceUserServiceGetForegroundUser(int32_t* userId);
 	int32_t sceUserServiceGetInitialUser(int32_t* userId);
-	// libSceImeDialog: the SDK's module stub, which tools/link.sh links with every other module
+	// libSceImeDialog: the SDK's module stub, which tools/link.sh links with every other module. Its
+	// four functions are null until sceSysmoduleLoadModule loads 0x0096, below.
 	int32_t sceImeDialogInit(const void* param, const void* extended);
 	int32_t sceImeDialogGetStatus();
 	int32_t sceImeDialogGetResult(void* result);
 	int32_t sceImeDialogTerm();
+	// libSceSysmodule: the console's keyboard is a system module, one a title does not start with
+	int32_t sceSysmoduleLoadModule(uint16_t moduleId);
+	// libSceCommonDialog: the dialogs' own start, which the keyboard's needs before it opens (the
+	// link-only stub tools/link.sh builds names the import; the loader binds it when 0x0096 loads)
+	int32_t sceCommonDialogInitialize();
 	// libkernel's clock, for the dialog's own limit
 	uint64_t sceKernelGetProcessTime();
 }
@@ -70,6 +76,13 @@ namespace
 	// name for another game's prompt. Empty rather than null, so the system never reads an address it was
 	// not given.
 	const uint16_t kNothing[] = {0};
+	// The console's keyboard is a system module a title does not start with (SCE_SYSMODULE_IME_DIALOG),
+	// and the dialogs it opens are libSceCommonDialog's. Until 0x0096 is loaded, its libraries' import
+	// slots are null, and calling one is a jump to address 0: the console run of 2026-11-22 died at the
+	// first sceImeDialogInit that way.
+	constexpr uint16_t kImeDialogModule = 0x0096;
+	constexpr int32_t kCommonDialogAlreadyInitialized = (int32_t)0x80b80002;
+	constexpr int32_t kNotAsked = -2; // the module and the dialogs are asked for once, before the first call
 
 	std::mutex s_mutex; // Open, Poll and Close, which the stop watchdog also reaches
 	ImeParam s_param;
@@ -78,6 +91,9 @@ namespace
 	uint64_t s_openedAt; // sceKernelGetProcessTime, for the answer time
 	bool s_open;
 	bool s_terminated;
+	int32_t s_module = kNotAsked; // the load's first answer, kept: it is asked for once
+	int32_t s_dialogs = kNotAsked; // the dialogs' start, the same
+	int32_t s_bound = kNotAsked; // 1: every import slot is filled; 0: one was null, said once
 #ifndef PS5IME_CHECK
 	// What this dialog says of itself, capped like the port's other diagnostics: the start with its
 	// parameters and return code, each status it reports, and the result. Never the text.
@@ -85,6 +101,80 @@ namespace
 	constexpr int kLogLines = 24;
 	int32_t s_lastStatus = -1; // the status GetStatus last gave, so only a change is a line
 #endif
+
+	// A module loaded after start-up fills its libraries' import slots when it loads. Until then a slot
+	// is null, and calling one is a jump to address 0. The address is read through a volatile so the
+	// compiler, which knows a function's is not null, cannot fold the check away: with -fno-plt this is
+	// the import's own slot.
+	template <typename Fn>
+	bool Bound(Fn function)
+	{
+		Fn volatile slot = function;
+		return slot != nullptr;
+	}
+
+	// Open holds s_mutex, so this is the locked form. The module is loaded and the dialogs started once,
+	// before anything calls into them; a failure declines the keyboard as the caller's 20 tries' end
+	// does, which cancels the game's own keyboard (app/ingame.cpp, patch cemu 0066).
+	bool PrepareLocked(int32_t& rc)
+	{
+		if (s_module == kNotAsked)
+		{
+			s_module = sceSysmoduleLoadModule(kImeDialogModule);
+#ifndef PS5IME_CHECK
+			if (s_logLines < kLogLines)
+			{
+				++s_logLines;
+				if (s_module < 0)
+					ps5log::Line("[ime] the console's keyboard module (sysmodule 0x96) did not load: {:#x}", (uint32_t)s_module);
+				else
+					ps5log::Line("[ime] the console's keyboard module (sysmodule 0x96): {:#x}", (uint32_t)s_module);
+			}
+#endif
+		}
+		if (s_module < 0)
+		{
+			rc = s_module;
+			return false;
+		}
+		if (s_bound == kNotAsked)
+		{
+			s_bound = (Bound(sceImeDialogInit) && Bound(sceImeDialogGetStatus) && Bound(sceImeDialogGetResult) &&
+				Bound(sceImeDialogTerm) && Bound(sceCommonDialogInitialize)) ? 1 : 0;
+#ifndef PS5IME_CHECK
+			if (!s_bound && s_logLines < kLogLines)
+			{
+				++s_logLines;
+				ps5log::Line("[ime] the console's keyboard functions are not bound");
+			}
+#endif
+		}
+		if (!s_bound)
+		{
+			rc = -1; // not a system code: the [ime] line says the slots stayed null
+			return false;
+		}
+		if (s_dialogs == kNotAsked)
+		{
+			s_dialogs = sceCommonDialogInitialize();
+#ifndef PS5IME_CHECK
+			if (s_logLines < kLogLines)
+			{
+				++s_logLines;
+				if (s_dialogs < 0 && s_dialogs != kCommonDialogAlreadyInitialized)
+					ps5log::Line("[ime] the console's dialogs did not initialize: {:#x}", (uint32_t)s_dialogs);
+				else
+					ps5log::Line("[ime] the console's dialogs: {:#x}", (uint32_t)s_dialogs);
+			}
+#endif
+		}
+		if (s_dialogs < 0 && s_dialogs != kCommonDialogAlreadyInitialized)
+		{
+			rc = s_dialogs;
+			return false;
+		}
+		return true;
+	}
 
 	void CloseLocked()
 	{
@@ -121,6 +211,8 @@ bool ps5ime::Open(std::u16string_view text, int maxLength, int32_t& rc)
 	const uint32_t limit = (uint32_t)std::clamp(maxLength, 0, (int)kMaxTextLength);
 	if (limit == 0)
 		return false; // no room for a character: nothing to type
+	if (!PrepareLocked(rc))
+		return false; // the module or the dialogs are not there: the caller cancels the game's keyboard
 	int32_t user = -1;
 	if (sceUserServiceGetForegroundUser(&user) < 0 || user < 0)
 		sceUserServiceGetInitialUser(&user);
@@ -247,3 +339,14 @@ void ps5ime::Close()
 	std::lock_guard lock(s_mutex);
 	CloseLocked();
 }
+
+#ifdef PS5IME_CHECK
+void ps5ime::ForgetModule()
+{
+	// The host test's fake: a new process has asked nothing of the system yet, and would ask again.
+	std::lock_guard lock(s_mutex);
+	s_module = kNotAsked;
+	s_dialogs = kNotAsked;
+	s_bound = kNotAsked;
+}
+#endif

@@ -15,8 +15,12 @@
 // The parameter block, the statuses and the outcomes are the ones public PS5 homebrew uses for this
 // dialog (offact's IME_dialog.c and prospero-win's pw_osk_ps5.c, GPL and LGPL homebrew), whose 96-byte
 // block and 16-byte result the PS4 reimplementations share; its text is 16 bits a unit whatever the
-// toolchain's wchar_t is. There is no SDK header for it and none is used here: the SDK ships the
-// module's stub, which tools/link.sh already links.
+// toolchain's wchar_t is. There is no SDK header for it and none is used here. The keyboard is sysmodule
+// 0x0096, which a title does not start with: Open loads it once and starts the dialogs
+// (libSceCommonDialog) before the first call, and declines as a cancel until both answer, so a missing
+// module is never a null call (the console run of 2026-11-22 crashed at one). The SDK's libSceImeDialog
+// stub is linked; for libSceCommonDialog tools/link.sh builds a link-only one, and tools/package.sh
+// names it to the converter.
 //
 // Open and Poll run on Cemu's render thread, the one its TV frame runs on, where the game's form is
 // read as it was for the port's sheet. Close also comes from the stop watchdog (app/emulator.cpp's
@@ -56,4 +60,9 @@ namespace ps5ime
 	// Ends it whatever its state, so the next appearance opens a fresh one. Called when the app leaves
 	// the game or VR stops under it.
 	void Close();
+#ifdef PS5IME_CHECK
+	// The host test's fake system: forget the module's load, its import slots and the dialogs' start,
+	// which happen once per process, so each case starts as a new one.
+	void ForgetModule();
+#endif
 }

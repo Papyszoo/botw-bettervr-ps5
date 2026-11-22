@@ -1033,6 +1033,14 @@ int PS5Cemu_DrawKeyboardVR(std::u16string* text, sint32 maxLength, uint32 appear
 	s_kbdVrAppearance = appearance;
 	if (s_menuOpen)
 	{
+		// The menu owns the screen and nothing polls the dialog from here: one left up would keep the pad
+		// blocked with its 90 s unchecked. It is ended, and this appearance opens a fresh one once the
+		// menu closes; the game's own keyboard is untouched.
+		if (s_imeStage == ImeStage::Up || s_imeStage == ImeStage::Opening)
+		{
+			ps5ingame::EndImeDialog("the menu opened over it; ended");
+			s_imeAppearance = 0;
+		}
 		LogImeDecline(appearance, "under the menu");
 		return 0;
 	}

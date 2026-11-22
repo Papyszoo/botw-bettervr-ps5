@@ -445,15 +445,40 @@ into the form and the hook returns 1, exactly as its sheet did, so Cemu's `swkbd
 game. The sheet is not drawn in stereo at all (not only when a flag said a headset was up), so it cannot take the
 pad while invisible.
 
+**The third console run crashed at the first call.** Build `8b4caf5` died at its first `sceImeDialogInit`
+(`port/app/ime_dialog.cpp`): signal 11, RIP 0 with fault address 0, an instruction fetch through an import slot
+whose value was 0 (GOT slot `0x2b7fa18`, the caller `ps5ime::Open` at `+0x259`). The import itself is right
+(`libSceImeDialog.prx`, NID `NUeBrN7hzf0#E#F`); `libSceImeDialog` is a system module, sysmodule 0x0096, that a
+title does not start with, and nothing in the app had loaded it. The first two runs never reached the call, and
+the host test defines the four functions itself, so it passed. There was no `[ime]` line because the process died
+inside the call.
+
+**The module and the dialogs before the first call.** `ps5ime::Open` now loads 0x0096 once
+(`sceSysmoduleLoadModule`), logs its rc, checks that the four IME import slots and `sceCommonDialogInitialize` are
+filled after the load (a null slot is never called), then starts the dialogs (`sceCommonDialogInitialize`; 0x80b80002,
+already started, is accepted), logged. Any failure returns false, and the existing 20-try path cancels the game's
+keyboard with `swkbd_cancelInput`, so a missing module is a cancel, not a crash. The first answer is kept: the load
+and the dialogs' start happen once per process, not once per appearance. The SDK has no libSceCommonDialog stub, so
+`tools/link.sh` builds a one-name link-only stub (`tools/sce-common-dialog-stub.c`) and `tools/package.sh` gives it
+to the converter; its import binds when 0x0096 loads.
+
 **A cancel, and no soft-lock.** Cemu's swkbd HLE had only the OK decision, so a game waiting on a keyboard that
 cannot show had no way out. Patch cemu 0066 adds `swkbd_cancelInput`: the keyboard disappears (`isActive` false)
 with no OK pressed and the form's text unchanged, which is what the hardware's cancel presents to a game that polls
 `SwkbdGetStateKeyboard`/`GetStateInputForm` and `SwkbdIsDecideOkButton`, and it logs `[swkbd] cancel: keyboard|form`.
 The port returns 2 - cancelled - for a player's cancel, a dialog the system abandons, one that never appears, one
-that does not open after its tries (`kImeOpenTries`, 20 frames), a form with no room for a character, and one left
-up for 90 seconds without an answer; `swkbd_renderVR` then calls `swkbd_cancelInput` instead of
-`swkbd_finishInput`, so the game leaves its naming input as it does on the hardware. A game that dismisses its own
-swkbd while the dialog is up ends it on the next TV frame, so the pad is not left idle.
+that does not open after its tries (`kImeOpenTries`, 20 frames), a form with no room for a character, one whose
+module did not load or whose functions are not bound, and one left up for 90 seconds without an answer;
+`swkbd_renderVR` then calls `swkbd_cancelInput` instead of `swkbd_finishInput`, so the game leaves its naming input
+as it does on the hardware. A game that dismisses its own swkbd while the dialog is up ends it on the next TV frame,
+so the pad is not left idle.
+
+**Two safety items on the same path.** `PS5SwkbdReadText` (Cemu) pushed the form's `formStringLength` from its
+4096-unit buffer, and the game writes that length: patch cemu 0067 clamps it to the buffer, as `maxTextLength`
+already was. And the app's Options shortcut can open the port's menu over the dialog, where nothing polls it: the
+dialog would stay up with the pad blocked and its 90 s unchecked. `PS5Cemu_DrawKeyboardVR` now ends it when the menu
+is open (`[ime] the menu opened over it; ended`) and the appearance opens a fresh one once the menu closes; the
+game's own keyboard is untouched.
 
 **The game's input while it is up.** The console's keyboard is the system's, so the pad is its: patch bettervr 0044
 has `hook_InjectXRInput` write an idle VPAD status while `BetterVR_PS5_GameInputBlocked` is set
@@ -474,16 +499,21 @@ reached the emulated GamePad while swkbd is active (`OverlayTakesInput`), as bef
   stereo session; the `frame` line's presence is what says the hook ran. `ime: appearance N: <reason>` is one line
   per appearance when the console's keyboard is not the one that runs: flat play, the port's menu, a dialog that did
   not open, or one that was cancelled.
-- `[ime]`, from the port's dialog: `init: type T, limit L, user U; rc 0x...`; `status: 0x...` on each change
-  (0 none, 1 running, 2 finished); `result: outcome 0x..., rc 0x...`; and the lines of the old request (`swkbd
-  asked for a keyboard ... opened/did not open`, `OK`, `cancelled`, `no answer in 90 s`, `ended without an
-  answer`, `the game dismissed its keyboard`), each cancel saying the game's keyboard is cancelled with it.
+- `[ime]`, from the port's dialog: the module and the dialogs' start, once each, before the first dialog
+  (`the console's keyboard module (sysmodule 0x96): 0x...`, `the console's dialogs: 0x...`), or their failures
+  (`the console's keyboard module (sysmodule 0x96) did not load: 0x...`, `the console's keyboard functions are not
+  bound`, `the console's dialogs did not initialize: 0x...`); `init: type T, limit L, user U; rc 0x...`; `status:
+  0x...` on each change (0 none, 1 running, 2 finished); `result: outcome 0x..., rc 0x...`; `the menu opened over
+  it; ended`; and the lines of the old request (`swkbd asked for a keyboard ... opened/did not open`, `OK`,
+  `cancelled`, `no answer in 90 s`, `ended without an answer`, `the game dismissed its keyboard`), each cancel
+  saying the game's keyboard is cancelled with it.
 
 **Where the layout comes from.** The SDK has no header for this dialog, and none is used: the 96-byte parameter
 block, its 16-byte result, the statuses (0 none, 1 running, 2 finished) and the outcomes (0 OK, 1 cancelled, 2
 aborted) are the ones public PS5 homebrew opens it with (ps5-payload-dev's offact, prospero-win's pw_osk_ps5.c),
-which the PS4 reimplementations share. Its text is 16 bits a unit whatever the toolchain's `wchar_t` is. The module
-stub is one of the SDK's, which `tools/link.sh` already links.
+which the PS4 reimplementations share. Its text is 16 bits a unit whatever the toolchain's `wchar_t` is. The IME's
+stub is one of the SDK's; `libSceCommonDialog`'s is the link-only stub `tools/link.sh` builds
+(`tools/sce-common-dialog-stub.c`), which `tools/package.sh` names to the converter.
 
 **What is not known until the console run.** Whether the system draws this dialog in an hmd2 session's headset at
 all: it is a system 2D layer composited over the title's TV output, and the headset gets Hmd2's own eye buffers. That
@@ -493,11 +523,15 @@ left unanswered does the same after 90 seconds.
 
 Patches: bettervr 0044 (the idle pad, and Options ending with it), cemu 0063 (the hook is told form or keyboard-only,
 for the request line), cemu 0066 (the swkbd exports' lines, the stereo call in `swkbd_renderVR` outside Cemu's ImGui
-frame, and `swkbd_cancelInput`); new files `port/app/ime_dialog.h/.cpp`; no GPU, frame-path or record change.
+frame, and `swkbd_cancelInput`), cemu 0067 (a form's length read within its buffer); new files
+`port/app/ime_dialog.h/.cpp` and `tools/sce-common-dialog-stub.c`; no GPU, frame-path or record change.
 
 **Test request 77 (v0.8 console keyboard in VR, 13.60 console).** Install the `BotW-VR-v...zip` from this head's
-green "BetterVR build" run and start Breath of the Wild in VR with the headset, both Sense controllers and the
+green "BetterVR build" run - it is the first build after `8b4caf5`, whose run crashed at its first
+`sceImeDialogInit` because the keyboard's module was never loaded; this head loads sysmodule 0x96 and starts the
+dialogs before that call - and start Breath of the Wild in VR with the headset, both Sense controllers and the
 DualSense on. Load a save that can reach a stable (or ride to one), register a horse and reach the naming screen.
+If the run dies at the same place, the crash report and the `[ime]` lines above say whether the module loaded.
 
 1. **Name the horse in VR.** Is the PS5 keyboard in the headset? Type a name and accept it: does the naming screen
    close, and does the name show in the stable and the pause menu? If nothing shows in the headset, lift the headset
@@ -519,11 +553,14 @@ showed none, and whether Circle left the naming input.
 
 **What it decides.** `[swkbd] appear form|keyboard` decides the game called HLE swkbd at that screen; with
 `[swkbd] HLE module mapped` and `[swkbd] create` it says the HLE is what loaded. `[kbd] frame` decides the
-out-of-frame hook ran (its `headset` field no longer gates anything), and `[ime] init ... rc 0x0` that the system
-took the dialog; `[ime] status: 0x1` that it reports it running. Step 1 then decides the open question: whether
-that dialog is visible in the headset, on the TV only, or nowhere. If it is TV-only or invisible, the next step is a
-keyboard drawn in BetterVR's own overlay. `[ime] result` and step 1's name decide that the typed text reaches swkbd;
-`[ime] cancelled` (or `did not open`) and `[swkbd] cancel` plus step 2 decide the no-soft-lock path.
+out-of-frame hook ran (its `headset` field no longer gates anything). `[ime] the console's keyboard module (sysmodule
+0x96): 0x0` and `[ime] the console's dialogs: 0x...` decide that the module loaded and the dialogs started; a
+`did not load`, `not bound` or `did not initialize` line followed by `it did not open` is the clean cancel path, not
+the `8b4caf5` crash. `[ime] init ... rc 0x0` decides that the system took the dialog; `[ime] status: 0x1` that it
+reports it running. Step 1 then decides the open question: whether that dialog is visible in the headset, on the TV
+only, or nowhere. If it is TV-only or invisible, the next step is a keyboard drawn in BetterVR's own overlay.
+`[ime] result` and step 1's name decide that the typed text reaches swkbd; `[ime] cancelled` (or `did not open`) and
+`[swkbd] cancel` plus step 2 decide the no-soft-lock path.
 
 ## 2026-11-21: the shrine respawn holds the third-person camera and its fade reaches the 3D picture without the 16:9 panel; built, untested on console
 

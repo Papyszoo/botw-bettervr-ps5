@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // The console's keyboard dialog (port/app/ime_dialog.cpp) on a PC: the system's calls are a fake, and
 // what is checked is the state around them - the game's text and limit, the NONE grace, OK, cancel,
-// abort, a dialog left up past its 90 s, a close once, a fresh dialog after one ended, and which
-// keyboard a stereo or a flat frame gets. tools/tests/test-ime-dialog.sh builds and runs it. Each
-// check prints PASS or FAIL; the exit status is the failures.
+// abort, a dialog left up past its 90 s, a close once, a fresh dialog after one ended, which keyboard a
+// stereo or a flat frame gets, and the module (sysmodule 0x96) and dialogs that must be there before the
+// first call into them. tools/tests/test-ime-dialog.sh builds and runs it. Each check prints PASS or
+// FAIL; the exit status is the failures.
 
 #include "app/ime_dialog.h"
 
@@ -55,10 +56,16 @@ namespace
 	uint16_t* g_buffer = nullptr;
 	uint32_t g_limit = 0;
 	bool g_foreground = true;
+	// the console's keyboard module (sysmodule 0x96) and its dialogs
+	int32_t g_moduleResult = 0;
+	int32_t g_dialogResult = 0;
+	uint16_t g_moduleId = 0;
+	int g_moduleLoads = 0, g_dialogInits = 0;
 
 	void Reset()
 	{
 		ps5ime::Close(); // whatever the last case left open
+		ps5ime::ForgetModule(); // a new process asks the system for the module and its dialogs again
 		g_now = 1'000'000;
 		g_initResult = 0;
 		g_status = 0;
@@ -70,6 +77,11 @@ namespace
 		g_buffer = nullptr;
 		g_limit = 0;
 		g_foreground = true;
+		g_moduleResult = 0;
+		g_dialogResult = 0;
+		g_moduleId = 0;
+		g_moduleLoads = 0;
+		g_dialogInits = 0;
 	}
 
 	bool Open(const char16_t* text, int limit, int32_t& rc)
@@ -106,6 +118,19 @@ extern "C"
 	{
 		*userId = 9;
 		return 0;
+	}
+
+	int32_t sceSysmoduleLoadModule(uint16_t moduleId)
+	{
+		++g_moduleLoads;
+		g_moduleId = moduleId;
+		return g_moduleResult;
+	}
+
+	int32_t sceCommonDialogInitialize()
+	{
+		++g_dialogInits;
+		return g_dialogResult;
 	}
 
 	int32_t sceImeDialogInit(const void* param, const void*)
@@ -149,10 +174,13 @@ int main()
 	int32_t rc = 0;
 	std::u16string text;
 
-	// a new appearance hands the game's text and limit to the system
+	// a new appearance hands the game's text and limit to the system, after the module is loaded and the
+	// dialogs started
 	Reset();
 	Check(Open(u"Link", 10, rc), "a dialog opens");
 	Check(g_inits == 1 && g_limit == 10 && g_userId == 7, "the game's limit and the foreground user reach the system");
+	Check(g_moduleLoads == 1 && g_moduleId == 0x0096 && g_dialogInits == 1,
+		"the keyboard's module (0x96) is loaded and the dialogs started once, before the first dialog");
 	Check(g_buffer != nullptr && Field() == u"Link", "the game's text is in the system's field");
 
 	// a taken dialog that has not appeared yet is given its second, then closed once
@@ -236,12 +264,33 @@ int main()
 	Check(Open(u"one", 8, rc), "a dialog opens to be replaced");
 	Check(Open(u"two", 8, rc) && g_inits == 2 && g_terms == 1 && Field() == u"two", "a new open ends the old dialog first");
 
-	// a refused dialog is no dialog; a later try can open one
+	// a refused dialog is no dialog; a later try can open one, without asking for the module again
 	Reset();
 	g_initResult = -12345;
 	Check(!Open(u"x", 8, rc) && rc == -12345 && g_inits == 1 && g_terms == 0, "a refused dialog opens nothing and ends nothing");
 	g_initResult = 0;
 	Check(Open(u"x", 8, rc) && g_inits == 2, "a later try can open the dialog");
+	Check(g_moduleLoads == 1 && g_dialogInits == 1, "a second dialog loads no module and starts no dialogs again");
+
+	// The console's keyboard is a system module (0x0096) and its dialogs are started before the first
+	// call: a system without either is declined, never called through a null import (the console run of
+	// 2026-11-22 crashed inside the first sceImeDialogInit for exactly that).
+	Reset();
+	g_moduleResult = -1;
+	Check(!Open(u"x", 8, rc) && rc == -1 && g_inits == 0 && g_dialogInits == 0,
+		"a keyboard module that does not load opens nothing and starts no dialogs");
+	Check(g_moduleLoads == 1 && g_moduleId == 0x0096, "the module asked for is 0x96, once");
+	g_moduleResult = 0;
+	Check(!Open(u"x", 8, rc) && g_moduleLoads == 1 && g_inits == 0, "a module that did not load is not asked for again");
+	Reset();
+	g_dialogResult = (int32_t)0x80b80003;
+	Check(!Open(u"x", 8, rc) && rc == (int32_t)0x80b80003 && g_inits == 0, "dialogs that do not start open nothing");
+	Check(g_moduleLoads == 1 && g_dialogInits == 1, "the module loads and the dialogs start once, after it");
+	g_dialogResult = 0;
+	Check(!Open(u"x", 8, rc) && g_dialogInits == 1 && g_inits == 0, "dialogs that did not start are not started again");
+	Reset();
+	g_dialogResult = (int32_t)0x80b80002;
+	Check(Open(u"x", 8, rc) && g_inits == 1, "dialogs already started (0x80b80002) are no failure");
 
 	// Close ends an open dialog exactly once, and nothing else
 	Reset();
