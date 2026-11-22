@@ -101,6 +101,15 @@ int main()
 		Check(std::strcmp(s.core[0].threadName, "A thread name that is much too long for") == 0, "the kept part");
 	}
 
+	// a guest name stops at its first non-printable byte: it cannot carry control bytes into the line
+	CoreRunning(2, "Control\x01Name", 5);
+	{
+		const Sample s = Take(1085 * kMs);
+		Check(std::strcmp(s.core[2].threadName, "Control") == 0, "the name stops at a control byte");
+		Check(Has(Describe(s), "2 executing, 'Control' prio 5"), Describe(s).c_str());
+		Check(!Has(Describe(s), "Control\x01"), "no control byte reaches the line");
+	}
+
 	// the export's name classifies a wait the paths do not mark: coreinit's primitives, its files
 	// and the GPU, with no work on the publication path
 	Check(WaitOf("coreinit.OSWaitEvent") == Wait::Coreinit, "coreinit.OS* is a coreinit primitive");
@@ -109,6 +118,29 @@ int main()
 	Check(WaitOf("TCL.TCLWaitTimestamp") == Wait::GpuSync, "TCL.* is a GPU sync");
 	Check(WaitOf("vpad.VPADRead") == Wait::None, "a plain host call has no wait kind");
 	Check(WaitOf(nullptr) == Wait::None, "no export, no wait");
+
+	// and the line says it: a host call no path marks as waiting is classified by its export, while
+	// one with no wait kind says only the call
+	CoreRunning(2, "WaitThread", 20);
+	HostEnter(2, "coreinit.OSWaitEvent", 1500 * kMs);
+	{
+		const Sample s = Take(2350 * kMs + 200000);
+		Check(s.core[2].wait == Wait::None, "no path marked the coreinit wait");
+		Check(Has(Describe(s), "2 in coreinit.OSWaitEvent for 850.2 ms, waiting on a coreinit primitive, 'WaitThread' prio 20"),
+			Describe(s).c_str());
+	}
+	HostEnter(2, "coreinit.FSReadFileWithPos", 3000 * kMs);
+	{
+		const Sample s = Take(3100 * kMs);
+		Check(Has(Describe(s), "2 in coreinit.FSReadFileWithPos for 100.0 ms, waiting on file I/O, 'WaitThread' prio 20"),
+			Describe(s).c_str());
+	}
+	HostEnter(2, "vpad.VPADRead", 4000 * kMs);
+	{
+		const Sample s = Take(4005 * kMs);
+		Check(Has(Describe(s), "2 in vpad.VPADRead for 5.0 ms, 'WaitThread' prio 20;"), Describe(s).c_str());
+	}
+	HostLeave(2);
 
 	// the AX thread: queued and not taken is runnable but not scheduled; taken is mixing; done is
 	// waiting for the next frame

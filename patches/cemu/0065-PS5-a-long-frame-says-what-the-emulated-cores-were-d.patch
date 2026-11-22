@@ -37,9 +37,9 @@ the sampling is reads only, from threads that already exist. Built, untested on 
  src/Cafe/HW/Latte/Core/LatteRenderTarget.cpp  | 58 +++++++++++++++++++
  src/Cafe/OS/libs/TCL/TCL.cpp                  | 17 +++++-
  src/Cafe/OS/libs/coreinit/coreinit_Thread.cpp | 12 ++++
- src/Cafe/OS/libs/snd_core/ax_ist.cpp          | 21 +++++++
+ src/Cafe/OS/libs/snd_core/ax_ist.cpp          | 26 +++++++++
  src/Cafe/OS/libs/snd_core/ax_out.cpp          | 47 +++++++++++++++
- 9 files changed, 201 insertions(+), 1 deletion(-)
+ 9 files changed, 206 insertions(+), 1 deletion(-)
 
 diff --git a/src/Cafe/HW/Espresso/Interpreter/PPCInterpreterHLE.cpp b/src/Cafe/HW/Espresso/Interpreter/PPCInterpreterHLE.cpp
 index cf7ba195..1c38f5ad 100644
@@ -327,7 +327,7 @@ index b6495891..9e2c1d03 100644
  			{
  				__OSLockScheduler();
 diff --git a/src/Cafe/OS/libs/snd_core/ax_ist.cpp b/src/Cafe/OS/libs/snd_core/ax_ist.cpp
-index 85bc3dd3..a8f50879 100644
+index 85bc3dd3..738cf0fd 100644
 --- a/src/Cafe/OS/libs/snd_core/ax_ist.cpp
 +++ b/src/Cafe/OS/libs/snd_core/ax_ist.cpp
 @@ -5,6 +5,10 @@
@@ -341,19 +341,31 @@ index 85bc3dd3..a8f50879 100644
  
  namespace snd_core
  {
-@@ -980,6 +984,11 @@ namespace snd_core
+@@ -971,6 +975,11 @@ namespace snd_core
+ 
+ 	CafeStaticVar<coreinit::OSMessage, 0x10> __AXIstThreadMsgArray{g_sndStaticData};
+ 	CafeStaticVar<coreinit::OSMessageQueue, 1> __AXIstThreadMsgQueue{g_sndStaticData};
++#if defined(CEMU_PS5)
++	// the diagnostics' per-core line names the thread it finds (patches/cemu 0065). OSGetThreadName
++	// reads the name as guest memory, so it is copied there rather than kept as a host literal
++	CafeStaticVar<char, 64> __AXIstThreadName{g_sndStaticData, "AX"};
++#endif
+ 
+ 	void AXIst_InitThread()
+ 	{
+@@ -980,6 +989,11 @@ namespace snd_core
  		// create thread
  		uint8 istThreadAttr = 0;
  		coreinit::__OSCreateThreadType(__AXIstThread.GetPtr(), PPCInterpreter_makeCallableExportDepr(AXIst_ThreadEntry), 0, &__AXIstThreadMsgQueue, __AXIstThreadStack.GetPtr() + 0x4000, 0x4000, 14, istThreadAttr, OSThread_t::THREAD_TYPE::TYPE_DRIVER);
 +#if defined(CEMU_PS5)
 +		// the diagnostics' per-core line names the thread it finds: without a name it would be the one
 +		// thread on core 1 that has none (patches/cemu 0065)
-+		coreinit::OSSetThreadName(__AXIstThread.GetPtr(), "AX");
++		coreinit::OSSetThreadName(__AXIstThread.GetPtr(), __AXIstThreadName.GetPtr());
 +#endif
  		coreinit::OSResumeThread(__AXIstThread.GetPtr());
  	}
  
-@@ -1035,8 +1044,15 @@ namespace snd_core
+@@ -1035,8 +1049,15 @@ namespace snd_core
  			}
  			else if (msg.GetPointer()->message != 1)
  				assert_dbg();
@@ -369,7 +381,7 @@ index 85bc3dd3..a8f50879 100644
  		}
  	}
  
-@@ -1049,6 +1065,11 @@ namespace snd_core
+@@ -1049,6 +1070,11 @@ namespace snd_core
  		msg->data0 = 0;
  		msg->data1 = 0;
  		msg->data2 = 0;

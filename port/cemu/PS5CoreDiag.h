@@ -110,7 +110,17 @@ namespace ps5diag
 		CoreSlot& slot = g_core[core];
 		char text[kNameBytes] = {};
 		if (name)
-			std::strncpy(text, name, kNameBytes - 1);
+		{
+			// a guest string: stop at the line's room, and at the first byte that is not printable,
+			// so a name cannot carry control bytes into the log or split the line
+			for (int i = 0; i < kNameBytes - 1 && name[i]; i++)
+			{
+				const unsigned char c = (unsigned char)name[i];
+				if (c < 0x20 || c > 0x7E)
+					break;
+				text[i] = (char)c;
+			}
+		}
 		uint64_t word[kNameBytes / 8] = {};
 		std::memcpy(word, text, sizeof(text));
 		// the seqlock: odd while written, so a sampler between the two bumps reads the old name again
@@ -305,11 +315,16 @@ namespace ps5diag
 				text += "executing";
 				break;
 			case State::Host:
+			{
 				text += it.hostCall ? std::string("in ") + it.hostCall : std::string("in a host call");
 				text += " for " + Ms(it.insideNs);
-				if (it.wait != Wait::None)
-					text += std::string(", waiting on ") + WaitText(it.wait);
+				// a path that knows what it blocks on says so (TCL's GPU timestamp); otherwise the
+				// export's name classifies it: a coreinit primitive, file I/O, a GPU sync
+				const Wait wait = it.wait != Wait::None ? it.wait : WaitOf(it.hostCall);
+				if (wait != Wait::None)
+					text += std::string(", waiting on ") + WaitText(wait);
 				break;
+			}
 			default:
 				text += "not started";
 				break;
