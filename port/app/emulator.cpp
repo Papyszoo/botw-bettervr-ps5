@@ -409,7 +409,7 @@ namespace ps5emu
 			return true;
 		}
 
-		// BotW VR, Play in VR: BetterVR 1.0.0 (patches/bettervr, built into Cemu as a host module) started
+		// BotW VR, Play in VR: BetterVR 1.0.2 (patches/bettervr, built into Cemu as a host module) started
 		// as Cemu's own start does it (main.cpp, CemuApp.cpp), once a game is chosen: the module is
 		// registered, its log put in the data folder, its OpenXR instance made and its packs registered,
 		// and the graphic packs loaded again for those. The module lives for this one game, as the app

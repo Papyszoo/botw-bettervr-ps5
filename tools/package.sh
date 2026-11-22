@@ -168,7 +168,7 @@ done
 # the compatibility list the game pages show a status from (app/compatibility.h)
 cp "$PS5CEMU_ROOT/docs/COMPATIBILITY.md" "$app/assets/compatibility.md"
 cp -a "$deps/Cemu/bin/resources/sharedFonts" "$app/assets/cemu/resources/"
-# BotW-BetterVR on PS5: BetterVR 1.0.0's packs, as its own download has them (BetterVR/packs, without the
+# BotW-BetterVR on PS5: BetterVR 1.0.2's packs, as its own download has them (BetterVR/packs, without the
 # pack's sources, its debug patches and CemuPatchCompiler): the module (port/bettervr/PlatformPS5.cpp) finds
 # them beside assets/bettervr and registers them with Cemu while Play in VR runs
 rm -rf "$app/assets/bettervr"

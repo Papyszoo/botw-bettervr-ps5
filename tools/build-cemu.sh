@@ -9,7 +9,7 @@
 #   tools/build-cemu.sh TARGET...    build only those targets
 #
 # Cemu itself (Crementif's BetterVR fork) stays at its pinned commit in .deps/Cemu; patches/cemu/*.patch are applied on a
-# branch named ps5 (tools/cemu-patches.sh). BetterVR 1.0.0 is a host module of that Cemu: its src/ (with
+# branch named ps5 (tools/cemu-patches.sh). BetterVR 1.0.2 is a host module of that Cemu: its src/ (with
 # patches/bettervr on a branch named ps5 in .deps/BotW-BetterVR, tools/bettervr-patches.sh) goes into
 # CEMU_EXTERNAL_MODULES, and takes the PS5's platform and the OpenXR runtime over hmd2 from port/bettervr
 # (module.cmake).
