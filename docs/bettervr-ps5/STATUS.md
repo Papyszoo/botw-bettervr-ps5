@@ -25,8 +25,11 @@ part on top, not the other way round:
 - **0008 (Vibration page and mixer):** 1.0.2's `RumbleStrength` slider on the Controls page is kept as the
   global strength; the 60 Hz mixer multiplies every category, the game's pattern and the page's test button by
   it. The Vibration page, its categories, device columns and test buttons are unchanged.
-- **0009/0048 (trigger strength, aiming dot):** upstream's stepped sliders take 5 % steps (and 0.05 for the
-  strength); the percent-label escaping stays for the sliders that are not stepped.
+- **0009/0048 (trigger strength, aiming dot):** upstream's sliders snap to steps now (8a8620e): the aiming dot's
+  Size and Opacity in 5 %, the trigger strength in 0.05; the percent-label escaping stays for the sliders that are
+  not stepped.
+- **0029 (damage):** the Damage Taken headset pulse follows the Controls page's Rumble row too, since it goes to
+  the runtime directly rather than through the mixer.
 - **0011/0017 (Skl_Root, body facing):** 1.0.2's `s_posedPlayerMtx` (arms reposed when the player matrix moves)
   is kept alongside the PS5 latched root and the pose tolerance; the camera-hook body pose removed by 0017 stays
   removed.
