@@ -3,6 +3,50 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-22: the audio-driven haptic beds need game state, so menus, music and ordinary play are silent, and each Vibration row's On box has its own ID; built, untested on console
+
+The first console run of the v0.8 haptics build (`df71b8d`, 13.60) says the controllers are constantly vibrating,
+and on the Vibration page every row's On box shows the focus frame at once, so a single row cannot be unticked. The
+log (`logs-h2/boot.log`) holds 67 `water on`, 52 `wind on`, 2 `rain on` and 384 `[vib] env` lines in about 200 s;
+the first water and wind pair is at 40.996 and 41.028 s, 0.6 s after the intro event ended and before any gameplay.
+
+**Why the beds never stopped.** `UpdateAmbience` added the water bed above `mix.water > 0.05f` and the wind bed
+above `mix.wind > 0.05f` with no game-state test (`haptics_ps5.cpp`, the two `AddBoth` beds). `WeatherFromBands`
+scores ordinary music as water 0.20-0.45 and wind 0.20-0.50 from its mid 0.25-0.50 and low 0.15-0.35 bands, so
+the beds were on continuously. Their levels start at 0.28 and 0.25 rather than zero (`WaterBedLevel`,
+`WindBedLevel`), so even a 0.05 detection sent about 0.10-0.11 to both Sense hands at the row's 35 %. The
+transition lines used `> 0.20` while the bed used `> 0.05`, and there was no hysteresis: the log could say wind off
+while the wind bed was still adding its floor. Rain had the same 0.25 floor and 0.05 gate; only its micro-onset
+condition kept it to two starts. The DualSense is off in this row's default mask, so the constant rumble was the
+Sense pair.
+
+**The fix (`haptics_ps5.h/.cpp`).** Each bed now stands on game state the director already reads. Water is added
+only while the player's move flags say swimming (`IS_SWIMMING`, `IS_SWIMMING_DASH`) or the published state is
+`0x101E08B0`; wind only while the state is the paraglider (`0x101E06AC`) or shield surf (`0x101E0498`),
+`IS_GLIDER_ACTIVE` is set, or `IS_IN_AIR` with the sampled descent below -3 m/s. Rain has no cheap weather reader,
+so `kRainWeatherReadable` is false and the rain bed and its thunder stay off; the row is labelled (beta) and starts
+off. A bed starts at 0.20 and holds to 0.12 (`kWeatherBedOn`/`kWeatherBedOff`), and under either threshold it adds
+exactly zero, floor included. The `[vib] env` line now carries the three state gates, and the `[vib] weather` lines
+follow the effective bed, not the raw detector.
+
+**Footsteps.** The 17 `[vib] step: on` lines in the log are real running steps (4.3-5.8 m/s, 4.07-4.50 steps/s,
+alternating hands, with `移動` 0x101E064C and a jump later), not the audio detector. A step now also requires the
+game's `IS_MOVING` flag and none of the air, swim, climb, glider, ragdoll or riding flags, so a walk state left on
+while the actor is moved cannot tick.
+
+**The checkboxes.** The On column drew `ImGui::Checkbox("##on")` with no `PushID` (`imgui_menus.cpp:1457`), so all
+fifteen boxes shared one ImGui ID: nav focus drew on all of them and the pad could not reach one alone. Each box now
+pushes its row's label, as the device columns already did with row label and column. This is not 0044's fault:
+v0.7.0 (`3e60ff2`) has the identical line in patch bettervr 0008 at line 775.
+
+New patch bettervr 0050 (`imgui_menus.cpp`, `mod_settings.h`) labels Weather & Water (beta), defaults it off and
+puts each On box in its row's ID scope; the gating is in `port/bettervr/haptics_ps5.h/.cpp`. No Cemu, runtime or
+asm change. The host haptics test adds the music-with-no-state zero-output cases and the release threshold;
+`tools/bettervr-patches.sh apply` and `tools/cemu-patches.sh apply` pass. Built, untested on console.
+
+Test request 77, in the v0.8 haptics entry below, carries this fix's defaults, the page-focus check and
+the silent-music step.
+
 ## 2026-11-22: the tutorial shrine's demos hold the third-person camera and keep their tutorial text; built, untested on console
 
 The rc5 report (13.60, first person, Comfort > Advanced > Cutscene Camera Third) says the Kakariko combat-training
@@ -217,7 +261,8 @@ low swell as wind. The mixer synthesises the result at 60 Hz: the rain bed is a 
 plus a low bed, water a smoother 0.6 Hz flowing bed, wind a 0.22 Hz swell. A low transient during rain or water is
 thunder: a 0.30 s hand thump and, only when the row's Headset tick is on, one 180 ms pulse through the direct path
 at a fixed strength before the Headset Limit (about 19 Hz at the 60 % default), like Damage Taken. Default: on,
-35 %, Hands and Headset, DualSense off. One tap per mixer tick at most, never a `Haptics::Play` per drop, so a heavy
+35 %, Hands and Headset, DualSense off (since the first console run: off and labelled (beta), the 2026-11-22 entry
+above). One tap per mixer tick at most, never a `Haptics::Play` per drop, so a heavy
 downpour cannot fill the event queue. Waterfalls, rivers and some music will
 read as rain or water until the thresholds are tuned; the row is named for what the detector hears.
 
@@ -261,10 +306,12 @@ test `tools/tests/test-bettervr-haptics.cpp`.
 
 **Test request 77 (v0.8 haptics, 13.60 console).** Install the `BotW-VR-v...zip` from this head's green
 "BetterVR build" run and start Breath of the Wild in VR with the headset, both Sense controllers and the DualSense
-on. Leave the Vibration page's master switch and Headset Limit at their defaults (on, 60 %); the new rows should
-read Weather & Water 35 % [Hands, Headset], Footsteps & Ground 50 % [Hands], Surfaces (beta) off, Shield Surf 60 %
-[Hands, DualSense], Traversal 55 % [Hands, Headset], Low Health 60 % [Hands, Headset]. Leave
-the other rows as they are, and leave `HapticsLogPatterns` on (the default) so the lines below exist.
+on. Leave the Vibration page's master switch and Headset Limit at their defaults (on, 60 %); the rows should read
+Weather & Water (beta) off at 35 % [Hands, Headset] (turn it on for step 5 and step 9), Footsteps & Ground 50 %
+[Hands], Surfaces (beta) off, Shield Surf 60 % [Hands, DualSense], Traversal 55 % [Hands, Headset], Low Health 60 %
+[Hands, Headset]. Leave the other rows as they are, and leave `HapticsLogPatterns` on (the default) so the lines
+below exist. On the page, move the pad's focus down the On column: exactly one box should show the focus frame, and
+the confirm press should toggle only that row; repeat across the Hands, Headset and DualSense columns.
 
 1. **Hands and motors.** Raise the shield and lower it: the rumble should be in the shield hand only. Draw a bow:
    the draw rumble in the drawing hand only. The game's own combat rumble stays on both. Rest a hand on the DualSense
@@ -281,31 +328,36 @@ the other rows as they are, and leave `HapticsLogPatterns` on (the default) so t
 4. **Low Health.** Start at full life, then take damage to just below half; the beat should start at about 1.1 s and
    speed up as life falls. Heal above half; it should stop. Say whether the headset beat is comfortable and well
    below a damage hit.
-5. **Weather & Water.** Stand still for 20 s in each of: light rain, heavy rain including thunder, snow, beside a
-   waterfall, in a cave or under a roof, and in a shrine. Note the timestamp and what was happening at each stop; the
-   `[vib] env` lines at 2 Hz and the `[vib] weather`/`[vib] thunder` lines say what the detector heard and when.
-   Say whether the rain patter and the thunder are comfortable at 35 %.
+5. **Weather & Water (beta).** Turn the row on. Stand still for 20 s in each of: light rain, heavy rain, snow, beside
+   a waterfall, in a cave or under a roof, and in a shrine. Rain and thunder must stay silent (they wait on a weather
+   reader); say whether anything is felt in any of the stops. Then swim in deep water: the water bed should be felt
+   only while the swim state holds (shallow wading may stay silent until a water-contact field is found). Note the
+   timestamp of each stop; the `[vib] env` lines at 2 Hz carry the detector's rain,
+   water and wind and the three `states` gates, and the `[vib] weather` lines now follow the effective bed.
 6. **Footsteps and surfaces.** Walk and run on grass, sand, snow, stone, metal, wood and ice, about 10 steps on each,
    first with Surfaces (beta) off (cadence only) and then on (turn it on in the page). Send every `[vib] step` and
-   `[vib] surface` line; they carry the band levels and the hardness/grain/decay the layer found.
+   `[vib] surface` line; they carry the band levels and the hardness/grain/decay the layer found. Steps should tick
+   only while you are walking or running on the ground, not while jumping, swimming, climbing, gliding or riding.
 7. **Parry and flurry.** Parry a Guardian beam or a melee blow (shield up, A on the beat), then do a flurry (a
    backflip dodge and attacks). Send every `[vib] combat probe` line and the `[vib] PlayerNormal state` lines around
    each; if no probe line appears, say so and send the PlayerNormal lines anyway, so the next build knows whether
    the game keeps one state through them.
 8. **Comfort.** After the checks, play 20 minutes with the rows on and say which effects are too strong, tiring or
    unnoticeable, and whether the headset gusts and beat are comfortable. The defaults change first, not the code.
-9. **Music and dialogue without rain.** With no rain or water nearby, play through music and spoken dialogue for a
-   few minutes: say whether Weather & Water and Footsteps & Ground are felt during music or speech, and whether that
-   is acceptable at the defaults. The `[vib] env` and `[vib] weather` lines show what the detector heard.
+9. **Music and dialogue without water.** With Weather & Water (beta) on, stay on dry land and away from water, glide
+   once for the wind check, then play through music and spoken dialogue for a few minutes: there must be no rumble
+   from the weather beds. Then swim for the water bed and glide for the wind bed. The `[vib] env` and `[vib] weather`
+   lines show what the detector heard and which state gate held.
 
 Send `boot.log` (Settings > Diagnostics > Copy logs to USB):
 `LC_ALL=C grep -a "\[vib\] haptics\|\[vib\] env\|\[vib\] weather\|\[vib\] thunder\|\[vib\] step\|\[vib\] surface\|\[vib\] surf\|\[vib\] traversal\|\[vib\] health\|\[vib\] combat probe\|\[vib\] PlayerNormal" boot.log`
 
-**What it decides.** The feel and the levels of the rows and whether their defaults stay, including whether Weather
-& Water and Footsteps & Ground are acceptable during music and dialogue with no rain; the thresholds behind the
-rain, water, wind and surface detectors; the usefulness of the two-motor split; and the parry/flurry hashes. If the
-probe names distinct states, Combat Peaks (0.8's idea 3) can be built from them; if it shows the same state through a
-parry and a normal attack, the next step is an action-name hook rather than another state hash.
+**What it decides.** The feel and the levels of the rows and whether their defaults stay; whether the weather beds
+are silent in menus, music and ordinary play and felt only in water, a glide, a fall or a surf; whether each On box
+focuses and toggles alone; whether footsteps tick only on real foot contacts; the thresholds behind the water,
+wind and surface detectors; the usefulness of the two-motor split; and the parry/flurry hashes. If the probe names
+distinct states, Combat Peaks (0.8's idea 3) can be built from them; if it shows the same state through a parry and a
+normal attack, the next step is an action-name hook rather than another state hash.
 
 ## 2026-11-21: the shrine respawn holds the third-person camera and its fade reaches the 3D picture without the 16:9 panel; built, untested on console
 

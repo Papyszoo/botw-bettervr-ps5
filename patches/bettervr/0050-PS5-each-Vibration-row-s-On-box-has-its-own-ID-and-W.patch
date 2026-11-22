@@ -1,0 +1,74 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ps5cemu <ps5cemu@localhost>
+Date: Sun, 22 Nov 2026 12:28:22 +0100
+Subject: [PATCH] PS5: each Vibration row's On box has its own ID, and Weather
+ & Water starts off as (beta); built, untested on console
+
+Every row drew ImGui::Checkbox("##on") without a PushID, so all fifteen On boxes shared one ImGui ID: nav focus drew on every first-column box at once, and the pad could not reach one alone. Each box now pushes its row's label, as the device columns already did.
+
+Weather & Water is labelled (beta) and starts off. The audio detector still logs rain, water and wind, but the director only feels water while swimming and wind while gliding, falling or surfing; rain and its thunder need the game's weather, which has no cheap reader, so they stay off.
+---
+ src/rendering/imgui_menus.cpp |  7 +++++--
+ src/utils/mod_settings.h      | 13 +++++++------
+ 2 files changed, 12 insertions(+), 8 deletions(-)
+
+diff --git a/src/rendering/imgui_menus.cpp b/src/rendering/imgui_menus.cpp
+index e552b7d..331b685 100644
+--- a/src/rendering/imgui_menus.cpp
++++ b/src/rendering/imgui_menus.cpp
+@@ -1356,7 +1356,7 @@ static constexpr HapticCategoryRow kHapticCategoryRows[] = {
+     { HapticCategory::Game, ICON_MS_STADIA_CONTROLLER, "Game Rumble", HapticSection::Categories },
+     { HapticCategory::Damage, ICON_MS_FALLING, "Damage Taken", HapticSection::Categories },
+     { HapticCategory::Explosion, ICON_MS_LOCAL_FIRE_DEPARTMENT, "Explosions", HapticSection::Categories },
+-    { HapticCategory::WeatherWater, ICON_MS_ECO, "Weather & Water", HapticSection::World },
++    { HapticCategory::WeatherWater, ICON_MS_ECO, "Weather & Water (beta)", HapticSection::World },
+     { HapticCategory::FootstepsGround, ICON_MS_CENTER_FOCUS_STRONG, "Footsteps & Ground", HapticSection::World },
+     { HapticCategory::SurfacesBeta, ICON_MS_PAN_TOOL_ALT, "Surfaces (beta)", HapticSection::World },
+     { HapticCategory::ShieldSurf, ICON_MS_SPEED, "Shield Surf", HapticSection::Movement },
+@@ -1454,10 +1454,13 @@ void RND_Renderer::ImGuiOverlay::DrawVibrationPage(bool* changed) {
+ 
+             ImGui::TableSetColumnIndex(1);
+             bool on = enabled.load();
++            // every row's box needs its own ID: with one "##on" for the whole table, nav focus draws on all of them
++            ImGui::PushID(row.label);
+             if (ImGui::Checkbox("##on", &on)) {
+                 enabled = on;
+                 *changed = true;
+             }
++            ImGui::PopID();
+ 
+             ImGui::TableSetColumnIndex(2);
+             ImGui::BeginDisabled(!enabled.load());
+@@ -1487,7 +1490,7 @@ void RND_Renderer::ImGuiOverlay::DrawVibrationPage(bool* changed) {
+     const float bottom = ImGui::GetCursorScreenPos().y - ImGui::GetStyle().ItemSpacing.y;
+     window->StateStorage.SetFloat(cardId, bottom - cardMin.y);
+ 
+-    DrawPageNote("Game Rumble is whatever the game asks for itself: damage, hits, explosions and cutscenes all arrive on it today, so turning it down turns all of them down. Damage Taken is the hit that starts one of the game's damage reactions; it is felt on top of Game Rumble unless that row is off. The launcher's Vibration row under Settings > VR stays the DualSense's outer switch. Weather & Water listens to the game's audio for rain, water and wind, and its Headset tick is for thunder only; Footsteps & Ground is the walk cadence, and Surfaces (beta) colours it from the same audio and is off until a console run tunes it. Shield Surf, Traversal and Low Health are synthesised by the haptics director: the first is a scrape that rises with speed and a landing thump, the second the paraglider's wind, the swim's splash and rush, hand-over-hand climbing and the horse's gallop, the third a slow heartbeat below half life. Hands means the hand an input rumble belongs to: a guard is felt on the shield hand and a bow draw on the drawing hand.");
++    DrawPageNote("Game Rumble is whatever the game asks for itself: damage, hits, explosions and cutscenes all arrive on it today, so turning it down turns all of them down. Damage Taken is the hit that starts one of the game's damage reactions; it is felt on top of Game Rumble unless that row is off. The launcher's Vibration row under Settings > VR stays the DualSense's outer switch. Weather & Water (beta) listens to the game's audio but is felt only while swimming, gliding, falling or surfing; its rain and thunder wait on the game's weather and stay off. Footsteps & Ground is the walk cadence on real foot contacts, and Surfaces (beta) colours it from the same audio and is off until a console run tunes it. Shield Surf, Traversal and Low Health are synthesised by the haptics director: the first is a scrape that rises with speed and a landing thump, the second the paraglider's wind, the swim's splash and rush, hand-over-hand climbing and the horse's gallop, the third a slow heartbeat below half life. Hands means the hand an input rumble belongs to: a guard is felt on the shield hand and a bow draw on the drawing hand.");
+ }
+ 
+ void RND_Renderer::ImGuiOverlay::DrawDisplayPage(bool* changed) {
+diff --git a/src/utils/mod_settings.h b/src/utils/mod_settings.h
+index e23c0b8..e84141e 100644
+--- a/src/utils/mod_settings.h
++++ b/src/utils/mod_settings.h
+@@ -695,12 +695,13 @@ struct ModSettings {
+     BoolSetting hapticsExplosion{ "HapticsExplosion", true };
+     UIntSetting hapticsExplosionStrength{ "HapticsExplosionStrength", 100, 0, 100 };
+     UIntSetting hapticsExplosionDevices{ "HapticsExplosionDevices", HapticDeviceSense | HapticDeviceHeadset, 0, HapticDeviceAll };
+-    // v0.8's effects: the haptic director's rows (port/bettervr/haptics_ps5.cpp). Weather & Water is the
+-    // audio-driven rain, water and wind with thunder on the headset; Footsteps & Ground is the cadence and
+-    // Surfaces (beta) is its audio-classified material layer, off until a console run tunes it. Shield Surf is
+-    // the bed and the landing, Traversal is the paraglider, swim, climb and gallop, Low Health is the heartbeat;
+-    // the defaults are the proposal's (docs/bettervr-ps5/STATUS.md, the v0.8 haptics entry).
+-    BoolSetting hapticsWeatherWater{ "HapticsWeatherWater", true };
++    // v0.8's effects: the haptic director's rows (port/bettervr/haptics_ps5.cpp). Weather & Water (beta) is the
++    // audio-driven water and wind, felt only while swimming and gliding, falling or surfing; its rain and thunder
++    // wait on a weather state the game exposes cheaply, so the row starts off. Footsteps & Ground is the cadence
++    // and Surfaces (beta) is its audio-classified material layer, off until a console run tunes it. Shield Surf
++    // is the bed and the landing, Traversal is the paraglider, swim, climb and gallop, Low Health is the
++    // heartbeat (docs/bettervr-ps5/STATUS.md, the v0.8 haptics entries).
++    BoolSetting hapticsWeatherWater{ "HapticsWeatherWater", false };
+     UIntSetting hapticsWeatherWaterStrength{ "HapticsWeatherWaterStrength", 35, 0, 100 };
+     UIntSetting hapticsWeatherWaterDevices{ "HapticsWeatherWaterDevices", HapticDeviceSense | HapticDeviceHeadset, 0, HapticDeviceAll };
+     BoolSetting hapticsFootstepsGround{ "HapticsFootstepsGround", true };

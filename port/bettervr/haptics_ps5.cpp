@@ -182,6 +182,9 @@ public:
 				m_rainNext = 0.0;
 				m_rainTickUntil = 0.0;
 				m_thunderUntil = 0.0;
+				m_rainOn = false;
+				m_waterOn = false;
+				m_windOn = false;
 				m_stepTick = -1.0;
 				m_stepOn = false;
 				m_stepPhase = 0.0f;
@@ -209,6 +212,9 @@ public:
 			m_rainNext = 0.0;
 			m_rainTickUntil = 0.0;
 			m_thunderUntil = 0.0;
+			m_rainOn = false;
+			m_waterOn = false;
+			m_windOn = false;
 			m_thunderSeen = ps5audio::Shared().thunder.load(std::memory_order_relaxed);
 			m_stepTick = -1.0;
 			m_stepOn = false;
@@ -300,6 +306,9 @@ private:
 		m_rainNext = 0.0;
 		m_rainTickUntil = 0.0;
 		m_rainTickLevel = 0.0f;
+		m_rainOn = false;
+		m_waterOn = false;
+		m_windOn = false;
 		m_waterPhase = 0.0f;
 		m_windPhase = 0.0f;
 		m_thunderSeen = ps5audio::Shared().thunder.load(std::memory_order_relaxed);
@@ -559,6 +568,27 @@ private:
 		const float gain = settings.GetHapticsGain(HapticCategory::WeatherWater);
 		const uint32_t devices = settings.GetHapticsDeviceMask(HapticCategory::WeatherWater);
 
+		// The beds hear ordinary music and ambience, so each one stands on game state the director can already
+		// read: water while swimming, wind while gliding, falling or surfing, rain only on the game's weather
+		// (which has no cheap reader, so rain and its thunder stay off).
+		const PlayerMoveBitFlags flags = Player::GetMoveFlags();
+		const bool swimming = HAS_FLAG(flags, PlayerMoveBitFlags::IS_SWIMMING) ||
+		                      HAS_FLAG(flags, PlayerMoveBitFlags::IS_SWIMMING_DASH) || m_state == ps5hapt::kSwim;
+		const bool falling = HAS_FLAG(flags, PlayerMoveBitFlags::IS_IN_AIR) && m_vertical < -ps5hapt::kWindFallSpeed;
+		const bool windState = m_state == ps5hapt::kGlide || m_state == ps5hapt::kShieldSurf ||
+		                       HAS_FLAG(flags, PlayerMoveBitFlags::IS_GLIDER_ACTIVE) || falling;
+		const bool raining = false; // the game's weather has no cheap reader: kRainWeatherReadable is false
+
+		const float rainLevel = ps5hapt::WeatherBedLevel(
+		    ps5hapt::WeatherBed::Rain, mix.rain,
+		    ps5hapt::WeatherBedAllowed(ps5hapt::WeatherBed::Rain, swimming, windState, raining), m_rainOn);
+		const float waterLevel = ps5hapt::WeatherBedLevel(
+		    ps5hapt::WeatherBed::Water, mix.water,
+		    ps5hapt::WeatherBedAllowed(ps5hapt::WeatherBed::Water, swimming, windState, raining), m_waterOn);
+		const float windLevel = ps5hapt::WeatherBedLevel(
+		    ps5hapt::WeatherBed::Wind, mix.wind,
+		    ps5hapt::WeatherBedAllowed(ps5hapt::WeatherBed::Wind, swimming, windState, raining), m_windOn);
+
 		if (HapticsLogging() && now >= m_envLogAt && m_envLogs < kEnvLogCap)
 		{
 			m_envLogAt = now + 0.5;
@@ -569,8 +599,10 @@ private:
 			                                          DescribeDevices(devices))
 			                            : std::string("Weather & Water off");
 			Log::print<INFO>("[vib] env: low {:.2f} mid {:.2f} high {:.2f}, onsets {:.1f}/s micro {:.1f}/s -> "
-			                 "rain {:.2f} water {:.2f} wind {:.2f}, {}",
-			                 audio.low, audio.mid, audio.high, audio.onsets, audio.micro, mix.rain, mix.water, mix.wind, row);
+			                 "rain {:.2f} water {:.2f} wind {:.2f}, states swim {} wind {} rain {}; {}",
+			                 audio.low, audio.mid, audio.high, audio.onsets, audio.micro, mix.rain, mix.water, mix.wind,
+			                 swimming ? "on" : "off", windState ? "on" : "off",
+			                 (ps5hapt::kRainWeatherReadable && raining) ? "on" : "off", row);
 		}
 
 		auto transition = [&](bool& on, bool next, const char* name, float level) {
@@ -581,9 +613,9 @@ private:
 				Log::print<INFO>("[vib] weather: {} {} at {:.2f}, bands low {:.2f} mid {:.2f} high {:.2f}, micro {:.1f}/s",
 				                 name, next ? "on" : "off", level, audio.low, audio.mid, audio.high, audio.micro);
 		};
-		transition(m_rainOn, mix.rain > 0.20f, "rain", mix.rain);
-		transition(m_waterOn, mix.water > 0.20f, "water", mix.water);
-		transition(m_windOn, mix.wind > 0.20f, "wind", mix.wind);
+		transition(m_rainOn, rainLevel > 0.0f, "rain", mix.rain);
+		transition(m_waterOn, waterLevel > 0.0f, "water", mix.water);
+		transition(m_windOn, windLevel > 0.0f, "wind", mix.wind);
 
 		const uint32_t thunder = audio.thunder;
 		if (m_thunderSeen == 0)
@@ -591,7 +623,8 @@ private:
 		else if (thunder != m_thunderSeen)
 		{
 			m_thunderSeen = thunder;
-			const bool stormy = mix.rain > 0.20f || mix.water > 0.30f;
+			// thunder is a rain sound: it needs the rain bed, which has no weather state to stand on
+			const bool stormy = rainLevel > 0.0f;
 			if (gain > 0.0f && devices != 0 && stormy && now >= m_lastThunderAt + ps5hapt::kThunderMinSeconds)
 			{
 				m_lastThunderAt = now;
@@ -620,7 +653,7 @@ private:
 		}
 
 		// the rain bed and its randomised taps; at most one tap a mixer tick, never a queue event
-		if (mix.rain > 0.05f)
+		if (rainLevel > 0.0f)
 		{
 			if (now >= m_rainNext)
 			{
@@ -632,20 +665,19 @@ private:
 				}
 				m_rainNext = now + 1.0 / 60.0;
 			}
-			AddBoth(ps5hapt::RainBedLevel(mix.rain) * gain, devices, senseLeft, senseRight, padLarge, padSmall, 0.35f,
-			        1.0f);
+			AddBoth(rainLevel * gain, devices, senseLeft, senseRight, padLarge, padSmall, 0.35f, 1.0f);
 		}
 		else
 			m_rainNext = 0.0;
 
 		m_waterPhase = std::fmod(m_waterPhase + dt * 2.0f * glm::pi<float>() * 0.60f, 2.0f * glm::pi<float>());
 		m_windPhase = std::fmod(m_windPhase + dt * 2.0f * glm::pi<float>() * 0.22f, 2.0f * glm::pi<float>());
-		if (mix.water > 0.05f)
-			AddBoth(ps5hapt::WaterBedLevel(mix.water) * gain * (0.88f + 0.12f * std::sin(m_waterPhase)), devices,
-			        senseLeft, senseRight, padLarge, padSmall, 1.0f, 0.25f);
-		if (mix.wind > 0.05f)
-			AddBoth(ps5hapt::WindBedLevel(mix.wind) * gain * (0.86f + 0.14f * std::sin(m_windPhase)), devices,
-			        senseLeft, senseRight, padLarge, padSmall, 1.0f, 0.10f);
+		if (waterLevel > 0.0f)
+			AddBoth(waterLevel * gain * (0.88f + 0.12f * std::sin(m_waterPhase)), devices, senseLeft, senseRight,
+			        padLarge, padSmall, 1.0f, 0.25f);
+		if (windLevel > 0.0f)
+			AddBoth(windLevel * gain * (0.86f + 0.14f * std::sin(m_windPhase)), devices, senseLeft, senseRight,
+			        padLarge, padSmall, 1.0f, 0.10f);
 
 		if (now < m_rainTickUntil)
 		{
@@ -704,7 +736,19 @@ private:
 		    surfaces ? ps5hapt::BlendSurfaceTone(neutral, m_surface, surfaceGain) : neutral;
 		const uint32_t tickDevices = devices | (surfaces ? surfaceDevices : 0u);
 
+		// a real foot contact: the game's moving flag on the ground, not a walk state left on while the actor is
+		// airborne, swimming, climbing, gliding, ragdolled or riding
+		const PlayerMoveBitFlags flags = Player::GetMoveFlags();
+		const bool offGround = HAS_FLAG(flags, PlayerMoveBitFlags::IS_IN_AIR) ||
+		                       HAS_FLAG(flags, PlayerMoveBitFlags::IS_SWIMMING_OR_CLIMBING) ||
+		                       HAS_FLAG(flags, PlayerMoveBitFlags::IS_CLIMBING_WALL) ||
+		                       HAS_FLAG(flags, PlayerMoveBitFlags::IS_SWIMMING) ||
+		                       HAS_FLAG(flags, PlayerMoveBitFlags::IS_SWIMMING_DASH) ||
+		                       HAS_FLAG(flags, PlayerMoveBitFlags::IS_GLIDER_ACTIVE) ||
+		                       HAS_FLAG(flags, PlayerMoveBitFlags::IS_RAGDOLL_ACTIVE) ||
+		                       HAS_FLAG(flags, PlayerMoveBitFlags::IS_RIDING_HORSE);
 		const bool walking = gain > 0.0f && devices != 0 && ps5hapt::IsWalkState(m_state) && !m_riding &&
+		                     HAS_FLAG(flags, PlayerMoveBitFlags::IS_MOVING) && !offGround &&
 		                     std::abs(m_vertical) < 1.2f && m_speed > 0.35f;
 		if (!walking)
 		{

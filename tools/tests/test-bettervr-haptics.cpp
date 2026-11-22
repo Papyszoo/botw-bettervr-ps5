@@ -114,6 +114,23 @@ int main()
 		Check(WaterBedLevel(0.0f) < WaterBedLevel(1.0f) && WaterBedLevel(1.0f) <= 0.78f,
 			"the water bed rises and stays capped");
 		Check(WindBedLevel(0.0f) < WindBedLevel(1.0f) && WindBedLevel(1.0f) <= 0.70f, "the wind bed rises and stays capped");
+
+		// the console report's fix: ordinary music must not move a hand without the game state a bed stands on
+		const WeatherMix music = WeatherFromBands(0.25f, 0.38f, 0.15f, 0.0f);
+		Check(music.water > kWeatherBedOn && music.wind > kWeatherBedOn,
+			"ordinary music still reads as water and wind in the analyser");
+		Check(WeatherBedLevel(WeatherBed::Water, music.water, WeatherBedAllowed(WeatherBed::Water, false, false, false), false) == 0.0f &&
+		      WeatherBedLevel(WeatherBed::Wind, music.wind, WeatherBedAllowed(WeatherBed::Wind, false, false, false), false) == 0.0f,
+			"music-like bands with no water or glide state add no bed");
+		Check(WeatherBedLevel(WeatherBed::Water, music.water, WeatherBedAllowed(WeatherBed::Water, true, false, false), false) > 0.0f,
+			"the water bed is felt once swimming");
+		Check(WeatherBedLevel(WeatherBed::Wind, music.wind, WeatherBedAllowed(WeatherBed::Wind, false, true, false), false) > 0.0f,
+			"the wind bed is felt once gliding, falling or surfing");
+		Check(WeatherBedLevel(WeatherBed::Rain, 1.0f, WeatherBedAllowed(WeatherBed::Rain, false, false, true), false) == 0.0f,
+			"rain stays off while the game's weather has no cheap reader");
+		Check(WeatherBedLevel(WeatherBed::Water, kWeatherBedOff + 0.01f, true, true) > 0.0f &&
+		      WeatherBedLevel(WeatherBed::Water, kWeatherBedOff - 0.01f, true, true) == 0.0f,
+			"a running bed holds to the release threshold and then lets go");
 	}
 
 	// Footsteps & Ground

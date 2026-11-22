@@ -138,6 +138,38 @@ inline float WaterBedLevel(float water) {
 inline float WindBedLevel(float wind) {
 	return 0.25f + 0.45f * Clamp01(wind);
 }
+
+// The game state each audio-driven bed needs. Water is only felt in or on the water (swimming), wind only while
+// gliding, falling or surfing; rain would need the game's weather, which no field here exposes cheaply, so it is
+// never allowed and stays off (docs/bettervr-ps5/STATUS.md, the console report's fix entry).
+enum class WeatherBed : uint8_t { Rain, Water, Wind };
+inline constexpr bool kRainWeatherReadable = false;
+inline constexpr float kWeatherBedOn = 0.20f;  // the detector's level that starts a bed
+inline constexpr float kWeatherBedOff = 0.12f; // ... and the lower one an already-running bed holds until
+inline constexpr float kWindFallSpeed = 3.0f;  // m/s downhill: a hop is not a fall
+
+inline bool WeatherBedAllowed(WeatherBed bed, bool swimming, bool windState, bool raining) {
+	switch (bed) {
+	case WeatherBed::Water: return swimming;
+	case WeatherBed::Wind: return windState;
+	case WeatherBed::Rain: return kRainWeatherReadable && raining;
+	}
+	return false;
+}
+
+// The level a bed adds this tick, or zero when its game state does not hold or the detector is under its
+// threshold. `wasOn` holds a bed that is already on down to kWeatherBedOff, so music grazing kWeatherBedOn
+// cannot make it flicker; at zero the bed adds nothing at all, floor included.
+inline float WeatherBedLevel(WeatherBed bed, float mix, bool allowed, bool wasOn) {
+	if (!allowed || mix < (wasOn ? kWeatherBedOff : kWeatherBedOn))
+		return 0.0f;
+	switch (bed) {
+	case WeatherBed::Rain: return RainBedLevel(mix);
+	case WeatherBed::Water: return WaterBedLevel(mix);
+	case WeatherBed::Wind: return WindBedLevel(mix);
+	}
+	return 0.0f;
+}
 // thunder keeps a fixed direct-pulse strength before the Headset Limit; the row's Headset tick gates it
 inline constexpr float kThunderHeadsetStrength = 1.0f; // 25 Hz at a 100 % limit through the runtime's sqrt mapping
 inline constexpr int kThunderHeadsetMs = 180;
