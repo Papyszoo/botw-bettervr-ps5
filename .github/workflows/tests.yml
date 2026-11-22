@@ -37,6 +37,11 @@ jobs:
           clang++-18 -std=c++20 -Wall -Wextra -Werror -Iport/cemu -o test-audio-queue tools/tests/test-audio-queue.cpp
           ./test-audio-queue
 
+      - name: Cemu's AX pump keeps its pace, from one core at a time
+        run: |
+          clang++-18 -std=c++20 -Wall -Wextra -Werror -pthread -Iport/cemu -o test-ax-pump tools/tests/test-ax-pump.cpp
+          ./test-ax-pump
+
       - name: System paths and legacy discovery
         run: bash tools/tests/test-paths.sh
 

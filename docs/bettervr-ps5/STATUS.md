@@ -6,6 +6,75 @@ tested.
 Test request 77 (v0.8 haptics) is withdrawn with the haptics work; the requests after it move up one, so
 the console keyboard is 77, the tutorial shrine 78 and the cutscene height 79.
 
+## 2026-11-22: the AX output is pumped by any idle emulated core, so a long arrival frame no longer drains the audio queue; built, untested on console
+
+The 16:52 session's warp-in windows hold one 80.2 ms and one 70.4 ms frame (`snd-report.md` §1), and
+the audio in flight at the device is 58-64 ms (48 ms queue, a 5.3 ms grain and 5-11 ms in AudioOut).
+Cemu queues one 3 ms AX frame per turn of **core 1's idle loop** only (`coreinit_Thread.cpp`'s
+`__OSCheckSystemEvents`, `ax_out.cpp`'s `AXOut_update`, `ax_ist.cpp`'s `AXIst_QueueFrame`,
+`PS5AudioAPI.cpp`'s target), so a frame on that core 16-22 ms longer than the queue drains it, and the
+producer's recovery is a hole the old counter line did not show.
+
+**What this branch changes (cemu 0065).** Every emulated core's idle loop now asks for the same pump
+at the same `idleEventsUs` spacing, on the way into its spin and every 64 spins while it waits for a
+runnable thread. `AXOut_update` takes a non-blocking gate first: a core that finds another in an
+update leaves this turn's frame to it, so exactly one caller is inside and Cemu's one-frame-in-flight
+check is unchanged. The pacing arithmetic moved unchanged into `port/cemu/PS5AxPump.h`
+(`ps5ax::Pacer`: 3 ms, 2.9 ms while the backend wants blocks, 1.7 ms minimum, 216 ms skip) on the same
+host clock, so the audio rate and latency are the ones v0.8 has. Core 1's own call is untouched.
+`bettervr.json`'s **`"audioAnyCore": 0`** restores core 1 alone (read beside `textureMemo`); the
+default is on. The update's state is safe under that gate: the pacing statics and
+`numQueuedFramesSndGeneric` are inside it, the audio devices and the queue are under `g_audioMutex`
+and `PS5AudioAPI`'s mutex as before, and nothing the update calls can take the gate again (no
+reentry, no waiting caller).
+
+**The diagnostics this build adds.** One `[stall]` line per frame over 34 ms (at most one every
+200 ms) with as much of its split as the counters give: the frame, the GPU thread's time waiting for
+the game, the stereo pass's record and replay, the six GPU waits, and the AX feed gap at that
+moment; the driver's submit and Cemu's textures/copies are named as not timed. The 10 s `[perf]`
+line gains the AX feed gap: frames fed, the longest gap between frames and between blocks, schedule
+skips, and how many frames each core pumped. `PS5 AudioOut: queue N ms (lowest N ms, grain late by
+N ms, N dropped, N padded) since the last line` is now printed **every 10 s unconditionally** in
+Cemu's log (the old line only appeared on a drop or a pad).
+
+Checks: `tools/tests/test-ax-pump.cpp` (one frame per 3 ms on host time, the 2.9 ms/1.7 ms/216 ms
+rules, one caller in an update at a time, the gap's numbers; also under ThreadSanitizer),
+`tools/tests/test-audio-queue.cpp`, `python3 -B tools/lang.py check`, and
+`tools/cemu-patches.sh apply` and `tools/bettervr-patches.sh apply` with `PS5CEMU_RELEASE=1` (every
+patch ID matching) pass. No host build compiles Cemu, `coreinit_Thread.cpp` or `PS5AudioAPI.cpp`, so
+the "BetterVR build" run is theirs. Built, untested on console.
+
+**Test request 82 (v0.8 audio at a warp, 13.60 console).** Install the `BotW-VR-v...zip` from the
+green "BetterVR build" run on this head; VR on, 1.25x as in the last run, `bettervr.json` as it is
+(the pump is on by default).
+
+1. **Towers and shrines, five or more times.** Fast travel between towers and to shrine entrances,
+   with a 2D screen or loading screen before as usual, and listen at each arrival for crackle, a
+   dropout or sound that stays behind the picture. Say roughly where and when each one was.
+2. **A pause menu** (the tower pause) and **one cutscene**, for the same.
+3. **Optional, the old pump.** Add `"audioAnyCore": 0` to `/data/botwvr/launcher/bettervr.json`,
+   restart the game and repeat step 1. The same travels without it are the comparison.
+
+**Send**, from `/data/ps5cemu/logs/boot.log`:
+
+- `LC_ALL=C grep -a "\[stall\]" boot.log`
+- `LC_ALL=C grep -a "\[perf\]" boot.log` (the `AX fed … longest gap … cores 0/1/2 …` part)
+- `LC_ALL=C grep -a "Audio from any idle core" boot.log`
+
+and from `/data/botwvr/cemu/log.txt` (or `cemu.txt` after Copy logs to USB):
+
+- `LC_ALL=C grep -a "PS5 AudioOut: queue" log.txt`
+
+plus which teleports crackled and which did not.
+
+**What it decides.** `lowest 0-5 ms` and `grain late by 16-22 ms` on the same second as a
+`[stall] frame 70-80 ms` means the queue still drained; the `[stall]` line's `AX … since the last
+block` and `cores 0/1/2` counts then say whether another core pumped during the frame (fix 2 worked
+and something else drained it) or none did (the main core was not the only busy one, and the
+self-paced AX thread of `stall-report.md` §3.3 is next). If `lowest` stays 40 ms or more through
+every teleport and no crackle is heard, the audio path is not the source and the search moves to the
+frame itself (the `[stall]` split) — with no added latency either way.
+
 ## 2026-11-22: a repeated `[copy]` note is a hash, and every compose-mode edge says its cost; built, untested on console
 
 The 13.60 Hateno report (`fps-report.md` 2233 row) has one 416.6 ms frame at the first

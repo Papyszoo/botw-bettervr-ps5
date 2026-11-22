@@ -92,6 +92,7 @@ PS5AudioAPI::PS5AudioAPI(bool padSpeaker, uint32 samplerate, uint32 channels, ui
 	// target inside the block and grain jitter is what left grains short (see PS5AudioQueue.h)
 	const uint32 target = std::clamp<uint32>(GetAudioDelay(), kTargetBlocks, kMaxTargetBlocks) * samples_per_block;
 	m_queue = PS5AudioQueue(channels, samples_per_block, kGrain, target, target + kSpareBlocks * samples_per_block);
+	m_lastCountLog = std::chrono::steady_clock::now(); // the first diagnostics line 10 s in
 	m_thread = std::thread(&PS5AudioAPI::OutputThread, this);
 }
 
@@ -141,6 +142,10 @@ bool PS5AudioAPI::Stop()
 	std::lock_guard lock(m_mutex);
 	m_playing = false;
 	m_queue.Clear(); // the pause's sound is not the sound of where play goes on
+	// the diagnostics start over: a pause empties the queue by design, and that is not a drain
+	m_lowestFrames = 0xFFFFFFFF;
+	m_longestGrainWaitNs = 0;
+	m_settled = false;
 	return true;
 }
 
@@ -162,16 +167,31 @@ void PS5AudioAPI::OutputThread()
 				// a grain short by a few frames would be padded with silence: a splice, heard as a
 				// click every time the stream's clock and AudioOut's cross. Wait for a whole one: the
 				// four blocks of target make that a hitch, not a dropout, in steady play.
-				if (!m_wake.wait_for(lock, std::chrono::milliseconds(kPadTimeoutMs),
-						[this] { return m_quit || !m_playing || m_queue.HasGrain(); }))
+				// The wait is timed and the fill kept (LogCountsLocked): a drain the producer recovers
+				// from is otherwise silent here, and it is what a warp's long frame leaves
+				if (m_settled)
+					m_lowestFrames = std::min<uint32>(m_lowestFrames, (uint32)m_queue.Frames());
+				const auto waitStart = std::chrono::steady_clock::now();
+				const bool got = m_wake.wait_for(lock, std::chrono::milliseconds(kPadTimeoutMs),
+					[this] { return m_quit || !m_playing || m_queue.HasGrain(); });
+				const uint64 waitedNs = (uint64)std::chrono::duration_cast<std::chrono::nanoseconds>(
+					std::chrono::steady_clock::now() - waitStart).count();
+				m_longestGrainWaitNs = std::max<uint64>(m_longestGrainWaitNs, waitedNs);
+				if (!got)
 					m_queue.CountPaddedGrain();
 				if (m_quit)
 					return;
 				if (!m_playing)
 					continue;
+				if (m_settled)
+					m_lowestFrames = std::min<uint32>(m_lowestFrames, (uint32)m_queue.Frames());
 			}
 			const float volume = std::clamp(m_volume, 0, 100) / 100.0f;
 			const size_t available = m_queue.Frames();
+			if (!m_queue.NeedsMore())
+				m_settled = true; // the start's fill is not a drain: the line starts once it has reached its target
+			if (m_settled)
+				m_lowestFrames = std::min<uint32>(m_lowestFrames, (uint32)available);
 			const size_t frames = std::min<size_t>(available, kGrain);
 			for (size_t frame = 0; frame < frames; frame++)
 			{
@@ -228,19 +248,21 @@ void PS5AudioAPI::RaisePriority()
 		result == 0 ? std::string() : fmt::format(" refused ({:#x}): it stays", (uint32)result));
 }
 
-// at most one line every 10 s, and only when a block was dropped or a grain padded since the last
-// one: in steady play neither happens, and the log stays quiet
+// One line every 10 s, whatever happened: the queue's fill now, its lowest and the longest wait for
+// a whole grain since the last line, and the blocks and grains given up. A drain the producer recovers
+// from pads nothing and logs nothing, so the lowest fill and the wait are the only evidence of it.
 void PS5AudioAPI::LogCountsLocked()
 {
-	const uint32 dropped = m_queue.DroppedBlocks(), padded = m_queue.PaddedGrains();
-	if (dropped == m_loggedDropped && padded == m_loggedPadded)
-		return;
 	const auto now = std::chrono::steady_clock::now();
 	if (m_lastCountLog != std::chrono::steady_clock::time_point{} && now - m_lastCountLog < std::chrono::seconds(10))
 		return;
-	cemuLog_log(LogType::Force, "PS5 AudioOut: dropped blocks {}, padded grains {} since the last line (queue {} ms)",
-		dropped - m_loggedDropped, padded - m_loggedPadded, m_queue.Milliseconds(kRate));
+	const uint32 dropped = m_queue.DroppedBlocks(), padded = m_queue.PaddedGrains();
+	const uint32 lowest = m_lowestFrames == 0xFFFFFFFF ? m_queue.Frames() : m_lowestFrames;
+	cemuLog_log(LogType::Force, "PS5 AudioOut: queue {} ms (lowest {} ms, grain late by {:.1f} ms, {} dropped, {} padded) since the last line",
+		m_queue.Milliseconds(kRate), lowest * 1000 / kRate, m_longestGrainWaitNs / 1e6, dropped - m_loggedDropped, padded - m_loggedPadded);
 	m_loggedDropped = dropped;
 	m_loggedPadded = padded;
+	m_lowestFrames = 0xFFFFFFFF;
+	m_longestGrainWaitNs = 0;
 	m_lastCountLog = now;
 }

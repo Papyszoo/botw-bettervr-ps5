@@ -56,4 +56,9 @@ private:
 	PS5AudioQueue m_queue; // interleaved samples at the stream's channel count
 	uint32 m_loggedDropped = 0, m_loggedPadded = 0;
 	std::chrono::steady_clock::time_point m_lastCountLog{};
+	// the diagnostics line (LogCountsLocked, every 10 s): the fill's lowest and the longest wait for
+	// a whole grain since the last line. A pause clears the queue by design, so Stop() starts them over
+	uint32 m_lowestFrames = 0xFFFFFFFF;
+	uint64 m_longestGrainWaitNs = 0;
+	bool m_settled = false; // the queue has reached its target once: before that it is still filling
 };

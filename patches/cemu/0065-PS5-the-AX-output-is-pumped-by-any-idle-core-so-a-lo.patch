@@ -1,0 +1,326 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Patryk Kowalczyk <papyszoo@gmail.com>
+Date: Sun, 22 Nov 2026 17:15:11 +0100
+Subject: [PATCH] PS5: the AX output is pumped by any idle core, so a long
+ frame on core 1 no longer drains the queue
+
+Cemu queues one 3 ms AX frame from its main core's idle loop. An 80 ms frame on that core (a loaded
+warp-in) is 16-22 ms longer than the 58-64 ms of audio in flight, so the console's queue runs dry
+and the arrival crackles.
+
+Any idle emulated core's loop now asks for the same pump, at the same idleEventsUs spacing, while
+the main core runs or sits in a host call. A non-blocking gate lets one caller into AXOut_update at
+a time; the others leave the turn's frame to it, so the pacing, Cemu's one-frame-in-flight check and
+the output queue's locking are as they were. The pacing arithmetic moves into the port's Pacer
+unchanged (3 ms, 2.9 ms while the backend wants blocks, 1.7 ms minimum, 216 ms skip) and stays on
+host time. bettervr.json's audioAnyCore (0) restores the main core alone.
+
+The diagnostics for a warp: one [stall] line per frame over 34 ms with its split as far as the
+counters give (waiting for the game, record and replay, the six GPU waits, the AX feed gap), the
+[perf] line's AX gap per 10 s (frames, longest gap between frames and blocks, skips, which cores
+fed them), and the AudioOut queue's lowest fill and longest grain wait every 10 s, unconditionally.
+A drain the producer recovers from was silent before.
+
+Built, untested on console.
+---
+ .../HW/Latte/Core/LattePerformanceMonitor.h   |  7 ++
+ src/Cafe/HW/Latte/Core/LatteRenderTarget.cpp  | 44 ++++++++++
+ src/Cafe/OS/libs/coreinit/coreinit_Thread.cpp | 28 ++++++-
+ src/Cafe/OS/libs/snd_core/ax.h                |  2 +-
+ src/Cafe/OS/libs/snd_core/ax_out.cpp          | 83 ++++++++++++++++++-
+ 5 files changed, 161 insertions(+), 3 deletions(-)
+
+diff --git a/src/Cafe/HW/Latte/Core/LattePerformanceMonitor.h b/src/Cafe/HW/Latte/Core/LattePerformanceMonitor.h
+index bd841b9c..f49ea6e5 100644
+--- a/src/Cafe/HW/Latte/Core/LattePerformanceMonitor.h
++++ b/src/Cafe/HW/Latte/Core/LattePerformanceMonitor.h
+@@ -32,6 +32,13 @@ public:
+ 		return previousFrame;
+ 	}
+ 
++	// PS5: the frame that has just ended, before frameFinished() files it as the previous one (the
++	// long-frame line in LatteRenderTarget.cpp reads it at the swap)
++	uint64 getCurrentFrameValue() const
++	{
++		return currentSum;
++	}
++
+ 	// PS5: every measured tick since the start, for the port's boot log ([perf]), which compares
+ 	// ten-second windows rather than single frames
+ 	uint64 getTotal() const
+diff --git a/src/Cafe/HW/Latte/Core/LatteRenderTarget.cpp b/src/Cafe/HW/Latte/Core/LatteRenderTarget.cpp
+index b1a034db..79b4840e 100644
+--- a/src/Cafe/HW/Latte/Core/LatteRenderTarget.cpp
++++ b/src/Cafe/HW/Latte/Core/LatteRenderTarget.cpp
+@@ -25,6 +25,8 @@
+ #endif
+ #if defined(CEMU_PS5)
+ #include "VrPS5.h" // BotW-BetterVR's stereo path (port/bettervr/VrPS5.h)
++#include "PS5AxPump.h" // ps5cemu/port/cemu: the AX output's feed gap, for the long-frame line
++#include <string_view>
+ #endif
+ 
+ uint32 prevScissorX = 0;
+@@ -811,6 +813,18 @@ std::atomic<uint64> g_ps5FrameVrEndNs{0};
+ std::atomic<uint32> g_ps5FrameProfileSamples{0};
+ extern uint64 _rdtscFrequency;
+ static uint64 s_ps5LastSwapTsc = 0;
++
++// The long-frame line (patches/cemu 0065): one [stall] line for a frame over 34 ms, with as much of
++// its split as the counters give, and the AX output's feed gap at that moment (port/cemu/PS5AxPump.h).
++// At most one every 200 ms: a run of long frames is on the [perf] line's counts. The stereo pass and
++// the GPU waits are deltas between two swaps, so they are the frame's own work up to its swap.
++extern std::atomic<uint64> g_ps5RecordNs; // VulkanRendererCore.cpp
++extern std::atomic<uint64> g_ps5ReplayNs;
++extern std::atomic<uint64> g_ps5GpuWaitTicks[6]; // VulkanRenderer.cpp
++void PS5Cemu_LogLine(std::string_view line);	 // the port's boot log, written at once
++static uint64 s_ps5PrevRecordNs = 0, s_ps5PrevReplayNs = 0;
++static uint64 s_ps5PrevGpuWait[6] = {};
++static uint64 s_ps5LastStallNs = 0;
+ static uint64 TscToNs(uint64 ticks)
+ {
+ 	return _rdtscFrequency ? ticks * 1000000000ull / _rdtscFrequency : 0;
+@@ -835,6 +849,36 @@ void LatteRenderTarget_itHLESwapScanBuffer()
+ 			while (us > longest && !g_ps5LongestFrameUs.compare_exchange_weak(longest, us, std::memory_order_relaxed))
+ 			{
+ 			}
++			const uint64 nowNs = TscToNs(now);
++			if (us > 34000 && nowNs - s_ps5LastStallNs >= 200000000ull)
++			{
++				s_ps5LastStallNs = nowNs;
++				const uint64 recordNs = g_ps5RecordNs.load(std::memory_order_relaxed) - s_ps5PrevRecordNs;
++				const uint64 replayNs = g_ps5ReplayNs.load(std::memory_order_relaxed) - s_ps5PrevReplayNs;
++				uint64 waitNs[6]{};
++				uint64 waitsTotalNs = 0;
++				for (int kind = 0; kind < 6; kind++)
++				{
++					waitNs[kind] = TscToNs(g_ps5GpuWaitTicks[kind].load(std::memory_order_relaxed) - s_ps5PrevGpuWait[kind]);
++					waitsTotalNs += waitNs[kind];
++				}
++				const ps5ax::FeedStats ax = ps5ax::PeekFeedGap();
++				// "waiting for the game" is this frame's GPU-thread idle: Cemu's command processor
++				// waited for the emulated CPU, so the frame is the guest's, not the GPU thread's
++				PS5Cemu_LogLine(fmt::format(
++					"[stall] frame {:.1f} ms: waiting for the game {:.1f} ms, stereo pass {:.1f} ms (record {:.1f}, replay {:.1f}), "
++					"GPU waits {:.1f} ms (the previous frame {:.1f}, an image {:.1f}, its fence {:.1f}, a present {:.1f}, presenting {:.1f}, "
++					"other {:.1f}); AX {:.1f} ms since the last frame and {:.1f} ms since the last block, longest {:.1f}/{:.1f} ms "
++					"(frames from cores 0/1/2: {}/{}/{}); driver submit, textures, images and copies not timed",
++					us / 1000.0, PPCTimer_tscToMicroseconds(performanceMonitor.gpuTime_idleTime.getCurrentFrameValue()) / 1000.0,
++					(recordNs + replayNs) / 1e6, recordNs / 1e6, replayNs / 1e6, waitsTotalNs / 1e6, waitNs[0] / 1e6, waitNs[1] / 1e6,
++					waitNs[2] / 1e6, waitNs[3] / 1e6, waitNs[4] / 1e6, waitNs[5] / 1e6, ax.sinceLastFrameNs / 1e6, ax.sinceLastBlockNs / 1e6,
++					ax.longestFrameGapNs / 1e6, ax.longestBlockGapNs / 1e6, ax.framesByCore[0], ax.framesByCore[1], ax.framesByCore[2]));
++			}
++			s_ps5PrevRecordNs = g_ps5RecordNs.load(std::memory_order_relaxed);
++			s_ps5PrevReplayNs = g_ps5ReplayNs.load(std::memory_order_relaxed);
++			for (int kind = 0; kind < 6; kind++)
++				s_ps5PrevGpuWait[kind] = g_ps5GpuWaitTicks[kind].load(std::memory_order_relaxed);
+ 		}
+ 		s_ps5LastSwapTsc = now;
+ 	}
+diff --git a/src/Cafe/OS/libs/coreinit/coreinit_Thread.cpp b/src/Cafe/OS/libs/coreinit/coreinit_Thread.cpp
+index b6495891..eb7d52a5 100644
+--- a/src/Cafe/OS/libs/coreinit/coreinit_Thread.cpp
++++ b/src/Cafe/OS/libs/coreinit/coreinit_Thread.cpp
+@@ -6,6 +6,9 @@
+ #include "Cafe/OS/libs/coreinit/coreinit_Alarm.h"
+ #include "Cafe/OS/libs/coreinit/coreinit_GHS.h"
+ #include "Cafe/OS/libs/snd_core/ax.h"
++#if defined(CEMU_PS5)
++#include "PS5AxPump.h" // ps5cemu/port/cemu: whether an idle core other than the main one runs the AX pump
++#endif
+ #include "Cafe/HW/Espresso/Debugger/GDBStub.h"
+ #include "Cafe/HW/Espresso/Interpreter/PPCInterpreterInternal.h"
+ #include "Cafe/HW/Espresso/Recompiler/PPCRecompiler.h"
+@@ -1236,7 +1239,7 @@ namespace coreinit
+ 	void __OSCheckSystemEvents()
+ 	{
+ 		// AX update
+-		snd_core::AXOut_update();
++		snd_core::AXOut_update(t_assignedCoreIndex);
+ 		// alarm update
+ 		coreinit::alarm_update();
+ 		// nfp update
+@@ -1253,6 +1256,20 @@ namespace coreinit
+ 	// 0: at every turn of the loop, as everywhere else
+ 	uint64 g_ps5IdleEventTicks = 0;
+ 	static uint64 s_ps5LastIdleEvents = 0; // the main core's thread's only
++
++	// PS5: another core's idle loop asks the AX output for a frame, at the main core's idleEventsUs
++	// spacing. The audio output is not the main core's alone (bettervr.json's audioAnyCore): while
++	// that core runs or sits in a host call, a core with no runnable thread keeps the 3 ms pace, and
++	// AXOut_update's gate makes exactly one caller an update at a time.
++	static void PS5_CoreIdleAxPump(sint32 coreIndex)
++	{
++		static uint64 s_lastEvents[3] = {};
++		const uint64 now = __rdtsc();
++		if (g_ps5IdleEventTicks != 0 && now - s_lastEvents[coreIndex] < g_ps5IdleEventTicks)
++			return;
++		s_lastEvents[coreIndex] = now;
++		snd_core::AXOut_update(coreIndex);
++	}
+ #endif
+ 
+ 	// idle fiber per core if no thread is runnable
+@@ -1307,8 +1324,17 @@ namespace coreinit
+ 				// thread wake-up latency; then asleep, as everywhere else
+ 				// (coreIndex is t_assignedCoreIndex here, without a thread-local read each turn: on the
+ 				// console thread_local is emulated, a call into the system library)
++				// and the audio output's pump on the way in and while spinning, when bettervr.json's
++				// audioAnyCore lets a core other than the main one run it (patch 0065)
++				const bool pumpAudio = ps5ax::AnyCore();
++				if (pumpAudio)
++					PS5_CoreIdleAxPump(coreIndex);
+ 				for (uint32 spin = g_ps5IdleSpinIterations; spin && g_coreRunQueueThreadCount[coreIndex].isZeroNow(); spin--)
++				{
+ 					_mm_pause();
++					if (pumpAudio && (spin & 63) == 0)
++						PS5_CoreIdleAxPump(coreIndex);
++				}
+ #endif
+ 				g_coreRunQueueThreadCount[t_assignedCoreIndex].waitUntilNonZero();
+ 				if (!sSchedulerActive.load(std::memory_order::relaxed))
+diff --git a/src/Cafe/OS/libs/snd_core/ax.h b/src/Cafe/OS/libs/snd_core/ax.h
+index 144e0c9a..3f3739e4 100644
+--- a/src/Cafe/OS/libs/snd_core/ax.h
++++ b/src/Cafe/OS/libs/snd_core/ax.h
+@@ -390,7 +390,7 @@ namespace snd_core
+ 	
+ 	void AXOut_init();
+ 	void AXOut_reset();
+-	void AXOut_update();
++	void AXOut_update(sint32 coreIndex = -1);
+ 
+ 	COSModule* GetModuleSndCore1();
+ 	COSModule* GetModuleSndCore2();
+diff --git a/src/Cafe/OS/libs/snd_core/ax_out.cpp b/src/Cafe/OS/libs/snd_core/ax_out.cpp
+index 0d9d930f..223a346c 100644
+--- a/src/Cafe/OS/libs/snd_core/ax_out.cpp
++++ b/src/Cafe/OS/libs/snd_core/ax_out.cpp
+@@ -4,6 +4,21 @@
+ #include "config/CemuConfig.h"
+ #include "Common/CafeStaticVar.h"
+ 
++#if defined(CEMU_PS5)
++#include "PS5AxPump.h" // ps5cemu/port/cemu: the pump's pacing, its one-caller gate and its feed gap
++#include <atomic>
++#endif
++
++#if defined(CEMU_PS5)
++namespace
++{
++	// the pump's numbers: written by the one caller AXOut_update's gate lets in, read by the port's
++	// [perf] and long-frame [stall] lines on other threads
++	ps5ax::FeedGap s_axFeedGap;
++	std::atomic<bool> s_axAnyCore{true}; // bettervr.json's audioAnyCore, on unless the file says 0
++}
++#endif
++
+ namespace snd_core
+ {
+ 	uint32 numProcessedFrames = 0;
+@@ -184,6 +199,10 @@ namespace snd_core
+ 		{
+ 			if(g_tvAudio)
+ 				g_tvAudio->FeedBlock(tempTVChannelData);
++#if defined(CEMU_PS5)
++			// the gap between two blocks is what the console's queue sees (port/cemu/PS5AxPump.h)
++			s_axFeedGap.Block(ps5ax::NowNs());
++#endif
+ 
+ 			tempAudioBlockCounter = 0;
+ 		}
+@@ -476,8 +495,24 @@ namespace snd_core
+ 	}
+ 
+ 	// called periodically to check for AX updates
+-	void AXOut_update()
++	// coreIndex: the emulated core whose idle loop calls it (-1: not an idle loop's), for the feed gap's
++	// per-core counts
++	void AXOut_update(sint32 coreIndex)
+ 	{
++#if defined(CEMU_PS5)
++		// one caller at a time (patches/cemu 0065): with audioAnyCore every idle core asks for the pump,
++		// and the first one in queues this turn's frame while the others leave it to that one. Nothing
++		// waits, and this function never re-enters the gate, so the pacing below and Cemu's one frame in
++		// flight are the same as with the main core alone.
++		static ps5ax::Gate s_pumpGate;
++		if (!s_pumpGate.TryEnter())
++			return;
++		struct LeaveGate
++		{
++			ps5ax::Gate& gate;
++			~LeaveGate() { gate.Leave(); }
++		} leaveGate{s_pumpGate};
++#endif
+ 		constexpr static auto kTimeout = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::milliseconds(((IAudioAPI::kBlockCount * 3) / 4) * (AX_FRAMES_PER_GROUP * 3)));
+ 		constexpr static auto kWaitDuration = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::milliseconds(3));
+ 		constexpr static auto kWaitDurationFast = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::microseconds(2900));
+@@ -493,6 +528,18 @@ namespace snd_core
+ 
+ 		const auto wait_duration = additional_blocks_required ? kWaitDurationFast : kWaitDuration;
+ 
++#if defined(CEMU_PS5)
++		// the same schedule as below, in the port's Pacer so the PC test runs it
++		// (tools/tests/test-ax-pump.cpp): the frame's place is kept on host time, whichever core calls
++		const auto nowNs = ps5ax::NowNs();
++		static ps5ax::Pacer s_pacer(nowNs, (uint64_t)kWaitDuration.count());
++		const ps5ax::Pacer::Step step = s_pacer.Due(nowNs, (uint64_t)wait_duration.count(), (uint64_t)kWaitDurationMinimum.count(), (uint64_t)kTimeout.count());
++		if (!step.frame)
++			return;
++		if (step.skipped)
++			s_axFeedGap.Skipped();
++#else
++		(void)coreIndex; // the port's per-core feed counts are the console's (CEMU_PS5)
+ 		// s_ax_interval_timer increases by the wait period
+ 		// it can lag behind by multiple periods (up to kTimeout) if there is minor stutter in the CPU thread
+ 		// s_last_check is always set to the timestamp at the time of firing
+@@ -517,6 +564,7 @@ namespace snd_core
+ 			s_ax_interval_timer = (now - wait_duration);
+ 		else
+ 			s_ax_interval_timer += wait_duration;
++#endif
+ 
+ 
+ 		if (snd_core::isInitialized())
+@@ -526,8 +574,41 @@ namespace snd_core
+ 				AXOut_updateDevicePlayState(true);
+ 				snd_core::AXIst_QueueFrame();
+ 				numQueuedFramesSndGeneric++;
++#if defined(CEMU_PS5)
++				s_axFeedGap.Fed(nowNs, coreIndex);
++#endif
+ 			}
+ 		}
+ 	}
+ 
+ }
++
++#if defined(CEMU_PS5)
++namespace ps5ax
++{
++	uint64_t NowNs()
++	{
++		return (uint64_t)std::chrono::duration_cast<std::chrono::nanoseconds>(now_cached().time_since_epoch()).count();
++	}
++
++	bool AnyCore()
++	{
++		return s_axAnyCore.load(std::memory_order_relaxed);
++	}
++
++	void SetAnyCore(bool on)
++	{
++		s_axAnyCore.store(on, std::memory_order_relaxed);
++	}
++
++	FeedStats PeekFeedGap()
++	{
++		return s_axFeedGap.Peek(NowNs());
++	}
++
++	FeedStats TakeFeedGap()
++	{
++		return s_axFeedGap.Take(NowNs());
++	}
++}
++#endif
