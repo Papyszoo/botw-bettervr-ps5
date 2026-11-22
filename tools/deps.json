@@ -6,7 +6,7 @@
       "about": "Cemu (Wii U emulator), Crementif's BetterVR fork (branch bettervr) at the pinned commit, with the submodules the PS5 build uses",
       "kind": "git",
       "url": "https://github.com/Crementif/Cemu.git",
-      "commit": "86168a81a65d8962c3a19d0e57e9ab26acc37206",
+      "commit": "6db0f53a86252f6cbc8f8f09707ee65a01b42ffd",
       "path": ".deps/Cemu",
       "submodules": ["dependencies/ZArchive", "dependencies/Vulkan-Headers", "dependencies/imgui"],
       "creates": ".deps/Cemu/src/Cafe/CafeSystem.cpp"
@@ -293,10 +293,10 @@
     },
     {
       "name": "bettervr",
-      "about": "Crementif's BotW-BetterVR 1.0.0 (MIT), the Breath of the Wild VR mod, built into the Cemu fork as a host module (CEMU_EXTERNAL_MODULES=.deps/BotW-BetterVR/src, tools/build-cemu.sh) with patches/bettervr. Its dependencies/ vendor the OpenXR headers, ImGui headers, ImPlot and the Vulkan ImGui backend; its cemu-src submodule is not used",
+      "about": "Crementif's BotW-BetterVR 1.0.2 (MIT), the Breath of the Wild VR mod, built into the Cemu fork as a host module (CEMU_EXTERNAL_MODULES=.deps/BotW-BetterVR/src, tools/build-cemu.sh) with patches/bettervr. Its dependencies/ vendor the OpenXR headers, ImGui headers, ImPlot and the Vulkan ImGui backend; its cemu-src submodule is not used",
       "kind": "git",
       "url": "https://github.com/Crementif/BotW-BetterVR.git",
-      "commit": "db5495b96177c84d1c39e4c424b414b4a9c4ca80",
+      "commit": "07abe22303021f204398e29b49ec84926c3160b4",
       "path": ".deps/BotW-BetterVR",
       "creates": ".deps/BotW-BetterVR/src/instance.h"
     }

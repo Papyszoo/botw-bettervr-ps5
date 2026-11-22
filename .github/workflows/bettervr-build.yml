@@ -2,12 +2,12 @@
 # BotW VR: builds this branch on a standard GitHub-hosted runner (2 vCPU, 7 GB), with
 # docs/BUILDING.md's packages and `make release`. It only builds: no release, tag or branch is made,
 # and no secret is used beyond the default token's read access. The push trigger is this branch
-# alone (and the bettervr-1.0 stage branches); workflow_dispatch starts working once this file is on the default branch.
+# alone (and the bettervr-1.0 and bettervr-1.0.2 stage branches); workflow_dispatch starts working once this file is on the default branch.
 name: BetterVR build
 
 on:
   push:
-    branches: ['fix/vr-first-frame-sigill', 'bettervr-1.0/**']
+    branches: ['fix/vr-first-frame-sigill', 'bettervr-1.0/**', 'bettervr-1.0.2/**']
   workflow_dispatch:
 
 permissions:
