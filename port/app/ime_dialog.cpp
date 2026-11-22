@@ -61,10 +61,10 @@ namespace
 	constexpr int32_t kOutcomeCancelled = 1;
 	constexpr int32_t kOutcomeAborted = 2;
 	// A dialog that reports NONE once it was taken never comes up on this firmware: a second, then the
-	// caller decides the text it has. The hook polls once a frame.
+	// caller cancels the game's keyboard. The hook polls once a frame.
 	constexpr int kGracePolls = 120;
 	// A dialog the player cannot see (or one left unanswered) must not hold the game: after 90 s of
-	// the console's clock it ends as a cancel would, and the game takes the text it gave.
+	// the console's clock it ends as a cancel would, and the game's own keyboard is cancelled with it.
 	constexpr uint64_t kAnswerTimeUs = 90ull * 1000 * 1000;
 	// No title and no placeholder of the app's own: the field holds the game's text, and the port has no
 	// name for another game's prompt. Empty rather than null, so the system never reads an address it was
@@ -102,6 +102,15 @@ namespace
 			ps5log::Line("[ime] ending the console's keyboard: {:#x}", (uint32_t)rc);
 #endif
 	}
+}
+
+ps5ime::Keyboard ps5ime::KeyboardFor(bool stereo, bool menuOpen)
+{
+	if (menuOpen)
+		return Keyboard::None;
+	// Stereo is the console's dialog even while VrPS5's HeadsetUp() says 0: that flag belongs to the M2
+	// flat path, and BetterVR's runtime starts Hmd2, so it is 0 in every stereo session (VrPS5.cpp).
+	return stereo ? Keyboard::Console : Keyboard::Sheet;
 }
 
 bool ps5ime::Open(std::u16string_view text, int maxLength, int32_t& rc)
@@ -173,7 +182,7 @@ int ps5ime::Poll(std::u16string& text, int32_t& rc)
 		if (sceKernelGetProcessTime() - s_openedAt >= kAnswerTimeUs)
 		{
 			CloseLocked();
-			return 4; // up too long: the game's text stands, as on a cancel
+			return 4; // up too long: a cancel for the game's keyboard
 		}
 		return 0;
 	}
@@ -229,7 +238,7 @@ int ps5ime::Poll(std::u16string& text, int32_t& rc)
 	if (outcome == kOutcomeCancelled)
 		return 2;
 	if (outcome != kOutcomeAborted)
-		rc = outcome; // an ending this build does not know: still the text the game gave
+		rc = outcome; // an ending this build does not know: a cancel for the game's keyboard
 	return 3;
 }
 

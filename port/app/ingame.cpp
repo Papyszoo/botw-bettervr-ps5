@@ -93,7 +93,8 @@ namespace
 		None,
 		Opening, // the system refused it once: tried again for a few frames
 		Up,
-		Answered
+		Answered,  // OK: the game's text is its typed text
+		Cancelled, // cancel, abandoned or never opened: the game's own keyboard ends as cancelled
 	};
 	ImeStage s_imeStage = ImeStage::None;
 	uint32_t s_imeAppearance = 0;
@@ -101,10 +102,11 @@ namespace
 	int s_imeLines = 0;
 	constexpr int kImeLogLines = 24;
 	// The [kbd] lines: one per game appearance for each hook, so a session says whether Cemu's ImGui
-	// frame drew the sheet's hook and whether the out-of-frame one opened the console's keyboard.
+	// frame drew the sheet's hook and whether the out-of-frame one opened the console's keyboard, and one
+	// per appearance when the console's keyboard is not the one that runs, naming the reason.
 	int s_kbdLines = 0;
 	constexpr int kKbdLogLines = 16;
-	uint32_t s_kbdSheetAppearance = 0, s_kbdVrAppearance = 0;
+	uint32_t s_kbdSheetAppearance = 0, s_kbdVrAppearance = 0, s_kbdImeAppearance = 0;
 	// a refused Open is often a Term and an Init back to back (a busy system): about a third of a second
 	// of frames before the game's own text is decided
 	constexpr int kImeOpenTries = 20;
@@ -835,11 +837,33 @@ void PS5Cemu_ImguiUploads()
 
 namespace
 {
+	// What the console's keyboard answered this frame: still up, the game's text decided (OK, with the
+	// typed text), or cancelled - which ends the game's own keyboard the way the hardware's cancel does.
+	enum class ImeAnswer
+	{
+		Waiting,
+		Decided,
+		Cancelled
+	};
+
+	// One [kbd] line per game appearance when the console's keyboard is not the one that runs, naming why.
+	// In stereo the gate is ps5vr::Stereo() alone (ps5ime::KeyboardFor), so a decline here is a fact a
+	// session should say: flat play, the port's menu, or a dialog that did not open or was cancelled.
+	void LogImeDecline(uint32 appearance, const char* reason)
+	{
+		if (s_kbdImeAppearance == appearance || s_kbdLines >= kKbdLogLines)
+			return;
+		s_kbdImeAppearance = appearance;
+		++s_kbdLines;
+		ps5log::Line("[kbd] ime: appearance {}: {}", appearance, reason);
+	}
+
 	// The console's keyboard in BetterVR's stereo frames (app/ime_dialog.h), driven by Cemu's swkbd state
 	// from outside its ImGui frame: one dialog per game appearance, polled once a frame, its typed text
 	// decided as the sheet's is. A cancel, a dialog the system abandons, one it refuses, and one left up
-	// for 90 s all decide the text the game gave, because swkbd has no cancel a game could take.
-	bool DrawImeKeyboard(std::u16string& text, sint32 maxLength, uint32 appearance, bool keyboardOnly)
+	// for 90 s all cancel the game's own keyboard (swkbd_cancelInput, patch cemu 0066): it disappears with
+	// no OK, as on the hardware, so the game leaves its naming input instead of waiting.
+	ImeAnswer DrawImeKeyboard(std::u16string& text, sint32 maxLength, uint32 appearance, bool keyboardOnly)
 	{
 		if (appearance != s_imeAppearance)
 		{
@@ -867,21 +891,22 @@ namespace
 				}
 				BetterVR_PS5_SetGameInputBlocked(true);
 				s_imeStage = ImeStage::Up;
-				return false;
+				return ImeAnswer::Waiting;
 			}
 			if (maxLength > 0 && s_imeTries < kImeOpenTries)
-				return false; // a refusal that may pass (a Term and an Init back to back): tried again next frame
+				return ImeAnswer::Waiting; // a refusal that may pass (a Term and an Init back to back): tried again next frame
 			if (s_imeLines < kImeLogLines)
 			{
 				++s_imeLines;
 				if (maxLength > 0)
-					ps5log::Line("[ime] swkbd asked for a keyboard: {} units, limit {} ({}); it did not open ({:#x}, {} tries): the text it gave is decided",
+					ps5log::Line("[ime] swkbd asked for a keyboard: {} units, limit {} ({}); it did not open ({:#x}, {} tries): the game's keyboard is cancelled",
 						text.size(), limit, keyboardOnly ? "keyboard" : "form", (uint32_t)rc, s_imeTries);
 				else
-					ps5log::Line("[ime] swkbd asked for a keyboard with no room for a character: the text it gave is decided");
+					ps5log::Line("[ime] swkbd asked for a keyboard with no room for a character: the game's keyboard is cancelled");
 			}
-			s_imeStage = ImeStage::Answered;
-			return true; // the game's own text decided, so it never waits for a keyboard nobody can see
+			LogImeDecline(appearance, maxLength > 0 ? "the console's keyboard did not open" : "no room for a character");
+			s_imeStage = ImeStage::Cancelled;
+			return ImeAnswer::Cancelled; // the game's own keyboard cancelled, so it never waits for one nobody can see
 		}
 		if (s_imeStage == ImeStage::Up)
 		{
@@ -889,28 +914,38 @@ namespace
 			int32_t rc = 0;
 			const int state = ps5ime::Poll(typed, rc);
 			if (state == 0)
-				return false;
+				return ImeAnswer::Waiting;
 			BetterVR_PS5_SetGameInputBlocked(false);
-			s_imeStage = ImeStage::Answered; // until the game shows the keyboard again
+			if (state == 1)
+			{
+				s_imeStage = ImeStage::Answered; // until the game shows the keyboard again
+				if (s_imeLines < kImeLogLines)
+				{
+					++s_imeLines;
+					ps5log::Line("[ime] the console's keyboard: OK, {} units", typed.size());
+				}
+				text = typed;
+				return ImeAnswer::Decided;
+			}
+			s_imeStage = ImeStage::Cancelled;
 			if (s_imeLines < kImeLogLines)
 			{
 				++s_imeLines;
-				if (state == 1)
-					ps5log::Line("[ime] the console's keyboard: OK, {} units", typed.size());
-				else if (state == 2)
-					ps5log::Line("[ime] the console's keyboard: cancelled; the text it gave is decided (swkbd has none to take)");
+				if (state == 2)
+					ps5log::Line("[ime] the console's keyboard: cancelled; the game's keyboard is cancelled with it");
 				else if (state == 4)
-					ps5log::Line("[ime] the console's keyboard: no answer in 90 s; ended, the text it gave is decided");
+					ps5log::Line("[ime] the console's keyboard: no answer in 90 s; ended, the game's keyboard is cancelled");
 				else
-					ps5log::Line("[ime] the console's keyboard: ended without an answer ({:#x}, {}, {} units)", (uint32_t)rc, state,
-						typed.size());
+					ps5log::Line("[ime] the console's keyboard: ended without an answer ({:#x}, {}, {} units); the game's keyboard is cancelled",
+						(uint32_t)rc, state, typed.size());
 			}
-			if (state == 1)
-				text = typed;
-			return true; // cancelled, timed out or abandoned: the text the game gave stands, as if it were decided
+			LogImeDecline(appearance, "the console's keyboard was cancelled");
+			return ImeAnswer::Cancelled;
 		}
+		if (s_imeStage == ImeStage::Cancelled)
+			return ImeAnswer::Cancelled; // the game's frame with nullptr ends it; the cancel stands until then
 		// answered (or a keyboard that was answered before this appearance): the game takes its text
-		return true;
+		return ImeAnswer::Decided;
 	}
 }
 
@@ -921,10 +956,10 @@ namespace
 // (SwkbdAppearKeyboard), not its form. appearance changes as the game shows the keyboard again,
 // which starts it over. True when the text is done: OK, or Options. Under the menu, it waits.
 //
-// Flat play's sheet only: in BetterVR's stereo frames the sheet is drawn into a TV picture neither the
-// headset nor the TV shows (docs/bettervr-ps5/STATUS.md), so PS5Cemu_DrawKeyboardVR opens the console's
-// own keyboard outside Cemu's ImGui frame, and this hook declines. Flat play, the M2 flat screen, and
-// a headset that failed to start (the TV then shows Cemu's picture, where the sheet is) keep the sheet.
+// Flat play's sheet only: in BetterVR's stereo frames the sheet is drawn into a TV picture that is
+// neither eye's (the TV shows Hmd2's social screen) and it would take the pad while invisible, so it is
+// neither drawn nor read there and PS5Cemu_DrawKeyboardVR opens the console's own keyboard instead
+// (ps5ime::KeyboardFor, app/ime_dialog.h). Flat play, the M2 flat screen and VR off keep the sheet.
 bool PS5Cemu_DrawKeyboard(std::u16string& text, sint32 maxLength, bool counted, uint32 appearance, bool keyboardOnly)
 {
 	if (s_kbdSheetAppearance != appearance && s_kbdLines < kKbdLogLines)
@@ -934,12 +969,10 @@ bool PS5Cemu_DrawKeyboard(std::u16string& text, sint32 maxLength, bool counted, 
 			ps5vr::HeadsetUp() ? 1 : 0, s_menuOpen ? 1 : 0);
 	}
 	s_kbdSheetAppearance = appearance;
-	if (s_menuOpen)
-		return false;
-	if (ps5vr::Stereo() && ps5vr::HeadsetUp())
-		return false; // the console's keyboard, opened and polled by PS5Cemu_DrawKeyboardVR
-	// flat: the sheet. A console keyboard still up from stereo is ended first, and the game takes the
-	// text it gave, since the sheet cannot be typed on behind it.
+	if (ps5ime::KeyboardFor(ps5vr::Stereo(), s_menuOpen) != ps5ime::Keyboard::Sheet)
+		return false; // stereo: the console's keyboard, opened and polled by PS5Cemu_DrawKeyboardVR
+	// flat: the sheet. A console keyboard still up from stereo is ended first, and the game's text stands,
+	// since the sheet cannot be typed on behind it.
 	if (s_imeStage == ImeStage::Up || s_imeStage == ImeStage::Opening)
 	{
 		ps5ingame::EndImeDialog(nullptr);
@@ -969,34 +1002,46 @@ bool PS5Cemu_DrawKeyboard(std::u16string& text, sint32 maxLength, bool counted, 
 
 // Cemu's swkbd state each TV frame (swkbd.cpp's swkbd_renderVR, called by LatteRenderTarget.cpp),
 // outside Cemu's ImGui frame: text is the form's while the game has its keyboard up and nullptr once
-// it has dismissed it. In stereo with the headset up this opens and polls the console's keyboard
-// (app/ime_dialog.h), so the dialog does not depend on that frame drawing; the game's text and limit
-// go to it and its typed text comes back as the sheet's did. Everywhere else the sheet stays the one
-// drawn, in the TV picture. True when the text is done: the game's swkbd takes it as Enter's.
-bool PS5Cemu_DrawKeyboardVR(std::u16string* text, sint32 maxLength, uint32 appearance, bool keyboardOnly)
+// it has dismissed it. In stereo this opens and polls the console's keyboard (app/ime_dialog.h), so the
+// dialog does not depend on that frame drawing, and no flag of VrPS5's own M2 path can hold it back:
+// that path is off in BetterVR, whose runtime starts Hmd2, so ps5vr::HeadsetUp() is 0 in every stereo
+// session (the console run of 2026-11-22). The game's text and limit go to it and its typed text comes
+// back as the sheet's did. Everywhere else the sheet is the one drawn, in the TV picture. 0 while the
+// keyboard is up, 1 when the game's text is decided (OK), 2 when it is cancelled: Cemu's swkbd then
+// ends as a cancel on the hardware does (swkbd_cancelInput), so the game leaves the input it waits in.
+int PS5Cemu_DrawKeyboardVR(std::u16string* text, sint32 maxLength, uint32 appearance, bool keyboardOnly)
 {
 	if (!text)
 	{
 		// the game dismissed its own swkbd: the dialog must not stay up over a game that no longer
 		// waits for it, and patch bettervr 0044 would keep the pad idle.
 		if (s_imeStage == ImeStage::Up || s_imeStage == ImeStage::Opening)
-			ps5ingame::EndImeDialog("the game dismissed its keyboard; ended, the text it gave is decided");
-		return false;
+			ps5ingame::EndImeDialog("the game dismissed its keyboard; ended");
+		return 0;
 	}
 	if (!ps5vr::Stereo())
-		return false; // flat: the sheet, whose hook is the one Cemu's ImGui frame calls
+	{
+		LogImeDecline(appearance, "flat play: the sheet is the keyboard");
+		return 0;
+	}
 	if (s_kbdVrAppearance != appearance && s_kbdLines < kKbdLogLines)
 	{
 		++s_kbdLines;
-		ps5log::Line("[kbd] frame: appearance {} ({}), limit {}; stereo 1, headset {}, menu {}", appearance,
+		ps5log::Line("[kbd] frame: appearance {} ({}), limit {}; stereo 1, headset {} (VrPS5's own path; not the gate), menu {}", appearance,
 			keyboardOnly ? "keyboard" : "form", maxLength, ps5vr::HeadsetUp() ? 1 : 0, s_menuOpen ? 1 : 0);
 	}
 	s_kbdVrAppearance = appearance;
 	if (s_menuOpen)
-		return false;
-	if (!ps5vr::HeadsetUp())
-		return false; // stereo but no headset: the TV shows Cemu's picture, where the sheet is
-	return DrawImeKeyboard(*text, maxLength, appearance, keyboardOnly);
+	{
+		LogImeDecline(appearance, "under the menu");
+		return 0;
+	}
+	switch (DrawImeKeyboard(*text, maxLength, appearance, keyboardOnly))
+	{
+	case ImeAnswer::Decided: return 1;
+	case ImeAnswer::Cancelled: return 2;
+	default: return 0;
+	}
 }
 
 // Whether the screen not shown whole goes in a corner (LatteRenderTarget.cpp).

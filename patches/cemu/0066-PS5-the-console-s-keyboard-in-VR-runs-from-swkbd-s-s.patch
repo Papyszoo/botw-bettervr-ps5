@@ -2,14 +2,15 @@ From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: ps5cemu <ps5cemu@localhost>
 Date: Sun, 22 Nov 2026 20:52:10 +0100
 Subject: [PATCH] PS5: the console's keyboard in VR runs from swkbd's state
- outside Cemu's ImGui frame, and every swkbd export reports its calls; built,
- untested on console
+ outside Cemu's ImGui frame, every swkbd export reports its calls, and the
+ port's dialog can cancel the game's keyboard as the hardware's cancel does;
+ built, untested on console
 
 ---
  src/Cafe/HW/Latte/Core/LatteRenderTarget.cpp |   5 +
- src/Cafe/OS/libs/swkbd/swkbd.cpp             | 229 ++++++++++++++++---
+ src/Cafe/OS/libs/swkbd/swkbd.cpp             | 250 +++++++++++++++++--
  src/Cafe/OS/libs/swkbd/swkbd.h               |   5 +
- 3 files changed, 213 insertions(+), 26 deletions(-)
+ 3 files changed, 233 insertions(+), 27 deletions(-)
 
 diff --git a/src/Cafe/HW/Latte/Core/LatteRenderTarget.cpp b/src/Cafe/HW/Latte/Core/LatteRenderTarget.cpp
 index 5374940c..65f777d3 100644
@@ -28,7 +29,7 @@ index 5374940c..65f777d3 100644
  	g_renderer->HandleScreenshotRequest(textureView, isPadView);
  	if (!g_renderer->ImguiBegin(!isPadView))
 diff --git a/src/Cafe/OS/libs/swkbd/swkbd.cpp b/src/Cafe/OS/libs/swkbd/swkbd.cpp
-index 56f3df06..35fbc329 100644
+index 56f3df06..1c0a68bd 100644
 --- a/src/Cafe/OS/libs/swkbd/swkbd.cpp
 +++ b/src/Cafe/OS/libs/swkbd/swkbd.cpp
 @@ -8,6 +8,8 @@
@@ -57,7 +58,7 @@ index 56f3df06..35fbc329 100644
 +	{
 +		uint32 create = 0;
 +		uint32 appearForm = 0, appearKeyboard = 0;
-+		uint32 disappearForm = 0, disappearKeyboard = 0;
++		uint32 disappearForm = 0, disappearKeyboard = 0, cancel = 0;
 +		uint32 subThreadFont = 0, subThreadPredict = 0;
 +		uint32 receiver = 0, drawInfo = 0, learnDic = 0, mapped = 0;
 +		uint32 inputFormLines = 0;
@@ -279,7 +280,7 @@ index 56f3df06..35fbc329 100644
  	isNeedCalcSubThreadPredict--;
  	coreinit::OSSleepTicks(ESPRESSO_TIMER_CLOCK / 200); // simulate 5ms of working time
  }
-@@ -402,6 +518,14 @@ void SwkbdCalcSubThreadPredict()
+@@ -402,42 +518,63 @@ void SwkbdCalcSubThreadPredict()
  void SwkbdCalc(void* controllerInfo)
  {
  	// no op for now
@@ -294,20 +295,19 @@ index 56f3df06..35fbc329 100644
  }
  
  void swkbd_keyInput(uint32 keyCode);
-@@ -414,30 +538,41 @@ void swkbd_finishInput();
+ #if defined(CEMU_PS5)
+ void swkbd_inputStringChanged();
+ void swkbd_finishInput();
++void swkbd_cancelInput();
+ // PS5Cemu (ps5cemu/port/app/ingame.cpp) draws the keyboard over the game as it draws its 3DS
+ // keyboard: in its menus' language, keys and typeface, read from the DualSense. It changes the form's
+ // text (UTF-16) to at most maxLength units (counted: a length the game set, which it shows), starts
  // over when appearance changes, and returns true when the text is done. keyboardOnly says the game
  // asked for the keyboard alone (SwkbdAppearKeyboard), not its form.
  bool PS5Cemu_DrawKeyboard(std::u16string& text, sint32 maxLength, bool counted, uint32 appearance, bool keyboardOnly);
 -#endif
 -void swkbd_render(bool mainWindow)
-+// The same keyboard in BetterVR's stereo frames: the console's own dialog (port/app/ime_dialog.cpp).
-+// text is the form's while the game has its keyboard up, nullptr once it has dismissed it, so the
-+// dialog is ended even when nothing draws. Called every TV frame from LatteRenderTarget, outside Cemu's
-+// ImGui frame, which ImguiBegin can decline.
-+bool PS5Cemu_DrawKeyboardVR(std::u16string* text, sint32 maxLength, uint32 appearance, bool keyboardOnly);
-+
-+namespace
- {
+-{
 -	// only render if active
 -	if( swkbdInternalState == NULL || swkbdInternalState->isActive == false)
 -		return;
@@ -317,6 +317,15 @@ index 56f3df06..35fbc329 100644
 -	// the length swkbd_keyInput allows, within the form
 -	sint32 maxLength = swkbdInternalState->maxTextLength;
 -	if (swkbdInternalState->keyboardOnlyMode)
++// The same keyboard in BetterVR's stereo frames: the console's own dialog (port/app/ime_dialog.cpp).
++// text is the form's while the game has its keyboard up, nullptr once it has dismissed it, so the
++// dialog is ended even when nothing draws. Called every TV frame from LatteRenderTarget, outside Cemu's
++// ImGui frame, which ImguiBegin can decline. 0 while it is up, 1 when the text is decided (OK, the
++// form's), 2 when it is cancelled: the game's keyboard then ends as a cancel on the hardware does.
++int PS5Cemu_DrawKeyboardVR(std::u16string* text, sint32 maxLength, uint32 appearance, bool keyboardOnly);
++
++namespace
++{
 +	// The form as the port's keyboard takes it: its text in UTF-16, the length its key input allows,
 +	// and whether that length is the game's (which it shows) rather than the form's maximum.
 +	struct PS5SwkbdText
@@ -357,7 +366,7 @@ index 56f3df06..35fbc329 100644
  	{
  		const sint32 length = std::min((sint32)text.size(), maxLength);
  		for (sint32 i = 0; i < length; i++)
-@@ -446,6 +581,23 @@ void swkbd_render(bool mainWindow)
+@@ -446,6 +583,23 @@ void swkbd_render(bool mainWindow)
  		swkbdInternalState->formStringLength = length;
  		swkbd_inputStringChanged();
  	}
@@ -381,7 +390,7 @@ index 56f3df06..35fbc329 100644
  	if (done)
  		swkbd_finishInput();
  	return;
-@@ -606,6 +758,27 @@ void swkbd_render(bool mainWindow)
+@@ -606,6 +760,44 @@ void swkbd_render(bool mainWindow)
  	ImGui::PopStyleColor();
  }
  
@@ -398,18 +407,35 @@ index 56f3df06..35fbc329 100644
 +	}
 +	PS5SwkbdText form = PS5SwkbdReadText();
 +	const std::u16string before = form.text;
-+	const bool done = PS5Cemu_DrawKeyboardVR(&form.text, form.maxLength, s_ps5Appearances, swkbdInternalState->keyboardOnlyMode);
++	const int answer = PS5Cemu_DrawKeyboardVR(&form.text, form.maxLength, s_ps5Appearances, swkbdInternalState->keyboardOnlyMode);
 +	if (form.text != before)
 +		PS5SwkbdWriteText(form.text, form.maxLength);
-+	if (done)
++	if (answer == 1)
 +		swkbd_finishInput();
++	else if (answer == 2)
++		swkbd_cancelInput();
++}
++
++// Ends the keyboard the way a cancel on the console's own does: it disappears with no OK pressed, and
++// the form's text stays what it was. The game, which polls SwkbdGetStateKeyboard/InputForm and
++// SwkbdIsDecideOkButton, then leaves the input it was waiting in instead of waiting forever. The port's
++// dialog calls it through swkbd_renderVR when the player cancels, when no dialog can open, or when one
++// is abandoned; never the other way round, so a game's own disappear is untouched.
++void swkbd_cancelInput()
++{
++	if (swkbdInternalState == NULL || swkbdInternalState->isActive == false)
++		return;
++	swkbdInternalState->decideButtonWasPressed = false;
++	swkbdInternalState->isActive = false;
++	if (s_ps5SwkbdLog.cancel++ < 8)
++		PS5SwkbdLogLine(fmt::format("[swkbd] cancel: {}", swkbdInternalState->keyboardOnlyMode ? "keyboard" : "form"));
 +}
 +#endif
 +
  bool swkbd_hasKeyboardInputHook()
  {
  	return swkbdInternalState != NULL && swkbdInternalState->isActive;
-@@ -737,6 +910,10 @@ namespace swkbd
+@@ -737,6 +929,10 @@ namespace swkbd
  			s_swkbdStaticData.Allocate();
  			isNeedCalcSubThreadFont = 0;
  			isNeedCalcSubThreadPredict = 0;

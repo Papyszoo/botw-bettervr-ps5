@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // The console's keyboard dialog (port/app/ime_dialog.cpp) on a PC: the system's calls are a fake, and
 // what is checked is the state around them - the game's text and limit, the NONE grace, OK, cancel,
-// abort, a dialog left up past its 90 s, a close once, and a fresh dialog after one ended.
-// tools/tests/test-ime-dialog.sh builds and runs it. Each check prints PASS or FAIL; the exit status
-// is the failures.
+// abort, a dialog left up past its 90 s, a close once, a fresh dialog after one ended, and which
+// keyboard a stereo or a flat frame gets. tools/tests/test-ime-dialog.sh builds and runs it. Each
+// check prints PASS or FAIL; the exit status is the failures.
 
 #include "app/ime_dialog.h"
 
@@ -257,6 +257,14 @@ int main()
 	Reset();
 	g_foreground = false;
 	Check(Open(u"x", 8, rc) && g_userId == 9, "a dialog opens on the initial user without a foreground one");
+
+	// The keyboard each hook opens: stereo is the console's dialog whatever VrPS5's own frame path calls
+	// its headset (the console run of 2026-11-22 was stereo 1, headset 0, and the dialog must open), flat
+	// is the sheet, and under the port's menu neither is drawn.
+	Check(ps5ime::KeyboardFor(true, false) == ps5ime::Keyboard::Console, "stereo opens the console's keyboard, though the headset flag of that run was 0");
+	Check(ps5ime::KeyboardFor(false, false) == ps5ime::Keyboard::Sheet, "flat play keeps the port's sheet");
+	Check(ps5ime::KeyboardFor(true, true) == ps5ime::Keyboard::None, "under the menu the console's keyboard does not open");
+	Check(ps5ime::KeyboardFor(false, true) == ps5ime::Keyboard::None, "under the menu the sheet does not open");
 
 	std::printf("%s (%d failed)\n", failures ? "FAILED" : "all passed", failures);
 	return failures;
