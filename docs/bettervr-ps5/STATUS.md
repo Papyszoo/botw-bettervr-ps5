@@ -33,9 +33,10 @@ to `c73d352`: `__OSCheckSystemEvents` (the pump's only caller) and `ax.h` are th
    no longer print a stereo pass of 1.8e13 ms.
 2. The `[stall] cores` line, sampled at that instant from threads that already exist: for each
    emulated core, executing the guest's code (its emulated thread's name and priority), inside a
-   host call (the HLE export's name, how long it has been inside), idle, or blocked (a GPU
-   timestamp, a coreinit primitive, file I/O, as the export's name says); and whether the AX
-   thread's frame is queued and not taken, which is the AX thread runnable and not scheduled.
+   host call (the HLE export's name and how long it has been inside), or idle with what its last
+   thread is waiting on (a GPU timestamp, a coreinit primitive, file I/O, named by the export); and
+   whether the AX thread's frame is queued and not taken, which is the AX thread runnable and not
+   scheduled.
 3. The `[audio]` line in the boot log: when no AX frame has been fed for 40 ms, the audio output
    thread (already running every grain, 5.3 ms) prints one line with the same per-core sample. A
    drain at an arrival is then visible even when no GPU-thread frame crossed 34 ms.
