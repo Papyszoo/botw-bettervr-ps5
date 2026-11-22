@@ -28,7 +28,7 @@
 #include "ps5platform/heap.h"
 #include "PS5PadController.h"
 #if defined(__PROSPERO__)
-#include "PS5AxPump.h" // port/cemu: the AX output's feed gap, for the [perf] line
+#include "PS5AxFeed.h" // port/cemu: the AX output's feed gap, for the [perf] line
 #endif
 
 #include "audio/IAudioAPI.h"
@@ -447,14 +447,6 @@ namespace ps5emu
 			ps5log::Line("[bettervr] Pass counts: {} (bettervr.json's passCounts)",
 				g_ps5PassCounts ? "render passes begun and submits counted in the [draws] line"
 					: "not counted (\"passCounts\": 0)");
-			// bettervr.json's "audioAnyCore": every emulated core's idle loop may run Cemu's AX output
-			// pump, so its 3 ms pace holds while core 1 is busy or in a host call (patch 0065); on
-			// unless "audioAnyCore": 0, which leaves it to core 1's idle loop as Cemu has it
-			const bool audioAnyCore = BetterVR_PS5_Setting("audioAnyCore", 1.0f) != 0.0f;
-			ps5ax::SetAnyCore(audioAnyCore);
-			ps5log::Line("[bettervr] Audio from any idle core: {} (bettervr.json's audioAnyCore)",
-				audioAnyCore ? "the AX output is pumped by whichever core's idle loop is free"
-					: "core 1's idle loop alone (\"audioAnyCore\": 0)");
 			// bettervr.json's "profile": the [perf] lines get the GPU's busy time, and the runtime
 			// logs one [frame] line every 10 s; off unless asked for
 			if (BetterVR_PS5_Profile())
@@ -1044,7 +1036,7 @@ namespace ps5emu
 					gpuWaits[i] = g_ps5GpuWaitTicks[i].load();
 				// the AX output's pace over the same window (patch 0065): the time between two fed
 				// frames and between two blocks handed to the PS5's queue, which is what a drain is
-				// made of, and which emulated cores' idle loops fed them
+				// made of. The window's longest, not the frame's: the [stall] line has the frame's.
 				const ps5ax::FeedStats ax = ps5ax::TakeFeedGap();
 				// the GPU thread: idle (the emulated CPU behind), or waiting on the PS5's GPU (it behind),
 				// or neither (the GPU thread itself the limit)
@@ -1053,14 +1045,14 @@ namespace ps5emu
 						"idle {:.0f}%, waiting on the GPU {:.0f}% (the previous frame {:.0f}, an image {:.0f}, its fence {:.0f}, a present {:.0f}, "
 						"presenting {:.0f}, other {:.0f}), for results {:.0f}%; {} draws a frame{}; accurate barriers {}{}; heap {} MiB; "
 						"descriptor sets {}, image samplers {}; AX fed {} frames, longest gap {:.1f} ms between frames and {:.1f} ms between "
-						"blocks ({} skips, cores 0/1/2 {}/{}/{})",
+						"blocks, {} skips",
 						(frames - loggedFrames) * 1e6 / (now - loggedAt), (now - loggedAt) / 1e6, over20, over34, over50, longestUs / 1000.0,
 						percent(idle - idleAt), percent(hostGpu - hostGpuAt), percent(gpuWaits[0] - gpuWaitAt[0]),
 						percent(gpuWaits[1] - gpuWaitAt[1]), percent(gpuWaits[2] - gpuWaitAt[2]), percent(gpuWaits[3] - gpuWaitAt[3]),
 						percent(gpuWaits[4] - gpuWaitAt[4]), percent(gpuWaits[5] - gpuWaitAt[5]), percent(async - asyncAt), DrawsPerFrame(), gpu,
 						GetConfig().vk_accurate_barriers ? "on" : "off", pipelines, HeapMiB(), performanceMonitor.vk.numDescriptorSets.get(),
 						performanceMonitor.vk.numDescriptorSamplerTextures.get(), ax.frames, ax.longestFrameGapNs / 1e6, ax.longestBlockGapNs / 1e6,
-						ax.skipped, ax.framesByCore[0], ax.framesByCore[1], ax.framesByCore[2]);
+						ax.skipped);
 				// diagnostics: Cemu's guest clock (OSGetSystemTime, 62,156,250 ticks a second) against the host's over
 				// the same window, and the game frame rate it gives; FPS++ and the game's physics take their speed
 				// from that clock, so a ratio away from 1.000 would put the game in slow motion or fast forward

@@ -15,9 +15,14 @@
 #include <array>
 #include <chrono>
 #include <string>
+#include <string_view>
 
 #include "util/helpers/helpers.h"
 #include "../ps5/pad.h"
+#include "PS5AxFeed.h"	 // port/cemu: the AX output's feed gap, for the gap line here
+#include "PS5CoreDiag.h" // port/cemu: what each emulated core is doing, for the same line
+
+void PS5Cemu_LogLine(std::string_view line); // the port's boot log (port/ps5/log.cpp)
 
 extern "C"
 {
@@ -146,6 +151,7 @@ bool PS5AudioAPI::Stop()
 	m_lowestFrames = 0xFFFFFFFF;
 	m_longestGrainWaitNs = 0;
 	m_settled = false;
+	m_lastAxGapNs = 0;
 	return true;
 }
 
@@ -227,6 +233,9 @@ void PS5AudioAPI::OutputThread()
 			std::fill(grain.begin() + frames * (m_padSpeaker ? 1 : 2), grain.end(), (sint16)0);
 			m_queue.Consume(frames);
 			LogCountsLocked();
+			// once a grain (~5.3 ms): a hole in the AX output, sampled from this host thread's own
+			// state under the mutex (only atomics are read from the emulated cores, PS5CoreDiag.h)
+			CheckAxGap();
 		}
 		if (sceAudioOutOutput(m_port, grain.data()) < 0)
 		{
@@ -265,4 +274,24 @@ void PS5AudioAPI::LogCountsLocked()
 	m_lowestFrames = 0xFFFFFFFF;
 	m_longestGrainWaitNs = 0;
 	m_lastCountLog = now;
+}
+
+// An AX feed gap the queue cannot cover: the output thread plays a grain every ~5.3 ms, so it is the
+// cheapest host thread to see the hole the moment it exists, and it reads only atomics the emulated
+// cores published (PS5CoreDiag.h). At most one line every 200 ms, so a long stall is a few lines;
+// before the queue has reached its target the gap is the start's fill, not a drain.
+void PS5AudioAPI::CheckAxGap()
+{
+	if (!m_settled)
+		return;
+	const uint64 now = ps5ax::NowNs();
+	const ps5ax::FeedStats ax = ps5ax::PeekFeedGap();
+	const uint64 gap = std::max(ax.sinceLastFrameNs, ax.sinceLastBlockNs);
+	if (gap <= 40000000)
+		return;
+	if (m_lastAxGapNs && now - m_lastAxGapNs < 200000000)
+		return;
+	m_lastAxGapNs = now;
+	PS5Cemu_LogLine(fmt::format("[audio] no AX frame for {:.1f} ms (no block for {:.1f} ms): {}", ax.sinceLastFrameNs / 1e6,
+		ax.sinceLastBlockNs / 1e6, ps5diag::Describe(ps5diag::Take(now))));
 }

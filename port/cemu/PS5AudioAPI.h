@@ -45,6 +45,7 @@ private:
 	void OutputThread();
 	void RaisePriority();
 	void LogCountsLocked();
+	void CheckAxGap(); // the AX feed gap, once a grain (~5.3 ms): one line per gap event
 
 	int m_port = -1;
 	bool m_padSpeaker = false; // one channel, on the DualSense
@@ -61,4 +62,5 @@ private:
 	uint32 m_lowestFrames = 0xFFFFFFFF;
 	uint64 m_longestGrainWaitNs = 0;
 	bool m_settled = false; // the queue has reached its target once: before that it is still filling
+	uint64 m_lastAxGapNs = 0; // the last [audio] gap line, for its 200 ms limit (OutputThread only)
 };
