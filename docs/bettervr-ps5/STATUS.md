@@ -6,6 +6,84 @@ tested.
 Test request 77 (v0.8 haptics) is withdrawn with the haptics work; the requests after it move up one, so
 the console keyboard is 77, the tutorial shrine 78 and the cutscene height 79.
 
+## 2026-11-23: v0.8 moves to BetterVR 1.0.2 and the Cemu fork it names; built, untested on console
+
+The pins move: BetterVR 1.0.0 (`db5495b`) to 1.0.2 (`07abe22`, 23 commits), and the Cemu fork from `86168a8`
+to `6db0f53`, the commit 1.0.2's `cemu-src` names (5 commits: multiview occlusion queries in pairs, the
+AppImage's pack settings, Cubeb as the only audio API outside Windows, modules told when Cemu exits, each eye
+drawn separately on Pascal and older). The console keeps its own audio path: `ApplyPlatformSettings` still sets
+`audio_api` to `PS5AudioOut` after Cemu's config load, so 1.0.2's forced Cubeb default never reaches it.
+
+**The patches.** 48 in `patches/bettervr` and 67 in `patches/cemu`, every one applying from its pin with
+`git am`. Old bettervr 0049 is dropped: 1.0.2's `02bcbe6` carries the same rune-query asm change. The others
+keep their purpose; the ones upstream changed in the same place were re-based on upstream's code with the PS5
+part on top, not the other way round:
+
+- **0006 (camera stall):** the 250 ms first-person tolerance stays; 1.0.2 applies the head materials once a
+  frame on `Skl_Root`, so old 0006's kept material list (and its missing-actor `SubmitNextMaterial` path) has no
+  job left and is gone. The head stays hidden through an actor-list gap because `Apply` is simply not called.
+- **0008 (Vibration page and mixer):** 1.0.2's `RumbleStrength` slider on the Controls page is kept as the
+  global strength; the 60 Hz mixer multiplies every category, the game's pattern and the page's test button by
+  it. The Vibration page, its categories, device columns and test buttons are unchanged.
+- **0009/0048 (trigger strength, aiming dot):** upstream's stepped sliders take 5 % steps (and 0.05 for the
+  strength); the percent-label escaping stays for the sliders that are not stepped.
+- **0011/0017 (Skl_Root, body facing):** 1.0.2's `s_posedPlayerMtx` (arms reposed when the player matrix moves)
+  is kept alongside the PS5 latched root and the pose tolerance; the camera-hook body pose removed by 0017 stays
+  removed.
+- **0018 (menu scrolling):** upstream already scrolls the Frame page to its note; the patch keeps the other
+  pages' stops.
+- **0036 (third-person turning):** the `[turn]` log line sits after 1.0.2's cutscene-direction block, which is
+  kept whole; the snap-turn and smooth-turn code is unchanged.
+- **Overlaps kept as both:** upstream's shield raise (L2's trigger effect follows the corrected
+  `isShieldGuarding`), magnesis grip hold (upstream's MagnetGlove checks; the wrist twist and Eye Magnesis are
+  untouched on top), horse soothe with the trigger (our UseThrow rumble category on it), head/hair out of view
+  (upstream's main-pass hiding, our stall tolerance), hands steady (upstream's matrix, our root latch), blood
+  moon in third person and cutscene direction (our 0043/0045/0047 holds are separate code).
+- **One-time setting reset:** 1.0.2 keys bundled graphic packs as `bundled/<path>` (the AppImage mount moves on
+  every start). The console's old keys were absolute, so a player's pack presets (VR Resolution, shadows, FPS++)
+  may come back at their defaults once; the next choice saves under the new key.
+
+**Checks.** `tools/bettervr-patches.sh apply` and `tools/cemu-patches.sh apply` from the new pins in clean
+clones with `git am` (48 and 67 patches, every change applying as exported), `python3 -B tools/lang.py check`,
+`tools/tests/test-bettervr-triggers.sh`, `tools/tests/test-bettervr-nids.py` and
+`tools/tests/test-texunit-memo.sh` pass. No host test builds BetterVR, Cemu's Vulkan path or the runtime, so the
+"BetterVR build" run is theirs. Built, untested on console.
+
+**Test request 85 (v0.8 on BetterVR 1.0.2, 13.60 console).** Install the `BotW-VR-v...zip` from the green
+"BetterVR build" run on this head; VR on, first person unless a step says otherwise.
+
+1. **Rune target.** At a landmark, hold the camera rune on a named target: one name in one place, one beep,
+   and a photo still registers (1.0.2's fix; our 0049 is gone).
+2. **Rumble slider.** Controls page > Rumble at 100 %, then 0 %, then 50 %: all rumble (game, swings, damage,
+   the Vibration page's tests) follows it; the Vibration page's own rows still turn one category off.
+3. **Head and body.** Look up in first person: no hair or headgear in view, and Link's head still casts its
+   shadow; walk and strafe near grass: no head or body flash (0006), the body faces the view (0017), and the
+   weapon wheel's dimmed arrows are visible (0011).
+4. **Cutscenes.** Start a cutscene while facing a direction: it plays facing that way; the blood moon cutscene is
+   third person; a third-person cutscene camera stays at the game's height in a low room (0047), and the
+   shrine/respawn demos hold their camera (0043/0045).
+5. **Shield and triggers.** Raise the shield with the hand up in front: it raises and L2 firms up; with the hand
+   low it stays down and L2 stays free. Draw the bow: R2 firms up with the draw (0009).
+6. **Magnesis.** Hold an object with the grip for a second or two: it stays held (1.0.2), the wrist twist turns
+   it (0013), and Eye Magnesis still picks and steers it if the row is on (0041).
+7. **Horse.** While riding, pull the trigger with nothing in hand: Link soothes the horse and the hand rumbles
+   (1.0.2, our UseThrow row).
+8. **Menu and sliders.** The in-game menu's pages scroll to their last row (0018), the Vibration page's On boxes
+   take focus one at a time (0046), and the aiming dot's Size/Color/Opacity and the trigger strength move in
+   steps (0042, 0048).
+9. **Third person.** Smooth turning on foot is smooth (0036); a snap turn is one step.
+10. **Pack settings.** After the first start, say whether VR Resolution and the other Graphic pack presets came
+    back at their defaults; set them again and check they survive the next start.
+
+**Send.** The build, what differed in each step, and from `/data/ps5cemu/logs/boot.log`:
+`LC_ALL=C grep -a "camera stall\|body root\|\[turn\]\|\[vib\]\|\[magnesis\]\|Foveated shading\|Vulkan: multiview" boot.log`,
+plus from Cemu's `log.txt` any `Exhausted query pool` or `[copy] ... clamped` line. No log is needed for a
+step that behaved.
+
+**What it decides.** A steady rune target and every adapted patch behaving as its test request before it
+decides the move; anything that regressed names the patch in the table above. A preset reset in step 10 is
+expected once and is not a defect unless it repeats after the next start.
+
 ## 2026-11-22: a rune's target name and beep hold still, its ID readback waiting for the GPU; built, untested on console
 
 At the Great Fairy Fountain the camera rune's target name blinked on and off frame to frame and jumped
