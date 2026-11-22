@@ -1,0 +1,133 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ps5cemu <ps5cemu@localhost>
+Date: Sun, 22 Nov 2026 01:54:08 +0100
+Subject: [PATCH] PS5: the tutorial shrine's demos hold the third-person camera
+ and keep their tutorial text; built, untested on console
+
+Demo719_0 (the tutorial dungeon's move demos), Demo026_0 (the combat shrine's enemy-appearing demo) and
+TutorialDungeon (the training shrine's tutorial messages) run a scripted event camera in third person like
+Demo002_0 and the respawn demos, and until now only those were in HoldsEventCamera, so the view stepped with
+every camera cue. They join the list, so ResolveGameplayBasePose holds the pose latched at the event start.
+
+The respawn demos' fade-quad rule is not extended to them: their text and move card are drawn into the same
+2D layer as any fade, so leaving the quad out would hide the tutorial. One line says when a fade screen is up
+during them, so a console report can tell whether the haze there was a fade at all.
+---
+ src/game/botw/camera/camera.cpp |  5 +++--
+ src/game/botw/game_state.cpp    | 32 +++++++++++++++++++++++++++++---
+ src/game/botw/game_state.h      |  1 +
+ 3 files changed, 33 insertions(+), 5 deletions(-)
+
+diff --git a/src/game/botw/camera/camera.cpp b/src/game/botw/camera/camera.cpp
+index 3f91087..b9ce45c 100644
+--- a/src/game/botw/camera/camera.cpp
++++ b/src/game/botw/camera/camera.cpp
+@@ -450,8 +450,9 @@ glm::mat4 Camera::GetFreshReferenceMtx() {
+ }
+ 
+ std::pair<glm::fvec3, glm::fquat> Camera::ResolveGameplayBasePose(const BESeadLookAtCamera& camera) {
+-    // The first-time pick-up and the respawn demos step their event camera around Link a frame at a time in third
+-    // person; the view keeps the pose it had on the last frame before the event, and the headset moves it from there.
++    // The first-time pick-up, the respawn and the tutorial-shrine demos step their event camera around Link a
++    // frame at a time in third person; the view keeps the pose it had on the last frame before the event, and the
++    // headset moves it from there.
+     const bool holdEventCamera = Events::IsEventCameraHoldActive() && GameState::IsThirdPerson();
+     if (holdEventCamera != s_isHoldingEventCamera) {
+         s_isHoldingEventCamera = holdEventCamera;
+diff --git a/src/game/botw/game_state.cpp b/src/game/botw/game_state.cpp
+index 93a7a4c..f2362fd 100644
+--- a/src/game/botw/game_state.cpp
++++ b/src/game/botw/game_state.cpp
+@@ -13,13 +13,17 @@ static std::atomic_bool s_eventActive = false;
+ // its frames stay fresh stereo pairs and the runtime's mono switch only fires near the end. Present the 2D
+ // layer alone for the whole event, the way a black-bars cutscene is presented.
+ static std::atomic_bool s_2DOnlyPresentation = false;
+-// Demo002_0 and the respawn demos run a scripted camera that steps the third-person view around Link a frame at a
+-// time, so the camera holds the pose it had on the last frame before the event and only the headset moves it.
++// Demo002_0, the respawn demos and the tutorial-shrine demos run a scripted camera that steps the third-person
++// view around Link a frame at a time, so the camera holds the pose it had on the last frame before the event and
++// only the headset moves it.
+ static std::atomic_bool s_eventCameraHold = false;
+ // The respawn demos draw their black fade into the 2D layer. The 3D picture already takes that fade from the
+ // layer's corner, so the 16:9 quad would show it a second time as a floating panel; it is left off while the
+ // fade is up.
+ static std::atomic_bool s_respawnDemo = false;
++// The tutorial-shrine demos draw their text and their move card into the same 2D layer, so the quad stays up
++// while a fade is; the respawn demos' rule would hide the tutorial with the fade.
++static std::atomic_bool s_tutorialDemo = false;
+ static std::string s_currentEvent;
+ // the camera picked with the cutscene button, kept across events the game chains together
+ static std::atomic<EventMode> s_eventModeOverride = EventMode::NO_EVENT;
+@@ -87,6 +91,10 @@ bool Events::IsRespawnDemoActive() {
+     return s_respawnDemo.load(std::memory_order_relaxed);
+ }
+ 
++bool Events::IsTutorialDemoActive() {
++    return s_tutorialDemo.load(std::memory_order_relaxed);
++}
++
+ static EventMode GetActiveEventMode() {
+     const EventMode overrideMode = s_eventModeOverride.load(std::memory_order_relaxed);
+     return overrideMode != EventMode::NO_EVENT ? overrideMode : GetSettings().GetCutsceneCameraMode();
+@@ -168,9 +176,16 @@ static bool IsRespawnDemo(std::string_view eventName) {
+     return eventName == "Demo048_0" || eventName == "Demo048_1";
+ }
+ 
++// Demo719_0 is the tutorial dungeon's move demos (backstep, guard just, spin attack, clear), Demo026_0 the combat
++// shrine's enemy-appearing demo, and TutorialDungeon the training shrine's tutorial messages; all three run a
++// scripted camera in third person like the pick-up and the respawn.
++static bool IsTutorialDemo(std::string_view eventName) {
++    return eventName == "Demo719_0" || eventName == "Demo026_0" || eventName == "TutorialDungeon";
++}
++
+ // The event camera walks the third-person view around Link in these events; first person already skips it.
+ static bool HoldsEventCamera(std::string_view eventName) {
+-    return eventName == "Demo002_0" || IsRespawnDemo(eventName);
++    return eventName == "Demo002_0" || IsRespawnDemo(eventName) || IsTutorialDemo(eventName);
+ }
+ 
+ // todo: Fix sped-up cutscenes. You can go in-game into a save file that didn't have DLC yet, and it'll give you a sped up Demo200_0.
+@@ -188,6 +203,7 @@ static void hook_GetEventName(PPCInterpreter_t* hCPU) {
+             }
+             s_eventCameraHold = false;
+             s_respawnDemo = false;
++            s_tutorialDemo = false;
+             Log::print<INFO>("Event '{}' has now ended", s_currentEvent);
+             s_currentEvent.clear();
+             s_currentEntryPoint.clear();
+@@ -221,6 +237,7 @@ static void hook_GetEventName(PPCInterpreter_t* hCPU) {
+     }
+     s_eventCameraHold = eventCameraHold;
+     s_respawnDemo = IsRespawnDemo(eventName);
++    s_tutorialDemo = IsTutorialDemo(eventName);
+     s_currentEvent = eventName;
+     s_currentEntryPoint = entryPointName;
+     Events::Settings settings = defaultFirstPersonSettings;
+@@ -345,6 +362,15 @@ static void PublishPresentation() {
+     }
+     s_suppressFadeQuadLogged = suppressFadeQuad;
+     presentation.suppressFadeQuad = suppressFadeQuad;
++    // The tutorial-shrine demos draw their text and their move card into the same 2D layer, so their quad stays up
++    // even while a fade is: the rule above would hide the tutorial with the fade. The 3D picture still takes the
++    // fade from the layer's corner, as it does for every event.
++    const bool keepTutorialQuad = Events::IsTutorialDemoActive() && Screens::IsAnyFadeVisible();
++    static bool s_keepTutorialQuadLogged = false;
++    if (keepTutorialQuad && !s_keepTutorialQuadLogged) {
++        Log::print<INFO>("Fade panel kept for '{}' (the 2D layer also holds the tutorial's text and card, so it stays)", s_currentEvent);
++    }
++    s_keepTutorialQuadLogged = keepTutorialQuad;
+     presentation.loadingScreenVisible = Screens::IsLoadingVisible();
+     presentation.aimingItemHeld = Weapons::IsAimingItemHeld();
+     presentation.cutsceneActive = Events::IsActive();
+diff --git a/src/game/botw/game_state.h b/src/game/botw/game_state.h
+index 9ff6ff8..ea7f404 100644
+--- a/src/game/botw/game_state.h
++++ b/src/game/botw/game_state.h
+@@ -22,6 +22,7 @@ namespace Events {
+     bool IsActive();
+     bool IsEventCameraHoldActive();
+     bool IsRespawnDemoActive();
++    bool IsTutorialDemoActive();
+     void ToggleCameraMode();
+     std::optional<Settings> GetFirstPersonSettings();
+     bool UsesAnimatedHands();

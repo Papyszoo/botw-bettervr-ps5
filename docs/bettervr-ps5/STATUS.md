@@ -3,6 +3,91 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+## 2026-11-22: the tutorial shrine's demos hold the third-person camera and keep their tutorial text; built, untested on console
+
+The rc5 report (13.60, first person, Comfort > Advanced > Cutscene Camera Third) says the Kakariko combat-training
+shrine, Ta'loh Naeg's Teaching, shows the fault the shrine respawn had: the tutorial cutscenes swing a third-person
+camera around the room from high, the picture changes angle every moment, and the tutorial text and the "Side Hop"
+card float over it. The pulled boot log (`logs-rc5/boot.log` 2900-3300) has
+`Event 'Demo026_0' started at 'Guardian_Mini_Practice_Appearance'` at 02:06:48.330,
+`Event 'TutorialDungeon' started at 'SideStepWarning_Npc_TutorialDungeon_StepStart'` at 02:07:53.683, and four
+`Event 'Demo719_0' started at 'StartTutorial_BackStep'`, `'StartTutorial_GuardJust'`, `'StartTutorial_SpinAttack'`
+and `'ClearTutorial'` between 02:08:36.056 and 02:10:22.963, all `(first person ON, ignore camera rotation ON,
+game-animated hands OFF)`. None of them has a `Camera hold` line, while `Demo002_0` in the same run has
+`Camera hold starts for 'Demo002_0' ...` (02:10:41.703) and the respawn has its own three lines at 02:56:34.463-472.
+
+**Which path they took.** All three ids are upstream's table exactly as logged: `Demo026_0` "Combat shrine: enemy
+appearing demo" (`patch_Settings_Cutscenes.asm:95`), `Demo719_0` "Tutorial dungeon" (`:251`) and `TutorialDungeon`
+(`:949`), all `FP_ON,PAN_OFF,HND_OFF,CTRL_OFF`. With Cutscene Camera Third, `GetActiveEventMode()` is Third for the
+whole event, so `GameState::IsFirstPerson()` is false and `hook_ShouldSkipEventCamera` returns 0
+(`camera.cpp:725-730`): the demo's own `CameraEvent` cues run, and `hook_UpdateCameraForGameplay` follows the event
+camera every frame, so the base pose steps cue by cue. `ResolveGameplayBasePose` returns the game camera unless
+`Events::IsEventCameraHoldActive()`, which 0037/0043 set only for `Demo002_0`, `Demo048_0` and `Demo048_1`; these ids
+were not in that list, so nothing was latched. Cutscene Camera is Third and 2D Cutscene Screen is off, so the event
+is the normal 3D path with the HUD/2D layer as its quad (`compose mode stereo ... the HUD quad over them` throughout).
+
+**The fix.** Patch bettervr 0049 extends 0043's one id list: `HoldsEventCamera` now covers `Demo719_0`, `Demo026_0`
+and `TutorialDungeon` as well, so `Camera::LatchEventCameraHold` latches the player's pose at each event start and
+`ResolveGameplayBasePose` holds it while the event runs in third person, exactly as for the pick-up and the respawn.
+Head tracking still applies, first person is unchanged (it already skips the event camera), and every other event
+keeps the game camera. The tutorial text and the move card are untouched: they are 2D content and the quad is not
+changed.
+
+**Why the fade-quad rule is not extended to them.** The white wash in the report does not show a second panel:
+the report's own recording (`cap-rc5/frames/f001-f017.png`) has no 16:9 rectangle edge anywhere, and the only 2D
+content is the tutorial text and the card's own rounded rectangle. The wash follows the room's depth (the near floor
+is the brightest area, the far walls darker, the dust motes stay crisp), which reads as the shrine's fog in the 3D
+picture seen from a camera high in the room. The only path of ours that can wash the whole 3D picture is the game's
+fade (`Screens::IsAnyFadeVisible()` and the 2D layer's corner texel in `present_depth.frag`), and 0043's rule leaves
+the *whole* 2D layer quad out while that flag is up (`renderer.cpp:387-392`). Here that quad also holds the tutorial
+text and the card, so extending the rule would hide the tutorial with the fade. The quad therefore stays, and one
+line, `Fade panel kept for '<event>' (the 2D layer also holds the tutorial's text and card, so it stays)`, says when
+a fade screen is up during one of these demos, so Test request 79 settles whether any part of the wash was a fade. If
+it was, the next step is a narrower rule that leaves out a fade-only quad, not this one.
+
+**Sibling events.** Included, as the same kind (a scripted event camera in third person around the training shrine's
+teaching): `Demo719_0` and `Demo026_0` — the table has no other `Demo719_x` or `Demo026_x` — and `TutorialDungeon`.
+Not included: `Npc_TutorialDungeon` (`:821`), the shrine NPC's dialogue event, not a demo with a scripted camera, and
+absent from the rc5 log; `Demo049_0` "Controls guide demo" (`:120`), the plateau's control guide; `Demo033_0`
+"CDungeon Monk Demo", the shrine-clear monk.
+
+**Cause.** The camera is upstream's: in third person the event camera runs and upstream's skip is first-person-only.
+The hold that covers it is ours, and 0037/0043's list named only the pick-up and the respawn.
+
+New patch bettervr 0049 (`game_state.cpp/.h`, `camera.cpp`); no Cemu, runtime or asm change.
+
+**Test request 79 (v0.8 tutorial-shrine camera, 13.60 console).** Install the `BotW-VR-v...zip` from the green
+"BetterVR build" run on this head. Before step 1, set Comfort > Advanced > **2D Cutscene Screen** to **Off** (the
+Gentle preset has it On; with it On a third-person event takes the black-bars path, no 3D picture is presented, and
+this test cannot decide the fix), Camera Mode to **First Person** and Comfort > Advanced > **Cutscene Camera** to
+**Third**.
+
+1. **The guardian's appearance.** Enter Ta'loh Naeg's Teaching in Kakariko and watch the guardian mini appear
+   (`Demo026_0`). Is the 3D picture steady, with no scripted angle change, and does the view stay where you stood?
+   Turn your head: the view must still turn.
+2. **Each tutorial.** Watch every tutorial cutscene in the shrine: the side-hop message, then the backstep, guard
+   just, spin attack and clear tutorials (`Demo719_0`, four starts). For each: is the picture steady, does the camera
+   stay in place, and are the tutorial text and the move card ("Side Hop" and the others) readable and in front of
+   you? Say which tutorials you saw.
+3. **The wash.** Say whether the room's washed-out look matches what the same cutscene shows on the TV with VR off,
+   and send the `Fade panel kept` line if it appears.
+4. **First person, unchanged.** Set Cutscene Camera to First and repeat one tutorial: it must look as v0.7 did, with
+   no `Camera hold` line for it.
+5. **Another cutscene, unchanged.** Trigger a cutscene that is not from this shrine (a memory, a tower or a chest):
+   no `Camera hold` line may name it, and it must look as before.
+
+**Send**, from `/data/ps5cemu/logs/boot.log`:
+
+- `LC_ALL=C grep -a "Event 'Demo719_0'\|Event 'Demo026_0'\|Event 'TutorialDungeon'\|Camera hold\|Fade panel kept" boot.log`
+- `LC_ALL=C grep -a "compose mode" boot.log`
+- which Camera Mode, 2D Cutscene Screen and Cutscene Camera settings were used, and which tutorials and events were
+  seen.
+
+**What it decides.** One `Camera hold starts for ...` per event in third person and none in first person decides that
+the three ids take the hold; steps 1-2 decide whether the picture is steady and the text/card readable; step 3 and
+the `Fade panel kept` line decide whether any of the wash was a fade (and so whether a narrower fade-only rule is
+worth building); steps 4-5 decide that first person and the other events are unchanged.
+
 ## 2026-11-21: in VR the software keyboard is the console's own, so a stable's horse name can be typed where the player is looking; built, untested on console
 
 **The report this acts on.** A console report (13.60, VR, Sense) of the stable's naming screen: the keyboard never
