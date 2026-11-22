@@ -3,6 +3,250 @@
 Newest entries first. Every console result here was reported by Patryk. Nothing else counts as
 tested.
 
+Test request 77 (v0.8 haptics) is withdrawn with the haptics work; the requests after it move up one, so
+the console keyboard is 77, the tutorial shrine 78 and the cutscene height 79.
+
+## 2026-11-22: v0.8 keeps v0.7.0's vibration, and each Vibration row's On box has its own ID; built, untested on console
+
+The v0.8 haptics work is dropped: the director, the audio bands, the two-motor split, the new Vibration rows and their
+patches are not in this branch. The owner's decision is that the extra effects would discharge the controllers faster,
+so v0.8 keeps the vibration exactly as v0.7.0 has it. The haptics branch, `bettervr-1.0/v08-haptics`, stays as the
+archive of that work. One fix from that run is kept, because the bug is v0.7.0's own: the Vibration page's On boxes.
+
+**The bug.** `DrawVibrationPage` drew every row's On box as `ImGui::Checkbox("##on")` with no `PushID`
+(`imgui_menus.cpp`, the line patch bettervr 0008 added at line 775), so all rows shared one ImGui ID: nav focus drew
+on every On box at once and the pad could not reach one row alone. Each box now pushes its row's label, as the device
+columns already do, and pops it after. Rows, strengths, devices and defaults are untouched.
+
+New patch bettervr 0046 (`imgui_menus.cpp`); no Cemu, runtime or asm change. `tools/bettervr-patches.sh apply`,
+`tools/cemu-patches.sh apply`, `python3 -B tools/lang.py check` and `tools/tests/test-bettervr-triggers.sh` pass.
+Built, untested on console.
+
+**Test request 80 (v0.8 Vibration page focus, 13.60 console).** Install the `BotW-VR-v...zip` from the green
+"BetterVR build" run on this head. In game, open BetterVR's Vibration page and move the pad's focus down the On
+column: exactly one box should show the focus frame, and the confirm press should toggle only that row. Repeat across
+the Hands, Headset and DualSense columns.
+
+**Send.** Which row and column were focused, whether the confirm press toggled one row or more, and whether any row
+changed twice. No log is needed.
+
+**What it decides.** One focus frame and one toggled row per press decides the fix; a shared focus frame or a second
+row moving leaves the ID scope wrong.
+
+## 2026-11-22: a third-person cutscene camera starts at the game's height, not 1.65 m above it; built, untested on console
+
+The 13.60 report (seated, first person with third-person cutscenes, Height Adjustment +34 cm) says the view "often
+lands in the ceiling" in third-person cutscenes. The investigation found upstream 1.0.0 adds the whole stage-space
+head pose to the game's or the held event camera (`BuildMiddlePose`,
+`camera.cpp:438`; `hook_UpdateCameraForGameplay`, `camera.cpp:594`). Seated calibration puts that pose at 1.65 m,
+so every third-person event camera sits that far above the game's, and the game's collision check only sees the base
+camera.
+
+**The fix.** Patch bettervr 0047. `GetAppliedHeadsetOffset` (`camera.cpp:290-307`) subtracts the head's stage y
+latched on the event's first third-person frame. The event-start hook arms it with the event's name and the
+event-end hook clears it (`Camera::BeginThirdPersonEventLift`/`EndThirdPersonEventLift`, `camera.cpp:74-82`;
+`game_state.cpp:207` and `:242`). It applies only while an event is active with the cutscene camera in third person,
+and neither flat camera mode nor the black-bars/2D path is active. The camera therefore starts at the game's or the
+held camera's height and keeps the head's motion from there on every axis: head turn and lean still move the view.
+Held events (0037/0043/0045) and non-held events both take it; third-person gameplay, first person, the 2D path and
+every other mode keep upstream's code path and values. No new setting, no Cemu, runtime or asm change.
+
+One INFO line at the latch: `Event camera lift removed for '<event>': <y> m`.
+
+Checks: `tools/bettervr-patches.sh apply`, `tools/cemu-patches.sh apply`, `python3 -B tools/lang.py check`,
+`tools/tests/test-bettervr-triggers.sh` passes. No host test builds the
+BetterVR camera, so the camera change is checked by the BetterVR build. Built, untested on console.
+
+**Test request 79 (v0.8 third-person cutscene height, 13.60 console).** Install the `BotW-VR-v...zip` from the green
+"BetterVR build" run on this head. Seated if possible, with **Camera Mode First Person**, Comfort > Advanced >
+**Cutscene Camera Third**, **2D Cutscene Screen Off**, and **Height Adjustment +34 cm** (or the current value).
+
+1. **Pick-up in a low room.** In a shrine, take a chest item for the first time (`Demo002_0`). The cutscene camera
+   must start at the room's own height, not in or through the ceiling. Turn your head: the view turns. Lean or sit
+   up: the view moves by that small amount, not by 1.65 m.
+2. **Guardian appearance.** In a Test of Strength shrine, watch the guardian mini appear (`Demo026_0`). Same check.
+3. **Shrine entry.** Enter a shrine and watch the entry cutscene. Same check.
+4. **Height 0 vs +34.** Repeat one of the cutscenes at Height Adjustment 0 and +34 cm: the cutscene camera height
+   must be the same; only the first-person view before and after may step.
+5. **First person and third-person gameplay, unchanged.** Pick up an item in first person and walk in third person
+   with no event: they must look as v0.7.0.
+6. **Standing, if possible.** Repeat steps 1-3 standing: the cutscene height must be the same as seated.
+
+**Send**, from `/data/ps5cemu/logs/boot.log`:
+
+- `LC_ALL=C grep -a "Event camera lift removed\|Event '\|Camera hold\|Player Height\|Seated height calibrated" boot.log`
+- which events and Height Adjustment values were used, seated or standing, and whether any camera entered a ceiling.
+
+**What it decides.** One `Event camera lift removed for ...` line per event in third person decides the latch;
+steps 1-3 decide the height and the head motion; step 4 decides the height setting is not in the cutscene; step 5
+decides first person and third-person gameplay are unchanged; step 6 decides standing matches seated.
+
+## 2026-11-22: the tutorial shrine's demos hold the third-person camera and keep their tutorial text; built, untested on console
+
+The rc5 report (13.60, first person, Comfort > Advanced > Cutscene Camera Third) says the Kakariko combat-training
+shrine, Ta'loh Naeg's Teaching, shows the fault the shrine respawn had: the tutorial cutscenes swing a third-person
+camera around the room from high, the picture changes angle every moment, and the tutorial text and the "Side Hop"
+card float over it. The pulled boot log (`logs-rc5/boot.log` 2900-3300) has
+`Event 'Demo026_0' started at 'Guardian_Mini_Practice_Appearance'` at 02:06:48.330,
+`Event 'TutorialDungeon' started at 'SideStepWarning_Npc_TutorialDungeon_StepStart'` at 02:07:53.683, and four
+`Event 'Demo719_0' started at 'StartTutorial_BackStep'`, `'StartTutorial_GuardJust'`, `'StartTutorial_SpinAttack'`
+and `'ClearTutorial'` between 02:08:36.056 and 02:10:22.963, all `(first person ON, ignore camera rotation ON,
+game-animated hands OFF)`. None of them has a `Camera hold` line, while `Demo002_0` in the same run has
+`Camera hold starts for 'Demo002_0' ...` (02:10:41.703) and the respawn has its own three lines at 02:56:34.463-472.
+
+**Which path they took.** All three ids are upstream's table exactly as logged: `Demo026_0` "Combat shrine: enemy
+appearing demo" (`patch_Settings_Cutscenes.asm:95`), `Demo719_0` "Tutorial dungeon" (`:251`) and `TutorialDungeon`
+(`:949`), all `FP_ON,PAN_OFF,HND_OFF,CTRL_OFF`. With Cutscene Camera Third, `GetActiveEventMode()` is Third for the
+whole event, so `GameState::IsFirstPerson()` is false and `hook_ShouldSkipEventCamera` returns 0
+(`camera.cpp:725-730`): the demo's own `CameraEvent` cues run, and `hook_UpdateCameraForGameplay` follows the event
+camera every frame, so the base pose steps cue by cue. `ResolveGameplayBasePose` returns the game camera unless
+`Events::IsEventCameraHoldActive()`, which 0037/0043 set only for `Demo002_0`, `Demo048_0` and `Demo048_1`; these ids
+were not in that list, so nothing was latched. Cutscene Camera is Third and 2D Cutscene Screen is off, so the event
+is the normal 3D path with the HUD/2D layer as its quad (`compose mode stereo ... the HUD quad over them` throughout).
+
+**The fix.** Patch bettervr 0045 extends 0043's one id list: `HoldsEventCamera` now covers `Demo719_0`, `Demo026_0`
+and `TutorialDungeon` as well, so `Camera::LatchEventCameraHold` latches the player's pose at each event start and
+`ResolveGameplayBasePose` holds it while the event runs in third person, exactly as for the pick-up and the respawn.
+Head tracking still applies, first person is unchanged (it already skips the event camera), and every other event
+keeps the game camera. The tutorial text and the move card are untouched: they are 2D content and the quad is not
+changed.
+
+**Why the fade-quad rule is not extended to them.** The white wash in the report does not show a second panel:
+the report's own recording (`cap-rc5/frames/f001-f017.png`) has no 16:9 rectangle edge anywhere, and the only 2D
+content is the tutorial text and the card's own rounded rectangle. The wash follows the room's depth (the near floor
+is the brightest area, the far walls darker, the dust motes stay crisp), which reads as the shrine's fog in the 3D
+picture seen from a camera high in the room. The only path of ours that can wash the whole 3D picture is the game's
+fade (`Screens::IsAnyFadeVisible()` and the 2D layer's corner texel in `present_depth.frag`), and 0043's rule leaves
+the *whole* 2D layer quad out while that flag is up (`renderer.cpp:387-392`). Here that quad also holds the tutorial
+text and the card, so extending the rule would hide the tutorial with the fade. The quad therefore stays, and one
+line, `Fade panel kept for '<event>' (the 2D layer also holds the tutorial's text and card, so it stays)`, says when
+a fade screen is up during one of these demos, so Test request 78 settles whether any part of the wash was a fade. If
+it was, the next step is a narrower rule that leaves out a fade-only quad, not this one.
+
+**Sibling events.** Included, as the same kind (a scripted event camera in third person around the training shrine's
+teaching): `Demo719_0` and `Demo026_0` — the table has no other `Demo719_x` or `Demo026_x` — and `TutorialDungeon`.
+Not included: `Npc_TutorialDungeon` (`:821`), the shrine NPC's dialogue event, not a demo with a scripted camera, and
+absent from the rc5 log; `Demo049_0` "Controls guide demo" (`:120`), the plateau's control guide; `Demo033_0`
+"CDungeon Monk Demo", the shrine-clear monk.
+
+**Cause.** The camera is upstream's: in third person the event camera runs and upstream's skip is first-person-only.
+The hold that covers it is ours, and 0037/0043's list named only the pick-up and the respawn.
+
+New patch bettervr 0045 (`game_state.cpp/.h`, `camera.cpp`); no Cemu, runtime or asm change. BetterVR build run
+`44969067687` on `d932c39` succeeded.
+
+**Test request 78 (v0.8 tutorial-shrine camera, 13.60 console).** Install the `BotW-VR-v...zip` from the green
+"BetterVR build" run on this head. Before step 1, set Comfort > Advanced > **2D Cutscene Screen** to **Off** (the
+Gentle preset has it On; with it On a third-person event takes the black-bars path, no 3D picture is presented, and
+this test cannot decide the fix), Camera Mode to **First Person** and Comfort > Advanced > **Cutscene Camera** to
+**Third**.
+
+1. **The guardian's appearance.** Enter Ta'loh Naeg's Teaching in Kakariko and watch the guardian mini appear
+   (`Demo026_0`). Is the 3D picture steady, with no scripted angle change, and does the view stay where you stood?
+   Turn your head: the view must still turn.
+2. **Each tutorial.** Watch every tutorial cutscene in the shrine: the side-hop message, then the backstep, guard
+   just, spin attack and clear tutorials (`Demo719_0`, four starts). For each: is the picture steady, does the camera
+   stay in place, and are the tutorial text and the move card ("Side Hop" and the others) readable and in front of
+   you? Say which tutorials you saw.
+3. **The wash.** Say whether the room's washed-out look matches what the same cutscene shows on the TV with VR off,
+   and send the `Fade panel kept` line if it appears.
+4. **First person, unchanged.** Set Cutscene Camera to First and repeat one tutorial: it must look as v0.7 did, with
+   no `Camera hold` line for it.
+5. **Another cutscene, unchanged.** Trigger a cutscene that is not from this shrine (a memory, a tower or a chest):
+   no `Camera hold` line may name it, and it must look as before.
+
+**Send**, from `/data/ps5cemu/logs/boot.log`:
+
+- `LC_ALL=C grep -a "Event 'Demo719_0'\|Event 'Demo026_0'\|Event 'TutorialDungeon'\|Camera hold\|Fade panel kept" boot.log`
+- `LC_ALL=C grep -a "compose mode" boot.log`
+- which Camera Mode, 2D Cutscene Screen and Cutscene Camera settings were used, and which tutorials and events were
+  seen.
+
+**What it decides.** One `Camera hold starts for ...` per event in third person and none in first person decides that
+the three ids take the hold; steps 1-2 decide whether the picture is steady and the text/card readable; step 3 and
+the `Fade panel kept` line decide whether any of the wash was a fade (and so whether a narrower fade-only rule is
+worth building); steps 4-5 decide that first person and the other events are unchanged.
+
+## 2026-11-21: in VR the software keyboard is the console's own, so a stable's horse name can be typed where the player is looking; built, untested on console
+
+**The report this acts on.** A console report (13.60, VR, Sense) of the stable's naming screen: the keyboard never
+showed and the game waited. The cause is the port's own keyboard sheet: Cemu hands its swkbd to `PS5Cemu_DrawKeyboard`
+(`port/app/ingame.cpp`, patch cemu 0039), which draws it into Cemu's TV picture. In BetterVR's stereo frames that
+picture is neither the headset's nor, with the TV mirror on, the TV's: the stereo path skips Cemu's TV game picture
+and the TV shows Hmd2's social screen, so the sheet is drawn where nobody sees it. With the TV mirror off it is on
+the TV only, never in the headset. Flat play was and is fine, and the game's own wait has no end: Cemu's swkbd has
+no cancel and no timeout.
+
+**The fix, on the PS5 side only.** While stereo runs with the headset up (`ps5vr::Stereo()` and `ps5vr::HeadsetUp()`),
+`PS5Cemu_DrawKeyboard` opens the console's own keyboard (libSceImeDialog, new `port/app/ime_dialog.cpp`) once per game
+appearance, with the form's text and the limit the game set (UTF-16 units, as swkbd counts them; a game's larger limit
+is clamped to the dialog's 2048). It polls the dialog once a frame on the thread `swkbd_render` runs on, and on OK
+writes the typed text into the form and returns done, exactly as its sheet did, so Cemu's `swkbd_finishInput` decides
+it to the game. A cancel, a dialog the system abandons, one it refuses, and one left up for 90 seconds without an
+answer all decide the text the game gave: swkbd has no cancel a game could take, and the game must never wait on a
+keyboard nobody can see. A game that dismisses its own swkbd while the dialog is up ends it from the next TV frame
+(`PS5Cemu_RenderOverlay`), so the pad is not left idle. If the headset failed to start, `ps5vr::Stereo()` stays true
+but Hmd2 is not up: the TV shows Cemu's own picture, where the sheet is visible, so that case keeps the sheet. Flat
+play and the M2 flat screen keep it too.
+
+**The game's input while it is up.** The console's keyboard is the system's, so the pad is its: patch bettervr 0044
+has `hook_InjectXRInput` write an idle VPAD status while `BetterVR_PS5_GameInputBlocked` is set
+(`port/bettervr/xr/runtime.cpp`) and holds the pad's and the Sense's Options from the game's pause. An Options press
+that runs into or through the dialog ends with it: its release is not a pause after the keyboard closes. The state
+above that write still runs, so a button held when the dialog closes is not read as a fresh press. The DualSense never
+reached the emulated GamePad while swkbd is active (`OverlayTakesInput`), as before.
+
+**Logs, capped at 24 lines each run, never the text.** `[ime] swkbd asked for a keyboard: N units, limit M
+(form|keyboard); the console's opened (0x0)`, or `... it did not open (0x..., N tries): the text it gave is decided`;
+`[ime] the console's keyboard: OK, N units`; `... cancelled; the text it gave is decided (swkbd has none to take)`;
+`... no answer in 90 s; ended, the text it gave is decided`; `... ended without an answer (...)`, with the close
+status and the length, never the text; and `[ime] the game dismissed its keyboard; ended, the text it gave is
+decided` when the game closes its own prompt.
+
+**Where the layout comes from.** The SDK has no header for this dialog, and none is used: the 96-byte parameter
+block, its 16-byte result, the statuses (0 none, 1 running, 2 finished) and the outcomes (0 OK, 1 cancelled, 2
+aborted) are the ones public PS5 homebrew opens it with (ps5-payload-dev's offact, prospero-win's pw_osk_ps5.c),
+which the PS4 reimplementations share. Its text is 16 bits a unit whatever the toolchain's `wchar_t` is. The module
+stub is one of the SDK's, which `tools/link.sh` already links.
+
+**What is not known until the console run.** Whether the system draws this dialog in an hmd2 session's headset at
+all: it is a system 2D layer composited over the title's TV output, and the headset gets Hmd2's own eye buffers. That
+is Test request 77's first question and this design stands or falls on it. Where it does not show, Circle cancels it
+even unseen, and a dialog left unanswered ends itself after 90 seconds: either way the game takes the text it gave
+instead of waiting forever.
+
+Patches: bettervr 0044 (the idle pad, and Options ending with it), cemu 0063 (the hook is told form or keyboard-only,
+for the request line); new files `port/app/ime_dialog.h/.cpp`; no GPU, frame-path or record change.
+
+**Test request 77 (v0.8 console keyboard in VR, 13.60 console).** Install the `BotW-VR-v...zip` from this head's
+green "BetterVR build" run and start Breath of the Wild in VR with the headset, both Sense controllers and the
+DualSense on. Load a save that can reach a stable (or ride to one), register a horse and reach the naming screen.
+
+1. **Does the console's keyboard show?** Say whether the PS5 keyboard appears in the headset, only on the TV, or
+   nowhere. This is the question the design rests on.
+2. **Does the name reach the game?** Type a name and accept it: does the naming screen close, and does the name show
+   in the stable and the pause menu? If it does not, say whether the game went on with the name it gave (the
+   fallback) or stayed waiting.
+3. **Cancel.** Show the keyboard again (rename the horse, or any other text prompt) and press the dialog's Circle
+   cancel, whether or not you can see the dialog: the game should continue with the text it gave, not wait.
+4. **An unanswered dialog.** Show it once more and leave it alone, best done while it is not visible: after about 90
+   seconds the game should go on with the text it gave. Say whether it did, and send the `no answer in 90 s` line.
+5. **The game's own prompt dismissed.** With the console keyboard up, back out of the game's prompt instead of
+   answering it: the game should be playable again, and the log should hold `the game dismissed its keyboard`.
+6. **Options across the dialog.** Hold Options while the dialog is up, then release it after the dialog closes: the
+   game must not open its pause screen.
+7. **Flat, unchanged.** Play on TV and name a horse: the port's own sheet must still be the one that shows and types.
+
+**Send**, from `/data/ps5cemu/logs/boot.log`:
+
+- `LC_ALL=C grep -a "\[ime\]" boot.log`
+- which of steps 1-7 happened, where the keyboard was seen in each, and whether the pad moved Link while it was up.
+
+**What it decides.** Step 1 decides whether the console's dialog is visible in the headset; if it is TV-only, the
+next step is a keyboard drawn in BetterVR's own overlay. Step 2 decides that the typed text reaches swkbd. Steps 3-5
+decide the cancel, the time limit and a game that dismisses its own keyboard. Step 6 decides that the pad returns
+without a pause. Step 7 guards flat play and the M2 flat screen.
+
 ## 2026-11-21: the shrine respawn holds the third-person camera and its fade reaches the 3D picture without the 16:9 panel; built, untested on console
 
 The rc4 report (13.60): falling into the void in a shrine, the respawn cutscene showed the same third-person camera
