@@ -19,7 +19,8 @@ thread is created with attributes `0` (`ax_ist.cpp:981`), so it is affined to th
 `AXInit` (core 1 here, `coreinit_Thread.cpp:474`), and only that core queues its messages. Another
 idle core's pump could queue one frame but could not produce a block while core 1 sat in a host
 call, which is the case the arrival needs. AX pumping is therefore Cemu's own again, byte-identical
-to `c73d352`: `coreinit_Thread.cpp` and `ax.h` have no change against it, and `ax_out.cpp`'s
+to `c73d352`: `__OSCheckSystemEvents` (the pump's only caller) and `ax.h` are the same bytes,
+`__OSThreadCoreIdle` differs only by the diagnostics hook above the run-queue check, and
 `AXOut_update` differs only by the feed-gap counters below. No `audioAnyCore` key exists.
 
 **What this build adds (cemu 0065, diagnostics only).**
@@ -43,9 +44,9 @@ to `c73d352`: `coreinit_Thread.cpp` and `ax.h` have no change against it, and `a
 5. The AudioOut queue line, every 10 s unconditionally: current fill, lowest fill, longest wait for
    a whole grain, blocks dropped and grains padded.
 
-**Cost.** A few relaxed atomic stores and one TSC read per HLE call and per thread switch; the
-`[audio]` sample runs once per grain; the two `[stall]` lines are formatted only when they print.
-Nothing on the guest's path waits, takes a lock or allocates.
+**Cost.** A few relaxed atomic stores and one TSC read per HLE call, a 40-byte name copy per thread
+switch; the `[audio]` sample runs once per grain; the two `[stall]` lines are formatted only when
+they print. Nothing on the guest's path waits, takes a lock or allocates.
 
 **Checks.** `tools/tests/test-core-diag.cpp` (the states, the thread name and priority, the export's
 name and how long, the wait kinds and the names that classify them, the AX thread's timestamps),
@@ -80,13 +81,15 @@ plus the list of arrivals that crackled, with their approximate times.
 **What it decides.** On the same second as a crackle: `lowest 0-5 ms` and `grain late by 16-22 ms`
 on the queue line, with `[audio] no AX frame for 40+ ms`, is the drain. The `[stall] cores` line then
 splits the two cases the owner asked about. If **core 1 is executing the guest's code** through the
-gap, the AX thread was runnable and only the scheduler's next switch was missing: a 3 ms self-paced
-AX thread would feed it with no added latency, so a no-latency fix exists. If **core 1 is inside a
+gap, the AX thread was runnable and only a scheduling point was missing: a 3 ms frame source that is
+not tied to core 1's idle loop (a host timer posting the AX message, not an alarm the idle loop
+checks) would feed it with no added latency, so a no-latency fix exists. If **core 1 is inside a
 host call** (a `gx2.*` readback, a driver submit) for most of the gap, nothing on core 1 can queue a
 frame, and no fix without moving the AX thread to another core exists; the queue could only be
-deepened, which is the added latency the owner rules out. If the queue stays at `lowest 40 ms` or
-more through every crackling arrival, the audio never drained and the search moves off the audio
-path.
+deepened, which is the added latency the owner rules out. If **core 1 is idle with a thread waiting
+on a GPU sync**, the idle loop was running and so was the pump: a gap then points at the pump's
+cadence or the output thread, not a busy core. If the queue stays at `lowest 40 ms` or more through
+every crackling arrival, the audio never drained and the search moves off the audio path.
 
 ## 2026-11-22: a repeated `[copy]` note is a hash, and every compose-mode edge says its cost; built, untested on console
 
