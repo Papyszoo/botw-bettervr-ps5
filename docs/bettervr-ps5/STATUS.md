@@ -6,6 +6,39 @@ tested.
 Test request 77 (v0.8 haptics) is withdrawn with the haptics work; the requests after it move up one, so
 the console keyboard is 77, the tutorial shrine 78 and the cutscene height 79.
 
+## 2026-11-23: HUD pieces blended over the UI keep their own shape in the VR alpha mask; built, untested on console
+
+Upstream's `hook_FixUIBlending` (`interface_hooks.cpp`) exists because VR uses the 2D UI's alpha as the HUD
+mask: a later draw that lowers already-written alpha leaves a see-through gap in the headset. It rewrote
+one particular blend's alpha to `ZERO, DST_ALPHA`, which is `dst²` on the 2-bit-alpha HUD target and ignores
+the piece's own texture alpha. The dialogue box's end caps, the rupee counter's right cap and the item-get
+popup's corner pieces use that blend, so each cap or corner arrived as one flat translucent rectangle, and a
+piece over clear HUD vanished and left the body's square end.
+
+**The fix.** New patch bettervr 0050 changes that alpha to standard over, `ONE, ONE_MINUS_SRC_ALPHA`, with
+the separate-alpha flag and the colour factors unchanged. `out.a = src.a + dst.a * (1 - src.a)` never lowers
+an existing HUD alpha, so the hook's purpose holds and no new holes open; where the HUD is clear it is the
+piece's own alpha, so a cap or corner keeps its shape; where the HUD is already opaque it stays opaque.
+
+**Checks.** `tools/bettervr-patches.sh apply` and `tools/cemu-patches.sh apply` pass, and all 50 patches
+apply from the 1.0.2 pin in a clean clone with `git am`, the tree equal to the branch's.
+`tools/tests/test-bettervr-triggers.sh`, `tools/tests/test-bettervr-nids.py` and `python3 -B tools/lang.py check`
+pass. No host test compiles BetterVR, so the "BetterVR build" run is the compile check. Built, untested on console.
+
+**Test request 87 (HUD alpha, 13.60 console).** Install the `BotW-VR-v...zip` from the green "BetterVR build"
+run on this head; VR on.
+
+1. **Dialogue box.** Talk to any NPC so the dialogue box shows. Are both ends round, or are the end caps
+   still lighter translucent rectangles?
+2. **Rupee counter.** Collect Rupees so the counter shows. Is its right end round, or still cut square?
+3. **Item-get popup.** Pick up a Spirit Orb (or any item) so the popup shows. Are its decorative corner
+   pieces the right shape, or still lighter translucent squares in the corners?
+4. **No new holes.** With the HUD up, look at the minimap, hearts and stamina; open the map screen, the
+   inventory and the pause menu. Is anything missing, or does the 3D show through a part of the HUD that
+   should be solid? Compare with the spots that were already see-through before this build.
+
+**Send.** The build, what each step did, and, if a HUD piece is still wrong, `/data/botwvr/launcher/logs/boot.log`.
+
 ## 2026-11-23: a Magnesis twist stays after the grip is let go, so rotations build up in steps; built, untested on console
 
 In Eye Magnesis (an object picked by the gaze) a wrist twist turns the held object, but letting go of the right

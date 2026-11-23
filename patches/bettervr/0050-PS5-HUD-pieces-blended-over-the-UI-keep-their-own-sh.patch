@@ -1,0 +1,28 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ps5cemu <ps5cemu@localhost>
+Date: Mon, 23 Nov 2026 13:51:37 +0100
+Subject: [PATCH] PS5: HUD pieces blended over the UI keep their own shape in
+ the VR alpha mask; built, untested on console
+
+Upstream's hook_FixUIBlending rewrote these draws' alpha to ZERO, DST_ALPHA, which is dst squared on the 2-bit-alpha HUD target and ignores the piece's texture alpha. The dialogue box's end caps, the rupee counter's right cap and the item-get popup's corner pieces use this blend, so they arrived as flat translucent rectangles, or vanished, instead of their shaped masks.
+
+Alpha is now standard over: ONE, ONE_MINUS_SRC_ALPHA, so out.a = src.a + dst.a * (1 - src.a). That never lowers existing HUD alpha, which is the hook's purpose (no gaps in the mask), follows the piece's own alpha where the HUD is clear, and keeps an opaque destination opaque. Colour factors and the separate-alpha flag are unchanged.
+---
+ src/game/botw/interface/interface_hooks.cpp | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/game/botw/interface/interface_hooks.cpp b/src/game/botw/interface/interface_hooks.cpp
+index a3b35a6..c998492 100644
+--- a/src/game/botw/interface/interface_hooks.cpp
++++ b/src/game/botw/interface/interface_hooks.cpp
+@@ -147,8 +147,8 @@ static void hook_FixUIBlending(PPCInterpreter_t* hCPU) {
+     bool matchesAlpha = alphaSrcFactor == GX2_BLENDFACTOR::SRC_ALPHA && alphaDstFactor == GX2_BLENDFACTOR::ONE_MINUS_SRC_ALPHA && alphaCombineFunc == GX2_COMBINEFUNC::DST_PLUS_SRC;
+     if (matchesColorSettings && matchesAlpha) {
+         hCPU->gpr[7] = 1;
+-        hCPU->gpr[8] = std::to_underlying(GX2_BLENDFACTOR::ZERO);
+-        hCPU->gpr[9] = std::to_underlying(GX2_BLENDFACTOR::DST_ALPHA);
++        hCPU->gpr[8] = std::to_underlying(GX2_BLENDFACTOR::ONE);
++        hCPU->gpr[9] = std::to_underlying(GX2_BLENDFACTOR::ONE_MINUS_SRC_ALPHA);
+     }
+ }
+ 
