@@ -38,7 +38,8 @@ To build it yourself, see [docs/BUILDING.md](docs/BUILDING.md).
 
 ## Known issues
 
-- Busier areas at 1.25x VR resolution can dip to about 37-45 fps; 1x holds about 60.
+- Busier areas, such as around Zora's Domain in the rain, can dip to about 37-45 fps at 1.25x VR resolution;
+  1x is the lighter setting.
 - A one-frame body flash can show while strafing with the stick (a known BetterVR 1.0 issue).
 - NPC dialogue panels can be darkened by world shadows (a known BetterVR 1.0 issue).
 - The eye rows need eye tracking on and the headset calibrated in the PS5's Settings > Accessories >
