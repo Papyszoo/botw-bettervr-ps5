@@ -1,0 +1,160 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ps5cemu <ps5cemu@localhost>
+Date: Mon, 23 Nov 2026 12:55:21 +0100
+Subject: [PATCH] PS5: a magnesis twist the grip built up stays after the
+ release; built, untested on console
+
+The wrist twist is only written while the grip is squeezed: upstream's hook returns as soon as the
+grip is not held (magnesis.cpp, hook_GetMagnesisHeldBodySpin), and the game's own update turns the
+held body back to its orientation once those writes stop. 0013's transform path shows this: a body
+whose angular velocity the game drops only holds a twist while the hook writes its matrix every
+frame. So a twist could not be built up in steps; letting go dropped it.
+
+The hook now remembers the twist a hold has built up (the target rotation, not just how far the
+body got) and, while the same body stays held without the grip, writes that rotation again through
+the transform path whenever the game has turned the body away from it by half a degree. A new grip
+starts its base from that kept rotation when the hook has seen the body within half a second, so
+the next twist continues from the last one; a grip that never turned anything keeps nothing and
+leaves the body's own rotation alone. Fixed objects are untouched.
+
+The spin log gains turned=, the body's rotation since the grip, which says whether the body kept
+up with the hand. One INFO line per release says the twist that stays, and at most two a second
+say when the game has turned the body away and the twist was put back.
+
+Patch bettervr 0049.
+---
+ src/game/botw/player/magnesis.cpp | 74 +++++++++++++++++++++++++++++--
+ 1 file changed, 70 insertions(+), 4 deletions(-)
+
+diff --git a/src/game/botw/player/magnesis.cpp b/src/game/botw/player/magnesis.cpp
+index c021f2a..a603c64 100644
+--- a/src/game/botw/player/magnesis.cpp
++++ b/src/game/botw/player/magnesis.cpp
+@@ -58,10 +58,21 @@ static constexpr float MagneSpinKeptShare = 0.25f;
+ // both cave sites can run in one game frame, and a long hitch must not turn the body in one jump
+ static constexpr float MagneSpinMinFrame = 0.004f;
+ static constexpr float MagneSpinMaxFrame = 0.050f;
++// a twist smaller than this is not worth keeping, a kept rotation is put back once the body is this far from it,
++// and a body the hook has not seen for longer than the timeout is no longer held
++static constexpr float MagneKeepMinTwist = 0.0175f;
++static constexpr float MagneKeepTolerance = 0.0087f;
++static constexpr uint64_t MagneKeepTimeoutNs = 500'000'000;
+ 
+ static glm::quat s_grabHandRotation = glm::identity<glm::quat>();
+ static glm::quat s_grabBodyRotation = glm::identity<glm::quat>();
+ static bool s_spinGripHeld = false;
++// PS5: the twist a hold has built up stays on the body after the grip is let go, so the game turning the body
++// back to its own orientation does not undo it and the next grip starts from it
++static glm::quat s_keptRotation = glm::identity<glm::quat>();
++static uint32_t s_keptBody = 0;
++static uint64_t s_keptNs = 0;
++static uint64_t s_keepLogNs = 0;
+ 
+ // the angular velocity reaches the body's simulation or the game drives over it; which one is decided
+ // once per hold, from how far the body turned after the first real spin
+@@ -567,6 +578,35 @@ static void hook_DriveMagnesisAim(PPCInterpreter_t* hCPU) {
+     }
+ }
+ 
++// PS5: the wrist twist is only a request the game answers while the grip is squeezed, so a hold's built-up
++// rotation is written again, through the transform path, while the same body is held without the grip; a body
++// that keeps its rotation costs no write
++static bool KeepHeldRotation(uint32_t body, uint32_t bodyMtxAddress, BEMatrix34& bodyMtx, const glm::quat& bodyRotation, bool isFixedObject) {
++    if (s_keptBody != body) {
++        return false;
++    }
++
++    const uint64_t now = GetTimeStamp();
++    if (isFixedObject || now - s_keptNs > MagneKeepTimeoutNs) {
++        s_keptBody = 0;
++        return false;
++    }
++    s_keptNs = now;
++
++    const float turnedAway = QuatAngle(glm::normalize(s_keptRotation * glm::inverse(bodyRotation)));
++    if (turnedAway < MagneKeepTolerance) {
++        return false;
++    }
++
++    bodyMtx.setRotLE(s_keptRotation);
++    Guest::Write(bodyMtxAddress, &bodyMtx);
++    if (s_keepLogNs == 0 || now - s_keepLogNs >= 500'000'000) {
++        s_keepLogNs = now;
++        Log::print<INFO>("[magnesis] spin keep: the body turned {:.1f} deg away from the kept twist, put back", glm::degrees(turnedAway));
++    }
++    return true;
++}
++
+ // r3 = sead::Matrix34 of the held body, r4 = Vec3 that receives the angular velocity, r5 = the body,
+ // returns 0 to leave the body alone, 1 to set the angular velocity, 2 to set the turned transform
+ static void hook_GetMagnesisHeldBodySpin(PPCInterpreter_t* hCPU) {
+@@ -614,11 +654,19 @@ static void hook_GetMagnesisHeldBodySpin(PPCInterpreter_t* hCPU) {
+ 
+     const bool gripHeld = inputs.inGame.grab[OpenXR::EyeSide::RIGHT].currentState > MagneGripThreshold;
+     const bool gripStarted = gripHeld && !s_spinGripHeld;
++    const bool gripReleased = !gripHeld && s_spinGripHeld;
+     s_spinGripHeld = gripHeld;
+     if (!gripHeld) {
+         s_spinPath = SpinPath::Unknown;
+         s_spinBody = 0;
+         s_probeSpin = 0.0f;
++        // PS5: letting go does not undo the twist; it stays on the body, and the next grip starts from it
++        if (gripReleased && s_keptBody == body) {
++            Log::print<INFO>("[magnesis] spin kept: the twist stays on release ({:.1f} deg)", glm::degrees(QuatAngle(glm::normalize(s_keptRotation * glm::inverse(s_grabBodyRotation)))));
++        }
++        if (KeepHeldRotation(body, bodyMtxAddress, bodyMtx, bodyRotation, isFixedObject)) {
++            hCPU->gpr[3] = 2;
++        }
+         return;
+     }
+ 
+@@ -629,7 +677,13 @@ static void hook_GetMagnesisHeldBodySpin(PPCInterpreter_t* hCPU) {
+         s_probeSpin = 0.0f;
+         s_lastBodySample = std::chrono::steady_clock::time_point{};
+         s_grabHandRotation = handRotation;
+-        s_grabBodyRotation = bodyRotation;
++        // PS5: a grip that follows a kept twist starts from it, so a rotation builds up in steps; a hold that
++        // ended in between (the hook went quiet past the timeout) starts from where the body is
++        const bool kept = s_keptBody == body && GetTimeStamp() - s_keptNs <= MagneKeepTimeoutNs;
++        s_grabBodyRotation = kept ? s_keptRotation : bodyRotation;
++        if (!kept) {
++            s_keptBody = 0;
++        }
+         s_spinGripReach = HandReach(handLocation);
+     }
+ 
+@@ -670,19 +724,31 @@ static void hook_GetMagnesisHeldBodySpin(PPCInterpreter_t* hCPU) {
+         errorAngle = 2.0f * std::atan2(errorAxisLength, error.w);
+         spin = errorAxis / errorAxisLength * std::min(errorAngle * MagneSpinGain, MagneMaxSpin);
+     }
++    const float handTwist = QuatAngle(glm::normalize(handRotation * glm::inverse(s_grabHandRotation)));
+ 
+     if (s_lastSpinLog == std::chrono::steady_clock::time_point{} || now - s_lastSpinLog >= std::chrono::milliseconds(500)) {
+         s_lastSpinLog = now;
+-        const float handTwist = QuatAngle(glm::normalize(handRotation * glm::inverse(s_grabHandRotation)));
++        const float turned = QuatAngle(glm::normalize(bodyRotation * glm::inverse(s_grabBodyRotation)));
+         const float reach = HandReach(handLocation);
+-        Log::print<INFO>("[magnesis] spin: fixed={} twist={:.1f} deg want={:.1f} rad/s body={:.1f} rad/s reach={:.2f}x",
+-            isFixedObject, glm::degrees(handTwist), glm::length(spin), bodySpin, s_spinGripReach > 0.0f && reach > 0.0f ? reach / s_spinGripReach : 1.0f);
++        Log::print<INFO>("[magnesis] spin: fixed={} twist={:.1f} deg turned={:.1f} deg want={:.1f} rad/s body={:.1f} rad/s reach={:.2f}x",
++            isFixedObject, glm::degrees(handTwist), glm::degrees(turned), glm::length(spin), bodySpin, s_spinGripReach > 0.0f && reach > 0.0f ? reach / s_spinGripReach : 1.0f);
+     }
+ 
+     if (isFixedObject) {
+         return;
+     }
+ 
++    // PS5: the twist this grip has built up is what stays on the body once it is let go; a grip that never
++    // turned anything leaves the body's own rotation alone
++    if (handTwist >= MagneKeepMinTwist) {
++        s_keptRotation = targetRotation;
++        s_keptBody = body;
++        s_keptNs = GetTimeStamp();
++    }
++    else if (s_keptBody == body) {
++        s_keptBody = 0;
++    }
++
+     if (s_spinPath == SpinPath::Transform) {
+         // the angular velocity stays at zero, so the body itself turns, about its own centre
+         const float stepAngle = std::min(errorAngle * MagneSpinGain, MagneMaxTransformSpin) * frameTime;

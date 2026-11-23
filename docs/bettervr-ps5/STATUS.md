@@ -6,6 +6,56 @@ tested.
 Test request 77 (v0.8 haptics) is withdrawn with the haptics work; the requests after it move up one, so
 the console keyboard is 77, the tutorial shrine 78 and the cutscene height 79.
 
+## 2026-11-23: a Magnesis twist stays after the grip is let go, so rotations build up in steps; built, untested on console
+
+In Eye Magnesis (an object picked by the gaze) a wrist twist turns the held object, but letting go of the right
+grip put it back at its default rotation, so the player could not turn it in two or three steps.
+
+**The cause.** The twist is upstream 1.0.2's: `hook_GetMagnesisHeldBodySpin` (`magnesis.cpp`) turns the hand's
+rotation since the grip into an angular velocity while `inputs.inGame.grab[RIGHT]` is above 0.51, and returns on
+the first frame it is not. 0013's own probe shows why that is not enough: the transform path exists for a body
+whose angular velocity the game drops, and that path only holds a twist by writing the body's matrix every frame.
+So the twist lives in those per-frame writes alone; when the grip lets go, the game's own update has the body back
+at its orientation, and the next grip captures that as its base. It is not a 0041 regression: Eye Magnesis only
+writes the hold point (`MagneActionBaseDirection`, `MagneActionYaw`, distance, height), never the body's rotation.
+
+**The fix.** New patch bettervr 0049 keeps the twist: while the grip is held, the hook remembers the rotation the
+grip has built up (the hand's target, not just how far the body got, so a fast wrist is not lost), and after the
+release it writes that rotation again through 0013's transform path whenever the game has turned the body away
+from it by half a degree. A body that keeps its rotation costs no write. A new grip starts its base from the kept
+rotation when the hook has seen the body within half a second, so the next twist continues from the last one; a
+grip that never turned anything keeps nothing and leaves the body's own rotation alone. Fixed objects are not
+kept. Both grip paths share the hook, so plain hand Magnesis keeps a wrist twist after release too; while the
+grip is held it is unchanged, and a release before this change already stopped the twist.
+
+The `[magnesis] spin` line gains `turned=`, the body's own rotation since the grip (next to `twist=`, the hand's),
+so the log says whether the body kept up with the wrist. One INFO line per release says the twist that stays, and
+at most two a second say when the game had turned the body away and the twist was put back.
+
+**Checks.** `tools/bettervr-patches.sh apply` and `tools/cemu-patches.sh apply` pass, and every patch applies from
+the 1.0.2 pin in a clean worktree with `git am` (49 patches, the tree equal to the branch's);
+`tools/tests/test-bettervr-triggers.sh`, `tools/tests/test-bettervr-nids.py` and `python3 -B tools/lang.py check`
+pass. No host test compiles BetterVR, so the "BetterVR build" run is the compile check. Built, untested on console.
+
+**Test request 86 (Magnesis rotation in steps, 13.60 console).** Install the `BotW-VR-v...zip` from the green
+"BetterVR build" run on this head; VR on, first person, both Sense controllers charged.
+
+1. **Eye Magnesis, one step.** Turn **Eye Magnesis** on. Take Magnesis, look at a free metal crate, hold the
+   right grip and twist the wrist about a quarter turn: the crate turns. Let go of the grip and keep looking at
+   it: it must stay turned, and it must not turn back while the gaze steers it elsewhere.
+2. **Eye Magnesis, three steps.** Grip again and twist the same way another quarter: it must turn further from
+   where it stopped, not start again from its first orientation; release. Repeat once more. Say whether the
+   third step builds on the second, and whether the crate drops or slides when the grip is released.
+3. **Plain Magnesis.** Turn **Eye Magnesis** off. Take Magnesis, grip a free metal crate: it must follow the hand
+   as before; a wrist twist must turn it in place; on release it must stay turned and stay held. Then a door or a
+   sliding block with the grip held: it must not turn.
+4. **An object you never twisted.** While gaze-steering a crate you have not twisted, say whether it still swings
+   and tumbles as before, and whether a crate that was twisted looks stiff or jerky while it is moved.
+
+**Send.** The build, what each step did, and from `/data/ps5cemu/logs/boot.log`
+`LC_ALL=C grep -a "\[magnesis\]" boot.log`: the `spin kept:` line of each release, the `spin:` lines' `twist=` and
+`turned=`, and every `spin keep:` line. No log is needed for a step that behaved.
+
 ## 2026-11-23: v0.8 moves to BetterVR 1.0.2 and the Cemu fork it names; built, untested on console
 
 The pins move: BetterVR 1.0.0 (`db5495b`) to 1.0.2 (`07abe22`, 23 commits), and the Cemu fork from `86168a8`
