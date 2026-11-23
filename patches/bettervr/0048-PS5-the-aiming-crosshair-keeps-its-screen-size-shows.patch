@@ -10,34 +10,36 @@ reticle, which is only ever a texture on the floating HUD panel. Being world-siz
 with distance; upstream skipped the synthetic target point, so an empty sky showed nothing; and
 the xray pass multiplied its alpha by 0.35, so 100 % could never be solid.
 
-Three settings beside Bow Aiming Arc: Aiming Crosshair Size (50-300 %, the radius), Aiming
+Three settings beside Bow Aiming Arc: Aiming Crosshair Size (10-400 %, the radius), Aiming
 Crosshair Color (White, Red, Green, Yellow, Cyan) and Aiming Crosshair Opacity (0-100 %, the
 crosshair's final on-screen alpha, so 100 % is solid while it still draws through walls). The
-radius follows the distance from the aim's start to keep the on-screen size it has at 10 m,
-clamped to 0.1-20 times; Size scales it. The synthetic/fallback point draws too, at the same
-size. The crosshair alone skips the 0.35 xray fade: DebugDraw::Sphere gains an xraySolid flag
-that puts its lines in a fourth bucket, drawn through the xray pipeline with the scale at 1.0.
-The arc and its fall marker are untouched, and the setting keys are unchanged, so saved settings
-load. The menu rows and the arc's step say crosshair, not dot.
+base radius is a quarter of that 0.16 m, so Size 100 % is a quarter of the size BetterVR's own
+marker had and 400 % reaches it again; a console check found the marker too big at the previous
+size. The radius follows the distance from the aim's start to keep the on-screen size it has at
+10 m, clamped to 0.1-20 times; Size scales it. The synthetic/fallback point draws too, at the
+same size. The crosshair alone skips the 0.35 xray fade: DebugDraw::Sphere gains an xraySolid
+flag that puts its lines in a fourth bucket, drawn through the xray pipeline with the scale at
+1.0. The arc and its fall marker are untouched, and the setting keys are unchanged, so saved
+settings load. The menu rows and the arc's step say crosshair, not dot.
 
-At Yellow, Size 100 % and Opacity 10 % the crosshair is the old default look in the default
-(70 %) arc mode: alpha 100 x 0.7 x 0.35 is 24.5 of 255, and 10 % is 25.5. The rows use the
+At Yellow, Size 100 % and Opacity 10 % the crosshair is the old default brightness in the
+default (70 %) arc mode: alpha 100 x 0.7 x 0.35 is 24.5 of 255, and 10 % is 25.5. The rows use the
 existing percent slider and combo helpers, whose label and setting-name PushIDs give each row
 its own focus, as 0046 did for the Vibration page.
 ---
- src/game/botw/player/bow.cpp  | 37 ++++++++++++++++++++++++++++++-----
- src/rendering/imgui_menus.cpp | 20 +++++++++++++++++--
- src/rendering/vk_backend.cpp  | 20 ++++++++++++++++---
- src/utils/debug_draw.cpp      | 22 +++++++++++++++------
+ src/game/botw/player/bow.cpp  | 39 ++++++++++++++++++++++++++++++-----
+ src/rendering/imgui_menus.cpp | 20 ++++++++++++++++--
+ src/rendering/vk_backend.cpp  | 20 +++++++++++++++---
+ src/utils/debug_draw.cpp      | 22 ++++++++++++++------
  src/utils/debug_draw.h        |  7 +++++--
- src/utils/mod_settings.h      | 26 ++++++++++++++++++++++++
- 6 files changed, 114 insertions(+), 18 deletions(-)
+ src/utils/mod_settings.h      | 26 +++++++++++++++++++++++
+ 6 files changed, 116 insertions(+), 18 deletions(-)
 
 diff --git a/src/game/botw/player/bow.cpp b/src/game/botw/player/bow.cpp
-index 8df50c1..0d0f561 100644
+index 8df50c1..b030921 100644
 --- a/src/game/botw/player/bow.cpp
 +++ b/src/game/botw/player/bow.cpp
-@@ -1370,14 +1370,33 @@ static uint32_t ScaleColorAlpha(uint32_t color, float scale) {
+@@ -1370,14 +1370,35 @@ static uint32_t ScaleColorAlpha(uint32_t color, float scale) {
      return (color & 0x00FFFFFF) | ((uint32_t)a << 24);
  }
  
@@ -58,9 +60,11 @@ index 8df50c1..0d0f561 100644
 -    const uint32_t targetColor = DebugDrawColor(255, 214, 64, 100);
      const uint32_t fallMarkerColor = DebugDrawColor(255, 52, 36, 200);
      constexpr float kThickness = 1.5f;
-+    constexpr float kAimingCrosshairRadius = 0.16f;
-+    // the sphere is world-sized, so its radius follows its distance to keep the crosshair the size it has at 10 m,
-+    // where upstream's 0.16 m radius looked right; the limits keep it sane against a wall and across a valley
++    // a quarter of upstream's 0.16 m, so Size 100 % is a quarter of the size the previous build showed at the same
++    // distance; the Size row spans 10-400 %, so it still reaches the previous build's size at 400 %
++    constexpr float kAimingCrosshairRadius = 0.04f;
++    // the sphere is world-sized, so its radius follows its distance to keep the crosshair the size it has at 10 m;
++    // the limits keep it sane against a wall and across a valley
 +    constexpr float kAimingCrosshairReferenceDistance = 10.0f;
 +    constexpr float kAimingCrosshairDistanceScaleMin = 0.1f;
 +    constexpr float kAimingCrosshairDistanceScaleMax = 20.0f;
@@ -74,7 +78,7 @@ index 8df50c1..0d0f561 100644
  
      if (!dotOnly && cache.pointCount >= 2) {
          std::array<uint32_t, kPresetDefaultMaxFrames + 2> colors = {};
-@@ -1400,7 +1419,13 @@ static void DrawAimingArc(const AimingArcCache& cache) {
+@@ -1400,7 +1421,13 @@ static void DrawAimingArc(const AimingArcCache& cache) {
      }
  
      if (cache.hasTargetPos) {
@@ -89,7 +93,7 @@ index 8df50c1..0d0f561 100644
      }
  }
  
-@@ -1430,7 +1455,9 @@ void Bow::QueueAimingArcPreview(long frameIdx) {
+@@ -1430,7 +1457,9 @@ void Bow::QueueAimingArcPreview(long frameIdx) {
          AimingArcCache cache = {};
          if (BuildPreviewTrajectory(launchState, cache.points, cache.pointCount, cache.firstFallIndex)) {
              cache.valid = true;
@@ -101,7 +105,7 @@ index 8df50c1..0d0f561 100644
              s_aimingArcCache = cache;
              Log::print<ARROW_SHOT_CAPTURE>("[BowViz] Rendering {} arc points (origin={}, direction={}, firstFall={}, draw={:.3f}, atRange={:.1f})", cache.pointCount, launchState.launchOrigin, launchState.launchDirection, cache.firstFallIndex, launchState.drawAmount, launchState.atRange);
 diff --git a/src/rendering/imgui_menus.cpp b/src/rendering/imgui_menus.cpp
-index 42da771..bba610f 100644
+index 42da771..fa299ff 100644
 --- a/src/rendering/imgui_menus.cpp
 +++ b/src/rendering/imgui_menus.cpp
 @@ -399,7 +399,7 @@ static void DrawPercentIntSlider(UIntSetting& setting, bool* changed) {
@@ -134,7 +138,7 @@ index 42da771..bba610f 100644
 +                { AimingDotColor::CYAN, "Cyan" },
 +            };
 +            DrawSetting(nullptr, "Aiming Crosshair Size", [&]() {
-+                DrawPercentSlider(settings.aimingDotSize, 50.0f, 300.0f, 5.0f, changed);
++                DrawPercentSlider(settings.aimingDotSize, 10.0f, 400.0f, 5.0f, changed);
 +            });
 +            DrawSetting(nullptr, "Aiming Crosshair Color", [&]() {
 +                DrawEnumCombo(settings.aimingDotColor, aimingDotColorChoices, changed);
@@ -308,7 +312,7 @@ index 5efbb6f..58b2306 100644
          glm::vec3 a = {};
          glm::vec3 b = {};
 diff --git a/src/utils/mod_settings.h b/src/utils/mod_settings.h
-index 8c77bdb..8237553 100644
+index 8c77bdb..2046f50 100644
 --- a/src/utils/mod_settings.h
 +++ b/src/utils/mod_settings.h
 @@ -567,6 +567,27 @@ struct EnumTable<SwingSensitivity> {
@@ -345,7 +349,7 @@ index 8c77bdb..8237553 100644
      FloatSetting bowArcOpacity{ "BowArcTransparency", 0.7f, 0.0f, 1.0f };
 +    // the aiming crosshair at the end of the arc: Size scales the sphere and Opacity is its final on-screen alpha,
 +    // so 100 % is solid; 10 % keeps the old default look (alpha 100 times the 70 % arc, times the xray 0.35)
-+    FloatSetting aimingDotSize{ "AimingDotSize", 1.0f, 0.5f, 3.0f };
++    FloatSetting aimingDotSize{ "AimingDotSize", 1.0f, 0.1f, 4.0f };
 +    EnumSetting<AimingDotColor> aimingDotColor{ "AimingDotColor", AimingDotColor::YELLOW };
 +    FloatSetting aimingDotOpacity{ "AimingDotOpacity", 0.1f, 0.0f, 1.0f };
  

@@ -234,22 +234,25 @@ circles. Enlarged, that reads as a crosshair, not a dot. The game's HUD reticle 
 the floating HUD panel (`vulkan_imgui.cpp`), and the port has no reticle code.
 
 **The settings.** Three rows in Comfort > Advanced, right after Bow Aiming Arc, in the card that already
-holds it: **Aiming Crosshair Size** (50-300 %, the radius; saved as `AimingDotSize`, 1.0 = 100 %),
-**Aiming Crosshair Color** (White, Red, Green, Yellow, Cyan; `AimingDotColor`, Yellow) and **Aiming
-Crosshair Opacity** (0-100 %, the crosshair's final on-screen alpha; `AimingDotOpacity`, 0.1 = 10 %). The
-setting keys are unchanged, so saved settings load. Yellow is exactly the old `(255, 214, 64)`. The arc's
-"Dot Only" step is now "Crosshair Only", and the summary says crosshair.
+holds it: **Aiming Crosshair Size** (10-400 %, the radius; saved as `AimingDotSize`, 1.0 = 100 %, a
+quarter of the previous build's size), **Aiming Crosshair Color** (White, Red, Green, Yellow, Cyan;
+`AimingDotColor`, Yellow) and **Aiming Crosshair Opacity** (0-100 %, the crosshair's final on-screen
+alpha; `AimingDotOpacity`, 0.1 = 10 %). The setting keys are unchanged, so saved settings load. Yellow is
+exactly the old `(255, 214, 64)`. The arc's "Dot Only" step is now "Crosshair Only", and the summary
+says crosshair.
 
-**What it does.** The radius follows the distance from the aim's start (0.16 m at 10 m, clamped to 0.1-20
-times) so the crosshair has the same size on screen near and far; Size still scales it. The
-synthetic/fallback point draws too, so an empty sky shows the crosshair; the arc keeps upstream's
-behaviour. Opacity is the final on-screen alpha: 100 % is solid, and the crosshair still draws through
-walls. It is the only primitive that skips the xray pass's 0.35 fade: its lines go to a separate bucket
-drawn through the same xray pipeline with the scale at 1.0. Yellow, Size 100 % and Opacity 10 % give the
-old default look in the default 70 % arc mode (alpha 100 x 0.7 x 0.35 is 24.5 of 255; 10 % is 25.5). The
-arc and its red fall marker are untouched. Each row keeps its own ID through `DrawSetting`'s label PushID
-and the setting-name PushID in the percent-slider/combo helpers, so focus frames and a confirm press reach
-one row, as 0046 did for the Vibration page.
+**What it does.** The base radius is 0.04 m, a quarter of the 0.16 m above, so Size 100 % is a quarter of
+the size the previous build showed and 400 % reaches it again. It follows the distance from the aim's
+start (0.04 m at 10 m, clamped to 0.1-20 times) so the crosshair has the same size on screen near and
+far; Size still scales it. The synthetic/fallback point draws too, so an empty sky shows the crosshair;
+the arc keeps upstream's behaviour. Opacity is the final on-screen alpha: 100 % is solid, and the
+crosshair still draws through walls. It is the only primitive that skips the xray pass's 0.35 fade: its
+lines go to a separate bucket drawn through the same xray pipeline with the scale at 1.0. Yellow, Size
+100 % and Opacity 10 % give the old default alpha in the default 70 % arc mode (alpha 100 x 0.7 x 0.35 is
+24.5 of 255; 10 % is 25.5), at the smaller size above. The arc and its red fall marker are untouched.
+Each row keeps its own ID through `DrawSetting`'s label PushID and the setting-name PushID in the
+percent-slider/combo helpers, so focus frames and a confirm press reach one row, as 0046 did for the
+Vibration page.
 
 New patch bettervr 0048 (`mod_settings.h`, `bow.cpp`, `imgui_menus.cpp`, `debug_draw.h`/`.cpp`,
 `vk_backend.cpp`); no Cemu, runtime or asm change. `tools/bettervr-patches.sh apply` and
@@ -262,8 +265,9 @@ console.
 green "BetterVR build" run on this head; VR on, first person, any bow, in a shrine or the open field.
 
 1. **Same size.** Aim at a wall about 2 m away and at a target about 30 m away with Size 100 %: the
-   crosshair keeps one size on screen; it is no longer much smaller far away. Set Size 50 % and then
-   300 %: only its size changes, at the same spot; the arc does not.
+   crosshair keeps one size on screen; it is no longer much smaller far away. The default is a quarter
+   of the previous build's size; the row now runs 10-400 %, where 400 % is the previous build's 100 %.
+   Set Size 10 % and then 400 %: only its size changes, at the same spot; the arc does not.
 2. **Sky.** In first person, aim at the sky with nothing under the crosshair: it is still there, at the
    end of the aim line, at the same size; the arc behaves as before. In third person, there is no
    crosshair at the far end of the aim line.
