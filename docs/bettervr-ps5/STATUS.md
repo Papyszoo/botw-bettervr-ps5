@@ -24,7 +24,7 @@ groups over at most four lines:
 [vr-xr] [draws] pass targets: 512x512 fmt 0x1e att 2, replay: 44 passes, 44 draws, shader 0x00000000a1b2c3d4 | 2480x2560 fmt 0x1e att 3, 120 passes, 900 draws, shader 0x0000000011223344
 ```
 
-A replayed group whose passes and draws are equal is one pass a draw: those are the extra passes. The same
+The counts are totals for the line's 5-second window, not per frame; divide by the window's frame count for a per-frame figure. A replayed group whose passes and draws are equal is one pass a draw: those are the extra passes. The same
 target's group without `replay` counts the passes begun once (multiview, mono or the left side of a replayed
 pass). `"passCounts": 0` prints no groups; with it on, the counters cost one compare and one increment per draw
 and a lookup when the pass changes.
