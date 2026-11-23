@@ -6,6 +6,52 @@ tested.
 Test request 77 (v0.8 haptics) is withdrawn with the haptics work; the requests after it move up one, so
 the console keyboard is 77, the tutorial shrine 78 and the cutscene height 79.
 
+## 2026-11-23: the [draws] line names the render passes the second eye replays, by target and by the first draw's shader; built, untested on console
+
+The 1.25x Zora's Domain run (rain, 39-40 fps) replays about 90 more draws for the second eye than a normal
+area, each as its own pass, 2.1-2.6 ms of the 16.8 ms record; the log counts the replay and the passes but
+cannot say which render targets they are. This build names them, so the next change can pick the group to
+make mono or multiview.
+
+**The counter (patch cemu 0068, `bettervr.json`'s `passCounts`, on).** Every render pass begun in a `[draws]`
+window is grouped by the target it was begun on: the FBO's size, its first attachment's format and its
+attachment count, and whether it is the second eye's replay. Each group counts its passes and draws and keeps
+the shader hash of its first draw (the pixel shader's base hash, the vertex shader's when a pass has no pixel
+shader). The runtime prints the groups after the `[draws]` line, the replayed first and then the busiest, nine
+groups over at most four lines:
+
+```
+[vr-xr] [draws] pass targets: 512x512 fmt 0x1e att 2, replay: 44 passes, 44 draws, shader 0x00000000a1b2c3d4 | 2480x2560 fmt 0x1e att 3, 120 passes, 900 draws, shader 0x0000000011223344
+```
+
+A replayed group whose passes and draws are equal is one pass a draw: those are the extra passes. The same
+target's group without `replay` counts the passes begun once (multiview, mono or the left side of a replayed
+pass). `"passCounts": 0` prints no groups; with it on, the counters cost one compare and one increment per draw
+and a lookup when the pass changes.
+
+**Checks.** `tools/cemu-patches.sh apply` passes, and all 68 patches apply from the 6db0f53 pin in a clean
+worktree with `git am`. `python3 -B tools/lang.py check` passes (no user-facing string changed). No host test
+compiles Cemu, so the "BetterVR build" run is the compile check. Built, untested on console.
+
+**Test request 88 (Zora's Domain at 1.25x, pass targets).** Install the `BotW-VR-v...zip` from the green
+"BetterVR build" run on this head; VR on, both Sense controllers charged. In `/data/botwvr/launcher/bettervr.json`
+keep `"profile"` as it is and leave `"passCounts"` out, or set it to 1; restart the game after any change.
+Set BetterVR's menu > System > VR Resolution > 1.25x and restart the game.
+
+1. **Zora's Domain in rain.** Ride or walk around Zora's Domain for about 2 minutes with the rain falling.
+   Stop or turn where the frame rate drops, as in the earlier Zora runs.
+2. **A normal area.** Then spend about 1 minute in an ordinary outdoor area away from Zora (grass and trees,
+   no heavy rain). Keep roughly the same route and pace in both parts.
+
+**Send.** The build and `/data/botwvr/launcher/logs/boot.log` (Settings > Diagnostics > Copy logs to USB), or:
+- `LC_ALL=C grep -a "Pass counts:\|\[draws\]" boot.log`
+
+**What it decides.** The Zora windows should name the replayed groups whose passes and draws are equal, with
+their sizes, formats and shader hashes; the normal-area windows say which of those groups still replay there.
+The next patch takes the busiest such group: a small offscreen target (rain, ripples, the water reflection) is
+a candidate for a mono section, while a group on the full eye target with the scene's shader is the multiview
+route. No visual change is expected; the lines are the only difference.
+
 ## 2026-11-23: HUD pieces blended over the UI keep their own shape in the VR alpha mask; built, untested on console
 
 Upstream's `hook_FixUIBlending` (`interface_hooks.cpp`) exists because VR uses the 2D UI's alpha as the HUD

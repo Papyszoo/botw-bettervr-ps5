@@ -1,0 +1,281 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ps5cemu <ps5cemu@localhost>
+Date: Mon, 23 Nov 2026 19:59:10 +0100
+Subject: [PATCH] PS5: the [draws] line names the render passes the second eye
+ replays, grouped by target and the first draw's shader; built, untested on
+ console
+
+The Zora's Domain run at 1.25x spends 2.1-2.6 ms a frame on the passes the second eye replays, and the [draws] line counts them but cannot say which render targets they are. This adds the targets to the line for bettervr.json's passCounts: every render pass begun in the window, grouped by the target's size, its first attachment's format and its attachment count, and by whether it is the right eye's replay, with the passes and draws of each group and the shader hash of its first draw. The runtime prints the replayed groups first, then the busiest, nine groups over at most four lines next to the [draws] line, and starts the window again.
+
+The replay passes are added where view_flushRightPass begins them, with the draws it re-issues; the others where draw_setRenderPass begins them, with each draw into that pass. A group's first draw hash is the active pixel shader at the pass's first begin, or the first draw a right pass records. "passCounts": 0 keeps counting off and prints nothing.
+
+Counters only: a compare and an increment per draw, a lookup only when the pass changes. Built, untested on console.
+---
+ .../Renderer/Vulkan/VulkanRendererCore.cpp    | 157 ++++++++++++++++++
+ .../Renderer/Vulkan/VulkanRendererView.cpp    |  29 ++++
+ 2 files changed, 186 insertions(+)
+
+diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRendererCore.cpp b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRendererCore.cpp
+index d2435350..56369b82 100644
+--- a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRendererCore.cpp
++++ b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRendererCore.cpp
+@@ -53,6 +53,154 @@ bool g_ps5PassCounts = false;
+ std::atomic<uint64> g_ps5PassesBegun{0};
+ std::atomic<uint64> g_ps5Submits{0};
+ 
++// The same line's pass targets (passCounts, on): the window's render passes grouped by the target they
++// were begun on (its size, its first attachment's format and its attachment count) and by whether the
++// pass is the right eye's replay, with the group's first draw's shader. The runtime prints the groups,
++// the replay first, in its next [draws] line and empties the table. VulkanRendererView.cpp adds the
++// replay passes (view_flushRightPass); the GPU thread is the only one that touches this.
++struct PS5PassTarget
++{
++	uint32 width;
++	uint32 height;
++	uint32 format;
++	uint32 attachments;
++	uint32 replayed;
++	uint32 passes;
++	uint32 draws;
++	uint64 shader;
++};
++
++constexpr uint32 kPS5PassTargets = 64;
++static PS5PassTarget s_ps5PassTargets[kPS5PassTargets];
++static uint32 s_ps5PassTargetCount = 0;
++static PS5PassTarget* s_ps5DrawTarget = nullptr; // the pass the draw in progress goes to
++static CachedFBOVk* s_ps5DrawTargetFBO = nullptr;
++
++static uint64 ps5ActiveShaderHash()
++{
++	LatteDecompilerShader* pixelShader = LatteSHRC_GetActivePixelShader();
++	if (pixelShader)
++		return pixelShader->baseHash;
++	LatteDecompilerShader* vertexShader = LatteSHRC_GetActiveVertexShader();
++	return vertexShader ? vertexShader->baseHash : 0;
++}
++
++static PS5PassTarget* ps5PassTargetFor(CachedFBOVk* fbo, bool replayed)
++{
++	const VkExtent2D extent = fbo->GetExtend();
++	uint32 format = 0;
++	uint32 attachments = 0;
++	for (sint32 i = 0; i < 8; i++)
++	{
++		LatteTextureView* view = fbo->colorBuffer[i].texture;
++		if (!view)
++			continue;
++		if (!attachments)
++			format = (uint32)view->format;
++		attachments++;
++	}
++	if (fbo->depthBuffer.texture)
++	{
++		if (!attachments)
++			format = (uint32)fbo->depthBuffer.texture->format;
++		attachments++;
++	}
++	for (uint32 i = 0; i < s_ps5PassTargetCount; i++)
++	{
++		PS5PassTarget& target = s_ps5PassTargets[i];
++		if (target.width == extent.width && target.height == extent.height && target.format == format &&
++			target.attachments == attachments && target.replayed == (replayed ? 1u : 0u))
++			return &target;
++	}
++	if (s_ps5PassTargetCount >= kPS5PassTargets)
++		return nullptr;
++	PS5PassTarget& target = s_ps5PassTargets[s_ps5PassTargetCount++];
++	target = {};
++	target.width = extent.width;
++	target.height = extent.height;
++	target.format = format;
++	target.attachments = attachments;
++	target.replayed = replayed ? 1 : 0;
++	return &target;
++}
++
++// draw_setRenderPass: a pass begins on fbo, and the draw that follows is its first
++static void ps5PassTargetBegin(CachedFBOVk* fbo)
++{
++	if (!g_ps5PassCounts)
++		return;
++	PS5PassTarget* target = ps5PassTargetFor(fbo, false);
++	s_ps5DrawTarget = target;
++	s_ps5DrawTargetFBO = fbo;
++	if (!target)
++		return;
++	target->passes++;
++	if (target->passes == 1)
++		target->shader = ps5ActiveShaderHash();
++}
++
++// each draw issued into the pass the draw in progress goes to
++static void ps5PassTargetDraw(CachedFBOVk* fbo)
++{
++	if (!g_ps5PassCounts || !fbo)
++		return;
++	if (fbo != s_ps5DrawTargetFBO)
++	{
++		s_ps5DrawTargetFBO = fbo;
++		s_ps5DrawTarget = ps5PassTargetFor(fbo, false);
++	}
++	if (s_ps5DrawTarget)
++		s_ps5DrawTarget->draws++;
++}
++
++// VulkanRendererView.cpp's view_flushRightPass: the right eye's pass and the draws it re-issued
++void ps5PassTargetReplay(CachedFBOVk* fbo, uint32 draws, uint64 firstShader)
++{
++	if (!g_ps5PassCounts || !fbo)
++		return;
++	PS5PassTarget* target = ps5PassTargetFor(fbo, true);
++	if (!target)
++		return;
++	target->passes++;
++	target->draws += draws;
++	if (!target->shader)
++		target->shader = firstShader;
++}
++
++// the runtime's [draws] line: the window's groups, the replay first and then the busiest, into out[0..n);
++// returns how many the window had, which can be more than max, and starts the window again empty
++uint32 ps5PassTargetsTake(PS5PassTarget* out, uint32 max)
++{
++	const uint32 count = s_ps5PassTargetCount;
++	uint32 order[kPS5PassTargets];
++	for (uint32 i = 0; i < count; i++)
++		order[i] = i;
++	for (uint32 i = 1; i < count; i++)
++	{
++		const uint32 value = order[i];
++		uint32 j = i;
++		while (j > 0)
++		{
++			const PS5PassTarget& a = s_ps5PassTargets[value];
++			const PS5PassTarget& b = s_ps5PassTargets[order[j - 1]];
++			const bool first = a.replayed != b.replayed ? a.replayed > b.replayed :
++				a.passes != b.passes ? a.passes > b.passes : a.draws > b.draws;
++			if (!first)
++				break;
++			order[j] = order[j - 1];
++			j--;
++		}
++		order[j] = value;
++	}
++	const uint32 written = count < max ? count : max;
++	for (uint32 i = 0; i < written; i++)
++		out[i] = s_ps5PassTargets[order[i]];
++	s_ps5PassTargetCount = 0;
++	s_ps5DrawTarget = nullptr;
++	s_ps5DrawTargetFBO = nullptr;
++	return count;
++}
++
+ enum class PS5DrawPhase : uint32
+ {
+ 	Sequence,
+@@ -1430,7 +1578,10 @@ void VulkanRenderer::draw_setRenderPass()
+ 	performanceMonitor.vk.numBeginRenderpassPerFrame.increment();
+ #if defined(CEMU_PS5)
+ 	if (g_ps5PassCounts)
++	{
+ 		ps5Count(g_ps5PassesBegun);
++		ps5PassTargetBegin(fboVk);
++	}
+ #endif
+ }
+ 
+@@ -1720,6 +1871,9 @@ void VulkanRenderer::draw_execute_first(uint32 baseVertex, uint32 baseInstance,
+ 		vkCmdDraw(m_state.currentCommandBuffer, count, instanceCount, baseVertex, baseInstance);
+ 	if (m_view.isRecording)
+ 		view_recordDraw(pipeline_info, vertexDS, pixelDS, geometryDS, hostIndexType != INDEX_TYPE::NONE, hostIndexType != INDEX_TYPE::NONE ? hostIndexCount : count, instanceCount, baseVertex, baseInstance);
++#if defined(CEMU_PS5)
++	ps5PassTargetDraw(m_state.activeRenderpassFBO);
++#endif
+ 	LatteStreamout_FinishDrawcall(m_useHostMemoryForCache);
+ }
+ 
+@@ -1974,6 +2128,9 @@ void VulkanRenderer::draw_execute_continued(uint32 baseVertex, uint32 baseInstan
+ 		vkCmdDraw(m_state.currentCommandBuffer, count, instanceCount, baseVertex, baseInstance);
+ 	if (m_view.isRecording)
+ 		view_recordDraw(pipeline_info, vertexDS, pixelDS, geometryDS, hostIndexType != INDEX_TYPE::NONE, hostIndexType != INDEX_TYPE::NONE ? hostIndexCount : count, instanceCount, baseVertex, baseInstance);
++#if defined(CEMU_PS5)
++	ps5PassTargetDraw(m_state.activeRenderpassFBO);
++#endif
+ 
+ 	LatteStreamout_FinishDrawcall(m_useHostMemoryForCache);
+ }
+diff --git a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRendererView.cpp b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRendererView.cpp
+index 95975523..b275f165 100644
+--- a/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRendererView.cpp
++++ b/src/Cafe/HW/Latte/Renderer/Vulkan/VulkanRendererView.cpp
+@@ -19,6 +19,12 @@ extern uint64 _rdtscFrequency;
+ extern std::atomic<uint64> g_ps5RecordNs;
+ extern std::atomic<uint64> g_ps5ReplayNs;
+ 
++// The runtime's [draws] line's pass targets (VulkanRendererCore.cpp): the right eye's replay pass, its
++// recorded draws and the first one's shader. The recording starts in view_prepareRightPass.
++extern bool g_ps5PassCounts;
++void ps5PassTargetReplay(CachedFBOVk* fbo, uint32 draws, uint64 firstShader);
++static uint64 s_ps5FirstDrawShader = 0;
++
+ static uint64 ps5TscToNs(uint64 ticks)
+ {
+ 	return _rdtscFrequency ? ticks * 1000000000ull / _rdtscFrequency : 0;
+@@ -207,6 +213,9 @@ void VulkanRenderer::view_prepareRightPass(CachedFBOVk* leftFBO)
+ 		}
+ 	}
+ 	m_view.commands.clear();
++#if defined(CEMU_PS5)
++	s_ps5FirstDrawShader = 0;
++#endif
+ 	m_view.dynamicOffsets.clear();
+ 	m_view.bound = {};
+ 	m_view.bound.depthBias[0] = std::numeric_limits<float>::quiet_NaN();
+@@ -469,6 +478,14 @@ void VulkanRenderer::view_recordDraw(PipelineInfo* pipeline_info, VkDescriptorSe
+ 		cemuLog_logOnce(LogType::Force, "LatteView: Stream-out draws are only issued for the left view");
+ 		return;
+ 	}
++#if defined(CEMU_PS5)
++	if (g_ps5PassCounts && !s_ps5FirstDrawShader)
++	{
++		LatteDecompilerShader* pixelShader = LatteSHRC_GetActivePixelShader();
++		LatteDecompilerShader* vertexShader = LatteSHRC_GetActiveVertexShader();
++		s_ps5FirstDrawShader = pixelShader ? pixelShader->baseHash : vertexShader ? vertexShader->baseHash : 0;
++	}
++#endif
+ 	auto& bound = m_view.bound;
+ 	auto emit = [this](VulkanViewCommandType type) -> VulkanViewCommand& {
+ 		VulkanViewCommand& cmd = m_view.commands.emplace_back();
+@@ -606,6 +623,9 @@ void VulkanRenderer::view_flushRightPass()
+ 		renderPassInfo.renderArea.extent = m_view.extent;
+ 		vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+ 	}
++#if defined(CEMU_PS5)
++	uint32 ps5RightDraws = 0;
++#endif
+ 	for (auto& cmd : m_view.commands)
+ 	{
+ 		switch (cmd.type)
+@@ -648,12 +668,21 @@ void VulkanRenderer::view_flushRightPass()
+ 			break;
+ 		case VulkanViewCommandType::Draw:
+ 			vkCmdDraw(commandBuffer, cmd.draw.count, cmd.draw.instanceCount, cmd.draw.baseVertex, cmd.draw.baseInstance);
++#if defined(CEMU_PS5)
++			ps5RightDraws++;
++#endif
+ 			break;
+ 		case VulkanViewCommandType::DrawIndexed:
+ 			vkCmdDrawIndexed(commandBuffer, cmd.draw.count, cmd.draw.instanceCount, 0, (sint32)cmd.draw.baseVertex, cmd.draw.baseInstance);
++#if defined(CEMU_PS5)
++			ps5RightDraws++;
++#endif
+ 			break;
+ 		}
+ 	}
++#if defined(CEMU_PS5)
++	ps5PassTargetReplay(m_view.rightFBO, ps5RightDraws, s_ps5FirstDrawShader);
++#endif
+ 	if (m_featureControl.deviceExtensions.dynamic_rendering)
+ 		vkCmdEndRenderingKHR(commandBuffer);
+ 	else

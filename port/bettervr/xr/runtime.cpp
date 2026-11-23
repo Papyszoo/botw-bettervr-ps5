@@ -133,6 +133,20 @@ extern std::atomic<uint64_t> g_ps5TextureUnitsReused;
 extern std::atomic<uint64_t> g_ps5PassesBegun;
 extern std::atomic<uint64_t> g_ps5Submits;
 extern uint64_t _rdtscFrequency;
+// patches/cemu 0068: the same line's pass targets, grouped by render target (size, first attachment's format,
+// attachment count) and by whether the group is the second eye's replay; Cemu empties the window when taken
+struct PS5PassTarget
+{
+	uint32_t width;
+	uint32_t height;
+	uint32_t format;
+	uint32_t attachments;
+	uint32_t replayed;
+	uint32_t passes;
+	uint32_t draws;
+	uint64_t shader;
+};
+extern uint32_t ps5PassTargetsTake(PS5PassTarget* out, uint32_t max);
 #endif
 
 // the port's (ps5/log.cpp): a line of the boot log
@@ -1443,6 +1457,37 @@ namespace
 			(double)g_ps5TextureUnitsReused.exchange(0, std::memory_order_relaxed) / frames,
 			(double)g_ps5PassesBegun.exchange(0, std::memory_order_relaxed) / frames,
 			(double)g_ps5Submits.exchange(0, std::memory_order_relaxed) / frames);
+		// The same window's render passes, grouped by the target they were begun on: the second eye's replay
+		// first, then the busiest. Three groups a line keeps each line within Log's buffer.
+		constexpr uint32_t kTargetsLine = 3;
+		constexpr uint32_t kTargetsShown = 9;
+		PS5PassTarget targets[kTargetsShown];
+		const uint32_t targetCount = ps5PassTargetsTake(targets, kTargetsShown);
+		for (uint32_t first = 0; first < targetCount && first < kTargetsShown; first += kTargetsLine)
+		{
+			char text[480];
+			text[0] = 0;
+			size_t used = 0;
+			for (uint32_t i = first; i < first + kTargetsLine && i < targetCount && i < kTargetsShown; i++)
+			{
+				const PS5PassTarget& target = targets[i];
+				if (target.replayed)
+					used += (size_t)std::snprintf(text + used, sizeof(text) - used,
+						"%s%ux%u fmt 0x%x att %u, replay: %u passes, %u draws, shader 0x%016llx",
+						i == first ? "" : " | ", target.width, target.height, target.format, target.attachments,
+						target.passes, target.draws, (unsigned long long)target.shader);
+				else
+					used += (size_t)std::snprintf(text + used, sizeof(text) - used,
+						"%s%ux%u fmt 0x%x att %u, %u passes, %u draws, shader 0x%016llx",
+						i == first ? "" : " | ", target.width, target.height, target.format, target.attachments,
+						target.passes, target.draws, (unsigned long long)target.shader);
+				if (used >= sizeof(text))
+					used = sizeof(text) - 1;
+			}
+			Log("[draws] pass targets: %s", text);
+		}
+		if (targetCount > kTargetsShown)
+			Log("[draws] pass targets: %u more groups, not named", targetCount - kTargetsShown);
 		// bettervr.json's profile: where the record's time went. The rest of the record, between the draws, is the
 		// command stream's own work: register writes, texture copies and clears, queries and the like.
 		double phaseMs[6];
