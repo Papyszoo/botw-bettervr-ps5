@@ -125,9 +125,10 @@ part on top, not the other way round:
   untouched on top), horse soothe with the trigger (our UseThrow rumble category on it), head/hair out of view
   (upstream's main-pass hiding, our stall tolerance), hands steady (upstream's matrix, our root latch), blood
   moon in third person and cutscene direction (our 0043/0045/0047 holds are separate code).
-- **One-time setting reset:** 1.0.2 keys bundled graphic packs as `bundled/<path>` (the AppImage mount moves on
-  every start). The console's old keys were absolute, so a player's pack presets (VR Resolution, shadows, FPS++)
-  may come back at their defaults once; the next choice saves under the new key.
+- **Pack presets kept:** 1.0.2 saves a bundled graphic pack's settings under `bundled/<path>` instead of its
+  absolute path, because an AppImage mounts them in a new folder on every start. `GraphicPack2::LoadGraphicPack`
+  still looks the old absolute key up first, and the console's bundled packs sit at one fixed path, so the
+  presets set before the update (VR Resolution, shadows, FPS++) load as they were and save under the new key.
 
 **Checks.** `tools/bettervr-patches.sh apply` and `tools/cemu-patches.sh apply` from the new pins in clean
 clones with `git am` (48 and 67 patches, every change applying as exported), `python3 -B tools/lang.py check`,
@@ -158,8 +159,8 @@ clones with `git am` (48 and 67 patches, every change applying as exported), `py
    take focus one at a time (0046), and the aiming crosshair's Size/Color/Opacity and the trigger strength move
    in steps (0042, 0048).
 9. **Third person.** Smooth turning on foot is smooth (0036); a snap turn is one step.
-10. **Pack settings.** After the first start, say whether VR Resolution and the other Graphic pack presets came
-    back at their defaults; set them again and check they survive the next start.
+10. **Pack settings kept.** After the first start, check that VR Resolution and the other Graphic pack presets
+    are the ones set before the update; change one, restart, and check it survives.
 
 **Send.** The build, what differed in each step, and from `/data/ps5cemu/logs/boot.log`:
 `LC_ALL=C grep -a "camera stall\|body root\|\[turn\]\|\[vib\]\|\[magnesis\]\|Foveated shading\|Vulkan: multiview" boot.log`,
@@ -167,8 +168,8 @@ plus from Cemu's `log.txt` any `Exhausted query pool` or `[copy] ... clamped` li
 step that behaved.
 
 **What it decides.** A steady rune target and every adapted patch behaving as its test request before it
-decides the move; anything that regressed names the patch in the table above. A preset reset in step 10 is
-expected once and is not a defect unless it repeats after the next start.
+decides the move; anything that regressed names the patch in the table above. Step 10 decides that the pack
+presets carried over; one that went back to its default is a defect.
 
 ## 2026-11-22: a rune's target name and beep hold still, its ID readback waiting for the GPU; built, untested on console
 
