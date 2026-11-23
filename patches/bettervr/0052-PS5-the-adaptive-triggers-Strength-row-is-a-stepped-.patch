@@ -1,0 +1,27 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ps5cemu <ps5cemu@localhost>
+Date: Mon, 23 Nov 2026 16:44:14 +0100
+Subject: [PATCH] PS5: the adaptive triggers' Strength row is a stepped percent
+ slider, so its label shows the percent; built, untested on console
+
+DrawFloatSlider passes a stepped slider's finished label straight to ImGui::SliderInt, which reads
+it as a printf format; the row's "50%" then reads past the percent and shows junk, the same fault
+0042 fixed on the sliders that are not stepped. DrawPercentSlider is the stepped percent helper the
+other rows use.
+---
+ src/rendering/imgui_menus.cpp | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/rendering/imgui_menus.cpp b/src/rendering/imgui_menus.cpp
+index fa299ff..f447be7 100644
+--- a/src/rendering/imgui_menus.cpp
++++ b/src/rendering/imgui_menus.cpp
+@@ -1602,7 +1602,7 @@ void RND_Renderer::ImGuiOverlay::DrawSystemPage(bool* changed) {
+             });
+         if (settings.adaptiveTriggers) {
+             DrawSetting(ICON_MS_SPORTS, "Strength", [&]() {
+-                DrawFloatSlider(settings.adaptiveTriggerStrength, 0.0f, 1.0f, 0.05f, [](float value) { return fmt::format("{:.0f}%", value * 100.0f); }, changed);
++                DrawPercentSlider(settings.adaptiveTriggerStrength, 0.0f, 100.0f, 5.0f, changed);
+             });
+         }
+         bool senseTriggers = BetterVR_PS5_SenseTriggersEnabled() != 0;
