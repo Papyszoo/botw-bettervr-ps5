@@ -1921,9 +1921,8 @@ namespace
 // so every level goes through HeadsetHz() and 0..1 becomes a force. A level is sent when it changes, and a
 // continuous hold is capped at 2 s like AstroBotVR2 so the forehead never buzzes for long. A Damage Taken hit
 // (BetterVR_PS5_HeadsetPulse) is a 60 ms kick at 25 Hz, then the mapped level held for the hit. The Vibration
-// page's test buttons override the level for 400 ms; the headset's stays full 25, the one motor speed the player
-// has already felt. The pad's level is 0..255, sent to port/cemu/PS5PadController.cpp; BetterVR's page is its
-// strength.
+// page's test buttons override the level for 400 ms, at the Controls page's Rumble strength like every other
+// rumble. The pad's level is 0..255, sent to port/cemu/PS5PadController.cpp; BetterVR's page is its strength.
 namespace
 {
 	constexpr int kHeadsetTestLevel = 25;
@@ -1947,6 +1946,7 @@ namespace
 		int sent = -1;  // what the device last took; -1 none yet
 		bool capped = false;
 		int cappedLevel = -1; // the level the 2 s cap cut, so it stays off until the level changes
+		int testLevel = 0;   // the Vibration page's test level while testUntil is ahead
 		XrTime sameAt = 0;
 		XrTime testUntil = 0;
 		// a Damage Taken hit: the kick at 25 Hz, then the mapped level held until pulseUntil
@@ -1970,7 +1970,7 @@ namespace
 	{
 		const XrTime now = Now();
 		const bool testing = now < s_headset.testUntil;
-		int wanted = testing ? kHeadsetTestLevel : s_headset.wanted;
+		int wanted = testing ? s_headset.testLevel : s_headset.wanted;
 		if (!testing)
 		{
 			// the pulse outlasts the mixer's own envelope: the hit's mapped level is held, not its falling tail
@@ -2023,7 +2023,7 @@ namespace
 	void ApplyPad()
 	{
 		const XrTime now = Now();
-		const int wanted = now < s_pad.testUntil ? kPadTestLevel : s_pad.wanted;
+		const int wanted = now < s_pad.testUntil ? s_pad.testLevel : s_pad.wanted;
 		if (wanted == s_pad.sent)
 			return;
 		PS5Pad_ExternalRumble(wanted / 255.0f);
@@ -2076,21 +2076,23 @@ extern "C" void BetterVR_PS5_PadVibration(float amplitude)
 	ApplyPad();
 }
 
-extern "C" void BetterVR_PS5_TestHeadset()
+extern "C" void BetterVR_PS5_TestHeadset(float strength)
 {
 	std::lock_guard lock(s.lock);
 	const XrTime now = Now();
-	const int rc = hmd2::set_vibration(kHeadsetTestLevel);
-	s_headset.sent = rc == 0 ? kHeadsetTestLevel : -1;
+	const int level = HeadsetHz(strength);
+	const int rc = hmd2::set_vibration(level);
+	s_headset.testLevel = level;
+	s_headset.sent = rc == 0 ? level : -1;
 	s_headset.sameAt = now;
 	s_headset.capped = false;
 	s_headset.cappedLevel = -1;
 	s_headset.testUntil = rc == 0 ? now + kDeviceTestHold : now;
-	VibLog("test headset: level %d -> 0x%08x (%s)", kHeadsetTestLevel, (unsigned)rc,
+	VibLog("test headset: level %d (%d%% Rumble) -> 0x%08x (%s)", level, (int)std::lround(std::clamp(strength, 0.0f, 1.0f) * 100.0f), (unsigned)rc,
 		rc == 0 ? "took it, 400 ms" : rc == hmd2::kHmd2VibrationUnavailable ? "sceHmd2SetVibration is not bound on this firmware" : "refused");
 }
 
-extern "C" void BetterVR_PS5_TestPad()
+extern "C" void BetterVR_PS5_TestPad(float strength)
 {
 	std::lock_guard lock(s.lock);
 	if (!s.padTakenOver)
@@ -2098,10 +2100,12 @@ extern "C" void BetterVR_PS5_TestPad()
 		VibLog("test pad: no VR session is driving the DualSense");
 		return;
 	}
-	PS5Pad_ExternalRumble(kPadTestLevel / 255.0f);
-	s_pad.sent = kPadTestLevel;
+	const float level = std::clamp(strength, 0.0f, 1.0f);
+	s_pad.testLevel = (int)std::lround(kPadTestLevel * level);
+	PS5Pad_ExternalRumble(s_pad.testLevel / 255.0f);
+	s_pad.sent = s_pad.testLevel;
 	s_pad.testUntil = Now() + kDeviceTestHold;
-	VibLog("test pad: level %d for 400 ms on the DualSense (player 1)", kPadTestLevel);
+	VibLog("test pad: level %d (%d%% Rumble) for 400 ms on the DualSense (player 1)", s_pad.testLevel, (int)std::lround(level * 100.0f));
 }
 
 // The Sense triggers' rows in BetterVR's menu (rendering/imgui_menus.cpp). The values stay in

@@ -1,0 +1,48 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ps5cemu <ps5cemu@localhost>
+Date: Mon, 23 Nov 2026 16:44:14 +0100
+Subject: [PATCH] PS5: the Vibration page's headset and DualSense tests follow
+ the Controls page's Rumble strength; built, untested on console
+
+The hands test already goes through the 60 Hz mixer, which multiplies its level by RumbleStrength.
+The other two buttons called the runtime's fixed test levels directly, so at Rumble 0% they still
+buzzed. Both now take the strength and scale their level: the pad linearly, the headset through the
+same HeadsetHz() mapping the mixer uses. Upstream's 1.0.2 has no test button of its own to compare
+with; every other rumble this port plays follows the row.
+---
+ src/rendering/haptics.cpp | 11 ++++++-----
+ 1 file changed, 6 insertions(+), 5 deletions(-)
+
+diff --git a/src/rendering/haptics.cpp b/src/rendering/haptics.cpp
+index f99eccc..933c299 100644
+--- a/src/rendering/haptics.cpp
++++ b/src/rendering/haptics.cpp
+@@ -3,9 +3,10 @@
+ #include "instance.h"
+ 
+ #if defined(__PROSPERO__)
+-// port/bettervr/xr/runtime.cpp: the Vibration page's test buttons for the headset and the pad
+-extern "C" void BetterVR_PS5_TestHeadset();
+-extern "C" void BetterVR_PS5_TestPad();
++// port/bettervr/xr/runtime.cpp: the Vibration page's test buttons for the headset and the pad; the
++// Controls page's Rumble strength is passed in, as the mixer applies it to every other rumble
++extern "C" void BetterVR_PS5_TestHeadset(float strength);
++extern "C" void BetterVR_PS5_TestPad(float strength);
+ #endif
+ 
+ static RumbleManager* GetRumbleManager() {
+@@ -52,12 +53,12 @@ void Haptics::TestHands() {
+ 
+ void Haptics::TestHeadset() {
+ #if defined(__PROSPERO__)
+-    BetterVR_PS5_TestHeadset(); // the runtime's: hmd2's set_vibration, one [vib] line
++    BetterVR_PS5_TestHeadset(GetSettings().rumbleStrength); // the runtime's: hmd2's set_vibration, one [vib] line
+ #endif
+ }
+ 
+ void Haptics::TestPad() {
+ #if defined(__PROSPERO__)
+-    BetterVR_PS5_TestPad(); // the runtime's: the DualSense, one [vib] line
++    BetterVR_PS5_TestPad(GetSettings().rumbleStrength); // the runtime's: the DualSense, one [vib] line
+ #endif
+ }
