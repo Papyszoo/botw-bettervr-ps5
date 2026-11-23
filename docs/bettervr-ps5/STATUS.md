@@ -25,9 +25,9 @@ part on top, not the other way round:
 - **0008 (Vibration page and mixer):** 1.0.2's `RumbleStrength` slider on the Controls page is kept as the
   global strength; the 60 Hz mixer multiplies every category, the game's pattern and the page's test button by
   it. The Vibration page, its categories, device columns and test buttons are unchanged.
-- **0009/0048 (trigger strength, aiming dot):** upstream's sliders snap to steps now (8a8620e): the aiming dot's
-  Size and Opacity in 5 %, the trigger strength in 0.05; the percent-label escaping stays for the sliders that are
-  not stepped.
+- **0009/0048 (trigger strength, aiming crosshair):** upstream's sliders snap to steps now (8a8620e): the aiming
+  crosshair's Size and Opacity in 5 %, the trigger strength in 0.05; the percent-label escaping stays for the
+  sliders that are not stepped.
 - **0029 (damage):** the Damage Taken headset pulse follows the Controls page's Rumble row too, since it goes to
   the runtime directly rather than through the mixer.
 - **0011/0017 (Skl_Root, body facing):** 1.0.2's `s_posedPlayerMtx` (arms reposed when the player matrix moves)
@@ -72,8 +72,8 @@ clones with `git am` (48 and 67 patches, every change applying as exported), `py
 7. **Horse.** While riding, pull the trigger with nothing in hand: Link soothes the horse and the hand rumbles
    (1.0.2, our UseThrow row).
 8. **Menu and sliders.** The in-game menu's pages scroll to their last row (0018), the Vibration page's On boxes
-   take focus one at a time (0046), and the aiming dot's Size/Color/Opacity and the trigger strength move in
-   steps (0042, 0048).
+   take focus one at a time (0046), and the aiming crosshair's Size/Color/Opacity and the trigger strength move
+   in steps (0042, 0048).
 9. **Third person.** Smooth turning on foot is smooth (0036); a snap turn is one step.
 10. **Pack settings.** After the first start, say whether VR Resolution and the other Graphic pack presets came
     back at their defaults; set them again and check they survive the next start.
@@ -142,47 +142,63 @@ registered. No log is needed unless it still flickers.
 jumping between two places means the ID readback was not the whole story, and the next build logs
 `gfx::IDAnalyzer` per frame.
 
-## 2026-11-22: the aiming dot at the arrow's target has Size, Color and Opacity rows; built, untested on console
+## 2026-11-22: the aiming crosshair keeps its size on screen, shows on the sky and is solid at 100 %; built, untested on console
 
-When a bow is drawn in first person, the dot at the target is BetterVR's own drawing, not the game's HUD
-reticle. `DrawAimingArc` (`game/botw/player/bow.cpp`) reads the game's weapon target position
-(`weaponPtr + 0x77C`) and draws a world-space sphere there: radius 0.16 m, colour `(255, 214, 64)`, alpha
-100 scaled by the Bow Aiming Arc transparency (2.2x in the "Dot Only" step). The game's HUD reticle is
-only ever a texture on the floating HUD panel (`vulkan_imgui.cpp`), and the port has no reticle code.
+When a bow is drawn, the marker at the target is BetterVR's own drawing, not the game's HUD reticle.
+`DrawAimingArc` (`game/botw/player/bow.cpp`) reads the game's weapon target position (`weaponPtr + 0x77C`)
+and draws a world-space sphere there: radius 0.16 m, colour `(255, 214, 64)`, as three 12-segment wire
+circles. Enlarged, that reads as a crosshair, not a dot. The game's HUD reticle is only ever a texture on
+the floating HUD panel (`vulkan_imgui.cpp`), and the port has no reticle code.
 
 **The settings.** Three rows in Comfort > Advanced, right after Bow Aiming Arc, in the card that already
-holds it: **Aiming Dot Size** (50-300 %, the sphere's radius; saved as `AimingDotSize`, 1.0 = 100 %),
-**Aiming Dot Color** (White, Red, Green, Yellow, Cyan; `AimingDotColor`, Yellow) and **Aiming Dot
-Opacity** (0-100 %, a multiplier on the alpha the dot already had; `AimingDotOpacity`, 1.0). Yellow is
-exactly the old `(255, 214, 64)`, Size 100 % is exactly 0.16 m and Opacity 100 % is exactly the old alpha,
-so the defaults draw the dot as before in arc and Dot Only modes alike. The arc and its red fall marker are
-untouched. Each row keeps its own ID through `DrawSetting`'s label PushID and the setting-name PushID in
-the percent-slider/combo helpers, so focus frames and a confirm press reach one row, as 0046 did for the
-Vibration page.
+holds it: **Aiming Crosshair Size** (50-300 %, the radius; saved as `AimingDotSize`, 1.0 = 100 %),
+**Aiming Crosshair Color** (White, Red, Green, Yellow, Cyan; `AimingDotColor`, Yellow) and **Aiming
+Crosshair Opacity** (0-100 %, the crosshair's final on-screen alpha; `AimingDotOpacity`, 0.1 = 10 %). The
+setting keys are unchanged, so saved settings load. Yellow is exactly the old `(255, 214, 64)`. The arc's
+"Dot Only" step is now "Crosshair Only", and the summary says crosshair.
 
-New patch bettervr 0048 (`mod_settings.h`, `bow.cpp`, `imgui_menus.cpp`); no Cemu, runtime or asm change.
-`tools/bettervr-patches.sh apply` and `tools/cemu-patches.sh apply` (every patch ID matching),
-`python3 -B tools/lang.py check`, `tools/tests/test-bettervr-triggers.sh` and
-`tools/tests/test-bettervr-nids.py` pass. No host test builds BetterVR's bow or menu, so the BetterVR
-build is theirs. Built, untested on console.
+**What it does.** The radius follows the distance from the aim's start (0.16 m at 10 m, clamped to 0.1-20
+times) so the crosshair has the same size on screen near and far; Size still scales it. The
+synthetic/fallback point draws too, so an empty sky shows the crosshair; the arc keeps upstream's
+behaviour. Opacity is the final on-screen alpha: 100 % is solid, and the crosshair still draws through
+walls. It is the only primitive that skips the xray pass's 0.35 fade: its lines go to a separate bucket
+drawn through the same xray pipeline with the scale at 1.0. Yellow, Size 100 % and Opacity 10 % give the
+old default look in the default 70 % arc mode (alpha 100 x 0.7 x 0.35 is 24.5 of 255; 10 % is 25.5). The
+arc and its red fall marker are untouched. Each row keeps its own ID through `DrawSetting`'s label PushID
+and the setting-name PushID in the percent-slider/combo helpers, so focus frames and a confirm press reach
+one row, as 0046 did for the Vibration page.
 
-**Test request 83 (v0.8 aiming dot, 13.60 console).** Install the `BotW-VR-v...zip` from the green
-"BetterVR build" run on this head; VR on, first person, any bow, in a shrine or the open field.
+New patch bettervr 0048 (`mod_settings.h`, `bow.cpp`, `imgui_menus.cpp`, `debug_draw.h`/`.cpp`,
+`vk_backend.cpp`); no Cemu, runtime or asm change. `tools/bettervr-patches.sh apply` and
+`tools/cemu-patches.sh apply` (every patch ID matching), `python3 -B tools/lang.py check`,
+`tools/tests/test-bettervr-triggers.sh` and `tools/tests/test-bettervr-nids.py` pass. No host test
+builds BetterVR's bow, menu or debug draw, so the BetterVR build is theirs. Built, untested on
+console.
 
-1. **Default unchanged.** Draw the bow with Aiming Dot Size 100 %, Color Yellow and Opacity 100 %: the
-   dot must look as it does now (same spot, size and brightness), and the blue/red arc as before.
-2. **Size.** Set Size 50 % and then 300 %: only the dot's size changes, at the same spot; the arc does not.
-3. **Color.** Step through White, Red, Green, Yellow and Cyan: the dot takes each colour; the arc and the
-   red fall marker keep theirs.
-4. **Opacity.** Set Opacity 100 % and then 30 %: the dot fades; the arc does not change.
-5. **Dot Only and Off.** With Bow Aiming Arc at "Dot Only", the dot is still there and the three rows
-   still work; at "Off" there is no dot. The reset buttons put each row back to its default.
+**Test request 83 (v0.8 aiming crosshair, 13.60 console).** Install the `BotW-VR-v...zip` from the
+green "BetterVR build" run on this head; VR on, first person, any bow, in a shrine or the open field.
 
-**Send.** Which row changed what, which did not, and whether the default in step 1 looked as before. No log
-is needed.
+1. **Same size.** Aim at a wall about 2 m away and at a target about 30 m away with Size 100 %: the
+   crosshair keeps one size on screen; it is no longer much smaller far away. Set Size 50 % and then
+   300 %: only its size changes, at the same spot; the arc does not.
+2. **Sky.** Aim at the sky with nothing under the crosshair: it is still there, at the end of the aim
+   line, at the same size; the arc behaves as before.
+3. **100 % solid.** Set Opacity 100 %: the crosshair is solid, not see-through, and it still shows
+   through a wall between Link and the target. Set 30 %: it fades; the arc does not change.
+4. **Default looks as before.** At Size 100 %, Color Yellow and Opacity 10 % (the defaults) in the
+   default 70 % Bow Aiming Arc mode, the crosshair is as bright and in the same spot as the old default
+   dot; the blue/red arc is as before.
+5. **Names and modes.** The rows say Aiming Crosshair Size/Color/Opacity, and the Bow Aiming Arc step
+   says "Crosshair Only"; with that step the crosshair is still there and the three rows still work; at
+   "Off" there is no crosshair. The reset buttons put each row back to its default. Color steps through
+   White, Red, Green, Yellow and Cyan; the arc and the red fall marker keep theirs.
 
-**What it decides.** Every row changing the dot alone, and step 1 matching the old look, decides the
-patch; a row that does nothing, changes the arc, or a default that looks different leaves it wrong.
+**Send.** Which row changed what, which did not, whether the crosshair kept one size and showed on the
+sky, and whether 10 % looked like the old default. No log is needed.
+
+**What it decides.** One size near and far, a crosshair on the sky, a solid 100 %, and a 10 % default
+matching the old look decide the patch; a size that still changes with distance, nothing on the sky, a
+translucent 100 % or a different default leaves it wrong.
 
 ## 2026-11-22: a long frame and a drained AX output now say what the emulated cores were doing; built, untested on console
 

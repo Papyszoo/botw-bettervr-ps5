@@ -1,0 +1,352 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ps5cemu <ps5cemu@localhost>
+Date: Sun, 22 Nov 2026 21:01:22 +0100
+Subject: [PATCH] PS5: the aiming crosshair keeps its screen size, shows on the
+ sky and is solid at 100%; built, untested on console
+
+The marker at the arrow's target is BetterVR's own: DrawAimingArc draws a 0.16 m yellow
+(255, 214, 64) wire sphere at the game's weapon target position. It is not the game's HUD
+reticle, which is only ever a texture on the floating HUD panel. Being world-sized, it shrank
+with distance; upstream skipped the synthetic target point, so an empty sky showed nothing; and
+the xray pass multiplied its alpha by 0.35, so 100 % could never be solid.
+
+Three settings beside Bow Aiming Arc: Aiming Crosshair Size (50-300 %, the radius), Aiming
+Crosshair Color (White, Red, Green, Yellow, Cyan) and Aiming Crosshair Opacity (0-100 %, the
+crosshair's final on-screen alpha, so 100 % is solid while it still draws through walls). The
+radius follows the distance from the aim's start to keep the on-screen size it has at 10 m,
+clamped to 0.1-20 times; Size scales it. The synthetic/fallback point draws too, at the same
+size. The crosshair alone skips the 0.35 xray fade: DebugDraw::Sphere gains an xraySolid flag
+that puts its lines in a fourth bucket, drawn through the xray pipeline with the scale at 1.0.
+The arc and its fall marker are untouched, and the setting keys are unchanged, so saved settings
+load. The menu rows and the arc's step say crosshair, not dot.
+
+At Yellow, Size 100 % and Opacity 10 % the crosshair is the old default look in the default
+(70 %) arc mode: alpha 100 x 0.7 x 0.35 is 24.5 of 255, and 10 % is 25.5. The rows use the
+existing percent slider and combo helpers, whose label and setting-name PushIDs give each row
+its own focus, as 0046 did for the Vibration page.
+---
+ src/game/botw/player/bow.cpp  | 36 ++++++++++++++++++++++++++++++-----
+ src/rendering/imgui_menus.cpp | 20 +++++++++++++++++--
+ src/rendering/vk_backend.cpp  | 20 ++++++++++++++++---
+ src/utils/debug_draw.cpp      | 22 +++++++++++++++------
+ src/utils/debug_draw.h        |  7 +++++--
+ src/utils/mod_settings.h      | 26 +++++++++++++++++++++++++
+ 6 files changed, 113 insertions(+), 18 deletions(-)
+
+diff --git a/src/game/botw/player/bow.cpp b/src/game/botw/player/bow.cpp
+index 8df50c1..931feab 100644
+--- a/src/game/botw/player/bow.cpp
++++ b/src/game/botw/player/bow.cpp
+@@ -1370,14 +1370,33 @@ static uint32_t ScaleColorAlpha(uint32_t color, float scale) {
+     return (color & 0x00FFFFFF) | ((uint32_t)a << 24);
+ }
+ 
++// the aiming crosshair's presets; yellow is the one upstream drew, and the alpha is the crosshair's own, so the
++// Opacity row is its final on-screen alpha
++static uint32_t AimingDotPresetColor(AimingDotColor preset) {
++    switch (preset) {
++        case AimingDotColor::WHITE: return DebugDrawColor(255, 255, 255);
++        case AimingDotColor::RED: return DebugDrawColor(255, 52, 36);
++        case AimingDotColor::GREEN: return DebugDrawColor(64, 255, 96);
++        case AimingDotColor::YELLOW: return DebugDrawColor(255, 214, 64);
++        case AimingDotColor::CYAN: return DebugDrawColor(64, 224, 255);
++    }
++    return DebugDrawColor(255, 214, 64);
++}
++
+ static void DrawAimingArc(const AimingArcCache& cache) {
+-    const uint32_t targetColor = DebugDrawColor(255, 214, 64, 100);
+     const uint32_t fallMarkerColor = DebugDrawColor(255, 52, 36, 200);
+     constexpr float kThickness = 1.5f;
++    constexpr float kAimingCrosshairRadius = 0.16f;
++    // the sphere is world-sized, so its radius follows its distance to keep the crosshair the size it has at 10 m,
++    // where upstream's 0.16 m radius looked right; the limits keep it sane against a wall and across a valley
++    constexpr float kAimingCrosshairReferenceDistance = 10.0f;
++    constexpr float kAimingCrosshairDistanceScaleMin = 0.1f;
++    constexpr float kAimingCrosshairDistanceScaleMax = 20.0f;
+     constexpr bool kPreviewXray = false;
+ 
+-    const bool dotOnly = GetSettings().IsBowArcDotOnly();
+-    const float alphaScale = dotOnly ? 1.0f : GetSettings().GetBowArcOpacity();
++    const ModSettings& settings = GetSettings();
++    const bool dotOnly = settings.IsBowArcDotOnly();
++    const float alphaScale = dotOnly ? 1.0f : settings.GetBowArcOpacity();
+ 
+     if (!dotOnly && cache.pointCount >= 2) {
+         std::array<uint32_t, kPresetDefaultMaxFrames + 2> colors = {};
+@@ -1400,7 +1419,13 @@ static void DrawAimingArc(const AimingArcCache& cache) {
+     }
+ 
+     if (cache.hasTargetPos) {
+-        DebugDraw::instance().Sphere(cache.targetPos, 0.16f, ScaleColorAlpha(targetColor, dotOnly ? 2.2f : alphaScale), 12, true);
++        const glm::vec3 crosshairOrigin = cache.pointCount > 0 ? cache.points[0] : cache.targetPos;
++        const float distanceScale = glm::clamp(
++            glm::distance(crosshairOrigin, cache.targetPos) / kAimingCrosshairReferenceDistance,
++            kAimingCrosshairDistanceScaleMin,
++            kAimingCrosshairDistanceScaleMax
++        );
++        DebugDraw::instance().Sphere(cache.targetPos, kAimingCrosshairRadius * settings.aimingDotSize * distanceScale, ScaleColorAlpha(AimingDotPresetColor(settings.aimingDotColor), settings.aimingDotOpacity), 12, true, true);
+     }
+ }
+ 
+@@ -1430,7 +1455,8 @@ void Bow::QueueAimingArcPreview(long frameIdx) {
+         AimingArcCache cache = {};
+         if (BuildPreviewTrajectory(launchState, cache.points, cache.pointCount, cache.firstFallIndex)) {
+             cache.valid = true;
+-            cache.hasTargetPos = launchState.hasTargetPos && !launchState.usedSyntheticTargetPos;
++            // the crosshair draws at the synthetic point too, so an empty sky still shows where the arrow is aimed
++            cache.hasTargetPos = launchState.hasTargetPos;
+             cache.targetPos = launchState.targetPos;
+             s_aimingArcCache = cache;
+             Log::print<ARROW_SHOT_CAPTURE>("[BowViz] Rendering {} arc points (origin={}, direction={}, firstFall={}, draw={:.3f}, atRange={:.1f})", cache.pointCount, launchState.launchOrigin, launchState.launchDirection, cache.firstFallIndex, launchState.drawAmount, launchState.atRange);
+diff --git a/src/rendering/imgui_menus.cpp b/src/rendering/imgui_menus.cpp
+index 42da771..bba610f 100644
+--- a/src/rendering/imgui_menus.cpp
++++ b/src/rendering/imgui_menus.cpp
+@@ -399,7 +399,7 @@ static void DrawPercentIntSlider(UIntSetting& setting, bool* changed) {
+ }
+ 
+ static void DrawBowArcSlider(FloatSetting& setting, bool* changed) {
+-    static constexpr const char* kStepLabels[] = { "Off", "Dot Only", "10%%", "20%%", "30%%", "40%%", "50%%", "60%%", "70%%", "80%%", "90%%", "100%%" };
++    static constexpr const char* kStepLabels[] = { "Off", "Crosshair Only", "10%%", "20%%", "30%%", "40%%", "50%%", "60%%", "70%%", "80%%", "90%%", "100%%" };
+     ImGui::PushID(setting.name);
+     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - ResetButtonReserve());
+     const float value = setting;
+@@ -1148,7 +1148,7 @@ void RND_Renderer::ImGuiOverlay::DrawComfortPage(bool* changed) {
+         DrawSummaryRow(IsSnapTurning(settings.turnMode) ? ICON_MS_ROTATE_RIGHT : ICON_MS_360, DescribeTurnMode(settings.turnMode));
+         DrawSummaryRow(settings.preventFirstPersonRagdoll ? ICON_MS_SHIELD : ICON_MS_FALLING, settings.preventFirstPersonRagdoll ? "Link never falls over" : "Link can fall over");
+         DrawSummaryRow(settings.useBlackBarsForCutscenes ? ICON_MS_TV : ICON_MS_MOVIE, DescribeCutscenes(settings));
+-        DrawSummaryRow(ICON_MS_BOW_ARC, settings.IsBowArcDotOnly() ? "Show only the aiming dot" : settings.bowArcOpacity > 0.0f ? "Show arrow arc while aiming" : "No arrow arc or aiming dot");
++        DrawSummaryRow(ICON_MS_BOW_ARC, settings.IsBowArcDotOnly() ? "Show only the aiming crosshair" : settings.bowArcOpacity > 0.0f ? "Show arrow arc while aiming" : "No arrow arc or aiming crosshair");
+         if (firstPerson) {
+             DrawSummaryRow(ICON_MS_SWORDS, settings.oneHitPerSwing ? "Each swing hits once" : "A swing can hit again, for less damage");
+         }
+@@ -1186,6 +1186,22 @@ void RND_Renderer::ImGuiOverlay::DrawComfortPage(bool* changed) {
+             DrawSetting(nullptr, "Bow Aiming Arc", [&]() {
+                 DrawBowArcSlider(settings.bowArcOpacity, changed);
+             });
++            static constexpr EnumChoice<AimingDotColor> aimingDotColorChoices[] = {
++                { AimingDotColor::WHITE, "White" },
++                { AimingDotColor::RED, "Red" },
++                { AimingDotColor::GREEN, "Green" },
++                { AimingDotColor::YELLOW, "Yellow" },
++                { AimingDotColor::CYAN, "Cyan" },
++            };
++            DrawSetting(nullptr, "Aiming Crosshair Size", [&]() {
++                DrawPercentSlider(settings.aimingDotSize, 50.0f, 300.0f, 5.0f, changed);
++            });
++            DrawSetting(nullptr, "Aiming Crosshair Color", [&]() {
++                DrawEnumCombo(settings.aimingDotColor, aimingDotColorChoices, changed);
++            });
++            DrawSetting(nullptr, "Aiming Crosshair Opacity", [&]() {
++                DrawPercentSlider(settings.aimingDotOpacity, 0.0f, 100.0f, 5.0f, changed);
++            });
+             EndCard();
+         }
+     }
+diff --git a/src/rendering/vk_backend.cpp b/src/rendering/vk_backend.cpp
+index 90a08fc..faaa09d 100644
+--- a/src/rendering/vk_backend.cpp
++++ b/src/rendering/vk_backend.cpp
+@@ -910,7 +910,8 @@ void RND_VkBackend::DebugDrawPipeline::UploadRenderData(const DebugDrawRenderDat
+     const uint32_t lineVertexCount = (uint32_t)renderData.lineVertices.size();
+     const uint32_t xrayTriangleVertexCount = (uint32_t)renderData.xrayTriangleVertices.size();
+     const uint32_t xrayLineVertexCount = (uint32_t)renderData.xrayLineVertices.size();
+-    const uint32_t totalVertexCount = triangleVertexCount + lineVertexCount + xrayTriangleVertexCount + xrayLineVertexCount;
++    const uint32_t xraySolidLineVertexCount = (uint32_t)renderData.xraySolidLineVertices.size();
++    const uint32_t totalVertexCount = triangleVertexCount + lineVertexCount + xrayTriangleVertexCount + xrayLineVertexCount + xraySolidLineVertexCount;
+ 
+     const uint32_t frameContextIndex = m_backend->GetFrameContextIndex();
+     m_uploadedVertexCounts[frameContextIndex] = 0;
+@@ -933,6 +934,9 @@ void RND_VkBackend::DebugDrawPipeline::UploadRenderData(const DebugDrawRenderDat
+     if (xrayLineVertexCount > 0) {
+         memcpy(dstVertices + triangleVertexCount + lineVertexCount + xrayTriangleVertexCount, renderData.xrayLineVertices.data(), xrayLineVertexCount * sizeof(DebugDrawVertex));
+     }
++    if (xraySolidLineVertexCount > 0) {
++        memcpy(dstVertices + triangleVertexCount + lineVertexCount + xrayTriangleVertexCount + xrayLineVertexCount, renderData.xraySolidLineVertices.data(), xraySolidLineVertexCount * sizeof(DebugDrawVertex));
++    }
+ 
+     m_uploadedVertexCounts[frameContextIndex] = totalVertexCount;
+ }
+@@ -966,7 +970,8 @@ void RND_VkBackend::DebugDrawPipeline::Render(OpenXR::EyeSide side, VkCommandBuf
+     const uint32_t lineVertexCount = (uint32_t)renderData.lineVertices.size();
+     const uint32_t xrayTriangleVertexCount = (uint32_t)renderData.xrayTriangleVertices.size();
+     const uint32_t xrayLineVertexCount = (uint32_t)renderData.xrayLineVertices.size();
+-    const uint32_t totalVertexCount = triangleVertexCount + lineVertexCount + xrayTriangleVertexCount + xrayLineVertexCount;
++    const uint32_t xraySolidLineVertexCount = (uint32_t)renderData.xraySolidLineVertices.size();
++    const uint32_t totalVertexCount = triangleVertexCount + lineVertexCount + xrayTriangleVertexCount + xrayLineVertexCount + xraySolidLineVertexCount;
+ 
+     const uint32_t frameContextIndex = m_backend->GetFrameContextIndex();
+     if (m_uploadedVertexCounts[frameContextIndex] < totalVertexCount) {
+@@ -1019,7 +1024,7 @@ void RND_VkBackend::DebugDrawPipeline::Render(OpenXR::EyeSide side, VkCommandBuf
+     RenderVertices(commandBuffer, m_trianglePipeline, 0, triangleVertexCount);
+     RenderVertices(commandBuffer, m_linePipeline, triangleVertexCount, lineVertexCount);
+ 
+-    if (xrayTriangleVertexCount > 0 || xrayLineVertexCount > 0) {
++    if (xrayTriangleVertexCount > 0 || xrayLineVertexCount > 0 || xraySolidLineVertexCount > 0) {
+         const uint32_t xrayTriangleOffset = triangleVertexCount + lineVertexCount;
+         const uint32_t xrayLineOffset = xrayTriangleOffset + xrayTriangleVertexCount;
+ 
+@@ -1028,6 +1033,15 @@ void RND_VkBackend::DebugDrawPipeline::Render(OpenXR::EyeSide side, VkCommandBuf
+ 
+         RenderVertices(commandBuffer, m_xrayTrianglePipeline, xrayTriangleOffset, xrayTriangleVertexCount);
+         RenderVertices(commandBuffer, m_xrayLinePipeline, xrayLineOffset, xrayLineVertexCount);
++
++        if (xraySolidLineVertexCount > 0) {
++            // the aiming crosshair's opacity is its own: drawing it through the same pipeline with a scale of one
++            // keeps it xray, depth-free, but skips the 0.35 fade that makes the other xray primitives translucent
++            const uint32_t xraySolidLineOffset = xrayLineOffset + xrayLineVertexCount;
++            settings.xrayAlphaScale = 1.0f;
++            dispatch->CmdPushConstants(commandBuffer, m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(settings), &settings);
++            RenderVertices(commandBuffer, m_xrayLinePipeline, xraySolidLineOffset, xraySolidLineVertexCount);
++        }
+     }
+ 
+     dispatch->CmdEndRenderPass(commandBuffer);
+diff --git a/src/utils/debug_draw.cpp b/src/utils/debug_draw.cpp
+index 1e57a61..89395fa 100644
+--- a/src/utils/debug_draw.cpp
++++ b/src/utils/debug_draw.cpp
+@@ -117,7 +117,12 @@ static void AddRenderXRayLine(DebugDrawRenderData& renderData, const glm::vec3&
+     renderData.xrayLineVertices.push_back({ b, color });
+ }
+ 
+-static void AddPlanarCircle(DebugDrawRenderData& renderData, const glm::vec3& center, const glm::vec3& axisX, const glm::vec3& axisY, uint32_t color, int segments, bool xray = false) {
++static void AddRenderXRaySolidLine(DebugDrawRenderData& renderData, const glm::vec3& a, const glm::vec3& b, uint32_t color) {
++    renderData.xraySolidLineVertices.push_back({ a, color });
++    renderData.xraySolidLineVertices.push_back({ b, color });
++}
++
++static void AddPlanarCircle(DebugDrawRenderData& renderData, const glm::vec3& center, const glm::vec3& axisX, const glm::vec3& axisY, uint32_t color, int segments, bool xray = false, bool xraySolid = false) {
+     if (segments < 3) {
+         return;
+     }
+@@ -126,7 +131,10 @@ static void AddPlanarCircle(DebugDrawRenderData& renderData, const glm::vec3& ce
+     for (int i = 1; i <= segments; ++i) {
+         const float angle = (glm::two_pi<float>() * (float)i) / (float)segments;
+         const glm::vec3 point = center + (axisX * std::cos(angle)) + (axisY * std::sin(angle));
+-        if (xray) {
++        if (xraySolid) {
++            AddRenderXRaySolidLine(renderData, previousPoint, point, color);
++        }
++        else if (xray) {
+             AddRenderXRayLine(renderData, previousPoint, point, color);
+         }
+         else {
+@@ -427,13 +435,14 @@ void DebugDraw::Dot(const glm::vec3& position, float radius, uint32_t color, boo
+     m_primitives.push_back(primitive);
+ }
+ 
+-void DebugDraw::Sphere(const glm::vec3& position, float radius, uint32_t color, int segments, bool xray) {
++void DebugDraw::Sphere(const glm::vec3& position, float radius, uint32_t color, int segments, bool xray, bool xraySolid) {
+     std::lock_guard lk(m_mutex);
+     DebugPrimitive primitive = { PrimitiveType::SPHERE, color, 1.0f };
+     primitive.a = position;
+     primitive.radius = radius;
+     primitive.segments = segments;
+     primitive.xray = xray;
++    primitive.xraySolid = xraySolid;
+     m_primitives.push_back(primitive);
+ }
+ 
+@@ -588,6 +597,7 @@ DebugDrawRenderData DebugDraw::TakeRenderData(long frameIdx) {
+     DebugDrawRenderData renderData;
+     renderData.lineVertices.reserve(primitives.size() * 4);
+     renderData.xrayLineVertices.reserve(primitives.size() * 4);
++    renderData.xraySolidLineVertices.reserve(primitives.size() * 4);
+     renderData.triangleVertices.reserve(primitives.size() * 12);
+     renderData.xrayTriangleVertices.reserve(primitives.size() * 12);
+ 
+@@ -639,9 +649,9 @@ DebugDrawRenderData DebugDraw::TakeRenderData(long frameIdx) {
+                     break;
+                 }
+ 
+-                AddPlanarCircle(renderData, prim.a, glm::vec3(prim.radius, 0.0f, 0.0f), glm::vec3(0.0f, prim.radius, 0.0f), prim.color, segments, prim.xray);
+-                AddPlanarCircle(renderData, prim.a, glm::vec3(prim.radius, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, prim.radius), prim.color, segments, prim.xray);
+-                AddPlanarCircle(renderData, prim.a, glm::vec3(0.0f, prim.radius, 0.0f), glm::vec3(0.0f, 0.0f, prim.radius), prim.color, segments, prim.xray);
++                AddPlanarCircle(renderData, prim.a, glm::vec3(prim.radius, 0.0f, 0.0f), glm::vec3(0.0f, prim.radius, 0.0f), prim.color, segments, prim.xray, prim.xraySolid);
++                AddPlanarCircle(renderData, prim.a, glm::vec3(prim.radius, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, prim.radius), prim.color, segments, prim.xray, prim.xraySolid);
++                AddPlanarCircle(renderData, prim.a, glm::vec3(0.0f, prim.radius, 0.0f), glm::vec3(0.0f, 0.0f, prim.radius), prim.color, segments, prim.xray, prim.xraySolid);
+                 break;
+             }
+ 
+diff --git a/src/utils/debug_draw.h b/src/utils/debug_draw.h
+index 5efbb6f..58b2306 100644
+--- a/src/utils/debug_draw.h
++++ b/src/utils/debug_draw.h
+@@ -25,11 +25,13 @@ struct DebugDrawRenderData {
+     std::vector<DebugDrawLineVertex> lineVertices;
+     std::vector<DebugDrawTriangleVertex> xrayTriangleVertices;
+     std::vector<DebugDrawLineVertex> xrayLineVertices;
++    // xray lines that keep the alpha they were given: the xray pass's 0.35 fade would change it
++    std::vector<DebugDrawLineVertex> xraySolidLineVertices;
+     std::array<glm::mat4, 2> viewProjections = { glm::mat4(1.0f), glm::mat4(1.0f) };
+     std::array<bool, 2> hasViewProjections = { false, false };
+     glm::vec3 cameraPos = glm::vec3(0.0f);
+ 
+-    bool IsEmpty() const { return triangleVertices.empty() && lineVertices.empty() && xrayTriangleVertices.empty() && xrayLineVertices.empty(); }
++    bool IsEmpty() const { return triangleVertices.empty() && lineVertices.empty() && xrayTriangleVertices.empty() && xrayLineVertices.empty() && xraySolidLineVertices.empty(); }
+ };
+ 
+ class DebugDraw {
+@@ -42,7 +44,7 @@ public:
+     // -- Submit primitives (thread-safe, callable from any thread) --
+     void Line(const glm::vec3& a, const glm::vec3& b, uint32_t color = DebugDrawColor(0, 255, 0), float thickness = 1.0f, bool xray = false);
+     void Dot(const glm::vec3& position, float radius = 0.15f, uint32_t color = DebugDrawColor(0, 255, 0), bool xray = false);
+-    void Sphere(const glm::vec3& position, float radius = 0.15f, uint32_t color = DebugDrawColor(0, 255, 0), int segments = 0, bool xray = false);
++    void Sphere(const glm::vec3& position, float radius = 0.15f, uint32_t color = DebugDrawColor(0, 255, 0), int segments = 0, bool xray = false, bool xraySolid = false);
+     // Y-up wire capsule. halfHeight is the half-height of the full capsule, including the rounded caps.
+     void Capsule(const glm::vec3& center, float radius, float halfHeight, uint32_t color = DebugDrawColor(0, 255, 0), float thickness = 1.0f, int segments = 0, bool xray = false);
+     void PhysicsBody(const glm::vec3& center, float radius, float halfHeight, uint32_t color = DebugDrawColor(0, 255, 0), float thickness = 1.0f, int segments = 0, bool xray = false);
+@@ -85,6 +87,7 @@ private:
+         uint32_t color;
+         float thickness;
+         bool xray = false;
++        bool xraySolid = false;
+ 
+         glm::vec3 a = {};
+         glm::vec3 b = {};
+diff --git a/src/utils/mod_settings.h b/src/utils/mod_settings.h
+index 8c77bdb..8237553 100644
+--- a/src/utils/mod_settings.h
++++ b/src/utils/mod_settings.h
+@@ -567,6 +567,27 @@ struct EnumTable<SwingSensitivity> {
+     });
+ };
+ 
++// the aiming crosshair at the arrow's target (game/botw/player/bow.cpp): a preset colour, its size, and the
++// opacity that is its final on-screen alpha (100 % is solid)
++enum class AimingDotColor : int32_t {
++    WHITE = 0,
++    RED = 1,
++    GREEN = 2,
++    YELLOW = 3,
++    CYAN = 4,
++};
++
++template <>
++struct EnumTable<AimingDotColor> {
++    static constexpr auto entries = std::to_array<EnumEntry<AimingDotColor>>({
++        { AimingDotColor::WHITE, "WHITE", "White" },
++        { AimingDotColor::RED, "RED", "Red" },
++        { AimingDotColor::GREEN, "GREEN", "Green" },
++        { AimingDotColor::YELLOW, "YELLOW", "Yellow" },
++        { AimingDotColor::CYAN, "CYAN", "Cyan" }
++    });
++};
++
+ enum class TurnMode : int32_t {
+     SMOOTH_SLOW = 0,
+     SMOOTH_NORMAL = 1,
+@@ -611,6 +632,11 @@ struct ModSettings {
+     FloatSetting hudDistance{ "HudDistance", 1.85f, 0.5f, 2.5f };
+     FloatSetting hudSize{ "HudSize", 0.85f, 0.4f, 1.75f };
+     FloatSetting bowArcOpacity{ "BowArcTransparency", 0.7f, 0.0f, 1.0f };
++    // the aiming crosshair at the end of the arc: Size scales the sphere and Opacity is its final on-screen alpha,
++    // so 100 % is solid; 10 % keeps the old default look (alpha 100 times the 70 % arc, times the xray 0.35)
++    FloatSetting aimingDotSize{ "AimingDotSize", 1.0f, 0.5f, 3.0f };
++    EnumSetting<AimingDotColor> aimingDotColor{ "AimingDotColor", AimingDotColor::YELLOW };
++    FloatSetting aimingDotOpacity{ "AimingDotOpacity", 0.1f, 0.0f, 1.0f };
+ 
+     BoolSetting enableDebuggerTools{ "EnableDebugOverlay", false };
+     BoolSetting showDebugConsole{ "ShowDebugConsole", false, &Log::SetConsoleVisible };
