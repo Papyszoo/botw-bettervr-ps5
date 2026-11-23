@@ -25,16 +25,16 @@ At Yellow, Size 100 % and Opacity 10 % the crosshair is the old default look in 
 existing percent slider and combo helpers, whose label and setting-name PushIDs give each row
 its own focus, as 0046 did for the Vibration page.
 ---
- src/game/botw/player/bow.cpp  | 36 ++++++++++++++++++++++++++++++-----
+ src/game/botw/player/bow.cpp  | 37 ++++++++++++++++++++++++++++++-----
  src/rendering/imgui_menus.cpp | 20 +++++++++++++++++--
  src/rendering/vk_backend.cpp  | 20 ++++++++++++++++---
  src/utils/debug_draw.cpp      | 22 +++++++++++++++------
  src/utils/debug_draw.h        |  7 +++++--
- src/utils/mod_settings.h      | 26 +++++++++++++++++++++++++
- 6 files changed, 113 insertions(+), 18 deletions(-)
+ src/utils/mod_settings.h      | 26 ++++++++++++++++++++++++
+ 6 files changed, 114 insertions(+), 18 deletions(-)
 
 diff --git a/src/game/botw/player/bow.cpp b/src/game/botw/player/bow.cpp
-index 8df50c1..931feab 100644
+index 8df50c1..0d0f561 100644
 --- a/src/game/botw/player/bow.cpp
 +++ b/src/game/botw/player/bow.cpp
 @@ -1370,14 +1370,33 @@ static uint32_t ScaleColorAlpha(uint32_t color, float scale) {
@@ -89,13 +89,14 @@ index 8df50c1..931feab 100644
      }
  }
  
-@@ -1430,7 +1455,8 @@ void Bow::QueueAimingArcPreview(long frameIdx) {
+@@ -1430,7 +1455,9 @@ void Bow::QueueAimingArcPreview(long frameIdx) {
          AimingArcCache cache = {};
          if (BuildPreviewTrajectory(launchState, cache.points, cache.pointCount, cache.firstFallIndex)) {
              cache.valid = true;
 -            cache.hasTargetPos = launchState.hasTargetPos && !launchState.usedSyntheticTargetPos;
-+            // the crosshair draws at the synthetic point too, so an empty sky still shows where the arrow is aimed
-+            cache.hasTargetPos = launchState.hasTargetPos;
++            // in first person the crosshair draws at the synthetic point too, so an empty sky still shows where the arrow is aimed;
++            // third person always uses that point and it is not where the arrow lands, so it keeps upstream's suppression
++            cache.hasTargetPos = launchState.hasTargetPos && (!launchState.usedSyntheticTargetPos || !GameState::IsThirdPerson());
              cache.targetPos = launchState.targetPos;
              s_aimingArcCache = cache;
              Log::print<ARROW_SHOT_CAPTURE>("[BowViz] Rendering {} arc points (origin={}, direction={}, firstFall={}, draw={:.3f}, atRange={:.1f})", cache.pointCount, launchState.launchOrigin, launchState.launchDirection, cache.firstFallIndex, launchState.drawAmount, launchState.atRange);

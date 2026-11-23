@@ -231,8 +231,9 @@ green "BetterVR build" run on this head; VR on, first person, any bow, in a shri
 1. **Same size.** Aim at a wall about 2 m away and at a target about 30 m away with Size 100 %: the
    crosshair keeps one size on screen; it is no longer much smaller far away. Set Size 50 % and then
    300 %: only its size changes, at the same spot; the arc does not.
-2. **Sky.** Aim at the sky with nothing under the crosshair: it is still there, at the end of the aim
-   line, at the same size; the arc behaves as before.
+2. **Sky.** In first person, aim at the sky with nothing under the crosshair: it is still there, at the
+   end of the aim line, at the same size; the arc behaves as before. In third person, there is no
+   crosshair at the far end of the aim line.
 3. **100 % solid.** Set Opacity 100 %: the crosshair is solid, not see-through, and it still shows
    through a wall between Link and the target. Set 30 %: it fades; the arc does not change.
 4. **Default looks as before.** At Size 100 %, Color Yellow and Opacity 10 % (the defaults) in the
