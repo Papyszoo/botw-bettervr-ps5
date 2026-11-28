@@ -28,9 +28,12 @@ The new `recalcBackgroundGpuView` then writes that one per-view block, while the
 uniforms, the per-eye previous-view slots and the view array keep the main camera's values; a view the array does
 not name, or a match at the main camera's own entry, leaves the pass as recorded instead of writing the main block.
 The two eyes share one view and differ only in projection, so the backdrop sits at infinity and cannot show double
-vision. The main layer, the overworld and every other special camera keep their existing path. One INFO line,
-`[bgcam] divine beast background camera: VR pose applied`, is printed once per Divine Beast entry, including
-re-entering the same Beast.
+vision. The main layer, the overworld and every other special camera keep their existing path. Two INFO lines are
+printed once per Divine Beast entry, including re-entering the same Beast: `[bgcam] divine beast background camera:
+VR pose applied`, and, when the pass's view array is first read, `[bgcam] background view block N matched: the
+pass's per-eye view was written` or `[bgcam] background view block not matched: backdrop left unchanged`. Display
+lists with no special pair (the deck, the interior, the HUD) do not reset them; only a map load, seen as the game's
+loading screen, forgets the pair.
 
 **Checks.** `tools/bettervr-patches.sh apply` passes; all 53 patches apply from the 1.0.2 pin with `git am` in a
 clean worktree and the tree equals the branch's. `tools/tests/test-bettervr-triggers.sh`,
@@ -45,19 +48,21 @@ the "BetterVR build" run is the compile check. Built, untested on console.
    the world while turning, with no sliding against the deck. The glow and the sun must stay with the landscape,
    not with the view.
 2. **Leave and re-enter.** Leave Vah Ruta and enter it again (or another Beast and back): the backdrop behaves as
-   in step 1 on the new entry, and the log has one more `[bgcam]` line for it.
+   in step 1 on the new entry, and the log has one more `[bgcam]` pose line and one more view-block line for it.
 3. **Any other Divine Beast.** If one is available, repeat step 1 on its deck or outside view; the same result.
 4. **Overworld sky.** In the open field, look at the sky, clouds and sun and turn the head: unchanged from the
    previous build.
 5. **A normal area.** A shrine, a stable or a town: the picture is unchanged.
 
 **Send.** The build, what each step did, and from `/data/ps5cemu/logs/boot.log`
-`LC_ALL=C grep -a "\[bgcam\]" boot.log`. No log is needed for a step that behaved.
+`LC_ALL=C grep -a "\[bgcam\]" boot.log`: the pose line and the one view-block line of each entry, with the block
+index of a match. No log is needed for a step that behaved.
 
-**What it decides.** A `[bgcam]` line on every Divine Beast entry, including a return to the same Beast, and a
-backdrop that lines up, stays far away and holds still against the deck decide the fix; double vision, a close
-backdrop or a glow that follows the view leaves it wrong. Steps 4 and 5 decide that the overworld and the normal
-path are untouched.
+**What it decides.** A `[bgcam]` pose line and a view-block line saying `matched` on every Divine Beast entry,
+including a return to the same Beast, and a backdrop that lines up, stays far away and holds still against the deck
+decide the fix; double vision, a close backdrop or a glow that follows the view leaves it wrong. A view-block line
+saying `not matched` means the pass kept its recorded matrices, so the backdrop cannot line up. Steps 4 and 5
+decide that the overworld and the normal path are untouched.
 
 ## 2026-11-23: HUD pieces blended over the UI keep their own shape in the VR alpha mask; built, untested on console
 

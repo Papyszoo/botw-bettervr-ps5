@@ -5,10 +5,10 @@ Subject: [PATCH] PS5: the Divine Beasts' background camera gets the VR pose
  and per-eye projection; built, untested on console
 
 ---
- ...ND_StereoRendering_CameraAndProjection.asm |  79 ++++-
- .../patch_RND_StereoReplay.asm                | 134 ++++++++
- src/game/botw/camera/stereo_view.cpp          | 320 ++++++++++++++++++
- 3 files changed, 532 insertions(+), 1 deletion(-)
+ ...ND_StereoRendering_CameraAndProjection.asm |  79 +++-
+ .../patch_RND_StereoReplay.asm                | 134 +++++++
+ src/game/botw/camera/stereo_view.cpp          | 349 ++++++++++++++++++
+ 3 files changed, 561 insertions(+), 1 deletion(-)
 
 diff --git a/resources/BreathOfTheWild_BetterVR/patch_RND_StereoRendering_CameraAndProjection.asm b/resources/BreathOfTheWild_BetterVR/patch_RND_StereoRendering_CameraAndProjection.asm
 index 017f934..3d5236c 100644
@@ -258,10 +258,10 @@ index bbb30f5..21b59f4 100644
  ; particles: wraps bl sub_3B684D8 at 0x3B66F38 (r3 = handle {VA,size}, r4 = 1), before it swaps the block to little-endian
  ; ================================================================================
 diff --git a/src/game/botw/camera/stereo_view.cpp b/src/game/botw/camera/stereo_view.cpp
-index ff781cc..ffa707a 100644
+index ff781cc..70c5f74 100644
 --- a/src/game/botw/camera/stereo_view.cpp
 +++ b/src/game/botw/camera/stereo_view.cpp
-@@ -17,6 +17,102 @@ static std::atomic<float> s_flatCameraFovYRadians = glm::radians(90.0f);
+@@ -17,6 +17,106 @@ static std::atomic<float> s_flatCameraFovYRadians = glm::radians(90.0f);
  static std::mutex s_gameCameraMutex;
  static std::optional<glm::mat4> s_gameCameraWorld;
  
@@ -271,6 +271,8 @@ index ff781cc..ffa707a 100644
 +static std::atomic_uint32_t s_backgroundProjectionPtr = 0;
 +// the camera whose entry has been logged, so a map entry logs once and re-entering the same Beast logs again
 +static std::atomic_uint32_t s_loggedBackgroundCameraPtr = 0;
++// the entry's one view-block probe line: whether the background pass's block was found and rewritten
++static std::atomic_bool s_loggedBackgroundViewBlock = false;
 +
 +static uint32_t ReadGuestU32(uint32_t address) {
 +    BEType<uint32_t> value;
@@ -312,11 +314,13 @@ index ff781cc..ffa707a 100644
 +
 +static BackgroundGpuViewState s_backgroundGpuViewState;
 +
-+// the layer's special camera is no longer the background camera: forget it, so a stale pair cannot name a later pass
++// the background camera has stopped being used (a map change): forget the pair and the once-per-entry markers, so
++// the next Beast entry logs its pose line and its view-block line again
 +static void ClearBackgroundCamera() {
 +    s_backgroundCameraPtr.store(0);
 +    s_backgroundProjectionPtr.store(0);
 +    s_loggedBackgroundCameraPtr.store(0);
++    s_loggedBackgroundViewBlock.store(false);
 +}
 +
 +static void GetEyeShared(VRSharedMemory& sharedMem, bool left, BEMatrix34& view, BEMatrix44& proj, float& nearZ, float& farZ, float& fovy, float& aspect, float& stuff5) {
@@ -364,7 +368,7 @@ index ff781cc..ffa707a 100644
  std::optional<glm::mat4> StereoView::GetGameCameraWorld() {
      std::scoped_lock lock(s_gameCameraMutex);
      return s_gameCameraWorld;
-@@ -211,6 +307,227 @@ static void hook_GetRenderCamera(PPCInterpreter_t* hCPU) {
+@@ -211,6 +311,252 @@ static void hook_GetRenderCamera(PPCInterpreter_t* hCPU) {
      Camera::UpdateDebugEyeViews(views, gameplayPos, gameplayRot);
  }
  
@@ -375,6 +379,14 @@ index ff781cc..ffa707a 100644
 +// projection up from the camera/projection pair the wrapper leaves behind (see recalcBackgroundGpuView)
 +static void hook_ModifyProjectionUsingCamera(PPCInterpreter_t* hCPU) {
 +    hCPU->instructionPointer = hCPU->sprNew.LR;
++
++    // a loading screen is a map change: the pair recorded before it belongs to the map that is going away, and the
++    // next Beast entry logs its pose line and its view-block line again. Display lists without a background camera
++    // are the normal case inside a Beast and must not reset any of it (see hook_PrepareBackgroundGpuView)
++    const bool loadingScreen = Screens::IsLoadingVisible();
++    if (loadingScreen) {
++        ClearBackgroundCamera();
++    }
 +
 +    if (GameState::UseBlackBarsDuringEvents() || GameState::UseFlatCameraPresentation() || GameState::UseMonoFrameBufferTemporarilyDuringMenusOrPictures()) {
 +        return;
@@ -417,8 +429,10 @@ index ff781cc..ffa707a 100644
 +        Guest::Write(projectionPtr, &perspectiveProjection);
 +    }
 +
-+    if (s_loggedBackgroundCameraPtr.load() != cameraPtr) {
++    // one line per Beast entry, including a return to the same Beast: the loading screen reset the marker above
++    if (!loadingScreen && s_loggedBackgroundCameraPtr.load() != cameraPtr) {
 +        s_loggedBackgroundCameraPtr.store(cameraPtr);
++        s_loggedBackgroundViewBlock.store(false);
 +        Log::print<INFO>("[bgcam] divine beast background camera: VR pose applied");
 +    }
 +}
@@ -437,6 +451,12 @@ index ff781cc..ffa707a 100644
 +    if (!Tracking::IsSessionRunning()) {
 +        return;
 +    }
++    // a loading screen is a map change: the recorded pair belongs to the map that is going away, so the new map's
++    // pass is not prepared with the old map's matrices
++    if (Screens::IsLoadingVisible()) {
++        ClearBackgroundCamera();
++        return;
++    }
 +    // the record hook leaves the pose alone in these modes, so the replay must leave the pass alone too
 +    if (GameState::UseBlackBarsDuringEvents() || GameState::UseFlatCameraPresentation() || GameState::UseMonoFrameBufferTemporarilyDuringMenusOrPictures()) {
 +        return;
@@ -448,21 +468,21 @@ index ff781cc..ffa707a 100644
 +        return;
 +    }
 +
++    // a display list without a special pair is the normal case inside a Beast (deck, interior, HUD, UI): it must
++    // not forget the pair, or the background list later in the frame would lose its block. Only the record hook's
++    // loading-screen reset forgets it.
 +    const uint32_t layer = ReadGuestU32(ctx + 0x208);
 +    if (layer == 0) {
-+        ClearBackgroundCamera();
 +        return;
 +    }
 +    const uint32_t special = ReadGuestU32(layer + 0x19C);
 +    if (special == 0) {
-+        ClearBackgroundCamera();
 +        return;
 +    }
 +    // both halves of the pair, not either: one match is not the background camera's pass
 +    const uint32_t specialCamera = special + 4;
 +    const uint32_t specialProjection = ReadGuestU32(special + 0xEC);
 +    if (specialCamera != cameraPtr || specialProjection != projectionPtr) {
-+        ClearBackgroundCamera();
 +        return;
 +    }
 +
@@ -549,7 +569,16 @@ index ff781cc..ffa707a 100644
 +            }
 +        }
 +    }
-+    // no block to write: leave the recorded pass as it is rather than fall back to the main camera's block
++    // no block to write: leave the recorded pass as it is rather than fall back to the main camera's block. The
++    // entry's single probe line says whether the mapping held, so a hit and an untouched pass can be told apart.
++    if (!s_loggedBackgroundViewBlock.exchange(true)) {
++        if (found) {
++            Log::print<INFO>("[bgcam] background view block {} matched: the pass's per-eye view was written", backgroundIndex);
++        }
++        else {
++            Log::print<INFO>("[bgcam] background view block not matched: backdrop left unchanged");
++        }
++    }
 +    if (!found) {
 +        return;
 +    }
@@ -592,7 +621,7 @@ index ff781cc..ffa707a 100644
  static void hook_GetRenderProjection(PPCInterpreter_t* hCPU) {
      hCPU->instructionPointer = hCPU->sprNew.LR;
  
-@@ -392,6 +709,9 @@ static void hook_FixCameraSaveFilesAndInventory(PPCInterpreter_t* hCPU) {
+@@ -392,6 +738,9 @@ static void hook_FixCameraSaveFilesAndInventory(PPCInterpreter_t* hCPU) {
  void StereoView::RegisterHooks() {
      CemuHost::RegisterHook("hook_RegisterVRSharedMemory", &hook_RegisterVRSharedMemory);
      CemuHost::RegisterHook("hook_GetRenderCamera", &hook_GetRenderCamera);
