@@ -6,6 +6,54 @@ tested.
 Test request 77 (v0.8 haptics) is withdrawn with the haptics work; the requests after it move up one, so
 the console keyboard is 77, the tutorial shrine 78 and the cutscene height 79.
 
+## 2026-11-28: the Divine Beasts' outside world takes the head's rotation and each eye's projection; built, untested on console
+
+Inside a Divine Beast the game draws the outside world (cliffs, water, sky and sun) with a background camera of
+its own, a separate, scaled world at a position away from Link. The game hands that camera and projection to the
+layer as the layer's special camera and projection. BetterVR 1.0.2 hooks the layer's normal camera and projection
+but deliberately leaves the special pair alone, so the outside world kept the game's 50-degree view while the
+inside was rendered with the headset's pose; it looked close, slid against the deck when the head turned, its glow
+stayed with the view, and the two eyes did not line up. During replay the layer's view block was also filled with
+the main camera's per-eye view, which is the wrong view for a world at a different position and scale.
+
+**The fix.** New patch bettervr 0053. The wrapper at `0x02C43450` keeps the game's own projection set call, then
+hands the background camera and projection to `hook_ModifyProjectionUsingCamera`. The hook keeps the background
+camera's own position (no head translation and no eye offset) and takes the gameplay yaw composed with the head's
+middle rotation, the same composition the main camera uses. At record it also gives the background projection the
+combined eye FOV, keeping its own near and far. During replay, when the layer's camera is that background camera,
+`hook_PrepareBackgroundGpuView` finds the background pass's view in the layer's view array, puts the background
+camera's shared view and that eye's own projection (the main eye projection's horizontal and vertical rows, and the
+background projection's depth rows) where `hook_recalcGpuView` reads them, and `hook_RestoreBackgroundGpuView`
+puts the eye's own matrices back afterwards; the two eyes share one view and differ only in projection, so the
+backdrop sits at infinity and cannot show double vision. The main layer, the overworld and every other special
+camera keep their existing path: the hook only fires on the background camera's own call, and nothing else in the
+frame changes. One INFO line, `[bgcam] divine beast background camera: VR pose applied`, is printed the first time
+the hook sees a background camera, not per frame.
+
+**Checks.** `tools/bettervr-patches.sh apply` passes; all 53 patches apply from the 1.0.2 pin with `git am` in a
+clean worktree and the tree equals the branch's. `tools/tests/test-bettervr-triggers.sh`,
+`tools/tests/test-bettervr-nids.py` and `python3 -B tools/lang.py check` pass. No host test compiles BetterVR, so
+the "BetterVR build" run is the compile check. Built, untested on console.
+
+**Test request 89 (Divine Beast backdrop, 13.60 console).** Install the `BotW-VR-v...zip` from the green
+"BetterVR build" run on this head; VR on, first person.
+
+1. **Vah Ruta's deck.** Stand on the deck and look out at the landscape. Turn the head left, right, up and down:
+   the backdrop must line up in both eyes (no double vision), look far away rather than close, and stay fixed in
+   the world while turning, with no sliding against the deck. The glow and the sun must stay with the landscape,
+   not with the view.
+2. **Any other Divine Beast.** If one is available, repeat step 1 on its deck or outside view; the same result.
+3. **Overworld sky.** In the open field, look at the sky, clouds and sun and turn the head: unchanged from the
+   previous build.
+4. **A normal area.** A shrine, a stable or a town: the picture is unchanged.
+
+**Send.** The build, what each step did, and from `/data/ps5cemu/logs/boot.log`
+`LC_ALL=C grep -a "\[bgcam\]" boot.log`. No log is needed for a step that behaved.
+
+**What it decides.** One `[bgcam]` line per map entry and a backdrop that lines up, stays far away and holds still
+against the deck decide the fix; double vision, a close backdrop or a glow that follows the view leaves it wrong.
+Steps 3 and 4 decide that the overworld and the normal path are untouched.
+
 ## 2026-11-23: HUD pieces blended over the UI keep their own shape in the VR alpha mask; built, untested on console
 
 Upstream's `hook_FixUIBlending` (`interface_hooks.cpp`) exists because VR uses the 2D UI's alpha as the HUD
