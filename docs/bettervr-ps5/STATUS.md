@@ -20,15 +20,17 @@ the main camera's per-eye view, which is the wrong view for a world at a differe
 hands the background camera and projection to `hook_ModifyProjectionUsingCamera`. The hook keeps the background
 camera's own position (no head translation and no eye offset) and takes the gameplay yaw composed with the head's
 middle rotation, the same composition the main camera uses. At record it also gives the background projection the
-combined eye FOV, keeping its own near and far. During replay, when the layer's camera is that background camera,
-`hook_PrepareBackgroundGpuView` finds the background pass's view in the layer's view array, puts the background
-camera's shared view and that eye's own projection (the main eye projection's horizontal and vertical rows, and the
-background projection's depth rows) where `hook_recalcGpuView` reads them, and `hook_RestoreBackgroundGpuView`
-puts the eye's own matrices back afterwards; the two eyes share one view and differ only in projection, so the
-backdrop sits at infinity and cannot show double vision. The main layer, the overworld and every other special
-camera keep their existing path: the hook only fires on the background camera's own call, and nothing else in the
-frame changes. One INFO line, `[bgcam] divine beast background camera: VR pose applied`, is printed the first time
-the hook sees a background camera, not per frame.
+combined eye FOV, keeping its own near and far. During replay, only when the layer's special camera and projection
+are both that pair and the layer sets the flags the game's own camera getters check, `hook_PrepareBackgroundGpuView`
+finds the background pass's view in the layer's view array and swaps in the background camera's view and that eye's
+own projection (the main eye projection's horizontal and vertical rows, and the background projection's depth rows).
+The new `recalcBackgroundGpuView` then writes that one per-view block, while the frame's shadow and environment
+uniforms, the per-eye previous-view slots and the view array keep the main camera's values; a view the array does
+not name, or a match at the main camera's own entry, leaves the pass as recorded instead of writing the main block.
+The two eyes share one view and differ only in projection, so the backdrop sits at infinity and cannot show double
+vision. The main layer, the overworld and every other special camera keep their existing path. One INFO line,
+`[bgcam] divine beast background camera: VR pose applied`, is printed once per Divine Beast entry, including
+re-entering the same Beast.
 
 **Checks.** `tools/bettervr-patches.sh apply` passes; all 53 patches apply from the 1.0.2 pin with `git am` in a
 clean worktree and the tree equals the branch's. `tools/tests/test-bettervr-triggers.sh`,
@@ -42,17 +44,20 @@ the "BetterVR build" run is the compile check. Built, untested on console.
    the backdrop must line up in both eyes (no double vision), look far away rather than close, and stay fixed in
    the world while turning, with no sliding against the deck. The glow and the sun must stay with the landscape,
    not with the view.
-2. **Any other Divine Beast.** If one is available, repeat step 1 on its deck or outside view; the same result.
-3. **Overworld sky.** In the open field, look at the sky, clouds and sun and turn the head: unchanged from the
+2. **Leave and re-enter.** Leave Vah Ruta and enter it again (or another Beast and back): the backdrop behaves as
+   in step 1 on the new entry, and the log has one more `[bgcam]` line for it.
+3. **Any other Divine Beast.** If one is available, repeat step 1 on its deck or outside view; the same result.
+4. **Overworld sky.** In the open field, look at the sky, clouds and sun and turn the head: unchanged from the
    previous build.
-4. **A normal area.** A shrine, a stable or a town: the picture is unchanged.
+5. **A normal area.** A shrine, a stable or a town: the picture is unchanged.
 
 **Send.** The build, what each step did, and from `/data/ps5cemu/logs/boot.log`
 `LC_ALL=C grep -a "\[bgcam\]" boot.log`. No log is needed for a step that behaved.
 
-**What it decides.** One `[bgcam]` line per map entry and a backdrop that lines up, stays far away and holds still
-against the deck decide the fix; double vision, a close backdrop or a glow that follows the view leaves it wrong.
-Steps 3 and 4 decide that the overworld and the normal path are untouched.
+**What it decides.** A `[bgcam]` line on every Divine Beast entry, including a return to the same Beast, and a
+backdrop that lines up, stays far away and holds still against the deck decide the fix; double vision, a close
+backdrop or a glow that follows the view leaves it wrong. Steps 4 and 5 decide that the overworld and the normal
+path are untouched.
 
 ## 2026-11-23: HUD pieces blended over the UI keep their own shape in the VR alpha mask; built, untested on console
 
