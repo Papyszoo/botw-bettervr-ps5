@@ -50,10 +50,11 @@ return address and the shared pose. One per entry: `[bgcam] shadow context ...: 
 pos (...), match yes/no`, from the background GPU setup's shadow slot, with the block's real values. One per entry:
 `[bgcam] view block ...`; either `... confirmed at ... (shader context ... field4 ..., VFC N views) ...` when a
 block's slot 0 holds the recorded view and is written for both eyes, or `... not matched ...` with the shader
-context, the view-array count and the closest index and difference when no block does, and the backdrop is left
-unchanged. At most one per five seconds: `[bgcam] summary: block ..., left W/P right W/P (written/prepared)`, which
-says whether both eyes replayed and wrote the block. A map load, seen as the game's loading screen, forgets the
-record and the once-per-entry markers.
+context and field4 plus the view-array count and the closest index and difference (or `not matched: no view
+array`) when no block does, and the backdrop is left unchanged. If no display list has a shader context, the
+view-block line stays absent. At most one per five seconds:
+`[bgcam] summary: block ..., left W/P right W/P (written/prepared)`, which says whether both eyes replayed and
+wrote the block. A map load, seen as the game's loading screen, forgets the record and the once-per-entry markers.
 
 **Checks.** `tools/bettervr-patches.sh apply` passes; all 53 patches apply from the 1.0.2 pin with `git am` in a
 clean worktree and the tree equals the branch's. `tools/tests/test-bettervr-triggers.sh`,
@@ -84,7 +85,7 @@ the "BetterVR build" run is the compile check. Built, untested on console.
 - the `[bgcam] shadow context ...` line of each entry, with `match yes` or `match no`;
 - the `[bgcam] view block ...` line of each entry: the `confirmed` line with its block index, block address,
   shader context and field4, or the `not matched` line with its shader context, field4, VFC count and closest
-  index and difference;
+  index and difference (or the shorter `not matched: no view array`);
 - one or two `[bgcam] summary:` lines from standing in the Beast, with the written/prepared counts for the left
   and right eyes.
 
