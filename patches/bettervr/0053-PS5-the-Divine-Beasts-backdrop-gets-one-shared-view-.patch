@@ -1,0 +1,909 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ps5cemu <ps5cemu@localhost>
+Date: Sat, 28 Nov 2026 19:32:20 +0100
+Subject: [PATCH] PS5: the Divine Beasts' backdrop gets one shared view and
+ each eye's projection from the background pass's own block; built, untested
+ on console
+
+The console session on c271758 showed the per-eye path in 0053 never ran: its
+prepare hook was gated on the layer's special camera/projection pair, and the
+outside world is drawn by the model scene, so the layer gate returned before
+the view scan and only the pose line was logged. The record-side pose change
+did reach the background camera, but the draw's view block was left as the
+record's mono/combined matrices, which is why the backdrop scaled with yaw,
+slid against the deck and could pass in front of deeper interior geometry.
+
+This replaces the layer gate with the model scene's own view array. At record,
+the hook keeps the background camera's own position, composes the gameplay yaw
+with the head's middle rotation and leaves that shared view, the projection's
+depth rows and its near/far in a small record. At replay, for each display
+list and each eye, the hook finds the view array entry whose view is the
+background camera's (views 0 and 3-6 are the main camera and shadow cascades),
+takes that index's per-view uniform block, and swaps the eye's shared matrices
+for the shared background view and that eye's projection: the eye's horizontal
+and vertical rows, the background projection's depth rows. recalcBackgroundGpuView
+then writes that one block, keeping the frame's shadow and environment uniforms,
+the previous-view cache and the view array as they are for the main camera.
+The two eyes share one viewpoint and differ only in projection, so the backdrop
+sits at infinity and stays behind real geometry as in flat play. No draws,
+passes or readbacks are added; the overworld never has a background camera, so
+its path is unchanged.
+
+Probes, all gated to a Divine Beast entry: one entry line with the caller LR,
+near/far/FOV and the shared pose; one line comparing the shadow context's block
+slot 0 with the recorded view; one line saying whether the view array/block was
+found and whether the block already held the background view; and at most one
+summary line per five seconds with the written/prepared counts per eye.
+---
+ ...ND_StereoRendering_CameraAndProjection.asm |  80 ++-
+ .../patch_RND_StereoReplay.asm                | 136 ++++
+ src/game/botw/camera/stereo_view.cpp          | 585 ++++++++++++++++++
+ 3 files changed, 800 insertions(+), 1 deletion(-)
+
+diff --git a/resources/BreathOfTheWild_BetterVR/patch_RND_StereoRendering_CameraAndProjection.asm b/resources/BreathOfTheWild_BetterVR/patch_RND_StereoRendering_CameraAndProjection.asm
+index 017f934..fce1fc2 100644
+--- a/resources/BreathOfTheWild_BetterVR/patch_RND_StereoRendering_CameraAndProjection.asm
++++ b/resources/BreathOfTheWild_BetterVR/patch_RND_StereoRendering_CameraAndProjection.asm
+@@ -179,4 +179,82 @@ mtlr r0
+ addi r1, r1, 0x20
+ blr
+ 
+-0x33DC1D8 = bla capture_dcbz_wrapper
+\ No newline at end of file
++0x33DC1D8 = bla capture_dcbz_wrapper
++; =================================================================================
++; the Divine Beasts' background camera (0x02C43450) sets the separate outside-world camera's projection.
++; The wrapper keeps the game's own set call, then hands the camera and projection to the DLL hook, which keeps the
++; camera's own position, composes the gameplay yaw with the head's middle rotation and leaves the shared view and
++; the projection's depth rows for the replay; the replay writes them into the background pass's block once per eye.
++; =================================================================================
++
++0x030C18F0 = sead__PerspectiveProjection__set:
++
++custom_ModifyProjectionUsingCamera:
++mflr r0
++stwu r1, -0x20(r1)
++stw r0, 0x24(r1)
++stw r3, 0x1C(r1)
++stw r4, 0x18(r1)
++stw r5, 0x14(r1)
++stw r6, 0x08(r1)
++stw r7, 0x04(r1)
++stw r30, 0x10(r1)
++stw r31, 0x0C(r1)
++
++mr. r31, r4
++mr r30, r3
++beq exit_custom_ModifyProjectionUsingCamera
++
++lis r3, Camera__getPerspectiveProjection@ha
++addi r3, r3, Camera__getPerspectiveProjection@l
++mtctr r3
++lis r3, Camera__sInstance@ha
++lwz r3, Camera__sInstance@l(r3)
++bctrl ; bl Camera__getPerspectiveProjection
++
++lwz r12, 0x90(r3)
++lwz r0, 0x3C(r12)
++mtctr r0
++bctrl ; sead__PerspectiveProjection__getAspect
++
++lfs f3, 0x68(r30)
++fmr f4, f1
++lfs f2, 0x64(r30)
++lfs f1, 0x60(r30)
++lis r3, sead__PerspectiveProjection__set@ha
++addi r3, r3, sead__PerspectiveProjection__set@l
++mtctr r3
++mr r3, r31
++bctrl ; bl sead__PerspectiveProjection__set
++lfs f0, 0x6C(r30)
++li r11, 1
++stfs f0, 0xB0(r31)
++lfs f0, 0x70(r30)
++stb r11, 0(r31)
++stfs f0, 0xB4(r31)
++
++lwz r3, 0x1C(r1)
++lwz r4, 0x18(r1)
++lis r5, currentEyeSide@ha
++lwz r5, currentEyeSide@l(r5)
++lwz r6, 0x24(r1)
++
++lwz r7, 0x10(r1)
++lwz r7, 0x128(r7)
++
++bla import.coreinit.hook_ModifyProjectionUsingCamera
++
++exit_custom_ModifyProjectionUsingCamera:
++lwz r3, 0x1C(r1)
++lwz r4, 0x18(r1)
++lwz r5, 0x14(r1)
++lwz r6, 0x08(r1)
++lwz r7, 0x04(r1)
++lwz r30, 0x10(r1)
++lwz r31, 0x0C(r1)
++lwz r0, 0x24(r1)
++addi r1, r1, 0x20
++mtlr r0
++blr
++
++0x02C43450 = bla custom_ModifyProjectionUsingCamera
+diff --git a/resources/BreathOfTheWild_BetterVR/patch_RND_StereoReplay.asm b/resources/BreathOfTheWild_BetterVR/patch_RND_StereoReplay.asm
+index bbb30f5..00c6e24 100644
+--- a/resources/BreathOfTheWild_BetterVR/patch_RND_StereoReplay.asm
++++ b/resources/BreathOfTheWild_BetterVR/patch_RND_StereoReplay.asm
+@@ -183,6 +183,24 @@ lis r12, halfEyeOffset@ha
+ lfs f1, halfEyeOffset@l(r12)             ; f1 = halfEyeOffset
+ fneg f1, f1                              ; f1 = -halfEyeOffset
+ bl hook_recalcGpuView
++mr r3, r31                               ; r3 = ModelRenderContext*
++lis r12, halfEyeOffset@ha
++lfs f1, halfEyeOffset@l(r12)             ; f1 = halfEyeOffset
++fneg f1, f1                              ; f1 = -halfEyeOffset
++bl import.coreinit.hook_PrepareBackgroundGpuView
++cmpwi r3, 0
++beq skipBackgroundGpuView1
++mr r3, r31                               ; r3 = ModelRenderContext*
++lis r12, halfEyeOffset@ha
++lfs f1, halfEyeOffset@l(r12)             ; f1 = halfEyeOffset
++fneg f1, f1                              ; f1 = -halfEyeOffset
++bl recalcBackgroundGpuView
++skipBackgroundGpuView1:
++mr r3, r31                               ; r3 = ModelRenderContext*
++lis r12, halfEyeOffset@ha
++lfs f1, halfEyeOffset@l(r12)             ; f1 = halfEyeOffset
++fneg f1, f1                              ; f1 = -halfEyeOffset
++bl import.coreinit.hook_RestoreBackgroundGpuView
+ skipRecalcGpuView1:
+ 
+ lwz r3, 0x10(r1)                         ; r3 = RenderDisplay*
+@@ -221,6 +239,31 @@ mr r3, r31                               ; r3 = ModelRenderContext*
+ lis r12, halfEyeOffset@ha
+ lfs f1, halfEyeOffset@l(r12)             ; f1 = halfEyeOffset, the right eye's values for the stereo scope
+ bl hook_beginStereoIssue
++
++; the right eye's background block writes belong to its own stream, as the recalc inside the stereo scope does
++lis r12, sStereoIssueThisFrame@ha
++lwz r0, sStereoIssueThisFrame@l(r12)
++cmpwi r0, 0
++beq skipBackgroundGpuViewRight
++mr r3, r31                               ; r3 = ModelRenderContext*
++lis r12, halfEyeOffset@ha
++lfs f1, halfEyeOffset@l(r12)             ; f1 = halfEyeOffset
++bl import.coreinit.hook_PrepareBackgroundGpuView
++cmpwi r3, 0
++beq skipBackgroundGpuViewRight
++li r3, 1
++bl gpuWriteSetRightView
++mr r3, r31                               ; r3 = ModelRenderContext*
++lis r12, halfEyeOffset@ha
++lfs f1, halfEyeOffset@l(r12)             ; f1 = halfEyeOffset
++bl recalcBackgroundGpuView
++li r3, 0
++bl gpuWriteSetRightView
++mr r3, r31                               ; r3 = ModelRenderContext*
++lis r12, halfEyeOffset@ha
++lfs f1, halfEyeOffset@l(r12)             ; f1 = halfEyeOffset
++bl import.coreinit.hook_RestoreBackgroundGpuView
++skipBackgroundGpuViewRight:
+ bl gpuWriteFlush                         ; the left eye's writes, ahead of its replay
+ 
+ lwz r3, 0x10(r1)
+@@ -269,6 +312,97 @@ mtlr r0
+ addi r1, r1, 0x50
+ blr
+ 
++; ================================================================================
++; the Divine Beasts' background view block: hook_recalcGpuView writes the block the background pass reads, but it
++; also rewrites the frame's shadow and env uniforms and the per-eye previous-view cache, which belong to the main
++; camera. Keep those as they are and let only the view block write through.
++; ================================================================================
++.align 2
++bgZero:
++.float 0.0
++
++recalcBackgroundGpuView:
++mflr r0
++stwu r1, -0x220(r1)
++stw r0, 0x224(r1)
++stmw r30, 0x08(r1)
++stfd f31, 0x10(r1)
++mr r31, r3
++fmr f31, f1
++
++; keep the previous-view cache, 114 words for both eyes, and stop the recalc from writing its slots 11-14
++lis r3, _ab8a815a3d735ad3_ZL19s_previousViewSlots@ha
++addi r3, r3, _ab8a815a3d735ad3_ZL19s_previousViewSlots@l
++addi r4, r1, 0x30
++li r5, 114
++mtctr r5
++bgSavePrev:
++lwz r6, 0(r3)
++stw r6, 0(r4)
++addi r3, r3, 4
++addi r4, r4, 4
++bdnz bgSavePrev
++
++lis r3, _ab8a815a3d735ad3_ZL19s_previousViewSlots@ha
++addi r3, r3, _ab8a815a3d735ad3_ZL19s_previousViewSlots@l
++lis r12, bgZero@ha
++lfs f0, bgZero@l(r12)
++fcmpu cr0, f31, f0
++blt bgLeftEye
++addi r3, r3, 0xE4                        ; right eye's entry
++bgLeftEye:
++li r0, 0
++stw r0, 0(r3)                            ; valid = 0, so the background block keeps its recorded slots 11-14
++
++; the shadow and env lists write frame-wide uniforms: empty them for this call, then put them back
++lis r3, _ab8a815a3d735ad3_ZL16s_shadowMatCount@ha
++lwz r6, _ab8a815a3d735ad3_ZL16s_shadowMatCount@l(r3)
++stw r6, 0x20(r1)
++li r0, 0
++stw r0, _ab8a815a3d735ad3_ZL16s_shadowMatCount@l(r3)
++lis r3, _ab8a815a3d735ad3_ZL14s_envViewCount@ha
++lwz r6, _ab8a815a3d735ad3_ZL14s_envViewCount@l(r3)
++stw r6, 0x24(r1)
++stw r0, _ab8a815a3d735ad3_ZL14s_envViewCount@l(r3)
++
++; the recalc skips a camera at x = 0 or looking along z = 0, a guard for the default camera; the background
++; camera is a real one, so hide the layer from it for this call
++lwz r6, 0x208(r31)
++stw r6, 0x28(r1)
++stw r0, 0x208(r31)
++
++mr r3, r31
++fmr f1, f31
++bl hook_recalcGpuView
++
++lwz r6, 0x28(r1)
++stw r6, 0x208(r31)
++lis r3, _ab8a815a3d735ad3_ZL16s_shadowMatCount@ha
++lwz r6, 0x20(r1)
++stw r6, _ab8a815a3d735ad3_ZL16s_shadowMatCount@l(r3)
++lis r3, _ab8a815a3d735ad3_ZL14s_envViewCount@ha
++lwz r6, 0x24(r1)
++stw r6, _ab8a815a3d735ad3_ZL14s_envViewCount@l(r3)
++
++lis r3, _ab8a815a3d735ad3_ZL19s_previousViewSlots@ha
++addi r3, r3, _ab8a815a3d735ad3_ZL19s_previousViewSlots@l
++addi r4, r1, 0x30
++li r5, 114
++mtctr r5
++bgRestorePrev:
++lwz r6, 0(r4)
++stw r6, 0(r3)
++addi r3, r3, 4
++addi r4, r4, 4
++bdnz bgRestorePrev
++
++lfd f31, 0x10(r1)
++lmw r30, 0x08(r1)
++lwz r0, 0x224(r1)
++addi r1, r1, 0x220
++mtlr r0
++blr
++
+ ; ================================================================================
+ ; particles: wraps bl sub_3B684D8 at 0x3B66F38 (r3 = handle {VA,size}, r4 = 1), before it swaps the block to little-endian
+ ; ================================================================================
+@@ -338,6 +472,8 @@ stw r4, 0x10(r1)
+ stw r5, 0x14(r1)
+ bl import.coreinit.hook_SnapShadowCascadeProj ; round the cascade fit to whole texels, see shadow_stabilizer.cpp
+ lwz r3, 0x0C(r1)
++bl import.coreinit.hook_ProbeBackgroundShadowContext ; the Divine Beasts' background camera probe, once per entry
++lwz r3, 0x0C(r1)
+ lwz r4, 0x10(r1)
+ lwz r5, 0x14(r1)
+ bl hook_captureDepthShadowProj           ; (r3=shaderCtx, r4=cascade, r5=src)
+diff --git a/src/game/botw/camera/stereo_view.cpp b/src/game/botw/camera/stereo_view.cpp
+index ff781cc..69306bb 100644
+--- a/src/game/botw/camera/stereo_view.cpp
++++ b/src/game/botw/camera/stereo_view.cpp
+@@ -17,6 +17,204 @@ static std::atomic<float> s_flatCameraFovYRadians = glm::radians(90.0f);
+ static std::mutex s_gameCameraMutex;
+ static std::optional<glm::mat4> s_gameCameraWorld;
+ 
++// the Divine Beasts draw the outside world with a background camera of their own, away from the dungeon and Link.
++// The record hook keeps that camera's own position, composes the gameplay yaw with the head's middle rotation and
++// leaves the orientation here with the background projection's depth rows; the replay writes them into the
++// background pass's per-view block once for each eye, so both eyes share one viewpoint and differ only in projection.
++struct BackgroundRecord {
++    uint32_t cameraPtr = 0;
++    uint32_t projectionPtr = 0;
++    uint32_t loggedCameraPtr = 0;
++    bool loggedViewProbe = false;
++    bool loggedShadowProbe = false;
++    uint64_t recordedAtNs = 0;
++    BEMatrix34 view = {};
++    float projA22 = 0.0f;
++    float projA23 = 0.0f;
++    float projA32 = 0.0f;
++    float projA33 = 0.0f;
++    float nearZ = 0.0f;
++    float farZ = 0.0f;
++};
++
++static BackgroundRecord s_backgroundRecord;
++static std::mutex s_backgroundRecordMutex;
++static bool s_backgroundValid = false;
++
++// a record older than this is not from the frame being drawn (a stage change that skipped the loading screen)
++static constexpr uint64_t kBackgroundRecordMaxAgeNs = 1'000'000'000;
++// the summary line, at most one per five seconds while a Beast's background is drawn
++static constexpr uint64_t kBackgroundSummaryIntervalNs = 5'000'000'000;
++static uint64_t s_backgroundLastSummaryNs = 0;
++static uint32_t s_backgroundLastBlockIndex = 0;
++static uint32_t s_backgroundLeftPrepares = 0;
++static uint32_t s_backgroundLeftWrites = 0;
++static uint32_t s_backgroundRightPrepares = 0;
++static uint32_t s_backgroundRightWrites = 0;
++
++// one display list's prepared write, consumed by hook_RestoreBackgroundGpuView
++struct BackgroundGpuViewState {
++    bool prepared = false;
++    bool left = false;
++    uint32_t sharedMemAddress = 0;
++    uint32_t shaderCtx = 0;
++    uint32_t shaderCtxField4 = 0;
++    BEMatrix34 mainView = {};
++    BEMatrix44 mainProj = {};
++    float mainNear = 0.0f;
++    float mainFar = 0.0f;
++    float mainFovy = 0.0f;
++    float mainAspect = 0.0f;
++    float mainStuff5 = 0.0f;
++};
++
++static BackgroundGpuViewState s_backgroundGpuViewState;
++
++static uint32_t ReadGuestU32(uint32_t address) {
++    BEType<uint32_t> value;
++    Guest::Read(address, &value);
++    return value.getLE();
++}
++
++static uint16_t ReadGuestU16(uint32_t address) {
++    BEType<uint16_t> value;
++    Guest::Read(address, &value);
++    return value.getLE();
++}
++
++static uint8_t ReadGuestU8(uint32_t address) {
++    BEType<uint8_t> value;
++    Guest::Read(address, &value);
++    return value.getLE();
++}
++
++static float ReadGuestFloat(uint32_t address) {
++    BEType<float> value;
++    Guest::Read(address, &value);
++    return value.getLE();
++}
++
++static void WriteGuestU32(uint32_t address, uint32_t value) {
++    BEType<uint32_t> beValue(value);
++    Guest::Write(address, &beValue);
++}
++
++// the view at slot 0 of an agl::UniformBlock, when the block and its slot are readable and the slot is a mat3x4
++// (the game's resolveSlot: block -> descriptor table -> slot offset and type, rows four words wide)
++static bool ReadUniformBlockView(uint32_t uniformBlock, float out[12]) {
++    if (uniformBlock < 0x04000000 || uniformBlock >= 0x50000000) return false;
++    const uint32_t descriptorPtr = ReadGuestU32(uniformBlock);
++    if (descriptorPtr < 0x04000000 || descriptorPtr >= 0x50000000) return false;
++    const uint32_t descriptorTable = ReadGuestU32(descriptorPtr);
++    if (descriptorTable < 0x04000000 || descriptorTable >= 0x50000000) return false;
++    const uint16_t descriptorOffset = ReadGuestU16(descriptorTable + 4);
++    const uint8_t typeIndex = ReadGuestU8(descriptorTable + 8);
++    if (ReadGuestU8(0x10362A70 + typeIndex * 4) != 4) return false;
++    const uint32_t bufferBase = ReadGuestU32(uniformBlock + 4);
++    if (bufferBase < 0x04000000 || bufferBase >= 0x50000000) return false;
++    const uint32_t dstVA = bufferBase + descriptorOffset;
++    for (uint32_t i = 0; i < 12; i++) {
++        out[i] = ReadGuestFloat(dstVA + i * 4);
++    }
++    return true;
++}
++
++// the background camera has stopped being used (a map change): forget the record and the once-per-entry markers, so
++// the next Beast entry logs its entry and view-block lines again
++static void ClearBackgroundCamera() {
++    std::scoped_lock lock(s_backgroundRecordMutex);
++    s_backgroundValid = false;
++    s_backgroundRecord = BackgroundRecord{};
++    s_backgroundLastSummaryNs = 0;
++    s_backgroundLastBlockIndex = 0;
++    s_backgroundLeftPrepares = s_backgroundLeftWrites = 0;
++    s_backgroundRightPrepares = s_backgroundRightWrites = 0;
++}
++
++// the background GPU setup writes the shadow slot through the same shader context the frame's view blocks hang off.
++// Log that context's slot 0 once per entry: it says whether the background camera reaches that block, which is the
++// one thing the replay's view-array scan cannot show from the code alone. Called from the wrapper at 0x39DF234.
++static void hook_ProbeBackgroundShadowContext(PPCInterpreter_t* hCPU) {
++    hCPU->instructionPointer = hCPU->sprNew.LR;
++
++    const uint32_t shaderCtx = hCPU->gpr[3];
++    if (shaderCtx == 0) {
++        return;
++    }
++
++    std::scoped_lock lock(s_backgroundRecordMutex);
++    if (!s_backgroundValid || s_backgroundRecord.loggedShadowProbe) {
++        return;
++    }
++    s_backgroundRecord.loggedShadowProbe = true;
++
++    const uint32_t field4 = ReadGuestU32(shaderCtx + 4);
++    float blockView[12];
++    if (field4 == 0 || !ReadUniformBlockView(field4 + 4, blockView)) {
++        Log::print<INFO>("[bgcam] shadow context {:08X}: block slot 0 unreadable", shaderCtx);
++        return;
++    }
++
++    const BEMatrix34& view = s_backgroundRecord.view;
++    const float backgroundView[12] = {
++        view.x_x.getLE(), view.y_x.getLE(), view.z_x.getLE(), view.pos_x.getLE(),
++        view.x_y.getLE(), view.y_y.getLE(), view.z_y.getLE(), view.pos_y.getLE(),
++        view.x_z.getLE(), view.y_z.getLE(), view.z_z.getLE(), view.pos_z.getLE(),
++    };
++    float worst = 0.0f;
++    for (uint32_t k = 0; k < 12; k++) {
++        float difference = blockView[k] - backgroundView[k];
++        if (difference < 0.0f) difference = -difference;
++        if (difference > worst) worst = difference;
++    }
++
++    Log::print<INFO>("[bgcam] shadow context {:08X}: block slot 0 pos ({:.1f}, {:.1f}, {:.1f}), background pos ({:.1f}, {:.1f}, {:.1f}), match {}",
++        shaderCtx, blockView[3], blockView[7], blockView[11], backgroundView[3], backgroundView[7], backgroundView[11],
++        worst <= 0.001f ? "yes" : "no");
++}
++
++static void GetEyeShared(VRSharedMemory& sharedMem, bool left, BEMatrix34& view, BEMatrix44& proj, float& nearZ, float& farZ, float& fovy, float& aspect, float& stuff5) {
++    if (left) {
++        view = sharedMem.leftView;
++        proj = sharedMem.leftProj;
++        nearZ = sharedMem.leftNear.getLE();
++        farZ = sharedMem.leftFar.getLE();
++        fovy = sharedMem.leftFovy.getLE();
++        aspect = sharedMem.leftAspect.getLE();
++        stuff5 = sharedMem.leftStuff5.getLE();
++    }
++    else {
++        view = sharedMem.rightView;
++        proj = sharedMem.rightProj;
++        nearZ = sharedMem.rightNear.getLE();
++        farZ = sharedMem.rightFar.getLE();
++        fovy = sharedMem.rightFovy.getLE();
++        aspect = sharedMem.rightAspect.getLE();
++        stuff5 = sharedMem.rightStuff5.getLE();
++    }
++}
++
++static void SetEyeShared(VRSharedMemory& sharedMem, bool left, const BEMatrix34& view, const BEMatrix44& proj, float nearZ, float farZ, float fovy, float aspect, float stuff5) {
++    if (left) {
++        sharedMem.leftView = view;
++        sharedMem.leftProj = proj;
++        sharedMem.leftNear = nearZ;
++        sharedMem.leftFar = farZ;
++        sharedMem.leftFovy = fovy;
++        sharedMem.leftAspect = aspect;
++        sharedMem.leftStuff5 = stuff5;
++    }
++    else {
++        sharedMem.rightView = view;
++        sharedMem.rightProj = proj;
++        sharedMem.rightNear = nearZ;
++        sharedMem.rightFar = farZ;
++        sharedMem.rightFovy = fovy;
++        sharedMem.rightAspect = aspect;
++        sharedMem.rightStuff5 = stuff5;
++    }
++}
++
+ std::optional<glm::mat4> StereoView::GetGameCameraWorld() {
+     std::scoped_lock lock(s_gameCameraMutex);
+     return s_gameCameraWorld;
+@@ -211,6 +409,389 @@ static void hook_GetRenderCamera(PPCInterpreter_t* hCPU) {
+     Camera::UpdateDebugEyeViews(views, gameplayPos, gameplayRot);
+ }
+ 
++// the Divine Beasts draw the outside world with a background camera of their own; the wrapper at 0x02C43450 runs
++// after the game has set that camera's projection. It keeps the camera's own position (the outside world is a
++// different, scaled world, away from Link), takes the gameplay yaw composed with the head's middle rotation, and
++// gives the record's culling the combined eye FOV. The replay writes one shared view and each eye's projection into
++// the background pass's own view block (see hook_PrepareBackgroundGpuView).
++static void hook_ModifyProjectionUsingCamera(PPCInterpreter_t* hCPU) {
++    hCPU->instructionPointer = hCPU->sprNew.LR;
++
++    // a loading screen is a map change: a record from before it belongs to the map that is going away
++    if (Screens::IsLoadingVisible()) {
++        ClearBackgroundCamera();
++        return;
++    }
++
++    if (GameState::UseBlackBarsDuringEvents() || GameState::UseFlatCameraPresentation() || GameState::UseMonoFrameBufferTemporarilyDuringMenusOrPictures()) {
++        return;
++    }
++
++    const uint32_t cameraPtr = hCPU->gpr[7];
++    const uint32_t projectionPtr = hCPU->gpr[4];
++    const uint32_t returnAddress = hCPU->gpr[6];
++    if (cameraPtr == 0 || projectionPtr == 0 || !Tracking::IsSessionRunning()) {
++        return;
++    }
++
++    const std::optional<Tracking::HeadViews> views = Tracking::Views();
++    if (!views.has_value()) {
++        return;
++    }
++
++    BESeadLookAtCamera camera = {};
++    Guest::Read(cameraPtr, &camera);
++
++    const glm::mat4 worldGame = glm::inverse(glm::mat4(camera.mtx.getLEMatrix()));
++    const glm::fvec3 basePos = glm::vec3(worldGame[3]);
++    auto [gameplayPos, gameplayRot] = Camera::ResolveGameplayBasePose(camera);
++    (void)gameplayPos;
++
++    // only the rotation is taken from the head; BuildMiddlePose's position is the gameplay anchor and is not used
++    auto [middlePos, middleRot] = Camera::BuildMiddlePose(views, basePos, gameplayRot);
++    (void)middlePos;
++    SetCameraWorld(camera, glm::translate(glm::identity<glm::fmat4>(), basePos) * glm::mat4_cast(middleRot));
++    Guest::Write(cameraPtr, &camera);
++
++    BESeadPerspectiveProjection perspectiveProjection = {};
++    Guest::Read(projectionPtr, &perspectiveProjection);
++    const std::optional<XrFovf> combinedFov = TryGetCombinedFOV(views);
++    if (combinedFov.has_value()) {
++        // the record's culling and its one draw use one projection; the combined eye FOV covers both eyes
++        ApplyProjectionFov(perspectiveProjection, combinedFov.value());
++        Guest::Write(projectionPtr, &perspectiveProjection);
++    }
++
++    BackgroundRecord record = {};
++    record.cameraPtr = cameraPtr;
++    record.projectionPtr = projectionPtr;
++    record.recordedAtNs = GetTimeStamp();
++    record.view = camera.mtx;
++    record.projA22 = perspectiveProjection.matrix.a22.getLE();
++    record.projA23 = perspectiveProjection.matrix.a23.getLE();
++    record.projA32 = perspectiveProjection.matrix.a32.getLE();
++    record.projA33 = perspectiveProjection.matrix.a33.getLE();
++    record.nearZ = perspectiveProjection.zNear.getLE();
++    record.farZ = perspectiveProjection.zFar.getLE();
++
++    bool logEntry = false;
++    {
++        std::scoped_lock lock(s_backgroundRecordMutex);
++        logEntry = s_backgroundRecord.loggedCameraPtr != cameraPtr;
++        if (logEntry) {
++            record.loggedCameraPtr = cameraPtr;
++            record.loggedViewProbe = false;
++            record.loggedShadowProbe = false;
++        }
++        else {
++            record.loggedCameraPtr = s_backgroundRecord.loggedCameraPtr;
++            record.loggedViewProbe = s_backgroundRecord.loggedViewProbe;
++            record.loggedShadowProbe = s_backgroundRecord.loggedShadowProbe;
++        }
++        s_backgroundRecord = record;
++        s_backgroundValid = true;
++    }
++
++    // one line per Beast entry, including a return to the same Beast: the loading screen reset the marker above
++    if (logEntry) {
++        Log::print<INFO>("[bgcam] entry: camera {:08X} projection {:08X} lr {:08X} near {:.3f} far {:.0f} fov {:.1f}deg basePos ({:.1f}, {:.1f}, {:.1f}) yaw {:.1f}deg",
++            cameraPtr, projectionPtr, returnAddress, record.nearZ, record.farZ,
++            glm::degrees(perspectiveProjection.fovYRadiansOrAngle.getLE()),
++            basePos.x, basePos.y, basePos.z, glm::degrees(glm::eulerAngles(middleRot).y));
++    }
++}
++
++struct BackgroundBlockLookup {
++    bool found = false;
++    bool viewFound = false;
++    bool blockReadable = false;
++    bool blockMatches = false;
++    uint32_t index = 0;
++    uint32_t blockEntry = 0;
++    uint32_t shaderCtx = 0;
++    uint32_t shaderCtxField4 = 0;
++    uint32_t vfcCount = 0;
++    uint32_t closestIndex = 0;
++    float closestDiff = 0.0f;
++};
++
++// the model scene's view array holds the background camera's view; the per-view uniform blocks are 48 bytes apart
++// and the block is at +4 of its entry (the layout hook_recalcGpuView and the shadow capture already use)
++static bool FindBackgroundBlock(uint32_t ctx, const BackgroundRecord& record, BackgroundBlockLookup& lookup) {
++    const uint32_t shaderCtx = ReadGuestU32(ctx + 0x1A8);
++    const uint32_t field4 = shaderCtx == 0 ? 0 : ReadGuestU32(shaderCtx + 4);
++    lookup.shaderCtx = shaderCtx;
++    lookup.shaderCtxField4 = field4;
++    if (shaderCtx == 0 || field4 == 0) {
++        return false;
++    }
++
++    const uint32_t vfcArray = ReadGuestU32(ctx + 0x0C);
++    const uint32_t vfcCount = ReadGuestU32(ctx + 0x08);
++    lookup.vfcCount = vfcCount;
++    if (vfcArray == 0 || vfcCount == 0) {
++        return false;
++    }
++
++    const float viewFloats[12] = {
++        record.view.x_x.getLE(), record.view.y_x.getLE(), record.view.z_x.getLE(), record.view.pos_x.getLE(),
++        record.view.x_y.getLE(), record.view.y_y.getLE(), record.view.z_y.getLE(), record.view.pos_y.getLE(),
++        record.view.x_z.getLE(), record.view.y_z.getLE(), record.view.z_z.getLE(), record.view.pos_z.getLE(),
++    };
++
++    // view 0 is the main camera and views 3 to 6 are the shadow cascades; neither is the background camera
++    const uint32_t scanCount = vfcCount < 32 ? vfcCount : 32;
++    lookup.closestDiff = 1.0e30f;
++    bool viewFound = false;
++    for (uint32_t i = 1; i < scanCount && !viewFound; i++) {
++        if (i >= 3 && i <= 6) continue;
++        for (uint32_t row = 0; row < 2 && !viewFound; row++) {
++            float worst = 0.0f;
++            for (uint32_t k = 0; k < 12; k++) {
++                float difference = ReadGuestFloat(vfcArray + i * 0x31C + row * 0x60 + k * 4) - viewFloats[k];
++                if (difference < 0.0f) difference = -difference;
++                if (difference > worst) worst = difference;
++            }
++            if (worst < lookup.closestDiff) {
++                lookup.closestDiff = worst;
++                lookup.closestIndex = i;
++            }
++            if (worst <= 0.001f) {
++                lookup.index = i;
++                viewFound = true;
++            }
++        }
++    }
++
++    auto blockHoldsView = [&](uint32_t index, uint32_t& entry) {
++        entry = field4 + index * 48;
++        float blockView[12];
++        if (!ReadUniformBlockView(entry + 4, blockView)) {
++            return false;
++        }
++        for (uint32_t k = 0; k < 12; k++) {
++            float difference = blockView[k] - viewFloats[k];
++            if (difference < 0.0f) difference = -difference;
++            if (difference > 0.001f) {
++                return false;
++            }
++        }
++        return true;
++    };
++
++    lookup.viewFound = viewFound;
++
++    // the view array names the background view; its own block is the one to rewrite even when it still holds the
++    // main camera's view, which is the state this fix exists to replace. Entry 0 is the main camera's block and is
++    // never the background's, whatever a stale record says.
++    if (viewFound) {
++        lookup.blockEntry = field4 + lookup.index * 48;
++        float blockView[12];
++        lookup.blockReadable = ReadUniformBlockView(lookup.blockEntry + 4, blockView);
++        if (lookup.blockReadable) {
++            lookup.blockMatches = true;
++            for (uint32_t k = 0; k < 12; k++) {
++                float difference = blockView[k] - viewFloats[k];
++                if (difference < 0.0f) difference = -difference;
++                if (difference > 0.001f) {
++                    lookup.blockMatches = false;
++                    break;
++                }
++            }
++        }
++        lookup.found = true;
++        return true;
++    }
++
++    // the view index and the block index need not be the same: find the block by the view it holds
++    for (uint32_t i = 1; i < scanCount; i++) {
++        if (i >= 3 && i <= 6) continue;
++        uint32_t entry = 0;
++        if (blockHoldsView(i, entry)) {
++            lookup.index = i;
++            lookup.blockEntry = entry;
++            lookup.blockReadable = true;
++            lookup.blockMatches = true;
++            lookup.found = true;
++            return true;
++        }
++    }
++    return false;
++}
++
++static void LogBackgroundSummary(bool left, bool wrote, uint32_t blockIndex) {
++    const uint64_t now = GetTimeStamp();
++    if (left) {
++        ++s_backgroundLeftPrepares;
++        if (wrote) ++s_backgroundLeftWrites;
++    }
++    else {
++        ++s_backgroundRightPrepares;
++        if (wrote) ++s_backgroundRightWrites;
++    }
++    if (wrote) s_backgroundLastBlockIndex = blockIndex;
++
++    if (s_backgroundLastSummaryNs == 0) {
++        s_backgroundLastSummaryNs = now;
++        return;
++    }
++    if (now - s_backgroundLastSummaryNs < kBackgroundSummaryIntervalNs) {
++        return;
++    }
++    Log::print<INFO>("[bgcam] summary: block {}, left {}/{} right {}/{} (written/prepared)",
++        s_backgroundLastBlockIndex, s_backgroundLeftWrites, s_backgroundLeftPrepares,
++        s_backgroundRightWrites, s_backgroundRightPrepares);
++    s_backgroundLeftPrepares = s_backgroundLeftWrites = 0;
++    s_backgroundRightPrepares = s_backgroundRightWrites = 0;
++    s_backgroundLastSummaryNs = now;
++}
++
++// the replay's per-view recalc, redirected to the background pass's block: the host finds the block whose view is
++// the background camera's, swaps the eye's shared matrices for the background view and that eye's projection, and
++// recalcBackgroundGpuView (patch_RND_StereoReplay.asm) writes that one block. It returns 1 in r3 when it prepared
++// the swap, 0 when no block matches
++static void hook_PrepareBackgroundGpuView(PPCInterpreter_t* hCPU) {
++    hCPU->instructionPointer = hCPU->sprNew.LR;
++
++    const uint32_t ctx = hCPU->gpr[3];
++    const float eyeOffset = hCPU->fpr[1].fp0;
++    const bool left = eyeOffset < 0.0f;
++    hCPU->gpr[3] = 0;
++    s_backgroundGpuViewState.prepared = false;
++
++    if (!Tracking::IsSessionRunning()) {
++        return;
++    }
++    // a loading screen is a map change: a record from before it belongs to the map that is going away
++    if (Screens::IsLoadingVisible()) {
++        ClearBackgroundCamera();
++        return;
++    }
++    // the record hook leaves the pose alone in these modes, so the replay must leave the pass alone too
++    if (GameState::UseBlackBarsDuringEvents() || GameState::UseFlatCameraPresentation() || GameState::UseMonoFrameBufferTemporarilyDuringMenusOrPictures()) {
++        return;
++    }
++
++    BackgroundRecord record = {};
++    {
++        std::scoped_lock lock(s_backgroundRecordMutex);
++        if (!s_backgroundValid || GetTimeStamp() - s_backgroundRecord.recordedAtNs > kBackgroundRecordMaxAgeNs) {
++            s_backgroundValid = false;
++            return;
++        }
++        record = s_backgroundRecord;
++    }
++    if (ctx == 0) {
++        return;
++    }
++
++    BackgroundBlockLookup lookup;
++    const bool found = FindBackgroundBlock(ctx, record, lookup);
++
++    // the entry's one view-block line: a hit and an untouched pass can be told apart
++    if (!record.loggedViewProbe) {
++        bool logProbe = false;
++        {
++            std::scoped_lock lock(s_backgroundRecordMutex);
++            if (!s_backgroundRecord.loggedViewProbe) {
++                s_backgroundRecord.loggedViewProbe = true;
++                logProbe = true;
++            }
++        }
++        if (logProbe) {
++            if (found && lookup.blockMatches) {
++                Log::print<INFO>("[bgcam] view block {} matched at {:08X} (VFC {} views): its slot 0 already holds the background view; the pass's view is written for each eye",
++                    lookup.index, lookup.blockEntry, lookup.vfcCount);
++            }
++            else if (found && lookup.blockReadable) {
++                Log::print<INFO>("[bgcam] view block {} at {:08X} (VFC {} views): its slot 0 does not hold the background view yet; the pass's view is written for each eye",
++                    lookup.index, lookup.blockEntry, lookup.vfcCount);
++            }
++            else if (found) {
++                Log::print<INFO>("[bgcam] view block {} at {:08X} (VFC {} views): its slot 0 is unreadable; backdrop left unchanged",
++                    lookup.index, lookup.blockEntry, lookup.vfcCount);
++            }
++            else if (lookup.shaderCtx == 0 || lookup.shaderCtxField4 == 0) {
++                Log::print<INFO>("[bgcam] view block not found: no shader context (VFC {} views)", lookup.vfcCount);
++            }
++            else {
++                Log::print<INFO>("[bgcam] view block not found (VFC {} views, closest index {} differs by {:.3f}): backdrop left unchanged",
++                    lookup.vfcCount, lookup.closestIndex, lookup.closestDiff);
++            }
++        }
++    }
++
++    bool wrote = false;
++    if (found && lookup.blockReadable) {
++        const uint32_t sharedAddress = StereoView::GetSharedMemoryAddress();
++        if (sharedAddress != 0) {
++            const uint32_t sharedMemAddress = sharedAddress + offsetof(VRSharedMemoryRoot, shared);
++            VRSharedMemory sharedMem = {};
++            Guest::Read(sharedMemAddress, &sharedMem);
++
++            BEMatrix34 mainView;
++            BEMatrix44 mainProj;
++            float mainNear = 0.0f;
++            float mainFar = 0.0f;
++            float mainFovy = 0.0f;
++            float mainAspect = 0.0f;
++            float mainStuff5 = 0.0f;
++            GetEyeShared(sharedMem, left, mainView, mainProj, mainNear, mainFar, mainFovy, mainAspect, mainStuff5);
++
++            // the eye's own horizontal and vertical projection, the background projection's depth range
++            BEMatrix44 backgroundProj = mainProj;
++            backgroundProj.a22 = record.projA22;
++            backgroundProj.a23 = record.projA23;
++            backgroundProj.a32 = record.projA32;
++            backgroundProj.a33 = record.projA33;
++
++            const float proj11 = backgroundProj.a11.getLE();
++            const float proj00 = backgroundProj.a00.getLE();
++            const float stuff5 = proj11 != 0.0f ? 1.0f / proj11 : mainStuff5;
++            const float aspect = proj00 != 0.0f && proj11 != 0.0f ? proj11 / proj00 : mainAspect;
++
++            s_backgroundGpuViewState.prepared = true;
++            s_backgroundGpuViewState.left = left;
++            s_backgroundGpuViewState.sharedMemAddress = sharedMemAddress;
++            s_backgroundGpuViewState.shaderCtx = lookup.shaderCtx;
++            s_backgroundGpuViewState.shaderCtxField4 = lookup.shaderCtxField4;
++            s_backgroundGpuViewState.mainView = mainView;
++            s_backgroundGpuViewState.mainProj = mainProj;
++            s_backgroundGpuViewState.mainNear = mainNear;
++            s_backgroundGpuViewState.mainFar = mainFar;
++            s_backgroundGpuViewState.mainFovy = mainFovy;
++            s_backgroundGpuViewState.mainAspect = mainAspect;
++            s_backgroundGpuViewState.mainStuff5 = mainStuff5;
++
++            SetEyeShared(sharedMem, left, record.view, backgroundProj, record.nearZ, record.farZ, mainFovy, aspect, stuff5);
++            Guest::Write(sharedMemAddress, &sharedMem);
++            WriteGuestU32(lookup.shaderCtx + 4, lookup.blockEntry);
++            wrote = true;
++        }
++    }
++
++    LogBackgroundSummary(left, wrote, lookup.index);
++    if (wrote) {
++        hCPU->gpr[3] = 1;
++    }
++}
++
++static void hook_RestoreBackgroundGpuView(PPCInterpreter_t* hCPU) {
++    hCPU->instructionPointer = hCPU->sprNew.LR;
++    if (!s_backgroundGpuViewState.prepared) {
++        return;
++    }
++
++    VRSharedMemory sharedMem = {};
++    Guest::Read(s_backgroundGpuViewState.sharedMemAddress, &sharedMem);
++    SetEyeShared(sharedMem, s_backgroundGpuViewState.left, s_backgroundGpuViewState.mainView, s_backgroundGpuViewState.mainProj,
++        s_backgroundGpuViewState.mainNear, s_backgroundGpuViewState.mainFar, s_backgroundGpuViewState.mainFovy,
++        s_backgroundGpuViewState.mainAspect, s_backgroundGpuViewState.mainStuff5);
++    Guest::Write(s_backgroundGpuViewState.sharedMemAddress, &sharedMem);
++    WriteGuestU32(s_backgroundGpuViewState.shaderCtx + 4, s_backgroundGpuViewState.shaderCtxField4);
++    s_backgroundGpuViewState.prepared = false;
++}
++
+ static void hook_GetRenderProjection(PPCInterpreter_t* hCPU) {
+     hCPU->instructionPointer = hCPU->sprNew.LR;
+ 
+@@ -392,6 +973,10 @@ static void hook_FixCameraSaveFilesAndInventory(PPCInterpreter_t* hCPU) {
+ void StereoView::RegisterHooks() {
+     CemuHost::RegisterHook("hook_RegisterVRSharedMemory", &hook_RegisterVRSharedMemory);
+     CemuHost::RegisterHook("hook_GetRenderCamera", &hook_GetRenderCamera);
++    CemuHost::RegisterHook("hook_ModifyProjectionUsingCamera", &hook_ModifyProjectionUsingCamera);
++    CemuHost::RegisterHook("hook_ProbeBackgroundShadowContext", &hook_ProbeBackgroundShadowContext);
++    CemuHost::RegisterHook("hook_PrepareBackgroundGpuView", &hook_PrepareBackgroundGpuView);
++    CemuHost::RegisterHook("hook_RestoreBackgroundGpuView", &hook_RestoreBackgroundGpuView);
+     CemuHost::RegisterHook("hook_GetRenderProjection", &hook_GetRenderProjection);
+     CemuHost::RegisterHook("hook_CheckIfCameraCanSeePos", &hook_CheckIfCameraCanSeePos);
+     CemuHost::RegisterHook("hook_ModifyPixelUniformBlockData", &hook_ModifyPixelUniformBlockData);

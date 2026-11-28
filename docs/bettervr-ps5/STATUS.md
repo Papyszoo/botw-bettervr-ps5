@@ -6,34 +6,42 @@ tested.
 Test request 77 (v0.8 haptics) is withdrawn with the haptics work; the requests after it move up one, so
 the console keyboard is 77, the tutorial shrine 78 and the cutscene height 79.
 
-## 2026-11-28: the Divine Beasts' outside world takes the head's rotation and each eye's projection; built, untested on console
+## 2026-11-28 (second attempt): the Divine Beasts' backdrop gets one shared view and each eye's projection; built, untested on console
 
-Inside a Divine Beast the game draws the outside world (cliffs, water, sky and sun) with a background camera of
-its own, a separate, scaled world at a position away from Link. The game hands that camera and projection to the
-layer as the layer's special camera and projection. BetterVR 1.0.2 hooks the layer's normal camera and projection
-but deliberately leaves the special pair alone, so the outside world kept the game's 50-degree view while the
-inside was rendered with the headset's pose; it looked close, slid against the deck when the head turned, its glow
-stayed with the view, and the two eyes did not line up. During replay the layer's view block was also filled with
-the main camera's per-eye view, which is the wrong view for a world at a different position and scale.
+The console session on c271758 (the first attempt, patch 0053) logged the background camera's pose line but no
+view-block line. The gate was wrong: `hook_PrepareBackgroundGpuView` ran only when the display list's layer had the
+background camera and projection as its special pair, and the outside world is drawn by the model scene, not by
+that layer display list, so the gate returned before the view scan. The record-side pose change did reach the
+background camera, but the draw's view block kept the record's mono, combined-FOV matrices: the backdrop scaled
+with head yaw and slid against the deck. The background is drawn first into the same model-scene colour and depth
+buffer as the interior and is covered by the depth test; a background transformed with the main camera's view can
+therefore also pass in front of deeper interior geometry, which is what the covered hall showed. BetterVR's near
+and far are the game's own 0.1/25000, so the depth range is not the cause; the view and projection the draw reads
+are.
 
-**The fix.** New patch bettervr 0053. The wrapper at `0x02C43450` keeps the game's own projection set call, then
-hands the background camera and projection to `hook_ModifyProjectionUsingCamera`. The hook keeps the background
-camera's own position (no head translation and no eye offset) and takes the gameplay yaw composed with the head's
-middle rotation, the same composition the main camera uses. At record it also gives the background projection the
-combined eye FOV, keeping its own near and far. During replay, only when the layer's special camera and projection
-are both that pair and the layer sets the flags the game's own camera getters check, `hook_PrepareBackgroundGpuView`
-finds the background pass's view in the layer's view array and swaps in the background camera's view and that eye's
-own projection (the main eye projection's horizontal and vertical rows, and the background projection's depth rows).
-The new `recalcBackgroundGpuView` then writes that one per-view block, while the frame's shadow and environment
-uniforms, the per-eye previous-view slots and the view array keep the main camera's values; a view the array does
-not name, or a match at the main camera's own entry, leaves the pass as recorded instead of writing the main block.
-The two eyes share one view and differ only in projection, so the backdrop sits at infinity and cannot show double
-vision. The main layer, the overworld and every other special camera keep their existing path. Two INFO lines are
-printed once per Divine Beast entry, including re-entering the same Beast: `[bgcam] divine beast background camera:
-VR pose applied`, and, when the pass's view array is first read, `[bgcam] background view block N matched: the
-pass's per-eye view was written` or `[bgcam] background view block not matched: backdrop left unchanged`. Display
-lists with no special pair (the deck, the interior, the HUD) do not reset them; only a map load, seen as the game's
-loading screen, forgets the pair.
+**The fix.** Patch bettervr 0053 is replaced. The wrapper at `0x02C43450` still keeps the game's own projection set
+call and hands the background camera and projection to the DLL hook. The hook keeps the background camera's own
+position (no head translation and no eye offset), takes the gameplay yaw composed with the head's middle rotation,
+and gives the record's culling the combined eye FOV. It leaves that shared view, the projection's depth rows and its
+near/far in a small record. During replay, for every display list and both eyes, `hook_PrepareBackgroundGpuView`
+finds the model scene's view array entry whose view is the background camera's (view 0 is the main camera and views
+3 to 6 are the shadow cascades), takes that index's per-view uniform block, and swaps the eye's shared matrices for
+the shared background view and that eye's projection: the eye's horizontal and vertical rows, the background
+projection's depth rows. The existing `recalcBackgroundGpuView` writes that one block, keeping the frame's shadow
+and environment uniforms, the per-eye previous-view cache and the view array on the main camera's values. The two
+eyes share one viewpoint and differ only in projection, so the backdrop sits at infinity, lines up in both eyes,
+does not slide and stays behind real geometry as in flat play. No draws, passes or readbacks are added. Outside a
+Divine Beast there is no background camera, so the overworld and the normal path are unchanged.
+
+**The probes.** Four lines, all only while a Divine Beast's background camera is current. One per entry:
+`[bgcam] entry: camera ... projection ... lr ... near ... far ... fov ... basePos ... yaw ...`, the caller's
+return address and the shared pose. One per entry: `[bgcam] shadow context ...: block slot 0 pos (...), background
+pos (...), match yes/no`, from the background GPU setup's shadow slot, which says whether the background camera
+reaches the same shader context. One per entry: `[bgcam] view block ... matched ...` or `... does not hold the
+background view yet ...` or `... not found ...`, with the view-array index, the block address and the nearest match.
+At most one per five seconds: `[bgcam] summary: block ..., left W/P right W/P (written/prepared)`, which says
+whether both eyes replayed and rewrote the block. A map load, seen as the game's loading screen, forgets the record
+and the once-per-entry markers.
 
 **Checks.** `tools/bettervr-patches.sh apply` passes; all 53 patches apply from the 1.0.2 pin with `git am` in a
 clean worktree and the tree equals the branch's. `tools/tests/test-bettervr-triggers.sh`,
@@ -44,25 +52,37 @@ the "BetterVR build" run is the compile check. Built, untested on console.
 "BetterVR build" run on this head; VR on, first person.
 
 1. **Vah Ruta's deck.** Stand on the deck and look out at the landscape. Turn the head left, right, up and down:
-   the backdrop must line up in both eyes (no double vision), look far away rather than close, and stay fixed in
-   the world while turning, with no sliding against the deck. The glow and the sun must stay with the landscape,
-   not with the view.
-2. **Leave and re-enter.** Leave Vah Ruta and enter it again (or another Beast and back): the backdrop behaves as
-   in step 1 on the new entry, and the log has one more `[bgcam]` pose line and one more view-block line for it.
-3. **Any other Divine Beast.** If one is available, repeat step 1 on its deck or outside view; the same result.
-4. **Overworld sky.** In the open field, look at the sky, clouds and sun and turn the head: unchanged from the
+   the backdrop must line up in both eyes (no double vision), look far away rather than close, and hold still in
+   the world while turning, with no slide against the deck and no change of apparent size with yaw. The glow and
+   the sun must stay with the landscape, not with the view.
+2. **The covered hall.** Go inside, under the roof, and look at the back wall, the tall slotted frame and the
+   floor, then through the openings. The outside world must stay behind every piece of interior geometry and show
+   only through the openings; it must not creep over the back wall, the frame or the floor.
+3. **Leave and re-enter.** Leave Vah Ruta and enter it again (or another Beast and back): the backdrop behaves as
+   in steps 1 and 2 on the new entry, and the log has one more entry line, one more shadow-context line and one
+   more view-block line for it.
+4. **Any other Divine Beast.** If one is available, repeat steps 1 and 2 on it; the same result.
+5. **Overworld sky.** In the open field, look at the sky, clouds and sun and turn the head: unchanged from the
    previous build.
-5. **A normal area.** A shrine, a stable or a town: the picture is unchanged.
+6. **A normal area.** A shrine, a stable or a town: the picture is unchanged.
 
 **Send.** The build, what each step did, and from `/data/ps5cemu/logs/boot.log`
-`LC_ALL=C grep -a "\[bgcam\]" boot.log`: the pose line and the one view-block line of each entry, with the block
-index of a match. No log is needed for a step that behaved.
+`LC_ALL=C grep -a "\[bgcam\]" boot.log`. Send every line, in particular:
+- the `[bgcam] entry:` line of each entry (camera, projection, `lr`, near, far, fov, basePos, yaw);
+- the `[bgcam] shadow context ...` line of each entry, with `match yes` or `match no`;
+- the `[bgcam] view block ...` line of each entry, whether it says `matched`, `does not hold the background view
+  yet`, or `not found`, and the view-array index and block address it names;
+- one or two `[bgcam] summary:` lines from standing in the Beast, with the written/prepared counts for the left
+  and right eyes.
 
-**What it decides.** A `[bgcam]` pose line and a view-block line saying `matched` on every Divine Beast entry,
-including a return to the same Beast, and a backdrop that lines up, stays far away and holds still against the deck
-decide the fix; double vision, a close backdrop or a glow that follows the view leaves it wrong. A view-block line
-saying `not matched` means the pass kept its recorded matrices, so the backdrop cannot line up. Steps 4 and 5
-decide that the overworld and the normal path are untouched.
+**What it decides.** An entry line, a view-block line naming an index and block, and a summary with writes for
+both eyes on every Divine Beast entry, plus a backdrop that lines up, stays far away, holds still against the deck
+and stays behind the interior geometry, decide the fix. A `not found` view-block line means the model scene's view
+array did not name the background view and the pass kept its recorded matrices; the closest index and its
+difference say where to look next. A `does not hold the background view yet` line means the block was written from
+the main camera's view and the write path is the one being tested. The shadow-context line says whether the
+background camera reaches the shader context the frame's view blocks hang off. Steps 5 and 6 decide that the
+overworld and the normal path are untouched.
 
 ## 2026-11-23: HUD pieces blended over the UI keep their own shape in the VR alpha mask; built, untested on console
 
